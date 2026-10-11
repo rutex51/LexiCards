@@ -1,0 +1,13 @@
+{
+  "name": "lexicards",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LexiCards – aplikacja webowa do nauki terminologii polsko-angielskiej",
+  "scripts": {
+    "test": "node --test \"tests/unit/*.test.js\"",
+    "build": "node tools/build.mjs",
+    "serve": "node tools/serve.mjs",
+    "test:e2e": "node tests/e2e/run.mjs"
+  }
+}

@@ -1,0 +1,107 @@
+// Nawigacja oparta na adresie po znaku # – działa na hostingu plików statycznych,
+// z przyciskiem „Wstecz” przeglądarki i gestem cofania w Safari.
+
+export const TABS = [
+  { id: 'start', title: 'Start', icon: 'home', root: '#/start' },
+  { id: 'library', title: 'Biblioteka', icon: 'library', root: '#/library' },
+  { id: 'study', title: 'Nauka', icon: 'cards', root: '#/study' },
+  { id: 'quiz', title: 'Quiz', icon: 'quiz', root: '#/quiz' },
+  { id: 'stats', title: 'Statystyki', icon: 'stats', root: '#/stats' }
+];
+
+export const routes = {
+  start: () => '#/start',
+  domains: () => '#/library',
+  glossary: () => '#/library/glossary',
+  domain: (id) => `#/library/domain/${encodeURIComponent(id)}`,
+  module: (id) => `#/library/module/${encodeURIComponent(id)}`,
+  lesson: (id) => `#/library/lesson/${encodeURIComponent(id)}`,
+  study: () => '#/study',
+  quiz: () => '#/quiz',
+  stats: () => '#/stats',
+  settings: () => '#/settings'
+};
+
+/** Zamienia fragment adresu na opis ekranu: { tab, name, id }. */
+export function parseHash(hash) {
+  const parts = String(hash ?? '').replace(/^#\/?/, '').split('/').filter(Boolean).map((part) => {
+    try {
+      return decodeURIComponent(part);
+    } catch {
+      return part;
+    }
+  });
+  const [first, second, third] = parts;
+  switch (first) {
+    case 'library':
+      if (second === 'glossary') return { tab: 'library', name: 'glossary' };
+      if (['domain', 'module', 'lesson'].includes(second) && third) return { tab: 'library', name: second, id: third };
+      return { tab: 'library', name: 'domains' };
+    case 'study': return { tab: 'study', name: 'study' };
+    case 'quiz': return { tab: 'quiz', name: 'quiz' };
+    case 'stats': return { tab: 'stats', name: 'stats' };
+    case 'settings': return { tab: null, name: 'settings' };
+    default: return { tab: 'start', name: 'start' };
+  }
+}
+
+export function routeKey(route) {
+  return `${route.name}:${route.id ?? ''}`;
+}
+
+export class Router {
+  constructor(onChange) {
+    this.onChange = onChange;
+    /** Ostatnio odwiedzony adres w każdej zakładce (jak osobne stosy nawigacji w iOS). */
+    this.lastHashByTab = new Map();
+    this.current = parseHash(location.hash);
+    // Pozycję przewijania przywracamy sami – treść ekranu powstaje dopiero po zmianie adresu.
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    window.addEventListener('hashchange', () => this.#handle());
+  }
+
+  start() {
+    if (!location.hash || location.hash === '#') {
+      history.replaceState(null, '', routes.start());
+    }
+    this.#handle();
+  }
+
+  /**
+   * Każdy wpis historii dostaje identyfikator. Wpis, który już go ma, został odwiedzony
+   * wcześniej – to powrót („wstecz”/„dalej”), przy którym przywracamy przewinięcie.
+   */
+  #entry() {
+    const known = history.state?.lexicardsEntry;
+    if (known) return { entry: known, restored: true };
+    const entry = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    history.replaceState({ ...(history.state ?? {}), lexicardsEntry: entry }, '');
+    return { entry, restored: false };
+  }
+
+  #handle() {
+    const hash = location.hash || routes.start();
+    this.current = parseHash(hash);
+    if (this.current.tab) this.lastHashByTab.set(this.current.tab, hash);
+    this.onChange(this.current, this.#entry());
+  }
+
+  navigate(hash, { replace = false } = {}) {
+    if (replace) {
+      history.replaceState(null, '', hash);
+      this.#handle();
+    } else if (location.hash === hash) {
+      // Ponowny wybór miejsca, w którym już jesteśmy, wraca na górę ekranu.
+      this.#handle();
+      window.scrollTo(0, 0);
+    } else {
+      location.hash = hash;
+    }
+  }
+
+  /** Adres zakładki: ostatnie miejsce w niej, a przy ponownym wyborze aktywnej – jej początek. */
+  tabHref(tab) {
+    if (this.current.tab === tab.id) return tab.root;
+    return this.lastHashByTab.get(tab.id) ?? tab.root;
+  }
+}

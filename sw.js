@@ -1,0 +1,82 @@
+// PLIK GENEROWANY przez `npm run build` z tools/sw.template.js – nie edytuj go ręcznie.
+// LexiCards – praca bez internetu.
+//
+// Przy instalacji pobiera komplet plików aplikacji do pamięci podręcznej oznaczonej wersją.
+// Każda zmiana dowolnego pliku zmienia wersję, więc przeglądarka pobiera nowy komplet
+// i nigdy nie miesza plików z dwóch wydań.
+
+const VERSION = '3d9d5574';
+const CACHE = `lexicards-${VERSION}`;
+const ASSETS = [
+  "css/app.css",
+  "icons/apple-touch-icon.png",
+  "icons/icon-192.png",
+  "icons/icon-512.png",
+  "icons/icon-maskable-512.png",
+  "index.html",
+  "js/core/backup.js",
+  "js/core/library.js",
+  "js/core/messages.js",
+  "js/core/model.js",
+  "js/core/sample-data.js",
+  "js/core/samples.js",
+  "js/core/storage.js",
+  "js/core/text.js",
+  "js/main.js",
+  "js/theme-boot.js",
+  "js/ui/actions.js",
+  "js/ui/components.js",
+  "js/ui/dialogs.js",
+  "js/ui/dom.js",
+  "js/ui/files.js",
+  "js/ui/icons.js",
+  "js/ui/router.js",
+  "js/ui/screens/glossary.js",
+  "js/ui/screens/library.js",
+  "js/ui/screens/settings.js",
+  "js/ui/screens/start.js",
+  "js/ui/screens/terms.js",
+  "js/ui/screens/upcoming.js",
+  "js/ui/shell.js",
+  "js/version.js",
+  "manifest.webmanifest"
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    // `reload` omija pamięć HTTP przeglądarki – do kompletu trafiają aktualne pliki.
+    await cache.addAll(ASSETS.map((url) => new Request(url, { cache: 'reload' })));
+    await self.skipWaiting();
+  })());
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const names = await caches.keys();
+    await Promise.all(names
+      .filter((name) => name.startsWith('lexicards-') && name !== CACHE)
+      .map((name) => caches.delete(name)));
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  if (request.method !== 'GET') return;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+
+  // Otwarcie aplikacji (adres katalogu albo index.html) zawsze dostaje stronę główną.
+  const scopePath = new URL(self.registration.scope).pathname;
+  const opensApp = request.mode === 'navigate'
+    && (url.pathname === scopePath || url.pathname === `${scopePath}index.html`);
+
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const cached = opensApp
+      ? await cache.match('index.html')
+      : await cache.match(request, { ignoreSearch: true });
+    return cached ?? fetch(request);
+  })());
+});
