@@ -4,7 +4,7 @@ Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na k
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
 są zapisywane wyłącznie w przeglądarce na Twoim urządzeniu.
 
-Adres: **https://6mhm9nv2yz-cyber.github.io/LexiCards/**
+Adres: **https://rutex51.github.io/LexiCards/**
 
 ## Co już działa (etap 1)
 
