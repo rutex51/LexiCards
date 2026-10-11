@@ -74,6 +74,11 @@ export class MemoryAdapter {
     return [...this.stores.get(name).values()].map(clone);
   }
 
+  /** Wpisy dziennika dotyczące jednego pojęcia. */
+  async readByTerm(name, termID) {
+    return [...this.stores.get(name).values()].filter((record) => record.termID === termID).map(clone);
+  }
+
   async count(name) {
     return this.stores.get(name).size;
   }
@@ -185,6 +190,12 @@ export class IdbAdapter {
   async readStore(name) {
     const transaction = this.db.transaction([name], 'readonly');
     return requestToPromise(transaction.objectStore(name).getAll());
+  }
+
+  /** Wpisy dziennika dotyczące jednego pojęcia (przez indeks, bez czytania całego magazynu). */
+  async readByTerm(name, termID) {
+    const transaction = this.db.transaction([name], 'readonly');
+    return requestToPromise(transaction.objectStore(name).index('termID').getAll(IDBKeyRange.only(termID)));
   }
 
   async count(name) {

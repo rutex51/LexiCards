@@ -13,6 +13,7 @@ import {
 } from './model.js';
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
 import { emptyChanges } from './storage.js';
+import { DECISIONS, emptyTiles, makeAssessment, makeSession, nextProgress, summarizeSession } from './study.js';
 
 const LEVEL_GENITIVE = { domain: 'dziedziny', module: 'modułu', lesson: 'lekcji', term: 'pojęcia' };
 const LEVEL_STORE = { domain: 'domains', module: 'modules', lesson: 'lessons', term: 'terms' };
@@ -34,7 +35,11 @@ const errors = {
   invalidDifficulty: () => new LibraryError('invalidDifficulty', `Trudność musi być liczbą od ${DIFFICULTY_MIN} do ${DIFFICULTY_MAX}.`),
   notFound: (level) => new LibraryError('notFound', `Nie znaleziono ${LEVEL_GENITIVE[level]}. Element mógł zostać usunięty.`, level),
   parentNotSelected: (level) => new LibraryError('parentNotSelected', PARENT_PROMPT[level], level),
-  nothingSelected: () => new LibraryError('nothingSelected', 'Nie wybrano żadnych pojęć.')
+  nothingSelected: () => new LibraryError('nothingSelected', 'Nie wybrano żadnych pojęć.'),
+  emptyStudyQueue: () => new LibraryError('emptyStudyQueue', 'Brak fiszek pasujących do wybranych ustawień.'),
+  noStudySession: () => new LibraryError('noStudySession', 'Nie ma trwającej sesji nauki.'),
+  nothingToUndo: () => new LibraryError('nothingToUndo', 'Nie ma decyzji do cofnięcia.'),
+  invalidDecision: () => new LibraryError('invalidDecision', 'Nieznana decyzja – oczekiwano „Umiem” albo „Powtórz”.')
 };
 
 function bySortOrder(a, b) {
@@ -93,6 +98,21 @@ class UnitOfWork {
     this.maps = maps;
     this.before = new Map();
     this.purgeTermIDs = [];
+    /** Dzienniki nauki nie są trzymane w pamięci – zbieramy tylko zapisy i usunięcia. */
+    this.journalPuts = new Map();
+    this.journalDeletes = new Map();
+  }
+
+  /** Dopisuje wpis do dziennika (magazynu spoza pamięci). */
+  append(store, record) {
+    if (!this.journalPuts.has(store)) this.journalPuts.set(store, []);
+    this.journalPuts.get(store).push(record);
+  }
+
+  /** Usuwa wpis dziennika – używane wyłącznie przy cofaniu ostatniej decyzji. */
+  erase(store, id) {
+    if (!this.journalDeletes.has(store)) this.journalDeletes.set(store, []);
+    this.journalDeletes.get(store).push(id);
   }
 
   #remember(store, id) {
@@ -127,6 +147,8 @@ class UnitOfWork {
         (changes.deletes[store] ??= []).push(id);
       }
     }
+    for (const [store, records] of this.journalPuts) (changes.puts[store] ??= []).push(...records);
+    for (const [store, ids] of this.journalDeletes) (changes.deletes[store] ??= []).push(...ids);
     changes.purgeTermIDs = [...new Set(this.purgeTermIDs)];
     return changes;
   }
@@ -303,7 +325,12 @@ export class Library {
     }
     for (const list of termsByLesson.values()) list.sort(bySortOrder);
 
-    this.#derived = { termsByLesson, lessonCounts, moduleCounts, domainCounts, favorites };
+    const progressByKey = new Map();
+    for (const progress of this.maps.progress.values()) {
+      progressByKey.set(`${progress.termID}\n${progress.direction}`, progress);
+    }
+
+    this.#derived = { termsByLesson, lessonCounts, moduleCounts, domainCounts, favorites, progressByKey };
     return this.#derived;
   }
 
@@ -790,11 +817,15 @@ export class Library {
   async deleteAllContent() {
     const stores = ['domains', 'modules', 'lessons', 'terms', 'progress'];
     const run = async () => {
+      // Trwająca sesja nauki wskazuje na usuwane pojęcia, więc znika razem z nimi.
+      const settings = { ...this.getSettings(), id: SETTINGS_ID, activeStudySession: null, updatedAt: nowISO() };
       await this.adapter.commit({
         ...emptyChanges(),
+        puts: { settings: [settings] },
         clear: [...stores, 'assessments', 'reviews', 'quizAnswers', 'studySessions', 'quizSessions']
       });
       for (const name of stores) this.maps[name] = new Map();
+      this.maps.settings.set(SETTINGS_ID, settings);
       this.#changed();
     };
     const next = this.#queue.then(run, run);
@@ -990,6 +1021,163 @@ export class Library {
     const next = this.#queue.then(run, run);
     this.#queue = next.catch(() => {});
     return next;
+  }
+
+  // ---------------------------------------------------------------- nauka z fiszkami
+
+  /** Postęp pojęcia w kierunku 'pl_en' albo 'en_pl'; null, gdy jeszcze nie było oceniane. */
+  getProgress(termID, direction) {
+    return this.#derive().progressByKey.get(`${termID}\n${direction}`) ?? null;
+  }
+
+  /** Trwająca sesja nauki albo null. */
+  getStudySession() {
+    return this.getSettings().activeStudySession ?? null;
+  }
+
+  #putStudySession(unit, session) {
+    unit.put('settings', { ...this.getSettings(), id: SETTINGS_ID, activeStudySession: session, updatedAt: nowISO() });
+  }
+
+  /** Wpis o sesji w dzienniku; sesja bez żadnej oceny nie zostawia śladu. */
+  #archiveStudySession(unit, session) {
+    const summary = summarizeSession(session);
+    if (summary.assessed === 0) return summary;
+    unit.append('studySessions', {
+      id: session.id,
+      startedAt: session.startedAt,
+      completedAt: nowISO(),
+      direction: session.config.direction,
+      scope: session.config.scope,
+      front: session.config.front ?? 'term',
+      round: session.round ?? 1,
+      selectedDomainIDs: session.config.domainID ? [session.config.domainID] : [],
+      selectedModuleIDs: session.config.moduleID ? [session.config.moduleID] : [],
+      selectedLessonIDs: [...(session.config.lessonIDs ?? [])],
+      totalCards: summary.total,
+      assessedCards: summary.assessed,
+      knownCards: summary.know,
+      repeatCards: summary.repeat,
+      statuses: summary.statuses,
+      finished: summary.remaining === 0
+    });
+    return summary;
+  }
+
+  /**
+   * Rozpoczyna sesję z gotową kolejką [{ termID, direction }]. Poprzednia, niedokończona
+   * sesja jest przy tym zamykana i trafia do dziennika.
+   */
+  startStudy(config, queue, { round = 1 } = {}) {
+    return this.#mutate((unit) => {
+      if (!Array.isArray(queue) || queue.length === 0) throw errors.emptyStudyQueue();
+      const previous = this.getStudySession();
+      if (previous) this.#archiveStudySession(unit, previous);
+      const session = makeSession({ config, queue, round });
+      this.#putStudySession(unit, session);
+      return session;
+    });
+  }
+
+  /**
+   * Zatwierdza bieżącą fiszkę: dopisuje ocenę do historii, aktualizuje postęp w kierunku
+   * fiszki i przesuwa sesję – wszystko jedną transakcją.
+   * tiles: { term, description, example } (true – „Umiem”), decision: 'know' | 'repeat'.
+   */
+  recordStudyDecision({ tiles, decision }) {
+    return this.#mutate((unit) => {
+      if (decision !== DECISIONS.KNOW && decision !== DECISIONS.REPEAT) throw errors.invalidDecision();
+      const session = this.getStudySession();
+      if (!session || session.position >= session.queue.length) throw errors.noStudySession();
+      const card = session.queue[session.position];
+      const term = this.#require('term', card.termID);
+
+      // Kafelek elementu, którego pojęcie nie ma, pozostaje „Brak danych” niezależnie od wejścia.
+      const available = emptyTiles(term);
+      const checked = {};
+      for (const key of Object.keys(available)) checked[key] = available[key] === null ? null : Boolean(tiles?.[key]);
+
+      const previous = this.getProgress(term.id, card.direction);
+      const assessment = makeAssessment({ term, direction: card.direction, tiles: checked, decision, sessionID: session.id });
+      const progress = nextProgress(previous, term, assessment);
+      unit.append('assessments', assessment);
+      unit.put('progress', progress);
+
+      const updated = {
+        ...session,
+        position: session.position + 1,
+        results: [...session.results, {
+          assessmentID: assessment.id,
+          decision,
+          status: assessment.assessmentStatus,
+          score: assessment.totalScore,
+          available: assessment.availableElementCount,
+          progressID: progress.id,
+          previousProgress: previous
+        }]
+      };
+      this.#putStudySession(unit, updated);
+      return updated;
+    });
+  }
+
+  /** Cofa ostatnią decyzję w sesji: usuwa jej wpis z historii i przywraca poprzedni postęp. */
+  undoStudyDecision() {
+    return this.#mutate((unit) => {
+      const session = this.getStudySession();
+      if (!session || session.results.length === 0) throw errors.nothingToUndo();
+      const last = session.results[session.results.length - 1];
+      const card = session.queue[session.position - 1];
+      if (!last.skipped) {
+        unit.erase('assessments', last.assessmentID);
+        const term = this.getTerm(card.termID);
+        if (last.previousProgress && term) {
+          // Pojęcie mogło w międzyczasie zmienić lekcję – klucze zakresu bierzemy z jego stanu.
+          unit.put('progress', {
+            ...last.previousProgress, lessonID: term.lessonID, moduleID: term.moduleID, domainID: term.domainID
+          });
+        } else if (this.maps.progress.has(last.progressID)) {
+          unit.delete('progress', last.progressID);
+        }
+      }
+      const updated = { ...session, position: session.position - 1, results: session.results.slice(0, -1) };
+      this.#putStudySession(unit, updated);
+      return updated;
+    });
+  }
+
+  /** Pomija fiszki pojęć, które usunięto w trakcie sesji. Zwraca aktualną sesję albo null. */
+  async skipMissingStudyCards() {
+    const missing = () => {
+      const session = this.getStudySession();
+      return Boolean(session) && session.position < session.queue.length && !this.getTerm(session.queue[session.position].termID);
+    };
+    if (!missing()) return this.getStudySession();
+    return this.#mutate((unit) => {
+      let session = this.getStudySession();
+      while (session && session.position < session.queue.length && !this.getTerm(session.queue[session.position].termID)) {
+        session = { ...session, position: session.position + 1, results: [...session.results, { skipped: true }] };
+      }
+      this.#putStudySession(unit, session);
+      return session;
+    });
+  }
+
+  /** Kończy sesję (także przed końcem kolejki). Zwraca { session, summary }. */
+  finishStudy() {
+    return this.#mutate((unit) => {
+      const session = this.getStudySession();
+      if (!session) throw errors.noStudySession();
+      const summary = this.#archiveStudySession(unit, session);
+      this.#putStudySession(unit, null);
+      return { session, summary };
+    });
+  }
+
+  /** Historia ocen pojęcia, od najnowszej. */
+  async termAssessments(termID) {
+    const records = await this.adapter.readByTerm('assessments', termID);
+    return records.sort((a, b) => (a.assessedAt < b.assessedAt ? 1 : a.assessedAt > b.assessedAt ? -1 : 0));
   }
 
   // ---------------------------------------------------------------- ustawienia

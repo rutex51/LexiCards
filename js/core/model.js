@@ -66,6 +66,10 @@ export function defaultSettings() {
     preferredVoiceEN: null,
     shuffleCards: true,
     automaticReviewMode: true,
+    studyScope: 'all',             // ostatnio wybrany zakres fiszek
+    studyCount: 20,                // ostatnio wybrana liczba fiszek (0 = wszystkie)
+    activeStudySession: null,      // trwająca sesja nauki – do wznowienia po ponownym otwarciu
+    lastBackupAt: null,
     createdAt: now,
     updatedAt: now
   };
