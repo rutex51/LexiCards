@@ -1,9 +1,11 @@
 // Lista pojęć (wspólna dla lekcji i glosariusza) oraz ekran lekcji.
 
 import { normalizeKey, pluralTerms, formatTags } from '../../core/text.js';
-import { DIFFICULTY_MAX } from '../../core/model.js';
+import { DIFFICULTY_MAX, DIRECTIONS } from '../../core/model.js';
+import { DIRECTION_NAMES, describeProgress } from '../../core/study.js';
 import {
-  copyLesson, copyTerms, moveLesson, moveTerms, openExportSheet, openLessonForm, openTermForm, requestDeletion, setFavorite
+  copyLesson, copyTerms, moveLesson, moveTerms, openAssessmentHistory, openExportSheet, openLessonForm, openTermForm,
+  requestDeletion, setFavorite
 } from '../actions.js';
 import { emptyState, iconButton, navButton, primaryButton } from '../components.js';
 import { openMenu } from '../dialogs.js';
@@ -28,15 +30,35 @@ function detailItem(label, value, { lang = null, required = false } = {}) {
   );
 }
 
-function termDetails(term) {
-  return h('dl', { class: 'term__details-list' },
-    detailItem('Opis po polsku', term.descriptionPL, { lang: 'pl', required: true }),
-    detailItem('Opis po angielsku', term.descriptionEN, { lang: 'en', required: true }),
-    detailItem('Przykład po polsku', term.examplePL, { lang: 'pl', required: true }),
-    detailItem('Przykład po angielsku', term.exampleEN, { lang: 'en', required: true }),
-    detailItem('Tagi', formatTags(term.tags)),
-    detailItem('Trudność', term.difficulty ? `${term.difficulty} z ${DIFFICULTY_MAX}` : null),
-    detailItem('Notatki', term.notes)
+/** Ostatnia ocena pojęcia w kierunku, z datą: „2/3 – Częściowo opanowane, 12 paź 2026”. */
+function learningState(progress) {
+  const state = describeProgress(progress);
+  if (!progress?.lastReviewedAt) return state;
+  const date = new Date(progress.lastReviewedAt).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${state}, ${date}`;
+}
+
+function termDetails(ctx, term) {
+  const forward = ctx.library.getProgress(term.id, DIRECTIONS.PL_EN);
+  const backward = ctx.library.getProgress(term.id, DIRECTIONS.EN_PL);
+  return h('div', null,
+    h('dl', { class: 'term__details-list' },
+      detailItem('Opis po polsku', term.descriptionPL, { lang: 'pl', required: true }),
+      detailItem('Opis po angielsku', term.descriptionEN, { lang: 'en', required: true }),
+      detailItem('Przykład po polsku', term.examplePL, { lang: 'pl', required: true }),
+      detailItem('Przykład po angielsku', term.exampleEN, { lang: 'en', required: true }),
+      detailItem('Tagi', formatTags(term.tags)),
+      detailItem('Trudność', term.difficulty ? `${term.difficulty} z ${DIFFICULTY_MAX}` : null),
+      detailItem('Notatki', term.notes),
+      detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.PL_EN]}`, learningState(forward)),
+      detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.EN_PL]}`, learningState(backward))
+    ),
+    forward || backward
+      ? h('button', {
+          type: 'button', class: 'button button--plain term__history', dataset: { testid: 'term-history' },
+          onClick: () => openAssessmentHistory(ctx, term)
+        }, 'Historia ocen')
+      : null
   );
 }
 
@@ -90,7 +112,7 @@ export function termList(ctx, state, terms, { path = null } = {}) {
         );
       }
 
-      const details = h('div', { class: 'term__details', id: detailsID, hidden: !isExpanded }, isExpanded ? termDetails(term) : null);
+      const details = h('div', { class: 'term__details', id: detailsID, hidden: !isExpanded }, isExpanded ? termDetails(ctx, term) : null);
       const toggle = h('button', {
         type: 'button', class: 'term__toggle', 'aria-expanded': String(isExpanded), 'aria-controls': detailsID,
         onClick: () => {
@@ -99,7 +121,7 @@ export function termList(ctx, state, terms, { path = null } = {}) {
           else state.expanded.delete(term.id);
           toggle.setAttribute('aria-expanded', String(open));
           details.hidden = !open;
-          if (open && !details.firstChild) details.appendChild(termDetails(term));
+          if (open && !details.firstChild) details.appendChild(termDetails(ctx, term));
         }
       }, text, h('span', { class: 'term__chevron' }, icon('chevronDown', { size: 18 })));
 
@@ -264,6 +286,11 @@ export class LessonScreen {
     } else {
       this.#renderResults();
       body = [
+        h('a', {
+          class: 'button button--primary button--block',
+          href: routes.study({ level: 'lesson', id: lesson.id }),
+          dataset: { testid: 'lesson-study' }
+        }, 'Ucz się tej lekcji'),
         searchField({
           value: this.search,
           placeholder: 'Szukaj po polsku lub angielsku',

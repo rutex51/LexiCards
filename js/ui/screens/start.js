@@ -1,6 +1,7 @@
 // Ekran Start: podsumowanie biblioteki i najkrótsza droga do dodania materiałów.
 
 import { sampleTermCount } from '../../core/samples.js';
+import { isSessionFinished } from '../../core/study.js';
 import { pluralLessons, pluralModules, pluralTerms } from '../../core/text.js';
 import { loadSampleData, openDomainForm, openLessonForm, openTermForm } from '../actions.js';
 import { actionRow, domainBadge, emptyState, group, primaryButton, settingsAction } from '../components.js';
@@ -59,12 +60,21 @@ export class StartScreen {
 
     const summary = library.summary();
     const domains = library.listDomains();
+    const session = library.getStudySession();
+    const resumable = session && !isSessionFinished(session);
 
     return {
       title: 'Start',
       subtitle: summarySentence(summary),
       actions,
       body: [
+        summary.terms > 0 ? h('a', {
+          class: 'button button--primary button--block',
+          href: resumable ? routes.studySession() : routes.study(),
+          dataset: { testid: 'start-study' }
+        }, resumable
+          ? `Wznów naukę (fiszka ${session.position + 1} z ${session.queue.length})`
+          : 'Rozpocznij naukę') : null,
         h('section', { class: 'group' },
           h('h2', { class: 'group__title' }, 'Twoje dziedziny'),
           h('ul', { class: 'tiles', role: 'list' }, domains.map((domain) => domainTile(library, domain)))

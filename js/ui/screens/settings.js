@@ -4,11 +4,12 @@ import { backupFileName, createBackup, parseBackupText, validateBackup } from '.
 import { nowISO } from '../../core/model.js';
 import { joinList, pluralDomains, pluralLessons, pluralModules, pluralTerms } from '../../core/text.js';
 import { loadSampleData, openExportSheet } from '../actions.js';
-import { actionRow, group, segmented, valueRow } from '../components.js';
+import { actionRow, field, formGroup, group, segmented, selectInput, valueRow } from '../components.js';
 import { confirmDialog, showError, toast } from '../dialogs.js';
 import { h } from '../dom.js';
 import { deliverFile, pickFile } from '../files.js';
 import { routes } from '../router.js';
+import { SPEECH_RATES, listVoices, onVoicesChanged, speak, speechAvailable } from '../speech.js';
 
 const APPEARANCE_OPTIONS = [
   { value: 'system', label: 'Automatyczny' },
@@ -48,10 +49,59 @@ export class SettingsScreen {
     this.persisted = null;
     this.disposed = false;
     this.#checkPersistence();
+    // Lista głosów systemu bywa dostępna dopiero po chwili.
+    this.stopWatchingVoices = onVoicesChanged(() => { if (!this.disposed) this.ctx.refresh(); });
   }
 
   dispose() {
     this.disposed = true;
+    this.stopWatchingVoices();
+  }
+
+  #speechGroup() {
+    const { ctx } = this;
+    const { library } = ctx;
+    if (!speechAvailable()) {
+      return group({ title: 'Wymowa', footer: 'Ta przeglądarka nie udostępnia syntezatora mowy, więc przyciski wymowy są ukryte.' });
+    }
+    const settings = library.getSettings();
+    const save = async (patch) => {
+      try {
+        await library.updateSettings(patch);
+      } catch (error) {
+        await showError(error);
+      }
+    };
+    const voiceField = (label, language, key, sample) => {
+      const voices = listVoices(language);
+      const current = voices.some((voice) => voice.voiceURI === settings[key]) ? settings[key] : '';
+      return field(label, selectInput({
+        value: current,
+        testID: `voice-${language}`,
+        options: [
+          { value: '', label: voices.length > 0 ? 'Domyślny głos systemu' : 'Domyślny (brak listy głosów)' },
+          ...voices.map((voice) => ({ value: voice.voiceURI, label: `${voice.name} (${voice.lang})` }))
+        ],
+        onChange: async (value) => {
+          await save({ [key]: value || null });
+          speak(sample, language, library.getSettings());
+        }
+      }));
+    };
+
+    return h('div', { class: 'settings-speech' },
+      formGroup('Wymowa',
+        field('Szybkość czytania', selectInput({
+          value: String(SPEECH_RATES.some((rate) => rate.value === settings.speechRate) ? settings.speechRate : 1),
+          testID: 'speech-rate',
+          options: SPEECH_RATES.map((rate) => ({ value: String(rate.value), label: rate.label })),
+          onChange: (value) => save({ speechRate: Number(value) })
+        })),
+        voiceField('Głos polski', 'pl', 'preferredVoicePL', 'Dzień dobry, to jest próbka głosu.'),
+        voiceField('Głos angielski', 'en', 'preferredVoiceEN', 'Hello, this is a voice sample.')
+      ),
+      h('p', { class: 'form-note' }, 'Głosy pochodzą z systemu urządzenia; nic nie jest wysyłane do internetu. Po wybraniu głosu usłyszysz próbkę.')
+    );
   }
 
   async #checkPersistence() {
@@ -209,6 +259,7 @@ export class SettingsScreen {
           actionRow({ label: 'Importuj pojęcia z pliku XLSX lub CSV', iconName: 'upload', onClick: () => ctx.navigate(routes.importFile()), testID: 'settings-import' }),
           library.isEmpty() ? null : actionRow({ label: 'Eksportuj bibliotekę do pliku', iconName: 'download', onClick: () => openExportSheet(ctx, { kind: 'all' }), testID: 'settings-export' })
         ),
+        this.#speechGroup(),
         this.#storageGroup(),
         this.#installGroup(),
         group({ title: 'Dane' },

@@ -7,6 +7,8 @@ import {
   DOMAIN_COLOR_NAMES, DOMAIN_ICONS, emptyTermDraft, termToDraft
 } from '../core/model.js';
 import { EXPORT_FORMATS, buildExportFile, collectExportRows } from '../core/exporter.js';
+import { ASSESSMENT_STATUS_NAMES } from '../core/model.js';
+import { DECISION_NAMES, DIRECTION_NAMES } from '../core/study.js';
 import { installSampleData } from '../core/samples.js';
 import { formatTags, isBlank, parseTags, pluralTerms } from '../core/text.js';
 import { field, formGroup, message, segmented, selectInput, textArea, textInput, toggle } from './components.js';
@@ -575,6 +577,47 @@ export async function requestDeletion(ctx, target) {
   });
   if (!confirmed) return false;
   return runAction(() => ctx.library.delete(target));
+}
+
+// ---------------------------------------------------------------- historia ocen
+
+/** Arkusz z historią ocen pojęcia (od najnowszej). Wpisy są tylko do odczytu. */
+export function openAssessmentHistory(ctx, term) {
+  const list = h('div', { class: 'history', dataset: { testid: 'history' } }, h('p', { class: 'picker__empty' }, 'Wczytywanie…'));
+  const sheet = openFormSheet({
+    title: 'Historia ocen',
+    submitLabel: '',
+    cancelLabel: 'Zamknij',
+    build(api) {
+      api.setCanSubmit(false);
+      return [h('p', { class: 'form-note history__term' }, `${term.termPL} – ${term.termEN}`), list];
+    },
+    onSubmit: () => false
+  });
+  sheet.dialog.classList.add('sheet--picker');
+
+  ctx.library.termAssessments(term.id).then((entries) => {
+    if (entries.length === 0) {
+      replaceChildren(list, h('p', { class: 'picker__empty' }, 'To pojęcie nie było jeszcze oceniane.'));
+      return;
+    }
+    replaceChildren(list, h('ul', { class: 'group__list', role: 'list' },
+      entries.map((entry) => h('li', { class: 'history__entry' },
+        h('span', { class: 'history__score' }, `${entry.totalScore}/${entry.availableElementCount}`),
+        h('span', { class: 'row__text' },
+          h('span', { class: 'row__title' }, ASSESSMENT_STATUS_NAMES[entry.assessmentStatus] ?? ''),
+          h('span', { class: 'row__subtitle' },
+            `${DIRECTION_NAMES[entry.direction] ?? ''}, decyzja: ${DECISION_NAMES[entry.swipeDecision] ?? ''}`),
+          h('span', { class: 'row__subtitle' }, new Date(entry.assessedAt).toLocaleString('pl-PL', {
+            day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+          }))
+        )
+      ))
+    ));
+  }).catch((error) => {
+    replaceChildren(list, message(error?.message ?? String(error), 'error'));
+  });
+  return sheet;
 }
 
 // ---------------------------------------------------------------- eksport

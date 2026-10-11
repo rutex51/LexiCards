@@ -95,6 +95,24 @@ export function radioRow({ name, value, checked, title, subtitle = null, onChang
   );
 }
 
+/** Wiersz z polem zaznaczenia (checkbox). Cały wiersz jest etykietą pola. */
+export function checkRow({ checked, title, subtitle = null, onChange, testID = null }) {
+  const input = h('input', {
+    type: 'checkbox', checked, class: 'radio__input',
+    dataset: { testid: testID },
+    onChange: (event) => onChange(event.target.checked)
+  });
+  return h('li', { class: 'row' },
+    h('label', { class: 'row__main radio' },
+      input,
+      h('span', { class: 'row__text' },
+        h('span', { class: 'row__title' }, title),
+        subtitle ? h('span', { class: 'row__subtitle' }, subtitle) : null
+      )
+    )
+  );
+}
+
 /** Wiersz informacyjny: etykieta i wartość. */
 export function valueRow(label, value) {
   return h('li', { class: 'row row--static' },

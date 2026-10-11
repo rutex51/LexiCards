@@ -1,6 +1,6 @@
 # Architektura LexiCards
 
-Dokument opisuje stan po etapie 2 oraz decyzje, które przygotowują kolejne etapy.
+Dokument opisuje stan po etapie 3 oraz decyzje, które przygotowują kolejne etapy.
 
 ## Założenia
 
@@ -21,6 +21,7 @@ js/ui/shell.js             powłoka: pasek nawigacji, zakładki / panel boczny
 js/ui/actions.js           formularze i przepływy wspólne dla wielu ekranów
 js/ui/dialogs.js           arkusze, pytania, menu, komunikaty (element <dialog>)
 js/ui/router.js            adresy po znaku # i historia przeglądarki
+js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
 js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
 js/core/model.js           kształt rekordów, wartości domyślne, stałe
@@ -31,6 +32,7 @@ js/core/csv.js             kodowanie, separator, odczyt i zapis CSV
 js/core/tablefile.js       rozpoznanie formatu pliku, wspólna postać tabeli
 js/core/importer.js        nagłówki → pola, wiersze pliku → wiersze importu, walidacja
 js/core/exporter.js        zakres eksportu → plik XLSX lub CSV
+js/core/study.js           fiszki: dobór do sesji, treść stron, ocena, postęp, podsumowanie
 js/core/text.js            normalizacja tekstu, tagi, odmiana liczebników
 ```
 
@@ -46,10 +48,12 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | `modules` | moduły | `domainID` |
 | `lessons` | lekcje | `moduleID`, `domainID` |
 | `terms` | pojęcia: 6 pól treści, tagi, trudność, notatki, ulubione | `lessonID`, `moduleID`, `domainID` |
-| `progress` | postęp nauki pojęcia w danym kierunku (etap 4) | `termID` + klucze zakresu |
-| `assessments`, `reviews`, `quizAnswers` | dzienniki nauki (etapy 3–5) | indeks `termID` |
-| `studySessions`, `quizSessions` | sesje (etapy 3–5) | – |
-| `settings` | jeden rekord `app` | – |
+| `progress` | ostatnia ocena pojęcia w danym kierunku; od etapu 4 także harmonogram powtórek | `termID` + klucze zakresu |
+| `assessments` | historia ocen fiszek – jeden wpis na zatwierdzoną fiszkę | indeks `termID` |
+| `reviews`, `quizAnswers` | dzienniki powtórek i quizów (etapy 4–5) | indeks `termID` |
+| `studySessions` | dziennik zakończonych sesji nauki | – |
+| `quizSessions` | sesje quizów (etap 5) | – |
+| `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki, trwająca sesja | – |
 
 Decyzje:
 
@@ -150,6 +154,39 @@ i historia nauki zostają. Powtórzenia w samym pliku są pomijane.
 Eksport zapisuje te same kolumny, które rozpoznaje import, dzięki czemu plik można poprawić
 w arkuszu i wczytać z powrotem.
 
+## Nauka z fiszkami
+
+Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany w
+`js/ui/screens/study-setup.js` i `study-session.js`.
+
+- **Sesja to kolejka** `[{ termID, direction }]` zbudowana z wybranego materiału, kierunku
+  (PL → EN, EN → PL albo mieszany – wtedy każde pojęcie raz, w jednym z kierunków), zakresu
+  i liczby fiszek. Trwająca sesja leży w ustawieniach (`activeStudySession`), więc przeżywa
+  zamknięcie strony i trafia do kopii zapasowej.
+- **Ocena** to stan trzech kafelków: `true`, `false` albo `null` („Brak danych” – pojęcie
+  nie ma opisu lub przykładu). Wynik liczy się względem dostępnych elementów (2/2, 1/1),
+  a status wynika z proporcji: komplet – opanowane, co najmniej połowa – częściowo opanowane,
+  mniej – w trakcie nauki, zero – do nauki.
+- **Zatwierdzenie fiszki jest jedną transakcją:** wpis w `assessments` (tylko dopisywany),
+  rekord `progress` dla pary pojęcie + kierunek oraz przesunięcie sesji. Biblioteka sama
+  ustala, które elementy pojęcie ma, więc ocena brakującego elementu nie może trafić do bazy.
+- **Opanowane** jest tylko pojęcie z kompletem zaliczonych elementów i decyzją „Umiem”.
+  „Umiem” przy niepełnym wyniku zachowuje status częściowy.
+- **Cofnięcie** usuwa ostatni wpis historii i przywraca poprzedni rekord postępu, zapamiętany
+  w wyniku fiszki. Działa także z ekranu podsumowania.
+- **Dzienniki** (`assessments`, `studySessions`) nie są trzymane w pamięci: zapis idzie przez
+  `UnitOfWork.append()` / `erase()` w tej samej transakcji co reszta zmian, a odczyt historii
+  pojęcia przez indeks `termID`.
+- **Zakresy** „Nowe”, „Do powtórki” i „Trudne” wynikają na razie z ostatniej oceny
+  (`learningGroup()`, `isHard()`). W etapie 4 „Do powtórki” przejdzie na terminy z FSRS;
+  status ostatniej oceny pozostanie osobnym polem.
+
+Ekran sesji przebudowuje widok tylko po zmianie danych (zatwierdzenie, cofnięcie). Obrót,
+kafelki i przeciąganie zmieniają istniejące elementy, żeby animacje nie zaczynały się od nowa.
+Gest korzysta ze zdarzeń wskaźnika; strona fiszki ma `touch-action: pan-y`, dzięki czemu
+ruch w pionie przewija długą treść, a ruch w poziomie trafia do aplikacji. Wymowa używa
+`speechSynthesis` z głosami systemu – nic nie jest wysyłane do sieci.
+
 ## Kopia zapasowa
 
 Jeden plik JSON: nagłówek (format, wersje, data, liczniki) i zawartość wszystkich magazynów.
@@ -161,16 +198,17 @@ nieistniejące pojęcia są pomijane.
 ## Testy
 
 - `tests/unit/` – Node.js (`node --test`), bez przeglądarki: reguły biblioteki, wycofywanie
-  nieudanych zmian, glosariusz, odczyt i zapis plików, import i eksport, kopia zapasowa,
-  spójność plików wydania.
+  nieudanych zmian, glosariusz, odczyt i zapis plików, import i eksport, nauka z fiszkami,
+  kopia zapasowa, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.
 - `tests/e2e/` – Chromium przez Playwright: pełne przepływy na ekranie telefonu i komputera,
-  trwałość po przeładowaniu, praca offline, aktualizacja wydania, klawiatura.
+  trwałość po przeładowaniu, praca offline, aktualizacja wydania, klawiatura. Gesty na fiszce
+  są wykonywane zdarzeniami dotyku przeglądarki, a syntezator mowy zastępuje atrapa.
 
 ## Przygotowanie kolejnych etapów
 
-- **Fiszki i powtórki (etapy 3–4)** zapiszą oceny w `assessments` i `reviews`, a stan
-  harmonogramu w `progress`. Brakujące pola pojęcia nie będą liczone jako nieznane –
-  funkcje `availableElementCount()` i `assessmentStatus()` są już w `model.js`.
+- **Powtórki (etap 4)** dopiszą do `progress` stan harmonogramu FSRS, osobno dla każdego
+  kierunku, a każdą powtórkę do `reviews`. Ocena z kafelków jest już zapisywana razem
+  z liczbą dostępnych elementów, więc da się ją odwzorować na oceny FSRS bez zgadywania.
 - **Quizy i statystyki (etapy 5–6)** korzystają z magazynów sesji i dzienników.

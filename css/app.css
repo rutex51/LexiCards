@@ -11,6 +11,7 @@
 
   --bg: #f2f2f7;
   --surface: #ffffff;
+  --surface-clear: rgba(255, 255, 255, 0);
   --sheet-bg: #f2f2f7;
   --sheet-surface: #ffffff;
   --elevated: #ffffff;
@@ -38,6 +39,14 @@
   --warning-soft: rgba(255, 149, 0, 0.18);
   --star: #e09b00;
   --switch-on: #2fa84f;
+  --success: #166c2e;
+  --success-fill: #1b7f38;
+  --success-soft: rgba(52, 199, 89, 0.16);
+  --success-border: rgba(31, 138, 61, 0.55);
+  --status-mastered: #2fa84f;
+  --status-partial: #f08c00;
+  --status-progress: #2f7fe6;
+  --status-learn: #e0443a;
 
   --toast-bg: #1c1c1e;
   --toast-text: #ffffff;
@@ -61,6 +70,7 @@
   :root:not([data-theme="light"]) {
     --bg: #000000;
     --surface: #1c1c1e;
+    --surface-clear: rgba(28, 28, 30, 0);
     --sheet-bg: #1c1c1e;
     --sheet-surface: #2c2c2e;
     --elevated: #2c2c2e;
@@ -83,6 +93,9 @@
     --warning: #ffb650;
     --warning-soft: rgba(255, 159, 10, 0.2);
     --star: #ffcc33;
+    --success: #5fd880;
+    --success-soft: rgba(48, 209, 88, 0.2);
+    --success-border: rgba(48, 209, 88, 0.6);
     --toast-bg: #3a3a3c;
     --backdrop: rgba(0, 0, 0, 0.56);
     --shadow: 0 10px 38px rgba(0, 0, 0, 0.6);
@@ -95,6 +108,7 @@
   color-scheme: dark;
   --bg: #000000;
   --surface: #1c1c1e;
+  --surface-clear: rgba(28, 28, 30, 0);
   --sheet-bg: #1c1c1e;
   --sheet-surface: #2c2c2e;
   --elevated: #2c2c2e;
@@ -117,6 +131,9 @@
   --warning: #ffb650;
   --warning-soft: rgba(255, 159, 10, 0.2);
   --star: #ffcc33;
+  --success: #5fd880;
+  --success-soft: rgba(48, 209, 88, 0.2);
+  --success-border: rgba(48, 209, 88, 0.6);
   --toast-bg: #3a3a3c;
   --backdrop: rgba(0, 0, 0, 0.56);
   --shadow: 0 10px 38px rgba(0, 0, 0, 0.6);
@@ -1327,6 +1344,476 @@ a.row__main:active,
 .status--updated,
 .status--addedDuplicate { color: var(--warning); }
 
+/* Nauka z fiszkami. */
+
+.screen--compact .screen__header { display: none; }
+.screen--compact .navbar__inline-title { visibility: visible; }
+
+.app--focus .tabbar { display: none; }
+.app--focus .screen { padding-bottom: calc(env(safe-area-inset-bottom) + 12px); }
+
+.bottombar__note {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--size-sub);
+  color: var(--text-2);
+}
+
+.study {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding-top: 6px;
+  max-width: 560px;
+  /* Pierwsza wartość dla przeglądarek bez jednostki dvh (iOS starszy niż 15.4). */
+  height: calc(100vh - var(--navbar-height) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 100px);
+  height: calc(100dvh - var(--navbar-height) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 18px);
+  min-height: 520px;
+  margin: 0 auto;
+}
+
+.study__header {
+  flex: none;
+  display: grid;
+  /* minmax(0, …): długa nazwa lekcji ma się skracać, a nie rozpychać ekran. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.study__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--size-sub);
+}
+
+.study__lesson {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+
+.study__counter {
+  flex: none;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.study__progress,
+.score__bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.study__progress-fill,
+.score__fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent-fill);
+  transition: width 0.25s ease;
+}
+
+.flashcard {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 12px 32px rgba(0, 0, 0, 0.09);
+  cursor: pointer;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+  will-change: transform;
+}
+
+/*
+ * Strona fiszki przewija się w pionie, więc to ona decyduje o obsłudze dotyku dla swojej
+ * treści. Bez pan-y tutaj przeglądarka przejmowałaby ruch w poziomie i gest by nie działał.
+ */
+.flashcard__face,
+.flashcard__face * { touch-action: pan-y; }
+
+.flashcard__face {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 18px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: inherit;
+}
+
+.flashcard__top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+}
+
+.flashcard__label {
+  font-size: var(--size-foot);
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.flashcard__speak { margin-right: -10px; }
+
+.flashcard__tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  margin-right: -10px;
+}
+
+.flashcard__tools .flashcard__speak { margin-right: 0; }
+.flashcard__turn { color: var(--accent); }
+
+.flashcard__text {
+  margin: auto 0;
+  padding: 6px 0;
+  text-align: center;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.flashcard__text--xl { font-size: 2.1rem; letter-spacing: -0.01em; }
+.flashcard__text--lg { font-size: 1.65rem; }
+.flashcard__text--md { font-size: 1.28rem; font-weight: 600; }
+.flashcard__text--sm { font-size: 1.06rem; font-weight: 600; line-height: 1.3; }
+
+/* Na odwrocie tłumaczenie dzieli miejsce z opisem i przykładem, więc jest o stopień mniejsze. */
+.flashcard__face--back .flashcard__text { margin: 0; padding: 0 0 2px; }
+.flashcard__face--back .flashcard__text--xl { font-size: 1.7rem; }
+.flashcard__face--back .flashcard__text--lg { font-size: 1.4rem; }
+.flashcard__face--back .flashcard__text--md { font-size: 1.15rem; }
+.flashcard__face--back .flashcard__text--sm { font-size: 1rem; }
+
+.flashcard__question {
+  text-align: center;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.flashcard__section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--separator);
+}
+
+.flashcard__section-title {
+  font-size: var(--size-foot);
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.flashcard__line {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.flashcard__line > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.flashcard__line + .flashcard__line {
+  margin-top: 2px;
+  font-size: var(--size-sub);
+  color: var(--text-2);
+}
+
+.flashcard__line .flashcard__speak {
+  width: 36px;
+  height: 36px;
+  margin-top: -6px;
+}
+
+.flashcard__missing {
+  color: var(--text-2);
+  font-style: italic;
+}
+
+/*
+ * Przycisk obrotu trzyma się dolnej krawędzi fiszki także wtedy, gdy treść się przewija.
+ * Sięga do krawędzi fiszki (ujemne marginesy równe odstępowi strony), żeby przewijana
+ * treść nie wystawała obok niego.
+ */
+.flashcard__flip {
+  position: sticky;
+  bottom: 0;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 46px;
+  margin: auto -18px 0;
+  padding: 4px 14px 8px;
+  background: var(--surface);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Łagodne wygaszenie treści chowającej się przy dolnej krawędzi – znak, że da się ją przewinąć. */
+.flashcard__flip::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 18px;
+  background: linear-gradient(to top, var(--surface), var(--surface-clear));
+  pointer-events: none;
+}
+
+.flashcard__fade {
+  position: sticky;
+  bottom: 0;
+  flex: none;
+  height: 18px;
+  margin: auto -18px 0;
+  background: linear-gradient(to top, var(--surface), var(--surface-clear));
+  pointer-events: none;
+}
+
+.flashcard__stamp {
+  position: absolute;
+  top: 54px;
+  padding: 3px 12px;
+  border: 2.5px solid currentColor;
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 1.1rem;
+  font-weight: 800;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.flashcard__stamp--know { right: 16px; color: var(--success); transform: rotate(7deg); }
+.flashcard__stamp--repeat { left: 16px; color: var(--warning); transform: rotate(-7deg); }
+.flashcard[data-swipe="know"] .flashcard__stamp--know,
+.flashcard[data-swipe="repeat"] .flashcard__stamp--repeat { opacity: 1; }
+
+.rating-row {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.rating {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-height: 84px;
+  padding: 9px 4px 8px;
+  border: 1.5px solid var(--separator);
+  border-radius: 16px;
+  background: var(--fill);
+  color: var(--text);
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+
+.rating__icon { color: var(--text-2); }
+.rating__name { font-size: var(--size-sub); font-weight: 600; }
+.rating__state { font-size: var(--size-foot); color: var(--text-2); }
+
+.rating--known {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+}
+
+.rating--known .rating__icon,
+.rating--known .rating__state { color: var(--success); font-weight: 600; }
+
+.rating--missing {
+  border-style: dashed;
+  background: transparent;
+}
+
+.rating:disabled { opacity: 0.55; }
+.rating:active:not(:disabled) { transform: scale(0.96); }
+
+.score {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.score__bar { flex: 1; }
+.score__fill { background: var(--success-fill); }
+
+.score__text {
+  flex: none;
+  min-width: 2.2em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.quick,
+.study__decisions {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.button--quick {
+  min-height: 38px;
+  padding: 0 8px;
+  border-radius: 11px;
+  background: var(--fill);
+  color: var(--text);
+  font-size: var(--size-sub);
+  font-weight: 500;
+}
+
+.button--know,
+.button--repeat {
+  gap: 8px;
+  min-height: 52px;
+}
+
+.button--know { background: var(--success-fill); color: #ffffff; }
+.button--repeat { background: var(--warning-soft); color: var(--warning); }
+
+.study__hint {
+  flex: none;
+  font-size: var(--size-foot);
+  color: var(--text-2);
+  text-align: center;
+}
+
+.study__keys { display: none; }
+
+/* Niski ekran (np. iPhone w Safari z widocznymi paskami): ciaśniej, żeby fiszka była jak największa. */
+@media (max-height: 760px) {
+  .study {
+    gap: 9px;
+    height: calc(100dvh - var(--navbar-height) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 12px);
+  }
+
+  .rating {
+    min-height: 70px;
+    padding: 6px 4px;
+  }
+
+  .rating__icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .button--quick { min-height: 36px; }
+
+  .button--know,
+  .button--repeat { min-height: 48px; }
+}
+
+/* W trakcie nauki komunikaty pojawiają się u góry, żeby nie zasłaniać kafelków i przycisków decyzji. */
+.app--focus ~ .toasts {
+  top: calc(var(--navbar-height) + env(safe-area-inset-top) + 8px);
+  bottom: auto;
+}
+
+.study-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 36px 8px 24px;
+  text-align: center;
+}
+
+.study-summary__line { display: block; }
+
+.status-bar {
+  display: flex;
+  gap: 2px;
+  width: min(100%, 340px);
+  height: 12px;
+  margin-top: 20px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.status-bar__part { flex: 1 1 0; }
+.status-bar__part--mastered, .status-legend__item--mastered .status-legend__dot { background: var(--status-mastered); }
+.status-bar__part--partiallyMastered, .status-legend__item--partiallyMastered .status-legend__dot { background: var(--status-partial); }
+.status-bar__part--inProgress, .status-legend__item--inProgress .status-legend__dot { background: var(--status-progress); }
+.status-bar__part--toLearn, .status-legend__item--toLearn .status-legend__dot { background: var(--status-learn); }
+
+.status-legend {
+  display: grid;
+  gap: 6px;
+  width: min(100%, 340px);
+  margin-top: 14px;
+  font-size: var(--size-sub);
+  text-align: left;
+}
+
+.status-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-legend__item strong {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-legend__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.term__history {
+  margin: 6px 0 -6px -10px;
+  min-height: 40px;
+}
+
+.history__term { margin-top: 0; }
+
+.history__entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px var(--gutter);
+}
+
+.history__score {
+  flex: none;
+  min-width: 2.4em;
+  font-size: 1.12rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-speech {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-speech .form-note { margin-top: 0; }
+
 /* ------------------------------------------------------------------ 8. okna */
 
 .dialog {
@@ -1686,6 +2173,8 @@ a.row__main:active,
   }
 
   .screen--wide { max-width: 1240px; }
+  /* Ekran nauki: pasek nawigacji tej samej szerokości co fiszka. */
+  .screen--compact { max-width: 616px; }
   .app--bottombar .screen { padding-bottom: 120px; }
 
   .screen__header { padding-left: 28px; padding-right: 28px; }
@@ -1718,6 +2207,18 @@ a.row__main:active,
   }
 
   .tiles { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+
+  .study {
+    height: calc(100dvh - var(--navbar-height) - 40px);
+    max-height: 820px;
+  }
+
+  .study__keys {
+    display: block;
+    font-size: var(--size-foot);
+    color: var(--text-2);
+    text-align: center;
+  }
 }
 
 /* ------------------------------------------------------------------ 11. ruch */
@@ -1728,6 +2229,7 @@ a.row__main:active,
   .dialog.alert[open] .alert__panel { animation: pop 0.2s ease-out; }
   .dialog[open]::backdrop { animation: fade 0.25s ease-out; }
   .toast { animation: toast-in 0.25s ease-out; }
+  .flashcard { animation: card-in 0.22s ease-out; }
 
   @media (min-width: 700px) {
     .dialog.sheet[open] .sheet__panel,
@@ -1758,6 +2260,11 @@ a.row__main:active,
 @keyframes fade {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@keyframes card-in {
+  from { transform: scale(0.96); opacity: 0; }
+  to { transform: none; opacity: 1; }
 }
 
 @keyframes toast-in {

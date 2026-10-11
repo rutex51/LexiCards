@@ -105,6 +105,16 @@ async function loadSamples(page) {
 
 const summary = (page) => page.evaluate(() => window.lexicards.library.summary());
 
+/**
+ * O ile pikseli treść jest szersza od ekranu. Porównujemy z szerokością urządzenia, a nie
+ * z window.innerWidth: w trybie telefonu przeglądarka poszerza obszar układu do treści,
+ * więc innerWidth rośnie razem z nią i niczego by nie wykrył.
+ */
+const overflowX = (page) => page.evaluate(
+  (width) => Math.max(document.documentElement.scrollWidth, window.innerWidth) - width,
+  page.viewportSize().width
+);
+
 // ---------------------------------------------------------------- kreator importu
 
 const FIXTURES = path.join(ROOT, 'tests/fixtures');
@@ -468,7 +478,7 @@ test('wąski ekran 320 px: żaden ekran nie przewija się w poziomie', async ({ 
   for (const hash of ['#/start', '#/library', '#/library/glossary', `#/library/lesson/${lessonID}`, '#/settings', '#/study']) {
     await page.goto(base + hash);
     await page.waitForFunction((expected) => location.hash === expected, hash);
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    const overflow = await overflowX(page);
     assert.ok(overflow <= 0, `${hash}: treść wystaje o ${overflow} px`);
   }
 }, { device: { ...PHONE, viewport: { width: 320, height: 568 } } });
@@ -968,6 +978,946 @@ test('wyeksportowany plik wczytany do pustej aplikacji odtwarza bibliotekę', as
     assert.deepEqual(await dump(page), await dump(source));
   } finally {
     await other.close();
+  }
+});
+
+// ---------------------------------------------------------------- nauka z fiszkami
+
+const flashcard = (page) => page.locator('[data-testid=flashcard]');
+const counter = (page) => page.locator('[data-testid=study-counter]');
+const tile = (page, id) => page.locator(`[data-testid=tile-${id}]`);
+const score = (page) => page.locator('[data-testid=score]');
+const planned = (page) => page.locator('[data-testid=study-planned]');
+const side = (page) => flashcard(page).getAttribute('data-side');
+
+/**
+ * Mała biblioteka o znanej zawartości. Kolejność fiszek „jak w lekcjach”:
+ * aktywa (opis i przykład), pasywa (sam opis), zysk (samo tłumaczenie),
+ * amortyzacja (komplet), płynność (sam przykład), umowa (komplet, inny moduł).
+ */
+async function seedStudy(page) {
+  return page.evaluate(async () => {
+    const { library } = window.lexicards;
+    const basics = await library.createLesson({ name: 'Podstawy' }, { create: { name: 'Finanse' }, domain: { create: { name: 'Biznes' } } });
+    const advanced = await library.createLesson({ name: 'Zaawansowane' }, { existing: basics.moduleID });
+    const contracts = await library.createLesson({ name: 'Umowy' }, { create: { name: 'Prawo' }, domain: { existing: basics.domainID } });
+    const add = async (draft, lesson) => (await library.createTerm(draft, lesson.id)).id;
+    const ids = {
+      assets: await add({
+        termPL: 'aktywa', termEN: 'assets',
+        descriptionPL: 'Zasoby majątkowe firmy.', descriptionEN: 'Resources owned by a company.',
+        examplePL: 'Aktywa spółki wzrosły.', exampleEN: 'The assets of the company increased.'
+      }, basics),
+      liabilities: await add({ termPL: 'pasywa', termEN: 'liabilities', descriptionPL: 'Źródła finansowania majątku.' }, basics),
+      profit: await add({ termPL: 'zysk', termEN: 'profit' }, basics),
+      depreciation: await add({
+        termPL: 'amortyzacja', termEN: 'depreciation',
+        descriptionPL: 'Rozłożenie kosztu w czasie.', descriptionEN: 'Spreading a cost over time.',
+        examplePL: 'Amortyzacja obniża zysk.', exampleEN: 'Depreciation lowers profit.'
+      }, advanced),
+      liquidity: await add({ termPL: 'płynność', termEN: 'liquidity', exampleEN: 'Liquidity matters in a crisis.' }, advanced),
+      contract: await add({
+        termPL: 'umowa', termEN: 'contract',
+        descriptionPL: 'Zgodne oświadczenie woli stron.', descriptionEN: 'An agreement between parties.',
+        examplePL: 'Podpisaliśmy umowę.', exampleEN: 'We signed the contract.'
+      }, contracts)
+    };
+    await library.updateSettings({ shuffleCards: false, studyCount: 0 });
+    return {
+      ...ids,
+      domainID: basics.domainID,
+      financeID: basics.moduleID,
+      basicsID: basics.id,
+      advancedID: advanced.id,
+      contractsID: contracts.id
+    };
+  });
+}
+
+/** Otwiera ekran przygotowania sesji (bez przeładowania strony). */
+async function openStudySetup(page, hash = '#/study') {
+  await page.evaluate((target) => { location.hash = target; }, hash);
+  await page.locator('[data-testid=study-start]').waitFor();
+}
+
+async function startStudy(page) {
+  await page.click('[data-testid=study-start]');
+  await page.locator('[data-testid=study-session]').waitFor();
+}
+
+/** Wybiera pozycję przełącznika segmentowego o podanej nazwie grupy. */
+async function choose(page, groupName, optionLabel) {
+  await page.getByRole('radiogroup', { name: groupName }).locator('.segmented__option', { hasText: optionLabel }).click();
+  await waitUntil(
+    () => page.getByRole('radiogroup', { name: groupName }).getByRole('radio', { name: optionLabel, exact: true }).isChecked(),
+    `Opcja „${optionLabel}” powinna zostać zaznaczona`
+  );
+}
+
+async function flip(page) {
+  const before = await side(page);
+  await page.locator('[data-testid=card-flip]:visible, [data-testid=card-unflip]:visible').first().click();
+  await waitUntil(async () => (await side(page)) !== before, 'Fiszka powinna się obrócić');
+}
+
+/** Odkrywa odpowiedź, zaznacza podane kafelki i zatwierdza fiszkę przyciskiem. */
+async function assess(page, tiles, decision) {
+  const before = await counter(page).textContent();
+  await flip(page);
+  if (tiles === 'all') await page.click('[data-testid=know-all]');
+  else for (const id of tiles) await tile(page, id).click();
+  await page.click(`[data-testid=decide-${decision}]`);
+  await waitUntil(async () => {
+    if (await page.locator('[data-testid=study-summary]').count()) return true;
+    return (await counter(page).textContent()) !== before;
+  }, 'Po decyzji powinna pojawić się następna fiszka albo podsumowanie');
+}
+
+const progressOf = (page, termID, direction) => page.evaluate(
+  ([id, way]) => window.lexicards.library.getProgress(id, way), [termID, direction]
+);
+const stored = (page) => page.evaluate(() => window.lexicards.library.exportAll());
+const activeSession = (page) => page.evaluate(() => window.lexicards.library.getStudySession());
+
+/** Przeciągnięcie palcem (zdarzenia dotykowe przeglądarki, nie myszy). */
+async function touchDrag(context, page, locator, dx, { release = true, dy = 0 } = {}) {
+  const client = await context.newCDPSession(page);
+  const box = await locator.boundingBox();
+  const x = box.x + box.width / 2;
+  const y = box.y + Math.min(box.height / 2, 140);
+  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
+  const steps = 8;
+  for (let step = 1; step <= steps; step += 1) {
+    await client.send('Input.dispatchTouchEvent', {
+      type: 'touchMove', touchPoints: [{ x: x + (dx * step) / steps, y: y + (dy * step) / steps, id: 1 }]
+    });
+  }
+  const end = () => client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  if (release) await end();
+  return { end };
+}
+
+test('fiszki: obrót, trzy kafelki, wynik, decyzje, podsumowanie i runda powtórkowa', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page);
+  await expectText(title(page), 'Nauka');
+  await expectText(planned(page), '6 fiszek');
+  await startStudy(page);
+
+  // Nagłówek sesji: lekcja, numer fiszki, pasek postępu; pasek zakładek jest schowany.
+  await expectText(counter(page), '1 z 6');
+  await expectText(page.locator('[data-testid=study-lesson]'), 'Podstawy');
+  assert.equal(await page.locator('.study__progress').getAttribute('aria-valuemax'), '6');
+  assert.equal(await page.locator('.tabbar').isVisible(), false, 'w trakcie nauki nie widać paska zakładek');
+
+  // Pierwsza strona: samo pojęcie po polsku; odpowiedź jest ukryta.
+  assert.equal(await side(page), 'front');
+  assert.equal(await flashcard(page).getAttribute('data-direction'), 'pl_en');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'aktywa');
+  assert.equal(await page.locator('[data-testid=card-back]').isVisible(), false);
+
+  // Przed odkryciem odpowiedzi nie da się niczego ocenić ani zatwierdzić.
+  for (const id of ['term', 'description', 'example']) assert.equal(await tile(page, id).isDisabled(), true, `kafelek ${id} nieaktywny`);
+  for (const id of ['know-all', 'know-none', 'decide-know', 'decide-repeat']) {
+    assert.equal(await page.locator(`[data-testid=${id}]`).isDisabled(), true, `${id} nieaktywny`);
+  }
+  assert.equal(await page.locator('[data-testid=study-hint]').isVisible(), true);
+  assert.equal(await page.locator('[data-testid=study-undo]').isDisabled(), true, 'nie ma czego cofać');
+
+  // Dotknięcie fiszki obraca ją; na odwrocie tłumaczenie, opis i przykład w obu językach.
+  await flashcard(page).locator('[data-testid=card-front] .flashcard__text').click();
+  await waitUntil(async () => (await side(page)) === 'back', 'Dotknięcie fiszki powinno ją obrócić');
+  const back = page.locator('[data-testid=card-back]');
+  await expectText(back.locator('.flashcard__text--answer'), 'assets');
+  await expectText(back.locator('.flashcard__question'), 'aktywa');
+  for (const text of ['Resources owned by a company.', 'Zasoby majątkowe firmy.', 'The assets of the company increased.', 'Aktywa spółki wzrosły.']) {
+    await expectText(back, text);
+  }
+  assert.equal(await page.locator('[data-testid=study-hint]').isVisible(), false);
+
+  // Kafelki działają jak przełączniki, wynik liczy zaznaczone elementy.
+  await expectText(score(page), '0/3');
+  assert.equal(await tile(page, 'term').isDisabled(), false);
+  await expectText(tile(page, 'term'), 'Nie umiem');
+  await tile(page, 'term').click();
+  assert.equal(await tile(page, 'term').getAttribute('aria-pressed'), 'true');
+  await expectText(tile(page, 'term').locator('.rating__state'), 'Umiem');
+  await expectText(score(page), '1/3');
+  await tile(page, 'description').click();
+  await expectText(score(page), '2/3');
+  await tile(page, 'term').click();
+  assert.equal(await tile(page, 'term').getAttribute('aria-pressed'), 'false');
+  await expectText(score(page), '1/3');
+
+  // Szybkie przyciski zaznaczają i odznaczają wszystko, ale niczego nie zatwierdzają.
+  await page.click('[data-testid=know-all]');
+  await expectText(score(page), '3/3');
+  await page.click('[data-testid=know-none]');
+  await expectText(score(page), '0/3');
+  await page.click('[data-testid=know-all]');
+  await expectText(score(page), '3/3');
+  await expectText(counter(page), '1 z 6');
+  assert.equal((await stored(page)).assessments.length, 0, 'szybkie przyciski nie zapisują oceny');
+
+  // Powrót na pierwszą stronę nie kasuje oceny i nie blokuje kafelków.
+  await page.click('[data-testid=card-unflip]');
+  await waitUntil(async () => (await side(page)) === 'front', 'Fiszka powinna wrócić na pierwszą stronę');
+  await expectText(score(page), '3/3');
+  assert.equal(await tile(page, 'term').isDisabled(), false);
+
+  // „Umiem” przy komplecie: opanowane w kierunku PL → EN, drugi kierunek nietknięty.
+  await page.click('[data-testid=decide-know]');
+  await expectText(counter(page), '2 z 6');
+  const first = await progressOf(page, ids.assets, 'pl_en');
+  assert.equal(first.lastStatus, 'mastered');
+  assert.equal(first.lastDecision, 'know');
+  assert.equal(first.reviewCount, 1);
+  assert.equal(await progressOf(page, ids.assets, 'en_pl'), null);
+
+  // Nowa fiszka zaczyna od pierwszej strony i pustej oceny.
+  assert.equal(await side(page), 'front');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'pasywa');
+  assert.equal(await tile(page, 'term').isDisabled(), true);
+
+  // Pojęcie bez przykładu: kafelek „Brak danych”, wynik liczony z dwóch elementów.
+  await flip(page);
+  await expectText(tile(page, 'example').locator('.rating__state'), 'Brak danych');
+  assert.equal(await tile(page, 'example').isDisabled(), true);
+  await expectText(score(page), '0/2');
+  await expectText(page.locator('[data-testid=card-back]'), 'Brak danych');
+  await tile(page, 'term').click();
+  await expectText(score(page), '1/2');
+  await page.click('[data-testid=decide-repeat]');
+  await expectText(counter(page), '3 z 6');
+
+  // Pojęcie z samym tłumaczeniem: 1/1 to komplet.
+  await flip(page);
+  await expectText(tile(page, 'description').locator('.rating__state'), 'Brak danych');
+  await expectText(tile(page, 'example').locator('.rating__state'), 'Brak danych');
+  await expectText(score(page), '0/1');
+  await page.click('[data-testid=know-all]');
+  await expectText(score(page), '1/1');
+  assert.equal(await tile(page, 'description').getAttribute('aria-pressed'), 'false', '„Umiem wszystko” nie zaznacza brakującego elementu');
+  await page.click('[data-testid=decide-know]');
+  await expectText(counter(page), '4 z 6');
+  await expectText(page.locator('[data-testid=study-lesson]'), 'Zaawansowane');
+
+  await assess(page, [], 'repeat');               // amortyzacja 0/3, Powtórz
+  await assess(page, ['term'], 'know');           // płynność 1/2, Umiem
+  await expectText(page.locator('[data-testid=study-lesson]'), 'Umowy');
+  await assess(page, 'all', 'know');              // umowa 3/3, Umiem
+
+  // Podsumowanie.
+  await page.locator('[data-testid=study-summary]').waitFor();
+  await expectText(page.locator('.empty__title'), 'Sesja zakończona');
+  await expectText(page.locator('[data-testid=summary-text]'), 'Ocenione fiszki: 6. Umiem: 4. Do powtórki: 2.');
+  const legend = (await page.locator('[data-testid=summary-statuses] li').allTextContents()).map((text) => text.trim());
+  assert.deepEqual(legend, ['Opanowane3', 'Częściowo opanowane2', 'W trakcie nauki0', 'Do nauki1']);
+
+  // Historia ocen: jeden wpis na fiszkę, z wynikiem względem dostępnych elementów.
+  let data = await stored(page);
+  assert.equal(data.assessments.length, 6);
+  const byTerm = (termID) => data.assessments.filter((entry) => entry.termID === termID);
+  const pick = (entry) => ({
+    term: entry.knowsTerm, description: entry.knowsDescription, example: entry.knowsExample,
+    score: `${entry.totalScore}/${entry.availableElementCount}`, status: entry.assessmentStatus,
+    decision: entry.swipeDecision, direction: entry.direction
+  });
+  assert.deepEqual(pick(byTerm(ids.assets)[0]), {
+    term: true, description: true, example: true, score: '3/3', status: 'mastered', decision: 'know', direction: 'pl_en'
+  });
+  assert.deepEqual(pick(byTerm(ids.liabilities)[0]), {
+    term: true, description: false, example: null, score: '1/2', status: 'partiallyMastered', decision: 'repeat', direction: 'pl_en'
+  });
+  assert.deepEqual(pick(byTerm(ids.profit)[0]), {
+    term: true, description: null, example: null, score: '1/1', status: 'mastered', decision: 'know', direction: 'pl_en'
+  });
+  assert.deepEqual(pick(byTerm(ids.depreciation)[0]), {
+    term: false, description: false, example: false, score: '0/3', status: 'toLearn', decision: 'repeat', direction: 'pl_en'
+  });
+  // „Umiem” przy niepełnym wyniku nie robi z fiszki opanowanej.
+  assert.equal((await progressOf(page, ids.liquidity, 'pl_en')).lastStatus, 'partiallyMastered');
+
+  // Runda powtórkowa obejmuje tylko fiszki odłożone do powtórki.
+  await expectText(page.locator('[data-testid=summary-repeat]'), 'Powtórz odłożone (2)');
+  await page.click('[data-testid=summary-repeat]');
+  await expectText(counter(page), '1 z 2');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'pasywa');
+  await assess(page, 'all', 'know');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'amortyzacja');
+  await assess(page, 'all', 'know');
+  await expectText(page.locator('.empty__title'), 'Runda powtórkowa zakończona');
+  await expectText(page.locator('[data-testid=summary-text]'), 'Ocenione fiszki: 2. Umiem: 2. Do powtórki: 0.');
+  assert.equal(await page.locator('[data-testid=summary-repeat]').count(), 0);
+
+  await page.click('[data-testid=summary-done]');
+  await page.waitForFunction(() => location.hash === '#/start');
+  await expectText(page.locator('[data-testid=start-study]'), 'Rozpocznij naukę');
+
+  // Dziennik sesji i stan po zakończeniu.
+  data = await stored(page);
+  assert.equal(data.assessments.length, 8, 'wcześniejsze wpisy historii zostają');
+  assert.equal(await activeSession(page), null);
+  const sessions = data.studySessions.sort((a, b) => a.round - b.round);
+  assert.deepEqual(
+    sessions.map((session) => [session.round, session.totalCards, session.assessedCards, session.knownCards, session.repeatCards, session.finished]),
+    [[1, 6, 6, 4, 2, true], [2, 2, 2, 2, 0, true]]
+  );
+  const again = await progressOf(page, ids.liabilities, 'pl_en');
+  assert.equal(again.reviewCount, 2);
+  assert.equal(again.lastStatus, 'mastered');
+});
+
+test('fiszki: gesty – w lewo „Umiem”, w prawo „Powtórz”, krótki ruch wraca', async ({ open, context }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page);
+  await startStudy(page);
+
+  // Przed odkryciem odpowiedzi przesunięcie niczego nie zatwierdza i nie obraca fiszki.
+  await touchDrag(context, page, flashcard(page), -220);
+  await page.waitForTimeout(350);
+  await expectText(counter(page), '1 z 6');
+  assert.equal(await side(page), 'front');
+  assert.equal((await stored(page)).assessments.length, 0);
+
+  // Stuknięcie palcem obraca fiszkę.
+  await flashcard(page).locator('[data-testid=card-front] .flashcard__text').tap();
+  await waitUntil(async () => (await side(page)) === 'back', 'Stuknięcie powinno obrócić fiszkę');
+  await page.click('[data-testid=know-all]');
+
+  // Za krótki ruch: fiszka wraca na miejsce, bez decyzji i bez obrotu.
+  await touchDrag(context, page, flashcard(page), -45);
+  await page.waitForTimeout(350);
+  await expectText(counter(page), '1 z 6');
+  assert.equal(await side(page), 'back');
+  assert.equal(await flashcard(page).evaluate((element) => element.style.transform), '');
+
+  // Ruch w pionie przewija stronę, a nie fiszkę.
+  await touchDrag(context, page, flashcard(page), 10, { dy: -160 });
+  await page.waitForTimeout(200);
+  await expectText(counter(page), '1 z 6');
+
+  // W trakcie przesuwania widać, jaka decyzja zapadnie.
+  const held = await touchDrag(context, page, flashcard(page), -170, { release: false });
+  assert.equal(await flashcard(page).getAttribute('data-swipe'), 'know');
+  assert.equal(await page.locator('.flashcard__stamp--know').evaluate((element) => getComputedStyle(element).opacity), '1');
+  await held.end();
+  await expectText(counter(page), '2 z 6');
+  const known = await progressOf(page, ids.assets, 'pl_en');
+  assert.equal(known.lastDecision, 'know');
+  assert.equal(known.lastStatus, 'mastered');
+
+  // W prawo: „Powtórz”.
+  await flashcard(page).locator('[data-testid=card-front] .flashcard__text').tap();
+  await waitUntil(async () => (await side(page)) === 'back', 'Stuknięcie powinno obrócić fiszkę');
+  const right = await touchDrag(context, page, flashcard(page), 170, { release: false });
+  assert.equal(await flashcard(page).getAttribute('data-swipe'), 'repeat');
+  await right.end();
+  await expectText(counter(page), '3 z 6');
+  const repeated = await progressOf(page, ids.liabilities, 'pl_en');
+  assert.equal(repeated.lastDecision, 'repeat');
+  assert.equal(repeated.lastStatus, 'toLearn');
+  assert.equal((await stored(page)).assessments.length, 2);
+});
+
+test('fiszki: przeciąganie myszą i przyciski zastępujące gesty (szeroki ekran)', async ({ open }) => {
+  const page = await open();
+  await seedStudy(page);
+  await openStudySetup(page);
+  await startStudy(page);
+
+  const drag = async (dx) => {
+    const box = await flashcard(page).boundingBox();
+    const x = box.x + box.width / 2;
+    const y = box.y + 90;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + dx / 2, y, { steps: 4 });
+    await page.mouse.move(x + dx, y, { steps: 4 });
+    await page.mouse.up();
+  };
+
+  // Przeciągnięcie przed odkryciem odpowiedzi nie obraca fiszki (kliknięcie kończące ruch jest pomijane).
+  await drag(-240);
+  await page.waitForTimeout(300);
+  assert.equal(await side(page), 'front');
+  await expectText(counter(page), '1 z 6');
+
+  await flip(page);
+  await drag(260);
+  await expectText(counter(page), '2 z 6');
+  assert.equal(await side(page), 'front', 'nowa fiszka zaczyna od pierwszej strony');
+  assert.equal(await page.locator('.sidebar').isVisible(), true, 'na szerokim ekranie panel boczny zostaje');
+}, { device: DESKTOP });
+
+test('fiszki: cofnięcie ostatniej decyzji przywraca poprzedni stan', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page);
+  await startStudy(page);
+
+  // Pierwsza ocena pojęcia: po cofnięciu nie zostaje po niej ślad.
+  await assess(page, 'all', 'know');
+  assert.equal(await page.locator('[data-testid=study-undo]').isDisabled(), false);
+  await page.click('[data-testid=study-undo]');
+  await expectText(counter(page), '1 z 6');
+  await expectText(page.locator('.toast').last(), 'Cofnięto ostatnią decyzję.');
+  assert.equal(await progressOf(page, ids.assets, 'pl_en'), null);
+  assert.equal((await stored(page)).assessments.length, 0);
+  assert.equal(await side(page), 'front', 'cofnięta fiszka wraca nieodkryta');
+  assert.equal(await page.locator('[data-testid=study-undo]').isDisabled(), true);
+
+  // Cofać można kolejne decyzje wstecz, aż do początku sesji.
+  await assess(page, 'all', 'know');
+  await assess(page, ['term'], 'repeat');
+  await expectText(counter(page), '3 z 6');
+  await page.click('[data-testid=study-undo]');
+  await expectText(counter(page), '2 z 6');
+  await page.click('[data-testid=study-undo]');
+  await expectText(counter(page), '1 z 6');
+  assert.equal((await stored(page)).assessments.length, 0);
+  assert.equal((await stored(page)).progress.length, 0);
+
+  // Ocena zapisana wcześniej zostaje, gdy cofamy późniejszą.
+  await assess(page, 'all', 'know');
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await expectText(page.locator('.toast').last(), 'Sesja zakończona. Ocenione fiszki: 1 z 6.');
+  await page.locator('[data-testid=study-start]').waitFor();
+  await startStudy(page);
+  await assess(page, [], 'repeat');
+  let progress = await progressOf(page, ids.assets, 'pl_en');
+  assert.deepEqual([progress.reviewCount, progress.lastStatus, progress.lastDecision], [2, 'toLearn', 'repeat']);
+  await page.click('[data-testid=study-undo]');
+  await expectText(counter(page), '1 z 6');
+  progress = await progressOf(page, ids.assets, 'pl_en');
+  assert.deepEqual([progress.reviewCount, progress.lastStatus, progress.lastDecision], [1, 'mastered', 'know']);
+  assert.equal((await stored(page)).assessments.length, 1);
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await page.locator('[data-testid=study-start]').waitFor();
+
+  // Cofnięcie z ekranu podsumowania wraca do ostatniej fiszki.
+  await openStudySetup(page, `#/study/lesson/${ids.contractsID}`);
+  await expectText(planned(page), '1 fiszka');
+  await startStudy(page);
+  await assess(page, 'all', 'know');
+  await page.locator('[data-testid=study-summary]').waitFor();
+  await page.click('[data-testid=summary-undo]');
+  await expectText(counter(page), '1 z 1');
+  assert.equal(await progressOf(page, ids.contract, 'pl_en'), null);
+});
+
+test('fiszki: przerwaną sesję można wznowić po ponownym otwarciu strony albo zakończyć', async ({ open }) => {
+  const page = await open();
+  await seedStudy(page);
+  await openStudySetup(page);
+  await startStudy(page);
+  await assess(page, 'all', 'know');
+  await assess(page, ['term'], 'repeat');
+  await expectText(counter(page), '3 z 6');
+
+  // Ponowne otwarcie strony w trakcie sesji: ta sama fiszka, oceny zostały.
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await expectText(counter(page), '3 z 6');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'zysk');
+  assert.equal((await stored(page)).assessments.length, 2);
+
+  // Wyjście z sesji niczego nie kasuje; można wrócić z ekranu Nauka i ze Startu.
+  await page.getByRole('link', { name: 'Nauka' }).first().click();
+  await expectText(page.locator('[data-testid=study-resume]'), 'Wznów naukę (fiszka 3 z 6)');
+  await tab(page, 'Start');
+  await expectText(page.locator('[data-testid=start-study]'), 'Wznów naukę (fiszka 3 z 6)');
+  await page.click('[data-testid=start-study]');
+  await expectText(counter(page), '3 z 6');
+
+  // Zakończenie przed czasem zapisuje sesję w dzienniku jako niedokończoną.
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await expectText(page.locator('.toast').last(), 'Sesja zakończona. Ocenione fiszki: 2 z 6.');
+  await page.locator('[data-testid=study-start]').waitFor();
+  assert.equal(await page.locator('[data-testid=study-resume]').count(), 0);
+  let data = await stored(page);
+  assert.deepEqual(
+    data.studySessions.map((session) => [session.totalCards, session.assessedCards, session.finished]),
+    [[6, 2, false]]
+  );
+
+  // Sesja bez żadnej oceny nie zostawia wpisu w dzienniku.
+  await startStudy(page);
+  await page.getByRole('link', { name: 'Nauka' }).first().click();
+  await page.click('[data-testid=study-discard]');
+  await expectText(page.locator('.toast').last(), 'Sesja zakończona.');
+  await waitUntil(async () => (await page.locator('[data-testid=study-resume]').count()) === 0, 'Grupa niedokończonej sesji powinna zniknąć');
+  data = await stored(page);
+  assert.equal(data.studySessions.length, 1);
+  assert.equal(await activeSession(page), null);
+
+  // Adres sesji bez trwającej sesji prowadzi do przygotowania nowej.
+  await page.evaluate(() => { location.hash = '#/study/session'; });
+  await expectText(page.locator('.empty__title'), 'Nie ma trwającej sesji');
+});
+
+test('fiszki: kierunek EN → PL ma osobne postępy; zakresy Nowe, Do powtórki, Trudne, Ulubione', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page);
+  await choose(page, 'Kierunek nauki', 'EN → PL');
+  await startStudy(page);
+
+  // Pytanie po angielsku, odpowiedź po polsku.
+  assert.equal(await flashcard(page).getAttribute('data-direction'), 'en_pl');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__label'), 'Angielski');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'assets');
+  await flip(page);
+  await expectText(page.locator('[data-testid=card-back] .flashcard__text--answer'), 'aktywa');
+  await expectText(page.locator('[data-testid=card-back] .flashcard__label'), 'Polski');
+  await page.click('[data-testid=know-all]');
+  await page.click('[data-testid=decide-know]');
+  await expectText(counter(page), '2 z 6');
+  await assess(page, [], 'repeat');        // liabilities: 0/2, Powtórz
+  await assess(page, ['term'], 'know');    // profit: 1/1, Umiem
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await page.locator('[data-testid=study-start]').waitFor();
+
+  assert.equal((await progressOf(page, ids.assets, 'en_pl')).lastStatus, 'mastered');
+  assert.equal(await progressOf(page, ids.assets, 'pl_en'), null, 'kierunek PL → EN pozostaje nieoceniony');
+
+  const scopes = async () => (await page.locator('[data-testid=study-scope] option').allTextContents()).map((text) => text.trim());
+  await page.evaluate((id) => window.lexicards.library.setFavorite(true, [id]), ids.contract);
+  await waitUntil(async () => (await scopes()).includes('Ulubione (1)'), 'Zakres „Ulubione” powinien pokazać jedno pojęcie');
+
+  // Kierunek zapamiętany z poprzedniej sesji: EN → PL.
+  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (3)', 'Do powtórki (1)', 'Trudne (1)', 'Ulubione (1)', 'Losowe (6)']);
+  await choose(page, 'Kierunek nauki', 'PL → EN');
+  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (6)', 'Do powtórki (0)', 'Trudne (0)', 'Ulubione (1)', 'Losowe (6)']);
+  await choose(page, 'Kierunek nauki', 'Mieszany');
+  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (6)', 'Do powtórki (1)', 'Trudne (1)', 'Ulubione (1)', 'Losowe (6)']);
+
+  // Zakres bez fiszek: nie da się rozpocząć.
+  await choose(page, 'Kierunek nauki', 'PL → EN');
+  await page.selectOption('[data-testid=study-scope]', 'repeat');
+  await expectText(planned(page), 'Brak fiszek dla tych ustawień');
+  assert.equal(await page.locator('[data-testid=study-start]').isDisabled(), true);
+
+  // „Do powtórki” w kierunku EN → PL: tylko fiszka odłożona do powtórki.
+  await choose(page, 'Kierunek nauki', 'EN → PL');
+  await expectText(planned(page), '1 fiszka');
+  await startStudy(page);
+  await expectText(counter(page), '1 z 1');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'liabilities');
+  await page.getByRole('link', { name: 'Nauka' }).first().click();
+  await page.click('[data-testid=study-discard]');
+  await waitUntil(async () => (await page.locator('[data-testid=study-resume]').count()) === 0, 'Sesja powinna zostać zamknięta');
+
+  // Tryb mieszany: każde pojęcie raz, w jednym z dwóch kierunków.
+  await page.selectOption('[data-testid=study-scope]', 'all');
+  await choose(page, 'Kierunek nauki', 'Mieszany');
+  await expectText(planned(page), '6 fiszek');
+  await startStudy(page);
+  const session = await activeSession(page);
+  assert.equal(new Set(session.queue.map((card) => card.termID)).size, 6);
+  assert.ok(session.queue.every((card) => card.direction === 'pl_en' || card.direction === 'en_pl'));
+});
+
+test('fiszki: przygotowanie sesji – materiał, wiele lekcji, liczba fiszek, kolejność, pierwsza strona', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  await tab(page, 'Nauka');
+  await page.locator('[data-testid=study-start]').waitFor();
+
+  // Domyślnie 20 losowych fiszek z całej biblioteki.
+  await expectText(planned(page), '20 fiszek z 40 pasujących');
+  assert.equal(await page.locator('[data-testid=study-module]').isDisabled(), true, 'moduł wybiera się po dziedzinie');
+  await choose(page, 'Liczba fiszek', '10');
+  await expectText(planned(page), '10 fiszek z 40 pasujących');
+  await choose(page, 'Liczba fiszek', 'Wszystkie');
+  await expectText(planned(page), '40 fiszek');
+
+  // Dziedzina → moduł → wybrane lekcje.
+  await page.selectOption('[data-testid=study-domain]', { label: 'Metrology' });
+  await expectText(planned(page), '18 fiszek');
+  const moduleName = await page.evaluate(() => {
+    const { library } = window.lexicards;
+    const domain = library.listDomains().find((item) => item.name === 'Metrology');
+    return library.listModules(domain.id).find((module) => library.listLessons(module.id).length >= 2).name;
+  });
+  await page.selectOption('[data-testid=study-module]', { label: moduleName });
+  const lessons = await page.evaluate((name) => {
+    const { library } = window.lexicards;
+    const module = [...library.maps.modules.values()].find((item) => item.name === name);
+    return library.listLessons(module.id).map((lesson) => ({ id: lesson.id, name: lesson.name, terms: library.listTerms(lesson.id).length }));
+  }, moduleName);
+  assert.equal(await page.locator('[data-testid=study-all-lessons]').isChecked(), true);
+  const total = lessons.reduce((sum, lesson) => sum + lesson.terms, 0);
+  await expectText(planned(page), `${total} fisz`);
+
+  const lessonBox = (name) => page.locator('.group--compact .row', { hasText: name }).locator('input');
+  await lessonBox(lessons[0].name).check();
+  await waitUntil(async () => !(await page.locator('[data-testid=study-all-lessons]').isChecked()), '„Wszystkie lekcje” powinno się odznaczyć');
+  await expectText(planned(page), `${lessons[0].terms} fisz`);
+  await lessonBox(lessons[1].name).check();
+  const two = lessons[0].terms + lessons[1].terms;
+  await expectText(planned(page), `${two} fisz`);
+
+  // Kolejność „jak w lekcjach”: fiszki w kolejności biblioteki.
+  await choose(page, 'Kolejność fiszek', 'Jak w lekcjach');
+  await choose(page, 'Pierwsza strona fiszki', 'Definicja');
+  await startStudy(page);
+  await expectText(counter(page), `1 z ${two}`);
+  let session = await activeSession(page);
+  const expected = await page.evaluate((ids) => ids.flatMap((id) => window.lexicards.library.listTerms(id).map((term) => term.id)), [lessons[0].id, lessons[1].id]);
+  assert.deepEqual(session.queue.map((card) => card.termID), expected);
+
+  // Pierwsza strona pokazuje definicję w języku pytania, a odwrót – pojęcie i tłumaczenie.
+  const firstTerm = await page.evaluate((id) => window.lexicards.library.getTerm(id), expected[0]);
+  await expectText(page.locator('[data-testid=card-front] .flashcard__label'), 'Definicja po polsku');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), firstTerm.descriptionPL);
+  await flip(page);
+  await expectText(page.locator('[data-testid=card-back] .flashcard__text--answer'), firstTerm.termEN);
+  await expectText(page.locator('[data-testid=card-back] .flashcard__question'), firstTerm.termPL);
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await page.locator('[data-testid=study-start]').waitFor();
+
+  // Ustawienia sesji są zapamiętane.
+  assert.equal(await page.getByRole('radiogroup', { name: 'Pierwsza strona fiszki' }).getByRole('radio', { name: 'Definicja', exact: true }).isChecked(), true);
+  assert.equal(await page.getByRole('radiogroup', { name: 'Liczba fiszek' }).getByRole('radio', { name: 'Wszystkie', exact: true }).isChecked(), true);
+
+  // Kolejność losowa: ten sam zestaw pojęć.
+  await choose(page, 'Kolejność fiszek', 'Losowa');
+  await choose(page, 'Liczba fiszek', '10');
+  await expectText(planned(page), '10 fiszek z 40 pasujących');
+  await startStudy(page);
+  session = await activeSession(page);
+  assert.equal(session.queue.length, 10);
+  assert.equal(new Set(session.queue.map((card) => card.termID)).size, 10, 'fiszki się nie powtarzają');
+});
+
+test('fiszki: wejście z lekcji i z menu biblioteki ustawia materiał', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+
+  await page.evaluate((id) => { location.hash = `#/library/lesson/${id}`; }, ids.advancedID);
+  await page.click('[data-testid=lesson-study]');
+  await page.locator('[data-testid=study-start]').waitFor();
+  assert.equal(await page.locator('[data-testid=study-domain]').inputValue(), ids.domainID);
+  assert.equal(await page.locator('[data-testid=study-module]').inputValue(), ids.financeID);
+  assert.equal(await page.locator('.group--compact .row', { hasText: 'Zaawansowane' }).locator('input').isChecked(), true);
+  await expectText(planned(page), '2 fiszki');
+  await startStudy(page);
+  await expectText(page.locator('[data-testid=study-lesson]'), 'Zaawansowane');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'amortyzacja');
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await page.locator('[data-testid=study-start]').waitFor();
+
+  // Menu modułu w bibliotece.
+  await page.evaluate((id) => { location.hash = `#/library/domain/${id}`; }, ids.domainID);
+  await page.getByRole('button', { name: 'Więcej poleceń: Prawo' }).click();
+  await menuItem(page, 'Ucz się');
+  await page.locator('[data-testid=study-start]').waitFor();
+  const lawID = await page.evaluate((id) => window.lexicards.library.getLesson(id).moduleID, ids.contractsID);
+  assert.equal(await page.locator('[data-testid=study-module]').inputValue(), lawID);
+  await expectText(planned(page), '1 fiszka');
+});
+
+test('fiszki: obsługa z klawiatury – spacja, 1 2 3, strzałki, Z', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page);
+  await startStudy(page);
+  await page.evaluate(() => document.activeElement?.blur());
+
+  // Strzałka przed odkryciem odpowiedzi nic nie robi.
+  await page.keyboard.press('ArrowLeft');
+  await page.waitForTimeout(200);
+  await expectText(counter(page), '1 z 6');
+
+  await page.keyboard.press('Space');
+  await waitUntil(async () => (await side(page)) === 'back', 'Spacja powinna obrócić fiszkę');
+  await page.keyboard.press('1');
+  await page.keyboard.press('3');
+  assert.equal(await tile(page, 'term').getAttribute('aria-pressed'), 'true');
+  assert.equal(await tile(page, 'description').getAttribute('aria-pressed'), 'false');
+  assert.equal(await tile(page, 'example').getAttribute('aria-pressed'), 'true');
+  await expectText(score(page), '2/3');
+  await page.keyboard.press('2');
+  await expectText(score(page), '3/3');
+  await page.keyboard.press('2');
+  await expectText(score(page), '2/3');
+
+  await page.keyboard.press('ArrowLeft');
+  await expectText(counter(page), '2 z 6');
+  const progress = await progressOf(page, ids.assets, 'pl_en');
+  assert.deepEqual([progress.lastScore, progress.lastAvailable, progress.lastStatus, progress.lastDecision], [2, 3, 'partiallyMastered', 'know']);
+
+  await page.keyboard.press('Enter');
+  await waitUntil(async () => (await side(page)) === 'back', 'Enter powinien obrócić fiszkę');
+  await page.keyboard.press('ArrowRight');
+  await expectText(counter(page), '3 z 6');
+  assert.equal((await progressOf(page, ids.liabilities, 'pl_en')).lastDecision, 'repeat');
+
+  await page.keyboard.press('z');
+  await expectText(counter(page), '2 z 6');
+  assert.equal(await progressOf(page, ids.liabilities, 'pl_en'), null);
+
+  // Tab i spacja na kafelku działają jak dotknięcie (bez podwójnego obrotu fiszki).
+  await page.locator('[data-testid=card-flip]').focus();
+  await page.keyboard.press('Enter');
+  await waitUntil(async () => (await side(page)) === 'back', 'Enter na przycisku powinien obrócić fiszkę');
+  await page.waitForTimeout(450);
+  assert.equal(await side(page), 'back', 'jedno naciśnięcie to jeden obrót');
+  assert.equal(
+    await page.evaluate(() => document.activeElement?.dataset.testid),
+    'card-unflip', 'fokus przechodzi na przycisk obrotu po drugiej stronie'
+  );
+  await tile(page, 'term').focus();
+  await page.keyboard.press('Space');
+  assert.equal(await tile(page, 'term').getAttribute('aria-pressed'), 'true');
+  assert.equal(await side(page), 'back');
+}, { device: DESKTOP });
+
+test('fiszki: wymowa – przycisk głośnika, szybkość i głos z ustawień', async ({ open, context }) => {
+  // Syntezator mowy przeglądarki zastąpiony atrapą, która zapisuje, co miało zostać odczytane.
+  await context.addInitScript(() => {
+    const spoken = [];
+    const voices = [
+      { voiceURI: 'pl-zosia', name: 'Zosia', lang: 'pl-PL', default: true, localService: true },
+      { voiceURI: 'en-samantha', name: 'Samantha', lang: 'en-US', default: false, localService: true },
+      { voiceURI: 'en-daniel', name: 'Daniel', lang: 'en-GB', default: false, localService: true },
+      { voiceURI: 'de-anna', name: 'Anna', lang: 'de-DE', default: false, localService: true }
+    ];
+    window.SpeechSynthesisUtterance = class {
+      constructor(text) {
+        this.text = text;
+        this.lang = '';
+        this.rate = 1;
+        this.voice = null;
+      }
+    };
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        getVoices: () => voices,
+        speak: (utterance) => spoken.push({ text: utterance.text, lang: utterance.lang, rate: utterance.rate, voice: utterance.voice?.voiceURI ?? null }),
+        cancel: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {}
+      }
+    });
+    window.spokenTexts = spoken;
+  });
+  const page = await open();
+  await seedStudy(page);
+  const spoken = () => page.evaluate(() => window.spokenTexts);
+
+  // Ustawienia: szybkość i głos angielski (tylko głosy danego języka); wybór głosu odtwarza próbkę.
+  await page.evaluate(() => { location.hash = '#/settings'; });
+  await page.locator('[data-testid=speech-rate]').waitFor();
+  assert.deepEqual(
+    (await page.locator('[data-testid=voice-en] option').allTextContents()).map((text) => text.trim()),
+    ['Domyślny głos systemu', 'Daniel (en-GB)', 'Samantha (en-US)']
+  );
+  await page.selectOption('[data-testid=speech-rate]', '0.7');
+  await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().speechRate === 0.7), 'Szybkość powinna się zapisać');
+  await page.selectOption('[data-testid=voice-en]', 'en-daniel');
+  await waitUntil(async () => (await spoken()).length === 1, 'Po wyborze głosu powinna zabrzmieć próbka');
+  assert.deepEqual((await spoken())[0], { text: 'Hello, this is a voice sample.', lang: 'en-GB', rate: 0.7, voice: 'en-daniel' });
+
+  await openStudySetup(page);
+  await startStudy(page);
+
+  // Głośnik czyta pojęcie w języku pytania i nie obraca fiszki.
+  await page.locator('[data-testid=card-front] [data-testid=speak]').click();
+  await waitUntil(async () => (await spoken()).length === 2, 'Powinno zostać odczytane pojęcie');
+  assert.deepEqual((await spoken())[1], { text: 'aktywa', lang: 'pl-PL', rate: 0.7, voice: null });
+  assert.equal(await side(page), 'front');
+
+  // Na odwrocie: tłumaczenie wybranym głosem oraz przykłady w obu językach.
+  await flip(page);
+  const back = page.locator('[data-testid=card-back]');
+  await back.locator('.flashcard__top [data-testid=speak]').click();
+  await waitUntil(async () => (await spoken()).length === 3, 'Powinno zostać odczytane tłumaczenie');
+  assert.deepEqual((await spoken())[2], { text: 'assets', lang: 'en-GB', rate: 0.7, voice: 'en-daniel' });
+  assert.deepEqual(
+    await back.locator('.flashcard__line [data-testid=speak]').evaluateAll((buttons) => buttons.map((button) => button.dataset.lang)),
+    ['en', 'pl']
+  );
+  await back.locator('.flashcard__line [data-testid=speak][data-lang=en]').click();
+  await waitUntil(async () => (await spoken()).length === 4, 'Powinien zostać odczytany przykład');
+  assert.equal((await spoken())[3].text, 'The assets of the company increased.');
+  assert.equal(await side(page), 'back');
+  await expectText(counter(page), '1 z 6');
+});
+
+test('fiszki: stan nauki i historia ocen w szczegółach pojęcia', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page, `#/study/lesson/${ids.basicsID}`);
+  await startStudy(page);
+  await assess(page, ['term', 'description'], 'know');   // aktywa 2/3
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await page.locator('[data-testid=study-start]').waitFor();
+
+  // Druga ocena tego samego pojęcia, tym razem w kierunku EN → PL.
+  await choose(page, 'Kierunek nauki', 'EN → PL');
+  await startStudy(page);
+  await assess(page, [], 'repeat');
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await page.locator('[data-testid=study-start]').waitFor();
+
+  await page.evaluate((id) => { location.hash = `#/library/lesson/${id}`; }, ids.basicsID);
+  const row = termRows(page).filter({ hasText: 'aktywa' });
+  await row.locator('.term__toggle').click();
+  const details = row.locator('.term__details');
+  await expectText(details, 'Nauka PL → EN');
+  await expectText(details, '2/3 – Częściowo opanowane');
+  await expectText(details, 'Nauka EN → PL');
+  await expectText(details, '0/3 – Do nauki');
+
+  await row.locator('[data-testid=term-history]').click();
+  const history = sheet(page).locator('[data-testid=history]');
+  await waitUntil(async () => (await history.locator('.history__entry').count()) === 2, 'Historia powinna mieć dwa wpisy');
+  const entries = (await history.locator('.history__entry').allTextContents()).map((text) => text.trim());
+  // Od najnowszej.
+  assert.ok(entries[0].startsWith('0/3Do naukiEN → PL, decyzja: Powtórz'), entries[0]);
+  assert.ok(entries[1].startsWith('2/3Częściowo opanowanePL → EN, decyzja: Umiem'), entries[1]);
+  await sheet(page).getByRole('button', { name: 'Zamknij' }).click();
+  await page.locator('dialog[open]').waitFor({ state: 'detached' });
+
+  // Pojęcie jeszcze nieoceniane: bez przycisku historii.
+  const other = termRows(page).filter({ hasText: 'zysk' });
+  await other.locator('.term__toggle').click();
+  await expectText(other.locator('.term__details'), 'Jeszcze nie oceniane');
+  assert.equal(await other.locator('[data-testid=term-history]').count(), 0);
+
+  const data = await stored(page);
+  assert.equal(data.assessments.length, 2);
+  assert.equal(data.progress.length, 2, 'osobny postęp dla każdego kierunku');
+});
+
+test('fiszki: pojęcie usunięte w trakcie sesji jest pomijane, a jego historia znika', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page, `#/study/lesson/${ids.basicsID}`);
+  await startStudy(page);
+  await assess(page, 'all', 'know');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'pasywa');
+
+  // Bieżąca fiszka znika z biblioteki (np. usunięta w drugiej karcie).
+  await page.evaluate((id) => window.lexicards.library.delete({ kind: 'terms', ids: [id] }), ids.liabilities);
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'zysk');
+  await expectText(counter(page), '3 z 3');
+  await assess(page, 'all', 'know');
+  await expectText(page.locator('[data-testid=summary-text]'), 'Ocenione fiszki: 2. Umiem: 2. Do powtórki: 0. Pominięto usunięte pojęcia: 1.');
+
+  // Usunięcie ocenionego pojęcia usuwa też jego postęp i wpisy historii.
+  await page.evaluate((id) => window.lexicards.library.delete({ kind: 'terms', ids: [id] }), ids.assets);
+  const data = await stored(page);
+  assert.deepEqual(data.assessments.map((entry) => entry.termID), [ids.profit]);
+  assert.deepEqual(data.progress.map((entry) => entry.termID), [ids.profit]);
+});
+
+test('fiszki: wąski ekran 320 px i długie teksty – nic nie wystaje, przyciski są w zasięgu', async ({ open }) => {
+  const page = await open();
+  await page.evaluate(async () => {
+    const { library } = window.lexicards;
+    const lesson = await library.createLesson({ name: 'Bardzo długa nazwa lekcji, która nie mieści się w jednym wierszu nagłówka' },
+      { create: { name: 'Moduł' }, domain: { create: { name: 'Dziedzina' } } });
+    await library.createTerm({
+      termPL: 'współrzędnościowa maszyna pomiarowa z głowicą skanującą i stołem obrotowym',
+      termEN: 'coordinate measuring machine with a scanning probe head and a rotary table',
+      descriptionPL: 'Urządzenie do wyznaczania wymiarów i odchyłek geometrycznych przedmiotów. '.repeat(6),
+      descriptionEN: 'A device for determining dimensions and geometric deviations of workpieces. '.repeat(6),
+      examplePL: 'Pomiar wykonano na współrzędnościowej maszynie pomiarowej w klimatyzowanym laboratorium. '.repeat(3),
+      exampleEN: 'Thequickbrownfoxjumpsoverthelazydogwithoutanyspacesatallinthisverylongexampletext'
+    }, lesson.id);
+    await library.updateSettings({ shuffleCards: false, studyCount: 0 });
+  });
+  const overflow = () => overflowX(page);
+  await openStudySetup(page);
+  assert.ok((await overflow()) <= 0, `przygotowanie sesji: treść wystaje o ${await overflow()} px`);
+  await startStudy(page);
+  assert.ok((await overflow()) <= 0, `pierwsza strona: treść wystaje o ${await overflow()} px`);
+  await flip(page);
+  assert.ok((await overflow()) <= 0, `odwrót: treść wystaje o ${await overflow()} px`);
+
+  // Długi odwrót przewija się wewnątrz fiszki, a przycisk obrotu pozostaje widoczny.
+  const inside = await page.locator('[data-testid=card-back]').evaluate((face) => ({
+    scrolls: face.scrollHeight > face.clientHeight,
+    width: face.scrollWidth - face.clientWidth
+  }));
+  assert.equal(inside.scrolls, true, 'odwrót przewija się wewnątrz fiszki');
+  assert.ok(inside.width <= 0, `tekst wystaje poza fiszkę o ${inside.width} px`);
+  // Pomiar po zakończeniu obrotu – w jego trakcie fiszka jest zwężona przez perspektywę.
+  await waitUntil(() => flashcard(page).evaluate((element) => element.getAnimations().length === 0), 'Obrót powinien się zakończyć');
+  const cardBox = await flashcard(page).boundingBox();
+  const flipBox = await page.locator('[data-testid=card-unflip]').boundingBox();
+  assert.ok(flipBox.y >= cardBox.y && flipBox.y + flipBox.height <= cardBox.y + cardBox.height, 'przycisk obrotu mieści się na fiszce');
+  assert.ok(flipBox.width >= 44 && flipBox.height >= 44, 'przycisk obrotu ma wygodny rozmiar');
+
+  // Kafelki i przyciski decyzji mieszczą się w szerokości ekranu.
+  for (const selector of ['[data-testid=tile-term]', '[data-testid=tile-example]', '[data-testid=decide-know]', '[data-testid=decide-repeat]']) {
+    const box = await page.locator(selector).boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= 320, `${selector} mieści się na ekranie`);
+    assert.ok(box.height >= 44, `${selector} ma wygodną wysokość (${box.height})`);
+  }
+  await page.click('[data-testid=know-all]');
+  await page.locator('[data-testid=decide-know]').scrollIntoViewIfNeeded();
+  await page.click('[data-testid=decide-know]');
+  await page.locator('[data-testid=study-summary]').waitFor();
+  assert.ok((await overflow()) <= 0, `podsumowanie: treść wystaje o ${await overflow()} px`);
+}, { device: { ...PHONE, viewport: { width: 320, height: 568 } } });
+
+test('fiszki: ograniczony ruch – obrót i decyzja działają bez animacji', async ({ open, context }) => {
+  const page = await open();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await seedStudy(page);
+  await openStudySetup(page);
+  await startStudy(page);
+  await page.click('[data-testid=card-flip]');
+  assert.equal(await side(page), 'back', 'bez animacji strona zmienia się od razu');
+  assert.equal(await flashcard(page).evaluate((element) => element.getAnimations().length), 0);
+  await page.click('[data-testid=know-all]');
+  await touchDrag(context, page, flashcard(page), -180);
+  await expectText(counter(page), '2 z 6');
+});
+
+test('fiszki: kopia zapasowa przenosi postępy, historię ocen i niedokończoną sesję', async ({ open, browser, track }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page);
+  await startStudy(page);
+  await assess(page, 'all', 'know');
+  await assess(page, ['term'], 'repeat');
+
+  await page.evaluate(() => { location.hash = '#/settings'; });
+  const file = await download(page, () => page.click('[data-testid=backup-export]'));
+
+  const context = await browser.newContext({ ...PHONE, locale: 'pl-PL', acceptDownloads: true });
+  try {
+    const other = await context.newPage();
+    track(other);
+    await other.goto(page.url().split('#')[0]);
+    await other.waitForSelector('#app[data-ready="true"]');
+    await other.evaluate(() => { location.hash = '#/settings'; });
+    const [chooser] = await Promise.all([other.waitForEvent('filechooser'), other.click('[data-testid=backup-restore]')]);
+    await chooser.setFiles(path.join(OUTPUT, file.name));
+    await confirm(other);
+    await waitUntil(async () => (await summary(other)).terms === 6, 'Kopia powinna zostać przywrócona');
+
+    const data = await stored(other);
+    assert.equal(data.assessments.length, 2);
+    assert.equal((await progressOf(other, ids.assets, 'pl_en')).lastStatus, 'mastered');
+    assert.equal((await progressOf(other, ids.liabilities, 'pl_en')).lastDecision, 'repeat');
+
+    // Sesja przerwana na trzeciej fiszce daje się dokończyć na drugim urządzeniu.
+    await other.evaluate(() => { location.hash = '#/start'; });
+    await expectText(other.locator('[data-testid=start-study]'), 'Wznów naukę (fiszka 3 z 6)');
+    await other.click('[data-testid=start-study]');
+    await expectText(counter(other), '3 z 6');
+    await expectText(other.locator('[data-testid=card-front] .flashcard__text'), 'zysk');
+  } finally {
+    await context.close();
   }
 });
 

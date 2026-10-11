@@ -85,6 +85,7 @@ export const pluralDomains = (count) => plural(count, 'dziedzina', 'dziedziny', 
 export const pluralModules = (count) => plural(count, 'moduł', 'moduły', 'modułów');
 export const pluralLessons = (count) => plural(count, 'lekcja', 'lekcje', 'lekcji');
 export const pluralTerms = (count) => plural(count, 'pojęcie', 'pojęcia', 'pojęć');
+export const pluralCards = (count) => plural(count, 'fiszka', 'fiszki', 'fiszek');
 
 /** Łączy elementy w wyliczenie: „a, b i c”. */
 export function joinList(parts) {

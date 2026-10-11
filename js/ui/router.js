@@ -18,7 +18,9 @@ export const routes = {
   lesson: (id) => `#/library/lesson/${encodeURIComponent(id)}`,
   /** Kreator importu; z identyfikatorem lekcji – import do tej lekcji. */
   importFile: (lessonID = null) => (lessonID ? `#/library/import/${encodeURIComponent(lessonID)}` : '#/library/import'),
-  study: () => '#/study',
+  /** Przygotowanie sesji nauki; preset: { level: 'domain' | 'module' | 'lesson', id } wybiera materiał. */
+  study: (preset = null) => (preset ? `#/study/${preset.level}/${encodeURIComponent(preset.id)}` : '#/study'),
+  studySession: () => '#/study/session',
   quiz: () => '#/quiz',
   stats: () => '#/stats',
   settings: () => '#/settings'
@@ -40,7 +42,12 @@ export function parseHash(hash) {
       if (second === 'import') return { tab: 'library', name: 'import', id: third ?? null };
       if (['domain', 'module', 'lesson'].includes(second) && third) return { tab: 'library', name: second, id: third };
       return { tab: 'library', name: 'domains' };
-    case 'study': return { tab: 'study', name: 'study' };
+    case 'study':
+      if (second === 'session') return { tab: 'study', name: 'studySession' };
+      if (['domain', 'module', 'lesson'].includes(second) && third) {
+        return { tab: 'study', name: 'study', id: `${second}:${third}`, preset: { level: second, id: third } };
+      }
+      return { tab: 'study', name: 'study' };
     case 'quiz': return { tab: 'quiz', name: 'quiz' };
     case 'stats': return { tab: 'stats', name: 'stats' };
     case 'settings': return { tab: null, name: 'settings' };

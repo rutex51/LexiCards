@@ -10,6 +10,8 @@ import { ImportScreen } from './ui/screens/import.js';
 import { DomainScreen, DomainsScreen, ModuleScreen } from './ui/screens/library.js';
 import { SettingsScreen } from './ui/screens/settings.js';
 import { StartScreen } from './ui/screens/start.js';
+import { StudySessionScreen } from './ui/screens/study-session.js';
+import { StudySetupScreen } from './ui/screens/study-setup.js';
 import { LessonScreen } from './ui/screens/terms.js';
 import { UpcomingScreen } from './ui/screens/upcoming.js';
 import { Shell } from './ui/shell.js';
@@ -23,7 +25,8 @@ const SCREENS = {
   lesson: LessonScreen,
   glossary: GlossaryScreen,
   import: ImportScreen,
-  study: UpcomingScreen,
+  study: StudySetupScreen,
+  studySession: StudySessionScreen,
   quiz: UpcomingScreen,
   stats: UpcomingScreen,
   settings: SettingsScreen

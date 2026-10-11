@@ -114,6 +114,9 @@ export class Shell {
     replaceChildren(this.actionSlot, view.actions ?? []);
     replaceChildren(this.bodyElement, view.body);
     this.main.classList.toggle('screen--wide', Boolean(view.wide));
+    // compact: bez dużego tytułu (tytuł widać w pasku); focus: bez paska zakładek – ekran nauki.
+    this.main.classList.toggle('screen--compact', Boolean(view.compact));
+    this.root.classList.toggle('app--focus', Boolean(view.focus));
 
     this.bottomBar.hidden = !view.bottomBar;
     replaceChildren(this.bottomBar, view.bottomBar ?? null);

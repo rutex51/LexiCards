@@ -105,6 +105,7 @@ export class DomainsScreen {
             onMenu: () => openMenu({
               title: domain.name,
               items: [
+                { label: 'Ucz się', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'domain', id: domain.id })) },
                 { label: 'Edytuj', icon: 'edit', onSelect: () => openDomainForm(ctx, domain.id) },
                 { label: 'Dodaj moduł', icon: 'plus', onSelect: () => openModuleForm(ctx, { domainID: domain.id }) },
                 { label: 'Eksportuj…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'domain', id: domain.id }) },
@@ -155,6 +156,7 @@ export class DomainScreen {
     const moreMenu = () => openMenu({
       title: domain.name,
       items: [
+        { label: 'Ucz się tej dziedziny', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'domain', id: domain.id })) },
         { label: 'Edytuj dziedzinę', icon: 'edit', onSelect: () => openDomainForm(ctx, domain.id) },
         modules.length > 1 ? { label: 'Zmień kolejność modułów', icon: 'reorder', onSelect: () => { this.reordering = true; ctx.refresh(); } } : null,
         { label: 'Eksportuj dziedzinę…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'domain', id: domain.id }) },
@@ -203,6 +205,7 @@ export class DomainScreen {
               onMenu: () => openMenu({
                 title: module.name,
                 items: [
+                  { label: 'Ucz się', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'module', id: module.id })) },
                   { label: 'Edytuj', icon: 'edit', onSelect: () => openModuleForm(ctx, { moduleID: module.id }) },
                   { label: 'Przenieś do innej dziedziny', icon: 'move', onSelect: () => moveModule(ctx, module.id) },
                   { label: 'Dodaj lekcję', icon: 'plus', onSelect: () => openLessonForm(ctx, { moduleID: module.id }) },
@@ -249,6 +252,7 @@ export class ModuleScreen {
     const moreMenu = () => openMenu({
       title: module.name,
       items: [
+        { label: 'Ucz się tego modułu', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'module', id: module.id })) },
         { label: 'Edytuj moduł', icon: 'edit', onSelect: () => openModuleForm(ctx, { moduleID: module.id }) },
         { label: 'Przenieś do innej dziedziny', icon: 'move', onSelect: () => moveModule(ctx, module.id) },
         lessons.length > 1 ? { label: 'Zmień kolejność lekcji', icon: 'reorder', onSelect: () => { this.reordering = true; ctx.refresh(); } } : null,
@@ -288,6 +292,7 @@ export class ModuleScreen {
             onMenu: () => openMenu({
               title: lesson.name,
               items: [
+                { label: 'Ucz się', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'lesson', id: lesson.id })) },
                 { label: 'Edytuj', icon: 'edit', onSelect: () => openLessonForm(ctx, { lessonID: lesson.id }) },
                 { label: 'Przenieś do innego modułu', icon: 'move', onSelect: () => moveLesson(ctx, lesson.id) },
                 { label: 'Kopiuj do…', icon: 'copy', onSelect: () => copyLesson(ctx, lesson.id) },

@@ -6,12 +6,6 @@ import { h } from '../dom.js';
 import { routes } from '../router.js';
 
 const SCREENS = {
-  study: {
-    title: 'Nauka',
-    iconName: 'cards',
-    heading: 'Fiszki są w przygotowaniu',
-    text: 'Tutaj będziesz przeglądać fiszki, oceniać znajomość pojęcia, definicji i przykładu oraz powtarzać materiał w odstępach dobranych do tego, co już umiesz.'
-  },
   quiz: {
     title: 'Quiz',
     iconName: 'quiz',

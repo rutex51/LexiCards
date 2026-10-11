@@ -6,7 +6,7 @@ są zapisywane wyłącznie w przeglądarce na Twoim urządzeniu.
 
 Adres: **https://rutex51.github.io/LexiCards/**
 
-## Co już działa (etapy 1–2)
+## Co już działa (etapy 1–3)
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -17,13 +17,18 @@ Adres: **https://rutex51.github.io/LexiCards/**
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
 - Eksport do XLSX lub CSV: cała biblioteka, dziedzina, moduł, lekcja albo zaznaczone pojęcia.
-- Kopia zapasowa do pliku i przywracanie z pliku.
+- Nauka z fiszkami: wybór materiału, kierunku (PL → EN, EN → PL, mieszany), zakresu i liczby fiszek;
+  obracana fiszka, trzy kafelki oceny (pojęcie, definicja, przykład), zatwierdzanie gestem albo
+  przyciskiem, cofanie, podsumowanie i runda powtórkowa. Postępy są osobne dla każdego kierunku.
+- Wymowa pojęć i przykładów głosem z urządzenia; historia ocen każdego pojęcia.
+- Kopia zapasowa do pliku i przywracanie z pliku (materiały, postępy, ustawienia).
 - Motyw jasny, ciemny albo zgodny z systemem; układ na telefon i na szeroki ekran.
 - Praca bez internetu po pierwszym otwarciu.
 - 40 przykładowych pojęć (Business English, Metrology) do wczytania jednym przyciskiem.
 
-Zakładki Nauka, Quiz i Statystyki są widoczne, ale ich funkcje powstaną w kolejnych etapach
-(plan niżej). Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2](docs/STAGE-2.md).
+Zakładki Quiz i Statystyki są widoczne, ale ich funkcje powstaną w kolejnych etapach
+(plan niżej). Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md),
+[etap 2](docs/STAGE-2.md), [etap 3](docs/STAGE-3.md).
 
 ## Jak korzystać
 
@@ -58,6 +63,17 @@ Rozpoznawane są też nagłówki takie jak „Polski”, „Angielski”, „Opi
 Wzór pliku można pobrać w pierwszym kroku kreatora; przykłady są w katalogu [docs/samples](docs/samples).
 Pliki CSV z polskiego Excela (Windows-1250, średniki) są odczytywane poprawnie. Stary format `.xls`
 trzeba najpierw zapisać w Excelu jako `.xlsx`.
+
+### Nauka z fiszkami
+
+1. W zakładce **Nauka** wybierz materiał i dotknij **Rozpocznij naukę** (albo „Ucz się tej lekcji”
+   na ekranie lekcji).
+2. Przypomnij sobie odpowiedź i dotknij fiszki, żeby ją odwrócić.
+3. Zaznacz kafelki tego, co umiesz: pojęcie, definicję, przykład.
+4. Przesuń fiszkę **w lewo – Umiem** albo **w prawo – Powtórz** (są też przyciski).
+
+Strzałka w pasku u góry cofa ostatnią decyzję. Przerwaną sesję można wznowić ze Startu.
+Na komputerze działa klawiatura: spacja odwraca, 1 2 3 przełączają kafelki, ← i → zatwierdzają, Z cofa.
 
 ### Gdzie są dane
 
@@ -110,10 +126,10 @@ z przyciskiem „Uruchom ją”.
 
 1. **Biblioteka, glosariusz, kopia zapasowa** – gotowe.
 2. **Import i eksport plików CSV oraz XLSX** – gotowe.
-3. Fiszki: obracana karta, ocena pojęcia, definicji i przykładu, gesty, cofanie.
+3. **Fiszki: obracana karta, ocena pojęcia, definicji i przykładu, gesty, cofanie** – gotowe.
 4. Powtórki w odstępach (FSRS), osobno dla kierunków PL→EN i EN→PL.
 5. Quizy: jednokrotny wybór, dopasowywanie, mieszany.
 6. Ekran startowy z planem dnia i statystyki.
-7. Dopracowanie: wymowa, dostępność, wydajność przy dużych bibliotekach.
+7. Dopracowanie: dostępność, wydajność przy dużych bibliotekach.
 
 Synchronizacja między urządzeniami nie jest planowana; urządzenia łączy kopia zapasowa w pliku.
