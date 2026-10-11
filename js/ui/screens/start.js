@@ -50,6 +50,7 @@ export class StartScreen {
           text: `Dziedzina to temat, którego się uczysz, na przykład „Business English”. Możesz też wczytać ${sampleTermCount()} przykładowych pojęć i od razu zobaczyć, jak działa aplikacja.`,
           actions: [
             primaryButton('Dodaj dziedzinę', () => openDomainForm(ctx), { testID: 'start-add-domain' }),
+            primaryButton('Importuj z pliku XLSX lub CSV', () => ctx.navigate(routes.importFile()), { testID: 'start-import', kind: 'secondary' }),
             primaryButton('Wczytaj przykładowe dane', () => loadSampleData(ctx), { testID: 'start-load-samples', kind: 'secondary' })
           ]
         })
@@ -71,7 +72,8 @@ export class StartScreen {
         group({ title: 'Dodaj materiały' },
           actionRow({ label: 'Nowe pojęcie', iconName: 'plus', onClick: () => openTermForm(ctx), testID: 'start-add-term' }),
           actionRow({ label: 'Nowa lekcja', iconName: 'book', onClick: () => openLessonForm(ctx) }),
-          actionRow({ label: 'Nowa dziedzina', iconName: 'folder', onClick: () => openDomainForm(ctx) })
+          actionRow({ label: 'Nowa dziedzina', iconName: 'folder', onClick: () => openDomainForm(ctx) }),
+          actionRow({ label: 'Importuj z pliku XLSX lub CSV', iconName: 'upload', onClick: () => ctx.navigate(routes.importFile()), testID: 'start-import' })
         ),
         group({
           title: 'Szukaj',

@@ -101,13 +101,17 @@ test('dane przykładowe: co najmniej 30 pojęć, każde z obiema nazwami', () =>
 test('wczytanie przykładów tworzy pełną hierarchię, a powtórka niczego nie duplikuje', async () => {
   const { library } = await makeLibrary();
 
+  const counts = (report) => [report.domains, report.modules, report.lessons, report.added, report.updated, report.skipped];
   const first = await installSampleData(library);
-  assert.deepEqual(first, { domains: 2, modules: 5, lessons: 13, added: sampleTermCount(), updated: 0, skipped: 0 });
+  assert.deepEqual(counts(first), [2, 5, 13, sampleTermCount(), 0, 0]);
+  assert.deepEqual(first.created.domains, ['Business English', 'Metrology']);
+  assert.equal(first.created.lessons.length, 13);
   const summary = library.summary();
   assert.deepEqual(summary, { domains: 2, modules: 5, lessons: 13, terms: sampleTermCount(), favorites: 0 });
 
   const second = await installSampleData(library);
-  assert.deepEqual(second, { domains: 0, modules: 0, lessons: 0, added: 0, updated: 0, skipped: sampleTermCount() });
+  assert.deepEqual(counts(second), [0, 0, 0, 0, 0, sampleTermCount()]);
+  assert.equal(second.duplicatesInLibrary, sampleTermCount());
   assert.deepEqual(library.summary(), summary);
 });
 
@@ -133,7 +137,12 @@ test('import do wskazanej lekcji zachowuje kolejność wierszy', async () => {
     { lessonID: branch.lesson.id, term: { termPL: 'drugie', termEN: 'second' } }
   ]);
 
-  assert.deepEqual(report, { domains: 0, modules: 0, lessons: 0, added: 2, updated: 0, skipped: 0 });
+  assert.deepEqual(
+    [report.domains, report.modules, report.lessons, report.added, report.updated, report.skipped],
+    [0, 0, 0, 2, 0, 0]
+  );
+  assert.deepEqual(report.statuses, ['added', 'added']);
+  assert.deepEqual(report.lessonIDs, [branch.lesson.id]);
   assert.deepEqual(library.listTerms(branch.lesson.id).map((term) => term.termPL), ['istniejące', 'pierwsze', 'drugie']);
 });
 

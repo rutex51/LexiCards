@@ -163,18 +163,24 @@ export function openMenu({ title = null, items }) {
 }
 
 /** Krótki komunikat u dołu ekranu, odczytywany przez czytniki ekranu. */
-export function toast(message, { kind = 'info', duration = 4500 } = {}) {
+export function toast(message, { kind = 'info', duration = 4500, action = null } = {}) {
   let region = document.getElementById('toasts');
   if (!region) {
     region = h('div', { id: 'toasts', class: 'toasts', role: 'status', 'aria-live': 'polite' });
     document.body.appendChild(region);
   }
-  const element = h('div', { class: `toast toast--${kind}` }, message);
+  // Komunikat z przyciskiem (action: { label, onSelect }) zostaje, dopóki użytkownik go nie użyje.
+  const element = h('div', { class: `toast toast--${kind}${action ? ' toast--action' : ''}` },
+    h('span', null, message),
+    action ? h('button', { type: 'button', class: 'toast__button', onClick: () => action.onSelect() }, action.label) : null
+  );
   region.appendChild(element);
-  setTimeout(() => {
-    element.classList.add('toast--leaving');
-    setTimeout(() => element.remove(), 300);
-  }, duration);
+  if (!action) {
+    setTimeout(() => {
+      element.classList.add('toast--leaving');
+      setTimeout(() => element.remove(), 300);
+    }, duration);
+  }
   return element;
 }
 

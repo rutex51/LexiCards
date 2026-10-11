@@ -16,6 +16,8 @@ export const routes = {
   domain: (id) => `#/library/domain/${encodeURIComponent(id)}`,
   module: (id) => `#/library/module/${encodeURIComponent(id)}`,
   lesson: (id) => `#/library/lesson/${encodeURIComponent(id)}`,
+  /** Kreator importu; z identyfikatorem lekcji – import do tej lekcji. */
+  importFile: (lessonID = null) => (lessonID ? `#/library/import/${encodeURIComponent(lessonID)}` : '#/library/import'),
   study: () => '#/study',
   quiz: () => '#/quiz',
   stats: () => '#/stats',
@@ -35,6 +37,7 @@ export function parseHash(hash) {
   switch (first) {
     case 'library':
       if (second === 'glossary') return { tab: 'library', name: 'glossary' };
+      if (second === 'import') return { tab: 'library', name: 'import', id: third ?? null };
       if (['domain', 'module', 'lesson'].includes(second) && third) return { tab: 'library', name: second, id: third };
       return { tab: 'library', name: 'domains' };
     case 'study': return { tab: 'study', name: 'study' };

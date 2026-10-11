@@ -6,6 +6,7 @@ import { toast } from './ui/dialogs.js';
 import { h, replaceChildren } from './ui/dom.js';
 import { Router, routeKey } from './ui/router.js';
 import { GlossaryScreen } from './ui/screens/glossary.js';
+import { ImportScreen } from './ui/screens/import.js';
 import { DomainScreen, DomainsScreen, ModuleScreen } from './ui/screens/library.js';
 import { SettingsScreen } from './ui/screens/settings.js';
 import { StartScreen } from './ui/screens/start.js';
@@ -21,6 +22,7 @@ const SCREENS = {
   module: ModuleScreen,
   lesson: LessonScreen,
   glossary: GlossaryScreen,
+  import: ImportScreen,
   study: UpcomingScreen,
   quiz: UpcomingScreen,
   stats: UpcomingScreen,
@@ -67,12 +69,32 @@ function trackVisualViewport() {
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
   const hadController = Boolean(navigator.serviceWorker.controller);
+  let announced = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (hadController) toast('Pobrano nową wersję aplikacji. Zobaczysz ją po ponownym otwarciu.', { duration: 8000 });
+    // Nowe wydanie jest już pobrane; otwarta aplikacja działa jeszcze na starych plikach.
+    if (!hadController || announced) return;
+    announced = true;
+    toast('Pobrano nową wersję aplikacji.', {
+      action: { label: 'Uruchom ją', onSelect: () => window.location.reload() }
+    });
   });
-  const register = () => navigator.serviceWorker.register('./sw.js').catch((error) => console.warn('Tryb offline niedostępny:', error));
+
+  let registration = null;
+  const register = async () => {
+    try {
+      registration = await navigator.serviceWorker.register('./sw.js');
+    } catch (error) {
+      console.warn('Tryb offline niedostępny:', error);
+    }
+  };
   if (document.readyState === 'complete') register();
   else window.addEventListener('load', register, { once: true });
+
+  // Aplikacja z ekranu początkowego rzadko startuje od zera, więc nowego wydania
+  // szukamy także przy każdym powrocie do niej.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') registration?.update().catch(() => {});
+  });
 }
 
 async function boot() {

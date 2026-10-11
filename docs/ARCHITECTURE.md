@@ -1,6 +1,6 @@
 # Architektura LexiCards
 
-Dokument opisuje stan po etapie 1 oraz decyzje, które przygotowują kolejne etapy.
+Dokument opisuje stan po etapie 2 oraz decyzje, które przygotowują kolejne etapy.
 
 ## Założenia
 
@@ -25,6 +25,12 @@ js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
 js/core/model.js           kształt rekordów, wartości domyślne, stałe
 js/core/backup.js          kopia zapasowa: tworzenie, walidacja, przywracanie
+js/core/zip.js             odczyt i zapis archiwów ZIP
+js/core/xlsx.js            odczyt i zapis skoroszytów XLSX
+js/core/csv.js             kodowanie, separator, odczyt i zapis CSV
+js/core/tablefile.js       rozpoznanie formatu pliku, wspólna postać tabeli
+js/core/importer.js        nagłówki → pola, wiersze pliku → wiersze importu, walidacja
+js/core/exporter.js        zakres eksportu → plik XLSX lub CSV
 js/core/text.js            normalizacja tekstu, tagi, odmiana liczebników
 ```
 
@@ -98,9 +104,51 @@ i zapisuje go razem z listą plików w `sw.js`.
 - Przy pierwszym otwarciu service worker pobiera komplet plików do pamięci podręcznej
   nazwanej tym identyfikatorem i od tej pory serwuje aplikację z niej.
 - Po publikacji nowego wydania przeglądarka wykrywa zmieniony `sw.js`, pobiera nowy komplet
-  w tle i usuwa stary. Otwarta aplikacja kończy pracę na starych plikach; nowe są używane
-  od następnego uruchomienia. Pliki z dwóch wydań nigdy się nie mieszają.
+  w tle i usuwa stary. Otwarta aplikacja kończy pracę na starych plikach i pokazuje komunikat
+  z przyciskiem uruchamiającym nowe wydanie. Pliki z dwóch wydań nigdy się nie mieszają.
+- Nowego wydania aplikacja szuka przy starcie i przy każdym powrocie na pierwszy plan –
+  aplikacja z ekranu początkowego iPhone'a rzadko startuje od zera.
 - Aktualizacja nie dotyka danych użytkownika – są w IndexedDB, nie w pamięci podręcznej.
+
+## Import i eksport plików
+
+Aplikacja nie ma zależności, więc pliki czyta i zapisuje własnym kodem:
+
+- **ZIP** (`zip.js`): spis treści archiwum, suma kontrolna CRC-32, zapis archiwum. Samą
+  kompresję wykonuje przeglądarka (`CompressionStream`, `DecompressionStream`); te same
+  interfejsy ma Node.js, więc moduł jest testowany bez przeglądarki.
+- **XLSX** (`xlsx.js`): z dokumentów XML skoroszytu czytane są lista arkuszy, wspólna tablica
+  tekstów i komórki. Obsłużone są teksty wpisane wprost w komórce, teksty z formatowaniem
+  części znaków, zapamiętane wyniki formuł i komórki bez adresu. Formatowanie liczb i dat
+  jest pomijane. Zapis tworzy jeden arkusz z pogrubionym, zamrożonym nagłówkiem.
+- **CSV** (`csv.js`): kodowanie jest rozpoznawane po znaczniku BOM, poprawności UTF-8,
+  a na końcu po bajtach polskich liter (Windows-1250 albo ISO-8859-2); separator – po tym,
+  przy którym początkowe rekordy mają najrówniejszą liczbę pól. Oba ustawienia użytkownik
+  może zmienić w kreatorze. Zapis używa UTF-8 ze znacznikiem BOM i średników, bo tak
+  plik otwiera się poprawnie w polskim Excelu.
+
+Odczyt każdego formatu daje tę samą tabelę: `{ rows: [{ number, cells }], columnCount }`,
+gdzie `number` to numer wiersza widoczny w arkuszu – używany w komunikatach walidacji.
+
+Dalsza droga jest wspólna:
+
+1. `analyzeHeader()` rozpoznaje pola po nagłówkach (rdzenie słów po polsku i angielsku
+   oraz oznaczenie języka) i proponuje przypisanie kolumn.
+2. `buildImportRows()` zamienia wiersze pliku na wiersze importu i zbiera błędy oraz
+   ostrzeżenia. Pusta komórka dziedziny, modułu lub lekcji przejmuje wartość z wiersza
+   powyżej (scalone komórki), o ile w tym wierszu nie zmienił się poziom wyżej.
+3. `Library.planImport()` wylicza, co powstanie i co stanie się z każdym wierszem, bez
+   zapisu. Plan i właściwy import wykonuje **ten sam kod** (`#runImport`) – z transakcją
+   albo bez niej – więc podgląd w kreatorze nie może rozminąć się z wynikiem.
+4. `Library.importRows()` zapisuje wszystko jedną transakcją.
+
+Duplikat to pojęcie o tych samych znormalizowanych nazwach PL i EN w tej samej lekcji.
+Tryb „aktualizuj” nadpisuje tylko pola, które wiersz rzeczywiście niesie: brak kolumny
+albo pusta komórka nie kasują treści, a identyfikator pojęcia się nie zmienia, więc postępy
+i historia nauki zostają. Powtórzenia w samym pliku są pomijane.
+
+Eksport zapisuje te same kolumny, które rozpoznaje import, dzięki czemu plik można poprawić
+w arkuszu i wczytać z powrotem.
 
 ## Kopia zapasowa
 
@@ -113,15 +161,15 @@ nieistniejące pojęcia są pomijane.
 ## Testy
 
 - `tests/unit/` – Node.js (`node --test`), bez przeglądarki: reguły biblioteki, wycofywanie
-  nieudanych zmian, glosariusz, import wsadowy, kopia zapasowa, spójność plików wydania.
+  nieudanych zmian, glosariusz, odczyt i zapis plików, import i eksport, kopia zapasowa,
+  spójność plików wydania.
+- `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
+  (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.
 - `tests/e2e/` – Chromium przez Playwright: pełne przepływy na ekranie telefonu i komputera,
   trwałość po przeładowaniu, praca offline, aktualizacja wydania, klawiatura.
 
 ## Przygotowanie kolejnych etapów
 
-- **Import (etap 2)** użyje istniejącego `Library.importRows()` – niepodzielnej operacji
-  z trybami duplikatów „pomiń / zaktualizuj / dodaj”. Do zrobienia zostaje odczyt plików
-  CSV i XLSX oraz kreator.
 - **Fiszki i powtórki (etapy 3–4)** zapiszą oceny w `assessments` i `reviews`, a stan
   harmonogramu w `progress`. Brakujące pola pojęcia nie będą liczone jako nieznane –
   funkcje `availableElementCount()` i `assessmentStatus()` są już w `model.js`.

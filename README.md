@@ -6,7 +6,7 @@ są zapisywane wyłącznie w przeglądarce na Twoim urządzeniu.
 
 Adres: **https://rutex51.github.io/LexiCards/**
 
-## Co już działa (etap 1)
+## Co już działa (etapy 1–2)
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -14,13 +14,16 @@ Adres: **https://rutex51.github.io/LexiCards/**
   tagi, trudność, notatki i oznaczenie „ulubione”.
 - Glosariusz wszystkich pojęć: wyszukiwanie bez polskich znaków („plynnosc” znajduje
   „płynność”), filtry (dziedzina, moduł, lekcja, ulubione, tag), sortowanie, zaznaczanie wielu pojęć.
+- Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
+  sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
+- Eksport do XLSX lub CSV: cała biblioteka, dziedzina, moduł, lekcja albo zaznaczone pojęcia.
 - Kopia zapasowa do pliku i przywracanie z pliku.
 - Motyw jasny, ciemny albo zgodny z systemem; układ na telefon i na szeroki ekran.
 - Praca bez internetu po pierwszym otwarciu.
 - 40 przykładowych pojęć (Business English, Metrology) do wczytania jednym przyciskiem.
 
 Zakładki Nauka, Quiz i Statystyki są widoczne, ale ich funkcje powstaną w kolejnych etapach
-(plan niżej). Szczegółowy raport z etapu 1, razem z wynikami testów: [docs/STAGE-1.md](docs/STAGE-1.md).
+(plan niżej). Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2](docs/STAGE-2.md).
 
 ## Jak korzystać
 
@@ -38,12 +41,31 @@ niż karta Safari. Dane wprowadzone wcześniej w Safari przeniesiesz kopią zapa
 Otwórz adres w Chrome albo Edge. Ikona instalacji w pasku adresu pozwala otwierać
 aplikację w osobnym oknie, ale nie jest to konieczne.
 
+### Import z arkusza
+
+W Bibliotece wybierz **+ → Import z pliku** (albo „Importuj z pliku” w menu lekcji). Plik powinien mieć
+w pierwszym wierszu nagłówki, po polsku albo po angielsku:
+
+| Kolumna | Znaczenie |
+| --- | --- |
+| `Term PL`, `Term EN` | pojęcie po polsku i po angielsku – wymagane |
+| `Description PL`, `Description EN` | opis |
+| `Example PL`, `Example EN` | przykład użycia |
+| `Domain`, `Module`, `Lesson` | miejsce w bibliotece; brakujące elementy zostaną utworzone |
+| `Tags`, `Difficulty`, `Notes` | tagi (po przecinku), trudność 1–5, notatki |
+
+Rozpoznawane są też nagłówki takie jak „Polski”, „Angielski”, „Opis PL”, „Przykład po angielsku”, „Lekcja”.
+Wzór pliku można pobrać w pierwszym kroku kreatora; przykłady są w katalogu [docs/samples](docs/samples).
+Pliki CSV z polskiego Excela (Windows-1250, średniki) są odczytywane poprawnie. Stary format `.xls`
+trzeba najpierw zapisać w Excelu jako `.xlsx`.
+
 ### Gdzie są dane
 
 - Dane zostają w przeglądarce na danym urządzeniu. Nic nie jest wysyłane do internetu.
 - Telefon i komputer mają osobne biblioteki. Żeby przenieść materiały, w Ustawieniach
   wybierz **Zapisz kopię do pliku** na jednym urządzeniu i **Przywróć z pliku** na drugim
-  (przywrócenie zastępuje dane na urządzeniu docelowym).
+  (przywrócenie zastępuje dane na urządzeniu docelowym). Same materiały, bez postępów, przeniesiesz też
+  eksportem i importem – wtedy dane na urządzeniu docelowym zostają, a pojęcia są dopisywane.
 - Przeglądarka może usunąć dane witryny, której długo nie otwierasz, albo gdy brakuje miejsca.
   Wyczyszczenie danych przeglądarki także je usuwa. Dlatego regularnie zapisuj kopię zapasową.
 
@@ -68,10 +90,10 @@ nie przejdzie, jeśli te pliki są nieaktualne.
 ```
 index.html, manifest.webmanifest, sw.js   strona, opis aplikacji, praca offline
 css/app.css                               wygląd
-js/core/                                  dane i reguły (bez zależności od przeglądarki)
+js/core/                                  dane, reguły, odczyt i zapis plików (bez zależności od przeglądarki)
 js/ui/                                    ekrany i okna
 icons/                                    ikony aplikacji
-tests/unit/, tests/e2e/                   testy
+tests/unit/, tests/e2e/, tests/fixtures/  testy i pliki testowe
 tools/                                    budowanie, serwer lokalny, generatory
 docs/                                     architektura, raporty etapów, pliki przykładowe
 ```
@@ -81,13 +103,13 @@ Opis budowy: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ### Publikacja
 
 Strona jest serwowana przez GitHub Pages z gałęzi `main` (katalog główny). Po wysłaniu zmian
-nowa wersja pojawia się po kilku minutach. Otwarta aplikacja pobiera ją w tle i używa od
-następnego uruchomienia.
+nowa wersja pojawia się po kilku minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat
+z przyciskiem „Uruchom ją”.
 
 ## Plan etapów
 
 1. **Biblioteka, glosariusz, kopia zapasowa** – gotowe.
-2. Import i eksport plików CSV oraz XLSX z kreatorem (podgląd, mapowanie kolumn, duplikaty).
+2. **Import i eksport plików CSV oraz XLSX** – gotowe.
 3. Fiszki: obracana karta, ocena pojęcia, definicji i przykładu, gesty, cofanie.
 4. Powtórki w odstępach (FSRS), osobno dla kierunków PL→EN i EN→PL.
 5. Quizy: jednokrotny wybór, dopasowywanie, mieszany.

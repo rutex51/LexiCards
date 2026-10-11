@@ -6,11 +6,13 @@ import {
   DEFAULT_DOMAIN_COLOR, DEFAULT_DOMAIN_ICON, DIFFICULTY_MAX, DIFFICULTY_MIN, DOMAIN_COLORS,
   DOMAIN_COLOR_NAMES, DOMAIN_ICONS, emptyTermDraft, termToDraft
 } from '../core/model.js';
+import { EXPORT_FORMATS, buildExportFile, collectExportRows } from '../core/exporter.js';
 import { installSampleData } from '../core/samples.js';
 import { formatTags, isBlank, parseTags, pluralTerms } from '../core/text.js';
-import { field, formGroup, message, selectInput, textArea, textInput, toggle } from './components.js';
+import { field, formGroup, message, segmented, selectInput, textArea, textInput, toggle } from './components.js';
 import { confirmDialog, openFormSheet, showError, toast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
+import { deliverFile } from './files.js';
 import { icon } from './icons.js';
 
 const NEW = '__new__';
@@ -573,6 +575,68 @@ export async function requestDeletion(ctx, target) {
   });
   if (!confirmed) return false;
   return runAction(() => ctx.library.delete(target));
+}
+
+// ---------------------------------------------------------------- eksport
+
+const EXPORT_SCOPE_LABELS = {
+  all: () => 'Cała biblioteka',
+  domain: (name) => `Dziedzina „${name}”`,
+  module: (name) => `Moduł „${name}”`,
+  lesson: (name) => `Lekcja „${name}”`,
+  terms: () => 'Zaznaczone pojęcia'
+};
+
+/**
+ * Arkusz eksportu do pliku XLSX albo CSV.
+ * scope: { kind: 'all' } | { kind: 'domain' | 'module' | 'lesson', id } | { kind: 'terms', ids }.
+ */
+export function openExportSheet(ctx, scope) {
+  const { library } = ctx;
+  const { name, rows } = collectExportRows(library, scope);
+  const count = rows.length;
+  const state = { format: 'xlsx' };
+
+  return openFormSheet({
+    title: 'Eksport do pliku',
+    submitLabel: 'Eksportuj',
+    build(api) {
+      api.setCanSubmit(count > 0);
+      return [
+        formGroup('Zakres',
+          h('div', { class: 'field', dataset: { testid: 'export-scope' } },
+            h('span', { class: 'field__label' }, EXPORT_SCOPE_LABELS[scope.kind](name)),
+            h('span', null, pluralTerms(count))
+          )
+        ),
+        h('section', { class: 'group' },
+          h('h3', { class: 'form-group__title' }, 'Format'),
+          segmented({
+            name: 'export-format',
+            label: 'Format pliku',
+            value: state.format,
+            options: EXPORT_FORMATS.map((format) => ({ value: format.id, label: format.label })),
+            onChange: (value) => { state.format = value; }
+          })
+        ),
+        count === 0
+          ? message('W tym zakresie nie ma pojęć do eksportu.', 'warning')
+          : h('p', { class: 'form-note' },
+              'Plik ma te same kolumny, których oczekuje import, więc możesz go poprawić w arkuszu i wczytać z powrotem. Postępy nauki zapisuje kopia zapasowa w Ustawieniach, nie eksport.')
+      ];
+    },
+    async onSubmit() {
+      const exported = await buildExportFile(library, scope, state.format);
+      const file = new File([exported.bytes], exported.name, { type: exported.type });
+      const outcome = await deliverFile(file, {
+        title: 'Plik jest gotowy',
+        message: `Zawiera: ${pluralTerms(exported.count)}. W następnym kroku wybierz „Zachowaj w Plikach”.`
+      });
+      if (outcome === 'cancelled') return false;
+      toast(outcome === 'downloaded' ? `Zapisano plik ${file.name}.` : `Wyeksportowano: ${pluralTerms(exported.count)}.`);
+      return true;
+    }
+  });
 }
 
 export async function loadSampleData(ctx) {

@@ -3,7 +3,7 @@
 import { normalizeKey, pluralTerms, formatTags } from '../../core/text.js';
 import { DIFFICULTY_MAX } from '../../core/model.js';
 import {
-  copyLesson, copyTerms, moveLesson, moveTerms, openLessonForm, openTermForm, requestDeletion, setFavorite
+  copyLesson, copyTerms, moveLesson, moveTerms, openExportSheet, openLessonForm, openTermForm, requestDeletion, setFavorite
 } from '../actions.js';
 import { emptyState, iconButton, navButton, primaryButton } from '../components.js';
 import { openMenu } from '../dialogs.js';
@@ -140,6 +140,7 @@ export function selectionBar(ctx, state, visibleTerms) {
         { label: 'Usuń z ulubionych', icon: 'star', onSelect: async () => { if (await setFavorite(ctx, false, ids)) finish(); } },
         { label: 'Przenieś do…', icon: 'move', onSelect: async () => { if (await moveTerms(ctx, ids)) finish(); } },
         { label: 'Kopiuj do…', icon: 'copy', onSelect: async () => { if (await copyTerms(ctx, ids)) finish(); } },
+        { label: 'Eksportuj…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'terms', ids }) },
         'separator',
         { label: 'Usuń', icon: 'trash', destructive: true, onSelect: async () => { if (await requestDeletion(ctx, { kind: 'terms', ids })) finish(); } }
       ]
@@ -229,6 +230,8 @@ export class LessonScreen {
         { label: 'Edytuj lekcję', icon: 'edit', onSelect: () => openLessonForm(ctx, { lessonID: lesson.id }) },
         { label: 'Przenieś do innego modułu', icon: 'move', onSelect: () => moveLesson(ctx, lesson.id) },
         { label: 'Kopiuj do…', icon: 'copy', onSelect: () => copyLesson(ctx, lesson.id) },
+        { label: 'Importuj z pliku…', icon: 'upload', onSelect: () => ctx.navigate(routes.importFile(lesson.id)) },
+        terms.length > 0 ? { label: 'Eksportuj lekcję…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'lesson', id: lesson.id }) } : null,
         'separator',
         {
           label: 'Usuń lekcję', icon: 'trash', destructive: true,
@@ -253,7 +256,10 @@ export class LessonScreen {
         iconName: 'cards',
         title: 'Brak pojęć',
         text: 'Dodaj pierwsze pojęcie: nazwę po polsku i po angielsku, a jeśli chcesz, także opis i przykład użycia.',
-        actions: [primaryButton('Dodaj pojęcie', () => openTermForm(ctx, { lessonID: lesson.id }), { testID: 'lesson-add-term' })]
+        actions: [
+          primaryButton('Dodaj pojęcie', () => openTermForm(ctx, { lessonID: lesson.id }), { testID: 'lesson-add-term' }),
+          primaryButton('Importuj z pliku XLSX lub CSV', () => ctx.navigate(routes.importFile(lesson.id)), { testID: 'lesson-import', kind: 'secondary' })
+        ]
       });
     } else {
       this.#renderResults();

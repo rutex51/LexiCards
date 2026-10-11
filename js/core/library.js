@@ -9,7 +9,7 @@
 
 import {
   ALL_STORES, DIFFICULTY_MAX, DIFFICULTY_MIN, MEMORY_STORES, SETTINGS_ID,
-  defaultSettings, makeDomain, makeLesson, makeModule, makeTerm, newID, nowISO, termFieldsFromDraft
+  defaultSettings, makeDomain, makeLesson, makeModule, makeTerm, newID, nowISO, termFieldsFromDraft, termToDraft
 } from './model.js';
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
 import { emptyChanges } from './storage.js';
@@ -59,6 +59,32 @@ export function validateTermDraft(draft) {
       throw errors.invalidDifficulty();
     }
   }
+}
+
+/**
+ * Aktualizacja pojęcia treścią z importu. Nadpisywane są tylko pola, które wiersz
+ * rzeczywiście niesie: pusta komórka albo brak kolumny nie kasuje istniejącej treści.
+ * Zwraca nowe pola pojęcia albo null, gdy nic by się nie zmieniło.
+ */
+function mergeTermUpdate(existing, draft) {
+  const merged = termToDraft(existing);
+  for (const [key, value] of Object.entries(draft)) {
+    if (key === 'tags') {
+      if (Array.isArray(value) && value.length > 0) merged.tags = value;
+    } else if (key === 'difficulty') {
+      if (value !== null && value !== undefined) merged.difficulty = value;
+    } else if (key === 'isFavorite') {
+      merged.isFavorite = existing.isFavorite || Boolean(value);
+    } else if (!isBlank(value)) {
+      merged[key] = value;
+    }
+  }
+  const fields = termFieldsFromDraft(merged);
+  const same = Object.entries(fields).every(([key, value]) => {
+    const current = existing[key];
+    return Array.isArray(value) ? value.join('\n') === (current ?? []).join('\n') : value === (current ?? null) || value === current;
+  });
+  return same ? null : fields;
 }
 
 /** Zbiera zmiany jednej operacji i pozwala je wycofać. */
@@ -779,99 +805,167 @@ export class Library {
   // ---------------------------------------------------------------- import wsadowy
 
   /**
+   * Wspólny przebieg importu i jego planu. Gdy `unit` jest podane, zmiany trafiają do
+   * biblioteki; gdy jest `null`, powstaje sam raport – co zostałoby utworzone i zmienione.
+   * Jeden kod dla obu trybów gwarantuje, że podgląd w kreatorze zgadza się z wynikiem.
+   */
+  #runImport(rows, duplicates, unit) {
+    const report = {
+      domains: 0, modules: 0, lessons: 0,
+      added: 0, updated: 0, unchanged: 0, skipped: 0,
+      duplicatesInLibrary: 0, duplicatesInFile: 0,
+      created: { domains: [], modules: [], lessons: [] },
+      statuses: new Array(rows.length),
+      lessonIDs: []
+    };
+    const touchedLessons = new Set();
+    let placeholder = 0;
+    const planned = (fields) => ({ id: `plan:${placeholder += 1}`, ...fields });
+
+    const domainByKey = new Map(this.listDomains().map((domain) => [domain.nameKey, domain]));
+    const moduleByKey = new Map();
+    for (const module of [...this.maps.modules.values()].sort(bySortOrder)) {
+      const key = `${module.domainID}\n${module.nameKey}`;
+      if (!moduleByKey.has(key)) moduleByKey.set(key, module);
+    }
+    const lessonByKey = new Map();
+    for (const lesson of [...this.maps.lessons.values()].sort(bySortOrder)) {
+      const key = `${lesson.moduleID}\n${lesson.nameKey}`;
+      if (!lessonByKey.has(key)) lessonByKey.set(key, lesson);
+    }
+    /** Klucz pojęcia → { term, fromFile }; fromFile oznacza pojęcie z wcześniejszego wiersza. */
+    const termByKey = new Map();
+    const nextTermOrder = new Map();
+    for (const term of this.maps.terms.values()) {
+      const key = `${term.lessonID}\n${term.keyPL}\n${term.keyEN}`;
+      if (!termByKey.has(key)) termByKey.set(key, { term, fromFile: false });
+      nextTermOrder.set(term.lessonID, Math.max(nextTermOrder.get(term.lessonID) ?? 0, term.sortOrder + 1));
+    }
+
+    rows.forEach((row, index) => {
+      try {
+        validateTermDraft(row.term);
+      } catch (error) {
+        throw new LibraryError(error.code, `Wiersz ${row.number ?? index + 1}: ${error.message}`);
+      }
+
+      let lesson;
+      if (row.lessonID) {
+        lesson = this.#require('lesson', row.lessonID);
+      } else {
+        // Wskazany istniejący moduł lub dziedzina (po identyfikatorze) mają pierwszeństwo przed nazwą.
+        let module = row.moduleID ? this.#require('module', row.moduleID) : null;
+        let domain = module ? this.#require('domain', module.domainID) : null;
+        if (!domain && row.domainID) domain = this.#require('domain', row.domainID);
+        if (!domain) {
+          const domainDraft = typeof row.domain === 'string' ? { name: row.domain } : (row.domain ?? {});
+          const domainKey = normalizeKey(domainDraft.name);
+          domain = domainByKey.get(domainKey);
+          if (!domain) {
+            domain = unit
+              ? this.#insertDomain(unit, domainDraft)
+              : planned({ name: validatedName(domainDraft.name, 'domain') });
+            domainByKey.set(domainKey, domain);
+            report.domains += 1;
+            report.created.domains.push(domain.name);
+          }
+        }
+        const moduleKey = `${domain.id}\n${normalizeKey(row.module)}`;
+        if (!module) module = moduleByKey.get(moduleKey);
+        if (!module) {
+          module = unit
+            ? this.#insertModule(unit, { name: row.module }, domain.id)
+            : planned({ name: validatedName(row.module, 'module'), domainID: domain.id });
+          moduleByKey.set(moduleKey, module);
+          report.modules += 1;
+          report.created.modules.push(`${domain.name} › ${module.name}`);
+        }
+        const lessonKey = `${module.id}\n${normalizeKey(row.lesson)}`;
+        lesson = lessonByKey.get(lessonKey);
+        if (!lesson) {
+          lesson = unit
+            ? this.#insertLesson(unit, { name: row.lesson }, module)
+            : planned({ name: validatedName(row.lesson, 'lesson'), moduleID: module.id, domainID: domain.id });
+          lessonByKey.set(lessonKey, lesson);
+          report.lessons += 1;
+          report.created.lessons.push(`${domain.name} › ${module.name} › ${lesson.name}`);
+        }
+      }
+      touchedLessons.add(lesson.id);
+
+      const fields = termFieldsFromDraft(row.term);
+      const termKey = `${lesson.id}\n${fields.keyPL}\n${fields.keyEN}`;
+      const match = termByKey.get(termKey);
+
+      if (match) {
+        if (match.fromFile) report.duplicatesInFile += 1;
+        else report.duplicatesInLibrary += 1;
+
+        if (duplicates !== 'add') {
+          // Powtórzenie w samym pliku nie niesie nowej treści – zostaje pierwsze wystąpienie.
+          if (match.fromFile || duplicates === 'skip') {
+            report.skipped += 1;
+            report.statuses[index] = match.fromFile ? 'skippedInFile' : 'skipped';
+            return;
+          }
+          const merged = mergeTermUpdate(match.term, row.term);
+          match.fromFile = true;
+          if (!merged) {
+            report.unchanged += 1;
+            report.statuses[index] = 'unchanged';
+            return;
+          }
+          const updated = { ...match.term, ...merged, updatedAt: nowISO() };
+          if (unit) unit.put('terms', updated);
+          match.term = updated;
+          report.updated += 1;
+          report.statuses[index] = 'updated';
+          return;
+        }
+      }
+
+      const order = nextTermOrder.get(lesson.id) ?? 0;
+      nextTermOrder.set(lesson.id, order + 1);
+      const term = unit
+        ? makeTerm({ lesson, draft: row.term, sortOrder: order })
+        : planned({ lessonID: lesson.id, ...fields });
+      if (unit) unit.put('terms', term);
+      if (!match) termByKey.set(termKey, { term, fromFile: true });
+      report.added += 1;
+      report.statuses[index] = match ? 'addedDuplicate' : 'added';
+    });
+
+    if (unit) report.lessonIDs = [...touchedLessons];
+    return report;
+  }
+
+  /**
    * Dodaje wiele pojęć jedną niepodzielną operacją (import plików, dane przykładowe).
    *
    * Wiersz: { term: szkic pojęcia } oraz położenie – albo `lessonID`, albo nazwy
    * `domain`, `module`, `lesson` (brakujące elementy hierarchii są tworzone).
    * `domain` może być nazwą albo szkicem { name, details, icon, color }.
+   * Zamiast nazwy można wskazać istniejący element: `domainID` albo `moduleID`.
+   * Opcjonalne `number` to numer wiersza w pliku, używany w komunikatach.
    *
    * duplicates – co zrobić z pojęciem o tych samych nazwach PL i EN w lekcji:
    *   'skip'   – pominąć (domyślnie),
-   *   'update' – zaktualizować istniejące; identyfikator i historia nauki zostają,
+   *   'update' – uzupełnić istniejące treścią z pliku; identyfikator, postępy i historia
+   *              nauki zostają, a puste komórki nie kasują istniejącej treści,
    *   'add'    – dodać jako nowe.
+   * Powtórzenia w samym pliku są pomijane (poza trybem 'add').
+   *
+   * Raport: liczby utworzonych elementów (domains, modules, lessons) i ich nazwy (created),
+   * liczby pojęć (added, updated, unchanged, skipped), liczby duplikatów oraz status
+   * każdego wiersza (statuses).
    */
   importRows(rows, { duplicates = 'skip' } = {}) {
-    return this.#mutate((unit) => {
-      const report = { domains: 0, modules: 0, lessons: 0, added: 0, updated: 0, skipped: 0 };
+    return this.#mutate((unit) => this.#runImport(rows, duplicates, unit));
+  }
 
-      const domainByKey = new Map(this.listDomains().map((domain) => [domain.nameKey, domain]));
-      const moduleByKey = new Map();
-      for (const module of [...this.maps.modules.values()].sort(bySortOrder)) {
-        const key = `${module.domainID}\n${module.nameKey}`;
-        if (!moduleByKey.has(key)) moduleByKey.set(key, module);
-      }
-      const lessonByKey = new Map();
-      for (const lesson of [...this.maps.lessons.values()].sort(bySortOrder)) {
-        const key = `${lesson.moduleID}\n${lesson.nameKey}`;
-        if (!lessonByKey.has(key)) lessonByKey.set(key, lesson);
-      }
-      const termByKey = new Map();
-      const nextTermOrder = new Map();
-      for (const term of this.maps.terms.values()) {
-        const key = `${term.lessonID}\n${term.keyPL}\n${term.keyEN}`;
-        if (!termByKey.has(key)) termByKey.set(key, term);
-        nextTermOrder.set(term.lessonID, Math.max(nextTermOrder.get(term.lessonID) ?? 0, term.sortOrder + 1));
-      }
-
-      rows.forEach((row, index) => {
-        try {
-          validateTermDraft(row.term);
-        } catch (error) {
-          throw new LibraryError(error.code, `Wiersz ${index + 1}: ${error.message}`);
-        }
-
-        let lesson;
-        if (row.lessonID) {
-          lesson = this.#require('lesson', row.lessonID);
-        } else {
-          const domainDraft = typeof row.domain === 'string' ? { name: row.domain } : (row.domain ?? {});
-          const domainKey = normalizeKey(domainDraft.name);
-          let domain = domainByKey.get(domainKey);
-          if (!domain) {
-            domain = this.#insertDomain(unit, domainDraft);
-            domainByKey.set(domainKey, domain);
-            report.domains += 1;
-          }
-          const moduleKey = `${domain.id}\n${normalizeKey(row.module)}`;
-          let module = moduleByKey.get(moduleKey);
-          if (!module) {
-            module = this.#insertModule(unit, { name: row.module }, domain.id);
-            moduleByKey.set(moduleKey, module);
-            report.modules += 1;
-          }
-          const lessonKey = `${module.id}\n${normalizeKey(row.lesson)}`;
-          lesson = lessonByKey.get(lessonKey);
-          if (!lesson) {
-            lesson = this.#insertLesson(unit, { name: row.lesson }, module);
-            lessonByKey.set(lessonKey, lesson);
-            report.lessons += 1;
-          }
-        }
-
-        const fields = termFieldsFromDraft(row.term);
-        const termKey = `${lesson.id}\n${fields.keyPL}\n${fields.keyEN}`;
-        const existing = termByKey.get(termKey);
-        if (existing && duplicates === 'skip') {
-          report.skipped += 1;
-          return;
-        }
-        if (existing && duplicates === 'update') {
-          const updated = { ...existing, ...fields, isFavorite: existing.isFavorite || fields.isFavorite, updatedAt: nowISO() };
-          unit.put('terms', updated);
-          termByKey.set(termKey, updated);
-          report.updated += 1;
-          return;
-        }
-        const order = nextTermOrder.get(lesson.id) ?? 0;
-        const term = makeTerm({ lesson, draft: row.term, sortOrder: order });
-        nextTermOrder.set(lesson.id, order + 1);
-        unit.put('terms', term);
-        if (!existing) termByKey.set(termKey, term);
-        report.added += 1;
-      });
-
-      return report;
-    });
+  /** Plan importu: ten sam raport co importRows(), bez żadnej zmiany w bibliotece. */
+  planImport(rows, { duplicates = 'skip' } = {}) {
+    return this.#runImport(rows, duplicates, null);
   }
 
   // ---------------------------------------------------------------- kopia zapasowa

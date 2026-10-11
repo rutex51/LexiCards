@@ -54,7 +54,7 @@ export async function deliverFile(file, { title, message }) {
 /** Otwiera systemowy wybór pliku. Zwraca obietnicę z plikiem albo null po anulowaniu. */
 export function pickFile(accept) {
   return new Promise((resolve) => {
-    const input = h('input', { type: 'file', accept, hidden: true, dataset: { testid: 'file-input' } });
+    const input = h('input', { type: 'file', accept: accept || null, hidden: true, dataset: { testid: 'file-input' } });
     let settled = false;
     const finish = (file) => {
       if (settled) return;

@@ -77,6 +77,24 @@ export function actionRow({ label, iconName = null, onClick, destructive = false
   );
 }
 
+/** Wiersz z polem wyboru jednej z opcji (radio). Cały wiersz jest etykietą pola. */
+export function radioRow({ name, value, checked, title, subtitle = null, onChange, testID = null }) {
+  const input = h('input', {
+    type: 'radio', name, value, checked, class: 'radio__input',
+    dataset: { testid: testID },
+    onChange: () => onChange(value)
+  });
+  return h('li', { class: 'row' },
+    h('label', { class: 'row__main radio' },
+      input,
+      h('span', { class: 'row__text' },
+        h('span', { class: 'row__title' }, title),
+        subtitle ? h('span', { class: 'row__subtitle' }, subtitle) : null
+      )
+    )
+  );
+}
+
 /** Wiersz informacyjny: etykieta i wartość. */
 export function valueRow(label, value) {
   return h('li', { class: 'row row--static' },

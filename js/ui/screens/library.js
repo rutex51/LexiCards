@@ -2,7 +2,7 @@
 
 import { pluralLessons, pluralModules, pluralTerms } from '../../core/text.js';
 import {
-  copyLesson, moveLesson, moveModule, openDomainForm, openLessonForm, openModuleForm, openTermForm,
+  copyLesson, moveLesson, moveModule, openDomainForm, openExportSheet, openLessonForm, openModuleForm, openTermForm,
   reorder, requestDeletion
 } from '../actions.js';
 import {
@@ -65,7 +65,10 @@ export class DomainsScreen {
         { label: 'Dziedzinę', icon: 'folder', onSelect: () => openDomainForm(ctx) },
         { label: 'Moduł', icon: 'stack', onSelect: () => openModuleForm(ctx) },
         { label: 'Lekcję', icon: 'book', onSelect: () => openLessonForm(ctx) },
-        { label: 'Pojęcie', icon: 'cards', onSelect: () => openTermForm(ctx) }
+        { label: 'Pojęcie', icon: 'cards', onSelect: () => openTermForm(ctx) },
+        'separator',
+        { label: 'Import z pliku', icon: 'upload', onSelect: () => ctx.navigate(routes.importFile()) },
+        domains.length > 0 ? { label: 'Eksport do pliku', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'all' }) } : null
       ]
     });
 
@@ -104,6 +107,7 @@ export class DomainsScreen {
               items: [
                 { label: 'Edytuj', icon: 'edit', onSelect: () => openDomainForm(ctx, domain.id) },
                 { label: 'Dodaj moduł', icon: 'plus', onSelect: () => openModuleForm(ctx, { domainID: domain.id }) },
+                { label: 'Eksportuj…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'domain', id: domain.id }) },
                 'separator',
                 { label: 'Usuń', icon: 'trash', destructive: true, onSelect: () => requestDeletion(ctx, { kind: 'domain', id: domain.id }) }
               ]
@@ -153,6 +157,7 @@ export class DomainScreen {
       items: [
         { label: 'Edytuj dziedzinę', icon: 'edit', onSelect: () => openDomainForm(ctx, domain.id) },
         modules.length > 1 ? { label: 'Zmień kolejność modułów', icon: 'reorder', onSelect: () => { this.reordering = true; ctx.refresh(); } } : null,
+        { label: 'Eksportuj dziedzinę…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'domain', id: domain.id }) },
         'separator',
         {
           label: 'Usuń dziedzinę', icon: 'trash', destructive: true,
@@ -201,6 +206,7 @@ export class DomainScreen {
                   { label: 'Edytuj', icon: 'edit', onSelect: () => openModuleForm(ctx, { moduleID: module.id }) },
                   { label: 'Przenieś do innej dziedziny', icon: 'move', onSelect: () => moveModule(ctx, module.id) },
                   { label: 'Dodaj lekcję', icon: 'plus', onSelect: () => openLessonForm(ctx, { moduleID: module.id }) },
+                  { label: 'Eksportuj…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'module', id: module.id }) },
                   'separator',
                   { label: 'Usuń', icon: 'trash', destructive: true, onSelect: () => requestDeletion(ctx, { kind: 'module', id: module.id }) }
                 ]
@@ -246,6 +252,7 @@ export class ModuleScreen {
         { label: 'Edytuj moduł', icon: 'edit', onSelect: () => openModuleForm(ctx, { moduleID: module.id }) },
         { label: 'Przenieś do innej dziedziny', icon: 'move', onSelect: () => moveModule(ctx, module.id) },
         lessons.length > 1 ? { label: 'Zmień kolejność lekcji', icon: 'reorder', onSelect: () => { this.reordering = true; ctx.refresh(); } } : null,
+        { label: 'Eksportuj moduł…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'module', id: module.id }) },
         'separator',
         {
           label: 'Usuń moduł', icon: 'trash', destructive: true,
@@ -285,6 +292,8 @@ export class ModuleScreen {
                 { label: 'Przenieś do innego modułu', icon: 'move', onSelect: () => moveLesson(ctx, lesson.id) },
                 { label: 'Kopiuj do…', icon: 'copy', onSelect: () => copyLesson(ctx, lesson.id) },
                 { label: 'Dodaj pojęcie', icon: 'plus', onSelect: () => openTermForm(ctx, { lessonID: lesson.id }) },
+                { label: 'Importuj z pliku…', icon: 'upload', onSelect: () => ctx.navigate(routes.importFile(lesson.id)) },
+                { label: 'Eksportuj…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'lesson', id: lesson.id }) },
                 'separator',
                 { label: 'Usuń', icon: 'trash', destructive: true, onSelect: () => requestDeletion(ctx, { kind: 'lesson', id: lesson.id }) }
               ]

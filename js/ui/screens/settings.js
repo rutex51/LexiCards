@@ -3,7 +3,7 @@
 import { backupFileName, createBackup, parseBackupText, validateBackup } from '../../core/backup.js';
 import { nowISO } from '../../core/model.js';
 import { joinList, pluralDomains, pluralLessons, pluralModules, pluralTerms } from '../../core/text.js';
-import { loadSampleData } from '../actions.js';
+import { loadSampleData, openExportSheet } from '../actions.js';
 import { actionRow, group, segmented, valueRow } from '../components.js';
 import { confirmDialog, showError, toast } from '../dialogs.js';
 import { h } from '../dom.js';
@@ -95,7 +95,8 @@ export class SettingsScreen {
 
   async #restoreBackup() {
     const { ctx } = this;
-    const file = await pickFile('.json,application/json');
+    // Na telefonie nie zawężamy typu pliku: system potrafi wyszarzyć kopię zapisaną przez inną aplikację.
+    const file = await pickFile(window.matchMedia('(pointer: coarse)').matches ? '' : '.json,application/json');
     if (!file) return;
     try {
       const result = validateBackup(parseBackupText(await file.text()));
@@ -200,6 +201,13 @@ export class SettingsScreen {
         group({ title: 'Kopia zapasowa', footer: backupFooter },
           actionRow({ label: 'Zapisz kopię do pliku', iconName: 'download', onClick: () => this.#exportBackup(), testID: 'backup-export' }),
           actionRow({ label: 'Przywróć z pliku', iconName: 'upload', onClick: () => this.#restoreBackup(), testID: 'backup-restore' })
+        ),
+        group({
+          title: 'Import i eksport',
+          footer: 'Eksport zapisuje same materiały w arkuszu, który można edytować. Kopia zapasowa obejmuje także postępy i ustawienia.'
+        },
+          actionRow({ label: 'Importuj pojęcia z pliku XLSX lub CSV', iconName: 'upload', onClick: () => ctx.navigate(routes.importFile()), testID: 'settings-import' }),
+          library.isEmpty() ? null : actionRow({ label: 'Eksportuj bibliotekę do pliku', iconName: 'download', onClick: () => openExportSheet(ctx, { kind: 'all' }), testID: 'settings-export' })
         ),
         this.#storageGroup(),
         this.#installGroup(),
