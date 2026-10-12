@@ -20,13 +20,22 @@ w sekcji „Testy”; to, czego nie udało się sprawdzić, jest wymienione osob
 **Ocena dla FSRS**
 
 FSRS przyjmuje jedną z czterech ocen przypomnienia: Again (zapomniane), Hard (z trudem),
-Good (poprawnie), Easy (bez wysiłku). Fiszka w aplikacji ma trzy kafelki i decyzję, więc
-ocena powstaje tak:
+Good (poprawnie), Easy (bez wysiłku). Od wersji 0.4.2 (na Twoją prośbę) przesunięcie
+w lewo – „Umiem” – oznacza, że pamiętasz wszystko: dostępne kafelki zaznaczają się same.
+Przesunięcie w prawo – „Powtórz” – bierze kafelki tak, jak je zaznaczyłeś:
 
-| Decyzja | Komplet dostępnych elementów | Pojęcie znane, reszta nie w całości | Pojęcie nieznane |
-| --- | --- | --- | --- |
-| Umiem | Good | Hard | Again |
-| Powtórz | Hard | Again | Again |
+| Decyzja i kafelki | Status ostatniej oceny | Ocena FSRS |
+| --- | --- | --- |
+| Umiem (kafelki zaznaczają się same) | Opanowane | Good |
+| Powtórz, żaden kafelek | Do nauki – nieznane | Again |
+| Powtórz, część kafelków bez pojęcia | częściowy – częściowo zapamiętane | Again |
+| Powtórz, część kafelków z pojęciem | częściowy – częściowo zapamiętane | Hard |
+| Powtórz, wszystkie kafelki | Opanowane, ale odłożone | Hard |
+
+W wersjach 0.4.0–0.4.1 obowiązywała inna tabela („Umiem” z niepełnym wynikiem dawało Hard,
+„Powtórz” obniżało ocenę o stopień). Oceny zapisane wtedy pozostają w historii bez zmian.
+To odstępstwo od punktu 7.4 specyfikacji („Umiem” z niepełnym wynikiem zachowuje status
+częściowy) – zastąpiła go Twoja decyzja.
 
 Uzasadnienie:
 
@@ -35,11 +44,9 @@ Uzasadnienie:
   pamiętasz definicję i przykład.
 - **Komplet to Good, nie Easy.** Aplikacja nie mierzy, czy przypomnienie było bez wysiłku,
   a premia za Easy wydłużyłaby odstępy na wyrost. Easy nie jest przyznawane automatycznie.
-- **Brak części definicji lub przykładu to Hard** – przypomnienie z trudem. Zgodnie ze
-  specyfikacją „Umiem” przy niepełnym wyniku daje status częściowy i krótszy odstęp, ale nie
-  oznacza zapomnienia.
-- **„Powtórz” obniża ocenę o stopień** – to Twój sygnał, że fiszka wymaga dalszej nauki,
-  więc wraca wcześniej niż przy „Umiem” z tymi samymi kafelkami.
+- **Częściowo zapamiętane to Hard** – przypomnienie z trudem: tłumaczenie pamiętasz,
+  ale nie całą resztę. Fiszka wraca wcześniej niż przy „Umiem”, ale nie jest zapomniana.
+- **Komplet z „Powtórz” to Hard** – pamiętasz, ale chcesz wrócić do fiszki wcześniej.
 - Brakujący opis lub przykład nie obniża oceny: 2/2 i 1/1 to komplet.
 - Cztery statusy (3/3, 2/3, 1/3, 0/3) nie są przekładane wprost na cztery oceny FSRS. Status
   ostatniej oceny i poziom długoterminowy z FSRS to osobne informacje.
@@ -161,6 +168,19 @@ w samym teście, nie w aplikacji; pomocnik czyta teraz stan strony jednym odczyt
 - Nowy zakres w formularzu sesji: **„Częściowo zapamiętane”** dla dowolnego materiału.
 - Testy: nowy test logiki, rozszerzony test zakresów i nowy test w przeglądarce (podsumowanie,
   runda, zakładka Nauka, zakres). Wszystkie: 159 testów logiki i 48 w przeglądarce, bez błędów.
+
+## Zmiana w wersji 0.4.2: „Umiem” to komplet, „Powtórz” według kafelków
+
+- Przesunięcie w lewo (i przycisk „Umiem”, i strzałka ← na klawiaturze) zaznacza wszystkie
+  dostępne kafelki – widać to na fiszce, zanim odleci. Wynik to zawsze komplet (3/3, 2/2, 1/1).
+- Przesunięcie w prawo zapisuje kafelki tak, jak je zaznaczono. Po sesji fiszki z „Powtórz”
+  dzielą się na **częściowo zapamiętane** (część kafelków) i **nieznane** (żaden kafelek).
+- Podsumowanie i grupa „Ostatnia sesja” w zakładce Nauka mają polecenia: odłożone (wszystkie
+  z „Powtórz”), częściowo zapamiętane, nieznane i cała sesja. Grupa z tymi samymi fiszkami co
+  „odłożone” nie dostaje osobnego przycisku.
+- Zakres „Częściowo zapamiętane” w formularzu sesji działa według tej samej reguły.
+- Podpowiedź pod „Umiem” zawsze pokazuje odstęp dla kompletu; pod „Powtórz” zależy od kafelków.
+- Testy: 159 testów logiki i 48 w przeglądarce (dwa kolejne przebiegi), bez błędów.
 
 ## Jak uruchomić
 

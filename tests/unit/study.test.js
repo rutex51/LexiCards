@@ -6,7 +6,7 @@ import { createBackup, restoreBackup } from '../../js/core/backup.js';
 import { Library, LibraryError } from '../../js/core/library.js';
 import { availableElementCount } from '../../js/core/model.js';
 import {
-  DECISIONS, buildQueue, cardContent, describeProgress, describeStudyMaterial, emptyTiles, isHard, isSessionFinished,
+  DECISIONS, REPEAT_KINDS, buildQueue, cardContent, describeProgress, describeStudyMaterial, emptyTiles, isHard, isSessionFinished,
   learningGroup, makeAssessment, nextProgress, repeatQueue, scopeCounts, scoreTiles, selectTerms, setAllTiles,
   summarizeSession
 } from '../../js/core/study.js';
@@ -160,18 +160,18 @@ test('zakresy: nowe, do powtórki, trudne, ulubione – osobno dla kierunku', as
   const hard = await addTerm(library, branch.lesson, 'trudne', 'hard', { difficulty: 5 });
   await library.setFavorite(true, [bare.id]);
 
-  // Oceny w kierunku PL→EN: bilans opanowany, aktywa odłożone, pasywa zatwierdzone z wynikiem 0/1.
+  // Oceny w kierunku PL→EN: bilans „Umiem”, aktywa „Powtórz” z 1/2 (częściowo), pasywa „Powtórz” bez kafelków.
   await library.startStudy(config(), [full, noExample, bare].map((term) => ({ termID: term.id, direction: PL_EN })));
-  await library.recordStudyDecision({ tiles: { term: true, description: true, example: true }, decision: DECISIONS.KNOW });
-  await library.recordStudyDecision({ tiles: { term: true, description: true }, decision: DECISIONS.REPEAT });
-  await library.recordStudyDecision({ tiles: { term: false }, decision: DECISIONS.KNOW });
+  await library.recordStudyDecision({ tiles: {}, decision: DECISIONS.KNOW });
+  await library.recordStudyDecision({ tiles: { term: true }, decision: DECISIONS.REPEAT });
+  await library.recordStudyDecision({ tiles: { term: false }, decision: DECISIONS.REPEAT });
   await library.finishStudy();
 
   const names = (extra, now = Date.now()) => buildQueue(library, config(extra), Math.random, now)
     .map((card) => library.getTerm(card.termID).termPL);
   assert.deepEqual(names({ scope: 'new' }), ['trudne']);
   // „Do powtórki” według terminów FSRS (domyślne kroki nauki): pasywa – Again, wraca po 1 min;
-  // aktywa – komplet, ale „Powtórz”, czyli Hard: 5,5 min; bilans – Good: 10 min.
+  // aktywa – częściowo, czyli Hard: 5,5 min; bilans – Good: 10 min.
   // Kolejność: najpierw najdłużej czekające.
   assert.deepEqual(names({ scope: 'repeat' }), []);
   const minute = 60_000;
@@ -181,8 +181,8 @@ test('zakresy: nowe, do powtórki, trudne, ulubione – osobno dla kierunku', as
   assert.deepEqual(names({ scope: 'repeat', count: 2 }, Date.now() + 11 * minute), ['pasywa', 'aktywa'], 'limit bierze najbardziej zaległe');
   assert.deepEqual(names({ scope: 'hard' }), ['pasywa', 'trudne']);
   assert.deepEqual(names({ scope: 'favorites' }), ['pasywa']);
-  // Częściowo zapamiętane: „Umiem” bez kompletu (pasywa 0/1); aktywa odłożone, bilans opanowany.
-  assert.deepEqual(names({ scope: 'partial' }), ['pasywa']);
+  // Częściowo zapamiętane: „Powtórz” z częścią kafelków (aktywa 1/2); pasywa nieznane, bilans opanowany.
+  assert.deepEqual(names({ scope: 'partial' }), ['aktywa']);
   // W drugim kierunku wszystko jest jeszcze nowe.
   assert.deepEqual(names({ scope: 'new', direction: EN_PL }), ['bilans', 'aktywa', 'pasywa', 'trudne']);
   assert.deepEqual(names({ scope: 'repeat', direction: EN_PL }, Date.now() + 11 * minute), []);
@@ -212,18 +212,24 @@ test('zatwierdzenie fiszki: wpis w historii, postęp kierunku i przesunięcie se
   assert.equal(library.getProgress(full.id, PL_EN), null);
   assert.equal(describeProgress(null), 'Jeszcze nie oceniane');
 
-  const afterFirst = await library.recordStudyDecision({ tiles: { term: true, description: true, example: false }, decision: DECISIONS.KNOW });
+  // „Powtórz” z częścią zaznaczonych kafelków: fiszka częściowo zapamiętana.
+  const afterFirst = await library.recordStudyDecision({ tiles: { term: true, description: true, example: false }, decision: DECISIONS.REPEAT });
   assert.equal(afterFirst.position, 1);
   const progress = library.getProgress(full.id, PL_EN);
   assert.deepEqual(
     [progress.reviewCount, progress.correctCount, progress.incorrectCount, progress.lastScore, progress.lastAvailable,
       progress.lastStatus, progress.lastDecision, progress.knowsTerm, progress.knowsDescription, progress.knowsExample],
-    [1, 0, 1, 2, 3, 'partiallyMastered', 'know', true, true, false]
+    [1, 0, 1, 2, 3, 'partiallyMastered', 'repeat', true, true, false]
   );
   assert.deepEqual([progress.lessonID, progress.moduleID, progress.domainID], [full.lessonID, full.moduleID, full.domainID]);
   assert.equal(describeProgress(progress), '2/3 – Częściowo opanowane');
-  // „Umiem” z niepełnym wynikiem nie oznacza opanowania.
-  assert.equal(learningGroup(progress), 'learning');
+  assert.equal(REPEAT_KINDS.partial(progress), true);
+  assert.equal(REPEAT_KINDS.repeat(progress), true);
+  // „Umiem” oznacza komplet: kafelki są zaliczone niezależnie od zaznaczenia.
+  await library.recordStudyDecision({ tiles: { term: false, description: false }, decision: DECISIONS.KNOW });
+  const known = library.getProgress(noExample.id, PL_EN);
+  assert.deepEqual([known.lastScore, known.lastAvailable, known.lastStatus, known.knowsTerm, known.knowsDescription, known.knowsExample],
+    [2, 2, 'mastered', true, true, null]);
   // Drugi kierunek pozostaje nietknięty.
   assert.equal(library.getProgress(full.id, EN_PL), null);
 
@@ -231,9 +237,9 @@ test('zatwierdzenie fiszki: wpis w historii, postęp kierunku i przesunięcie se
   assert.equal(history.length, 1);
   assert.deepEqual([history[0].totalScore, history[0].availableElementCount, history[0].assessmentStatus, history[0].sessionID],
     [2, 3, 'partiallyMastered', session.id]);
-  assert.equal(await adapter.count('assessments'), 1);
-  assert.equal(await adapter.count('progress'), 1);
-  assert.equal((await adapter.readStore('settings'))[0].activeStudySession.position, 1);
+  assert.equal(await adapter.count('assessments'), 2);
+  assert.equal(await adapter.count('progress'), 2);
+  assert.equal((await adapter.readStore('settings'))[0].activeStudySession.position, 2);
 });
 
 test('kafelek elementu, którego pojęcie nie ma, nie wpływa na wynik nawet po zaznaczeniu', async () => {
@@ -442,41 +448,47 @@ test('runda powtórkowa pamięta pełny zestaw fiszek, więc da się wrócić do
   assert.deepEqual([whole.queue, whole.round], [queue, 1]);
 });
 
-test('powtórka odłożonych i częściowo zapamiętanych: z całej sesji, według najnowszej oceny', async () => {
+test('powtórka odłożonych, częściowo zapamiętanych i nieznanych: z całej sesji, według najnowszej oceny', async () => {
   const { library, branch, full, noExample, bare } = await setup();
   const extra = await addTerm(library, branch.lesson, 'zysk', 'profit', FULL);
   const queue = [full, noExample, bare, extra].map((term) => ({ termID: term.id, direction: PL_EN }));
   const first = await library.startStudy(config(), queue);
-  await library.recordStudyDecision({ tiles: ALL_KNOWN, decision: DECISIONS.KNOW });           // bilans: opanowane
-  await library.recordStudyDecision({ tiles: { term: true }, decision: DECISIONS.KNOW });      // aktywa: 1/2, „Umiem”
-  await library.recordStudyDecision({ tiles: {}, decision: DECISIONS.REPEAT });                // pasywa: odłożone
-  await library.recordStudyDecision({ tiles: { term: true }, decision: DECISIONS.KNOW });      // zysk: 1/3, „Umiem”
+  await library.recordStudyDecision({ tiles: {}, decision: DECISIONS.KNOW });                  // bilans: „Umiem” = komplet
+  await library.recordStudyDecision({ tiles: { term: true }, decision: DECISIONS.REPEAT });    // aktywa: 1/2 – częściowo
+  await library.recordStudyDecision({ tiles: {}, decision: DECISIONS.REPEAT });                // pasywa: nic – nieznane
+  await library.recordStudyDecision({ tiles: { term: true }, decision: DECISIONS.REPEAT });    // zysk: 1/3 – częściowo
 
-  const ids = (kind) => library.getRepeatableStudy(kind)?.queue.map((card) => library.getTerm(card.termID).termPL) ?? [];
-  assert.deepEqual(ids('repeat'), ['pasywa']);
-  assert.deepEqual(ids('partial'), ['aktywa', 'zysk']);
-  assert.deepEqual(ids('all'), ['bilans', 'aktywa', 'pasywa', 'zysk']);
+  const names = (kind) => library.getRepeatableStudy(kind)?.queue.map((card) => library.getTerm(card.termID).termPL) ?? [];
+  const kinds = () => library.repeatChoices().map((choice) => choice.kind);
+  assert.deepEqual(names('repeat'), ['aktywa', 'pasywa', 'zysk']);
+  assert.deepEqual(names('partial'), ['aktywa', 'zysk']);
+  assert.deepEqual(names('unknown'), ['pasywa']);
+  assert.deepEqual(names('all'), ['bilans', 'aktywa', 'pasywa', 'zysk']);
+  assert.deepEqual(kinds(), ['repeat', 'partial', 'unknown', 'all']);
 
   // Runda z częściowo zapamiętanymi to kolejna runda tej samej sesji – pełny zestaw zostaje.
   const round = await library.repeatStudy(Math.random, 'partial');
   assert.deepEqual([round.round, round.queue.length, round.baseQueue.length], [2, 2, 4]);
   assert.deepEqual(round.baseQueue, first.baseQueue);
-  await library.recordStudyDecision({ tiles: ALL_KNOWN, decision: DECISIONS.KNOW });           // aktywa: teraz komplet
-  await library.recordStudyDecision({ tiles: { term: true, description: true }, decision: DECISIONS.KNOW }); // zysk: 2/3
-  // Odłożone z pierwszej rundy nadal czekają, mimo że nie było ich w tej rundzie.
-  assert.deepEqual(ids('repeat'), ['pasywa']);
-  assert.deepEqual(ids('partial'), ['zysk']);
+  await library.recordStudyDecision({ tiles: {}, decision: DECISIONS.KNOW });                                // aktywa: komplet
+  await library.recordStudyDecision({ tiles: { term: true, description: true }, decision: DECISIONS.REPEAT }); // zysk: 2/3
+  // Nieznane z pierwszej rundy nadal czekają, mimo że nie było ich w tej rundzie.
+  assert.deepEqual(names('unknown'), ['pasywa']);
+  assert.deepEqual(names('partial'), ['zysk']);
+  assert.deepEqual(names('repeat'), ['pasywa', 'zysk']);
 
   // Po zamknięciu sesji to samo jest dostępne z ostatniej sesji.
   await library.finishStudy();
   assert.equal(library.getStudySession(), null);
-  assert.deepEqual(ids('partial'), ['zysk']);
-  const again = await library.repeatStudy(Math.random, 'repeat');
+  const again = await library.repeatStudy(Math.random, 'unknown');
   assert.deepEqual([again.round, again.queue.length, again.baseQueue.length], [2, 1, 4]);
   assert.equal(library.getTerm(again.queue[0].termID).termPL, 'pasywa');
-  await library.recordStudyDecision({ tiles: ALL_KNOWN, decision: DECISIONS.KNOW });
-  assert.equal(library.getRepeatableStudy('repeat'), null, 'nic już nie czeka');
-  await assert.rejects(library.repeatStudy(Math.random, 'repeat'), (error) => error.code === 'noLastStudy');
+  await library.recordStudyDecision({ tiles: {}, decision: DECISIONS.KNOW });
+  assert.equal(library.getRepeatableStudy('unknown'), null, 'nic nieznanego już nie ma');
+  await assert.rejects(library.repeatStudy(Math.random, 'unknown'), (error) => error.code === 'noLastStudy');
+  // Odłożone i częściowo zapamiętane to teraz te same fiszki – zostaje jedno polecenie.
+  assert.deepEqual(names('repeat'), ['zysk']);
+  assert.deepEqual(kinds(), ['repeat', 'all']);
 });
 
 test('ostatnią sesję można powtórzyć także po jej zamknięciu i ponownym otwarciu aplikacji', async () => {
@@ -582,7 +594,7 @@ test('przeniesienie pojęcia aktualizuje klucze zakresu w jego postępie', async
 test('kopia zapasowa przenosi historię ocen, postępy i trwającą sesję', async () => {
   const { library, full, noExample } = await setup();
   await library.startStudy(config(), [full, noExample].map((term) => ({ termID: term.id, direction: PL_EN })));
-  await library.recordStudyDecision({ tiles: { term: true, description: true, example: false }, decision: DECISIONS.KNOW });
+  await library.recordStudyDecision({ tiles: { term: true, description: true, example: false }, decision: DECISIONS.REPEAT });
   const backup = JSON.parse(JSON.stringify(await createBackup(library, '0.3.0')));
   assert.equal(backup.counts.assessments, 1);
 

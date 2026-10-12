@@ -172,14 +172,17 @@ Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany 
 - **Zatwierdzenie fiszki jest jedną transakcją:** wpis w `assessments` (tylko dopisywany),
   rekord `progress` dla pary pojęcie + kierunek oraz przesunięcie sesji. Biblioteka sama
   ustala, które elementy pojęcie ma, więc ocena brakującego elementu nie może trafić do bazy.
-- **Opanowane** jest tylko pojęcie z kompletem zaliczonych elementów i decyzją „Umiem”.
-  „Umiem” przy niepełnym wyniku zachowuje status częściowy.
+- **„Umiem” to komplet:** przy tej decyzji biblioteka zalicza wszystkie dostępne elementy,
+  niezależnie od zaznaczenia. „Powtórz” zapisuje kafelki tak, jak je zaznaczono; grupy po sesji
+  (`REPEAT_KINDS`): odłożone (ostatnia decyzja „Powtórz”), częściowo zapamiętane (wynik między
+  zerem a kompletem), nieznane (wynik zero).
 - **Powtórzenie sesji:** sesja przechowuje `baseQueue` – pełny zestaw fiszek, także w rundzie
   powtórkowej. Zamknięta sesja z ocenami trafia do ustawień jako `lastStudySession`
   (`config` + `queue`). `repeatStudy(random, kind)` zaczyna jedną transakcją: całą sesję
-  (`all`, nowa sesja) albo kolejną rundę z odłożonymi (`repeat`) lub częściowo zapamiętanymi
-  (`partial`). Dwie ostatnie grupy wynikają z najnowszej oceny każdej fiszki pełnego zestawu
-  (`learningGroup()`), więc obejmują wszystkie rundy sesji.
+  (`all`, nowa sesja) albo kolejną rundę z odłożonymi (`repeat`), częściowo zapamiętanymi
+  (`partial`) lub nieznanymi (`unknown`). Grupy wynikają z najnowszej oceny każdej fiszki
+  pełnego zestawu (`REPEAT_KINDS`), więc obejmują wszystkie rundy sesji. `repeatChoices()`
+  zwraca polecenia do pokazania, bez grup identycznych z „odłożonymi”.
 - **Cofnięcie** usuwa ostatni wpis historii i przywraca poprzedni rekord postępu, zapamiętany
   w wyniku fiszki. Działa także z ekranu podsumowania.
 - **Dzienniki** (`assessments`, `studySessions`) nie są trzymane w pamięci: zapis idzie przez
@@ -199,8 +202,8 @@ Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany 
   (`tools/gen_fsrs_reference.py` → `tests/fixtures/fsrs-reference.json`).
 - **Ustawienia:** domyślne parametry, docelowa skuteczność z Ustawień (domyślnie 90%), kroki
   nauki 1 i 10 min, ponowna nauka 10 min, najdłuższy odstęp 36500 dni, rozmycie włączone.
-- **Ocena 1–4** (`fsrsRating()`): pojęcie nieznane – Again; komplet – Good; pojęcie znane bez
-  kompletu – Hard; decyzja „Powtórz” obniża o stopień; Easy nigdy automatycznie.
+- **Ocena 1–4** (`fsrsRating()`): pojęcie nieznane – Again; komplet z „Umiem” – Good; pojęcie
+  znane bez kompletu albo komplet z „Powtórz” – Hard; Easy nigdy automatycznie.
 - **Harmonogram** leży w `progress.schedule` (stan, krok, stabilność, trudność, termin,
   ostatnia powtórka, liczba powtórek i zapomnień), osobno dla pary pojęcie + kierunek.
   Zatwierdzenie fiszki zapisuje w jednej transakcji: ocenę (`assessments`), powtórkę

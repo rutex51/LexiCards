@@ -15,15 +15,9 @@ import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.j
 import { emptyChanges } from './storage.js';
 import { createScheduler } from './fsrs.js';
 import {
-  DECISIONS, emptyTiles, fsrsRating, learningGroup, makeAssessment, makeSession, nextProgress, repeatQueue,
+  DECISIONS, REPEAT_KINDS, emptyTiles, fsrsRating, makeAssessment, makeSession, nextProgress, repeatQueue,
   reviewSchedule, summarizeSession
 } from './study.js';
-
-/**
- * Które fiszki sesji powtórzyć: wszystkie, odłożone (ostatnia decyzja „Powtórz”) albo
- * częściowo zapamiętane (ostatnio „Umiem”, ale bez kompletu kafelków).
- */
-const REPEAT_GROUPS = { repeat: 'repeat', partial: 'learning' };
 
 /** Wpis dziennika powtórek FSRS – jeden na zatwierdzoną fiszkę. */
 function reviewRecord({ assessment, rating, reviewed, migrated = false }) {
@@ -1191,8 +1185,9 @@ export class Library {
   /**
    * Fiszki, które dałoby się powtórzyć: z pełnego zestawu trwającej (zwykle właśnie
    * zakończonej) sesji albo, gdy jej nie ma, ostatniej zakończonej. Pomija usunięte pojęcia.
-   * kind: 'all' – wszystkie, 'repeat' – odłożone, 'partial' – częściowo zapamiętane; dwa
-   * ostatnie według najnowszej oceny fiszki, więc obejmują wszystkie rundy sesji.
+   * kind: 'all' – wszystkie albo grupa z REPEAT_KINDS ('repeat' – odłożone, 'partial' –
+   * częściowo zapamiętane, 'unknown' – nieznane) według najnowszej oceny fiszki, więc grupy
+   * obejmują wszystkie rundy sesji.
    * Zwraca { config, queue, baseQueue } albo null.
    */
   getRepeatableStudy(kind = 'all') {
@@ -1202,11 +1197,33 @@ export class Library {
       : this.getSettings().lastStudySession;
     if (!source?.config || !Array.isArray(source.queue)) return null;
     const baseQueue = source.queue.filter((card) => this.getTerm(card.termID));
-    const group = REPEAT_GROUPS[kind];
-    const queue = group
-      ? baseQueue.filter((card) => learningGroup(this.getProgress(card.termID, card.direction)) === group)
+    const belongs = REPEAT_KINDS[kind];
+    const queue = belongs
+      ? baseQueue.filter((card) => belongs(this.getProgress(card.termID, card.direction)))
       : baseQueue;
     return queue.length > 0 ? { config: source.config, queue, baseQueue } : null;
+  }
+
+  /**
+   * Polecenia powtórki do pokazania po sesji: [{ kind, queue }] w kolejności odłożone,
+   * częściowo zapamiętane, nieznane, cała sesja. Grupa z dokładnie tymi samymi fiszkami co
+   * „odłożone” jest pomijana, żeby nie było dwóch przycisków robiących to samo.
+   */
+  repeatChoices() {
+    const whole = this.getRepeatableStudy('all');
+    if (!whole) return [];
+    const key = (queue) => queue.map((card) => `${card.termID}\n${card.direction}`).sort().join('|');
+    const choices = [];
+    let postponed = null;
+    for (const kind of ['repeat', 'partial', 'unknown']) {
+      const study = this.getRepeatableStudy(kind);
+      if (!study) continue;
+      if (kind === 'repeat') postponed = key(study.queue);
+      else if (postponed !== null && key(study.queue) === postponed) continue;
+      choices.push({ kind, queue: study.queue });
+    }
+    choices.push({ kind: 'all', queue: whole.queue });
+    return choices;
   }
 
   /**
@@ -1279,9 +1296,13 @@ export class Library {
    * wpis historii, ocena FSRS i nowy harmonogram w kierunku fiszki.
    */
   #evaluate(term, direction, previous, tiles, decision, sessionID, random, now) {
+    // „Umiem” oznacza, że pamiętasz wszystko: dostępne kafelki są zaliczone niezależnie od
+    // tego, co zaznaczono. Przy „Powtórz” liczą się kafelki tak, jak je zaznaczono.
     const available = emptyTiles(term);
     const checked = {};
-    for (const key of Object.keys(available)) checked[key] = available[key] === null ? null : Boolean(tiles?.[key]);
+    for (const key of Object.keys(available)) {
+      checked[key] = available[key] === null ? null : (decision === DECISIONS.KNOW || Boolean(tiles?.[key]));
+    }
     const assessment = makeAssessment({
       term, direction, tiles: checked, decision, sessionID, now: new Date(now).toISOString()
     });

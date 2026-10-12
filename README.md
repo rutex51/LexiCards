@@ -76,8 +76,8 @@ trzeba najpierw zapisać w Excelu jako `.xlsx`.
 4. Przesuń fiszkę **w lewo – Umiem** albo **w prawo – Powtórz** (są też przyciski).
 
 Strzałka w pasku u góry cofa ostatnią decyzję. Przerwaną sesję można wznowić ze Startu.
-Po sesji można jednym dotknięciem powtórzyć fiszki odłożone („Powtórz”), częściowo zapamiętane
-(„Umiem”, ale bez kompletu kafelków) albo całą sesję – na podsumowaniu, a po jego zamknięciu
+Po sesji można jednym dotknięciem powtórzyć fiszki odłożone (wszystkie z „Powtórz”), częściowo
+zapamiętane („Powtórz” z częścią kafelków), nieznane („Powtórz” bez kafelków) albo całą sesję – na podsumowaniu, a po jego zamknięciu
 w zakładce Nauka (grupa „Ostatnia sesja”); całą sesję także ze Startu. Zakres „Częściowo zapamiętane”
 działa też dla dowolnego materiału. Formularz sesji pamięta ostatnio wybrany materiał.
 Na komputerze działa klawiatura: spacja odwraca, 1 2 3 przełączają kafelki, ← i → zatwierdzają, Z cofa.
@@ -86,13 +86,17 @@ Na komputerze działa klawiatura: spacja odwraca, 1 2 3 przełączają kafelki, 
 
 Każda zatwierdzona fiszka dostaje termin następnej powtórki (algorytm FSRS), osobno dla każdego
 kierunku. Gdy termin minie, na Starcie pojawia się **Powtórka na dziś** – zaległe fiszki z całej
-biblioteki, od najdłużej czekających. Pod przyciskami „Umiem” i „Powtórz” widać, za ile fiszka wróci
-przy obecnie zaznaczonych kafelkach. Ocena dla algorytmu wynika z kafelków i decyzji:
+biblioteki, od najdłużej czekających. Pod przyciskami „Umiem” i „Powtórz” widać, za ile fiszka wróci.
 
-| | wszystko zaznaczone | pojęcie znane, reszta nie w całości | pojęcie nieznane |
-| --- | --- | --- | --- |
-| **Umiem** | Good – dłuższy odstęp | Hard – krótszy odstęp | Again – wraca po chwili |
-| **Powtórz** | Hard | Again | Again |
+**Przesunięcie w lewo – Umiem** oznacza, że pamiętasz wszystko: kafelki zaznaczają się same
+(ocena Good). **Przesunięcie w prawo – Powtórz** bierze kafelki tak, jak je zaznaczyłeś:
+
+| Zaznaczone kafelki przy „Powtórz” | Grupa po sesji | Ocena dla algorytmu |
+| --- | --- | --- |
+| żaden | nieznane | Again – wraca po chwili |
+| część, w tym pojęcie | częściowo zapamiętane | Hard – krótszy odstęp |
+| część bez pojęcia (tłumaczenia) | częściowo zapamiętane | Again |
+| wszystkie | odłożone | Hard |
 
 ### Gdzie są dane
 

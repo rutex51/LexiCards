@@ -6,6 +6,7 @@ import {
   isSessionFinished, scopeCounts
 } from '../../core/study.js';
 import { startTodaysReview, todaysReviewQueue } from '../actions.js';
+import { REPEAT_LABELS } from './study-session.js';
 import {
   actionRow, checkRow, emptyState, field, formGroup, group, segmented, selectInput, settingsAction
 } from '../components.js';
@@ -166,35 +167,28 @@ export class StudySetupScreen {
   #lastSessionGroup(repeatable) {
     const { ctx } = this;
     const { library } = ctx;
-    const { config, queue } = repeatable;
+    const { config } = repeatable;
     const direction = config.direction === MIXED ? 'kierunek mieszany' : DIRECTION_NAMES[config.direction];
-    const postponed = library.getRepeatableStudy('repeat');
-    const partial = library.getRepeatableStudy('partial');
+    const rows = {
+      all: { subtitle: 'Wszystkie fiszki, także ocenione jako „Umiem”', iconName: 'undo', testID: 'study-repeat-last' },
+      repeat: { subtitle: 'Wszystkie przesunięte na „Powtórz”', iconName: 'arrowRight', testID: 'study-repeat-postponed' },
+      partial: { subtitle: '„Powtórz” z częścią zaznaczonych kafelków', iconName: 'minus', testID: 'study-repeat-partial' },
+      unknown: { subtitle: '„Powtórz” bez żadnego zaznaczonego kafelka', iconName: 'close', testID: 'study-repeat-unknown' }
+    };
+    // Cała sesja na górze – to najczęstszy wybór przy wracaniu do materiału.
+    const choices = library.repeatChoices();
+    const ordered = [...choices.filter((choice) => choice.kind === 'all'), ...choices.filter((choice) => choice.kind !== 'all')];
     return group({
       title: 'Ostatnia sesja',
       footer: `${describeStudyMaterial(library, config)}, ${direction}. Te same ustawienia co ostatnio.`
     },
-      actionRow({
-        label: `Powtórz całą sesję (${pluralCards(queue.length)})`,
-        subtitle: 'Wszystkie fiszki, także ocenione jako „Umiem”',
-        iconName: 'undo',
-        testID: 'study-repeat-last',
-        onClick: () => this.#repeatLast('all')
-      }),
-      postponed ? actionRow({
-        label: `Powtórz odłożone (${pluralCards(postponed.queue.length)})`,
-        subtitle: 'Fiszki przesunięte na „Powtórz”',
-        iconName: 'arrowRight',
-        testID: 'study-repeat-postponed',
-        onClick: () => this.#repeatLast('repeat')
-      }) : null,
-      partial ? actionRow({
-        label: `Powtórz częściowo zapamiętane (${pluralCards(partial.queue.length)})`,
-        subtitle: 'Fiszki z „Umiem”, ale bez kompletu kafelków',
-        iconName: 'check',
-        testID: 'study-repeat-partial',
-        onClick: () => this.#repeatLast('partial')
-      }) : null
+      ordered.map((choice) => actionRow({
+        label: `${REPEAT_LABELS[choice.kind]} (${pluralCards(choice.queue.length)})`,
+        subtitle: rows[choice.kind].subtitle,
+        iconName: rows[choice.kind].iconName,
+        testID: rows[choice.kind].testID,
+        onClick: () => this.#repeatLast(choice.kind)
+      }))
     );
   }
 
@@ -317,7 +311,7 @@ export class StudySetupScreen {
               all: 'Wszystkie pojęcia z wybranego materiału.',
               new: 'Pojęcia, których w tym kierunku jeszcze nie oceniałeś.',
               repeat: 'Fiszki, których termin powtórki według FSRS już minął – najpierw najdłużej czekające.',
-              partial: 'Pojęcia ostatnio zatwierdzone jako „Umiem”, ale bez kompletu kafelków.',
+              partial: 'Pojęcia ostatnio przesunięte na „Powtórz” z częścią zaznaczonych kafelków.',
               hard: 'Pojęcia z trudnością 4–5, sprawiające kłopot w powtórkach albo ostatnio ocenione poniżej połowy.',
               favorites: 'Pojęcia oznaczone gwiazdką.',
               random: 'Losowy wybór z całego materiału.'

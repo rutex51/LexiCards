@@ -36,23 +36,25 @@ const cardsOf = (terms, direction = PL_EN) => terms.map((term) => ({ termID: ter
 
 // ---------------------------------------------------------------- ocena dla FSRS
 
-test('ocena FSRS z kafelków i decyzji: Again / Hard / Good, „Powtórz” obniża o stopień, nigdy Easy', () => {
+test('ocena FSRS z kafelków i decyzji: Again / Hard / Good, nigdy Easy', () => {
   const rating = (knowsTerm, totalScore, availableElementCount, swipeDecision) =>
     fsrsRating({ knowsTerm, totalScore, availableElementCount, swipeDecision });
   const { KNOW, REPEAT } = DECISIONS;
-  // Pełna fiszka (3 elementy).
+  // „Umiem” – komplet (kafelki zaznacza aplikacja).
   assert.equal(rating(true, 3, 3, KNOW), RATINGS.GOOD);
-  assert.equal(rating(true, 2, 3, KNOW), RATINGS.HARD);
-  assert.equal(rating(true, 1, 3, KNOW), RATINGS.HARD);
-  assert.equal(rating(false, 2, 3, KNOW), RATINGS.AGAIN, 'bez tłumaczenia to zapomnienie, nawet przy 2/3');
-  assert.equal(rating(false, 0, 3, KNOW), RATINGS.AGAIN);
-  assert.equal(rating(true, 3, 3, REPEAT), RATINGS.HARD);
-  assert.equal(rating(true, 2, 3, REPEAT), RATINGS.AGAIN);
-  assert.equal(rating(false, 0, 3, REPEAT), RATINGS.AGAIN);
-  // Brakujące elementy nie obniżają oceny: 2/2 i 1/1 to komplet.
-  assert.equal(rating(true, 2, 2, KNOW), RATINGS.GOOD);
+  assert.equal(rating(true, 2, 2, KNOW), RATINGS.GOOD, 'brakujące elementy nie obniżają oceny');
   assert.equal(rating(true, 1, 1, KNOW), RATINGS.GOOD);
-  assert.equal(rating(false, 0, 1, KNOW), RATINGS.AGAIN);
+  // „Powtórz” – kafelki tak, jak je zaznaczono.
+  assert.equal(rating(false, 0, 3, REPEAT), RATINGS.AGAIN, 'nic – nieznane');
+  assert.equal(rating(false, 2, 3, REPEAT), RATINGS.AGAIN, 'bez tłumaczenia to zapomnienie, nawet przy 2/3');
+  assert.equal(rating(true, 1, 3, REPEAT), RATINGS.HARD, 'częściowo zapamiętane');
+  assert.equal(rating(true, 2, 3, REPEAT), RATINGS.HARD);
+  assert.equal(rating(true, 1, 2, REPEAT), RATINGS.HARD);
+  assert.equal(rating(true, 3, 3, REPEAT), RATINGS.HARD, 'wszystko zaznaczone, ale „Powtórz”');
+  assert.equal(rating(false, 0, 1, REPEAT), RATINGS.AGAIN);
+  // Oceny ze starszych wersji: „Umiem” z niepełnym wynikiem.
+  assert.equal(rating(true, 2, 3, KNOW), RATINGS.HARD);
+  assert.equal(rating(false, 0, 3, KNOW), RATINGS.AGAIN);
   // Easy (4) nie występuje w żadnej kombinacji.
   for (const knowsTerm of [true, false]) {
     for (const [score, available] of [[0, 1], [1, 1], [0, 2], [1, 2], [2, 2], [0, 3], [1, 3], [2, 3], [3, 3]]) {
@@ -67,7 +69,7 @@ test('zatwierdzenie fiszki zapisuje harmonogram w postępie kierunku i wpis w dz
   const { library, adapter, full, noExample } = await setup();
   await library.startStudy(config(), cardsOf([full, noExample]));
   await library.recordStudyDecision({ tiles: ALL, decision: DECISIONS.KNOW, now: T0 });
-  await library.recordStudyDecision({ tiles: { term: true }, decision: DECISIONS.KNOW, now: T0 + MINUTE });
+  await library.recordStudyDecision({ tiles: { term: true }, decision: DECISIONS.REPEAT, now: T0 + MINUTE });
 
   const progress = library.getProgress(full.id, PL_EN);
   // Nowa fiszka z oceną Good: pierwszy krok nauki zaliczony, następny za 10 minut.
@@ -85,7 +87,7 @@ test('zatwierdzenie fiszki zapisuje harmonogram w postępie kierunku i wpis w dz
   assert.equal(assessment.review.stateBefore, 'new');
   assert.equal(assessment.review.interval, 10 * MINUTE);
   const second = (await library.termAssessments(noExample.id))[0];
-  assert.equal(second.review.rating, RATINGS.HARD, '1/2 z „Umiem” to Hard');
+  assert.equal(second.review.rating, RATINGS.HARD, '1/2 z „Powtórz” – częściowo zapamiętane – to Hard');
   assert.equal(library.getStudySession().results[1].rating, RATINGS.HARD);
 });
 
@@ -123,13 +125,17 @@ test('podgląd przed zatwierdzeniem zgadza się z zapisanym wynikiem', async () 
   await library.recordStudyDecision({ tiles: ALL, decision: DECISIONS.KNOW, now: T0 });
   await library.recordStudyDecision({ tiles: ALL, decision: DECISIONS.KNOW, now: T0 + 10 * MINUTE });
   const later = T0 + 5 * DAY;
-  const preview = library.previewStudyDecision({ term: true, description: true, example: false }, { random: fixed(0.3), now: later });
-  assert.equal(preview.know.rating, RATINGS.HARD);
-  assert.equal(preview.repeat.rating, RATINGS.AGAIN);
-  assert.ok(preview.know.interval >= DAY);
-  assert.equal(preview.repeat.interval, 10 * MINUTE, 'Again w powtórkach: ponowna nauka za 10 minut');
-  await library.recordStudyDecision({ tiles: { term: true, description: true, example: false }, decision: DECISIONS.KNOW, random: fixed(0.3), now: later });
-  assert.equal(Date.parse(library.getProgress(full.id, PL_EN).schedule.due) - later, preview.know.interval);
+  const partial = { term: true, description: true, example: false };
+  const preview = library.previewStudyDecision(partial, { random: fixed(0.3), now: later });
+  assert.equal(preview.know.rating, RATINGS.GOOD, '„Umiem” to komplet, niezależnie od kafelków');
+  assert.equal(preview.repeat.rating, RATINGS.HARD, '„Powtórz” z częścią kafelków');
+  assert.ok(preview.repeat.interval >= DAY && preview.repeat.interval < preview.know.interval);
+  const none = library.previewStudyDecision({}, { random: fixed(0.3), now: later });
+  assert.equal(none.repeat.rating, RATINGS.AGAIN);
+  assert.equal(none.repeat.interval, 10 * MINUTE, 'Again w powtórkach: ponowna nauka za 10 minut');
+  assert.equal(none.know.interval, preview.know.interval);
+  await library.recordStudyDecision({ tiles: partial, decision: DECISIONS.REPEAT, random: fixed(0.3), now: later });
+  assert.equal(Date.parse(library.getProgress(full.id, PL_EN).schedule.due) - later, preview.repeat.interval);
 });
 
 test('docelowa skuteczność z ustawień zmienia odstępy: 95% częściej niż 90%', async () => {
@@ -226,8 +232,8 @@ test('powtórka na dziś: zaległe fiszki z całej biblioteki, jedno pojęcie ra
     { termID: noExample.id, direction: EN_PL },
     { termID: bare.id, direction: PL_EN }
   ]);
-  await library.recordStudyDecision({ tiles: NONE, decision: DECISIONS.KNOW, now: T0 });            // bilans PL→EN: Again, 1 min
-  await library.recordStudyDecision({ tiles: NONE, decision: DECISIONS.KNOW, now: T0 - 5 * MINUTE }); // bilans EN→PL: Again, wcześniej
+  await library.recordStudyDecision({ tiles: NONE, decision: DECISIONS.REPEAT, now: T0 });            // bilans PL→EN: Again, 1 min
+  await library.recordStudyDecision({ tiles: NONE, decision: DECISIONS.REPEAT, now: T0 - 5 * MINUTE }); // bilans EN→PL: Again, wcześniej
   await library.recordStudyDecision({ tiles: ALL, decision: DECISIONS.KNOW, now: T0 });            // aktywa EN→PL: Good, 10 min
   await library.recordStudyDecision({ tiles: ALL, decision: DECISIONS.REPEAT, now: T0 });          // pasywa: Hard, 5,5 min
   await library.finishStudy();

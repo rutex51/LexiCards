@@ -5,6 +5,9 @@
 //  - oceniane są tylko elementy, które pojęcie ma (tłumaczenie zawsze, opis i przykład,
 //    jeśli istnieją) – brak treści nie obniża wyniku,
 //  - postęp jest osobny dla każdego kierunku (PL→EN i EN→PL),
+//  - „Umiem” (przesunięcie w lewo) oznacza, że pamiętasz wszystko – dostępne kafelki są
+//    zaznaczane automatycznie; „Powtórz” (w prawo) bierze kafelki tak, jak je zaznaczono:
+//    nic – fiszka nieznana, część – częściowo zapamiętana,
 //  - fiszka jest „opanowana” tylko przy komplecie zaliczonych elementów i decyzji „Umiem”,
 //  - każda zatwierdzona ocena trafia do historii; wcześniejszych wpisów nic nie nadpisuje,
 //  - termin następnej powtórki wyznacza FSRS (js/core/fsrs.js), osobno dla każdego kierunku;
@@ -72,6 +75,19 @@ export function learningGroup(progress) {
   return progress.lastStatus === 'mastered' ? 'mastered' : 'learning';
 }
 
+/**
+ * Grupy fiszek do powtórki po sesji, według ostatniej oceny w kierunku fiszki:
+ *   repeat  – odłożone: ostatnio przesunięte na „Powtórz”,
+ *   partial – częściowo zapamiętane: zaznaczona część dostępnych kafelków,
+ *   unknown – nieznane: żaden kafelek nie był zaznaczony.
+ */
+export const REPEAT_KINDS = Object.freeze({
+  repeat: (progress) => Boolean(progress?.reviewCount) && progress.lastDecision === DECISIONS.REPEAT,
+  partial: (progress) => Boolean(progress?.reviewCount)
+    && (progress.lastStatus === 'inProgress' || progress.lastStatus === 'partiallyMastered'),
+  unknown: (progress) => Boolean(progress?.reviewCount) && progress.lastStatus === 'toLearn'
+});
+
 /** Trudność FSRS (1–10), od której fiszka trafia do zakresu „Trudne”. */
 export const HARD_FSRS_DIFFICULTY = 7;
 
@@ -103,7 +119,7 @@ function matchesScope(scope, term, progress, now) {
     case 'new': return learningGroup(progress) === 'new';
     case 'repeat': return isDue(progress, now);
     // Ostatnio zatwierdzone jako „Umiem”, ale bez kompletu kafelków.
-    case 'partial': return learningGroup(progress) === 'learning';
+    case 'partial': return REPEAT_KINDS.partial(progress);
     case 'hard': return isHard(term, progress);
     case 'favorites': return Boolean(term.isFavorite);
     default: return true;
@@ -334,20 +350,20 @@ export const RATING_LABELS = Object.freeze({ 1: 'Nie pamiętam', 2: 'Trudno', 3:
 
 /**
  * Ocena dla FSRS z wyniku fiszki:
- *   - nieznane pojęcie (tłumaczenie) – Again: zapomniane jest to, czego fiszka uczy,
- *   - pojęcie znane, ale nie wszystkie elementy – Hard: przypomnienie z trudem,
- *   - komplet dostępnych elementów – Good: zwykłe, poprawne przypomnienie,
- *   - decyzja „Powtórz” obniża ocenę o jeden stopień (najniżej Again),
+ *   - nieznane pojęcie (tłumaczenie) – Again: zapomniane jest to, czego fiszka uczy;
+ *     dotyczy też „Powtórz” bez żadnego zaznaczonego kafelka,
+ *   - komplet dostępnych elementów z „Umiem” – Good: zwykłe, poprawne przypomnienie
+ *     („Umiem” zawsze oznacza komplet – kafelki zaznaczają się same),
+ *   - pojęcie znane, ale nie wszystko (częściowo zapamiętane) – Hard: przypomnienie z trudem,
+ *   - komplet zaznaczony, ale „Powtórz” – Hard: pamiętasz, ale chcesz wrócić do fiszki wcześniej,
  *   - Easy nie jest przyznawane automatycznie – aplikacja nie mierzy, czy przypomnienie
  *     było bez wysiłku, a premia za Easy wydłużałaby odstępy na wyrost.
+ * Oceny zapisane w starszych wersjach („Umiem” z niepełnym wynikiem) dają Hard.
  */
 export function fsrsRating({ knowsTerm, totalScore, availableElementCount, swipeDecision }) {
-  let rating;
-  if (!knowsTerm) rating = RATINGS.AGAIN;
-  else if (totalScore >= availableElementCount) rating = RATINGS.GOOD;
-  else rating = RATINGS.HARD;
-  if (swipeDecision === DECISIONS.REPEAT) rating = Math.max(RATINGS.AGAIN, rating - 1);
-  return rating;
+  if (!knowsTerm) return RATINGS.AGAIN;
+  if (totalScore >= availableElementCount && swipeDecision !== DECISIONS.REPEAT) return RATINGS.GOOD;
+  return RATINGS.HARD;
 }
 
 /** Karta FSRS (czas w ms) z harmonogramu zapisanego w postępie (czas jako ISO). */
