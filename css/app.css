@@ -1537,6 +1537,9 @@ a.row__main:active,
 }
 
 .flashcard__line .flashcard__speak {
+  /* flex: none – przy długim tekście przycisk nie może się zwężać, inaczej ikony
+     w kolejnych wierszach nie leżą w jednej linii. */
+  flex: none;
   width: 36px;
   height: 36px;
   margin-top: -6px;

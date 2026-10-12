@@ -1738,14 +1738,19 @@ test('fiszki: wymowa – przycisk głośnika, szybkość i głos z ustawień', a
   await back.locator('.flashcard__top [data-testid=speak]').click();
   await waitUntil(async () => (await spoken()).length === 3, 'Powinno zostać odczytane tłumaczenie');
   assert.deepEqual((await spoken())[2], { text: 'assets', lang: 'en-GB', rate: 0.7, voice: 'en-daniel' });
-  assert.deepEqual(
-    await back.locator('.flashcard__line [data-testid=speak]').evaluateAll((buttons) => buttons.map((button) => button.dataset.lang)),
-    ['en', 'pl']
-  );
-  await back.locator('.flashcard__line [data-testid=speak][data-lang=en]').click();
-  await waitUntil(async () => (await spoken()).length === 4, 'Powinien zostać odczytany przykład');
-  assert.equal((await spoken())[3].text, 'The assets of the company increased.');
+  // Głośnik przy każdej linii definicji i przykładu, w kolejności: angielski, polski.
+  const languages = (section) => back.locator(`[data-section=${section}] [data-testid=speak]`)
+    .evaluateAll((buttons) => buttons.map((button) => button.dataset.lang));
+  assert.deepEqual(await languages('description'), ['en', 'pl']);
+  assert.deepEqual(await languages('example'), ['en', 'pl']);
+  await back.locator('[data-section=description] [data-testid=speak][data-lang=pl]').click();
+  await waitUntil(async () => (await spoken()).length === 4, 'Powinna zostać odczytana definicja');
+  assert.deepEqual((await spoken())[3], { text: 'Zasoby majątkowe firmy.', lang: 'pl-PL', rate: 0.7, voice: null });
+  await back.locator('[data-section=example] [data-testid=speak][data-lang=en]').click();
+  await waitUntil(async () => (await spoken()).length === 5, 'Powinien zostać odczytany przykład');
+  assert.equal((await spoken())[4].text, 'The assets of the company increased.');
   assert.equal(await side(page), 'back');
+
   await expectText(counter(page), '1 z 6');
 });
 
@@ -1854,6 +1859,16 @@ test('fiszki: wąski ekran 320 px i długie teksty – nic nie wystaje, przycisk
   const flipBox = await page.locator('[data-testid=card-unflip]').boundingBox();
   assert.ok(flipBox.y >= cardBox.y && flipBox.y + flipBox.height <= cardBox.y + cardBox.height, 'przycisk obrotu mieści się na fiszce');
   assert.ok(flipBox.width >= 44 && flipBox.height >= 44, 'przycisk obrotu ma wygodny rozmiar');
+
+  // Głośniki przy długich liniach definicji i przykładu nie zwężają się i leżą w jednej linii.
+  const speakers = await page.locator('[data-testid=card-back] .flashcard__line [data-testid=speak]')
+    .evaluateAll((buttons) => buttons.map((button) => {
+      const box = button.getBoundingClientRect();
+      return { right: Math.round(box.right), width: Math.round(box.width) };
+    }));
+  assert.equal(speakers.length, 4, 'głośnik przy każdej linii definicji i przykładu');
+  assert.equal(new Set(speakers.map((item) => item.right)).size, 1, `prawe krawędzie: ${speakers.map((item) => item.right).join(', ')}`);
+  assert.ok(speakers.every((item) => item.width === 36), `szerokości: ${speakers.map((item) => item.width).join(', ')}`);
 
   // Kafelki i przyciski decyzji mieszczą się w szerokości ekranu.
   for (const selector of ['[data-testid=tile-term]', '[data-testid=tile-example]', '[data-testid=decide-know]', '[data-testid=decide-repeat]']) {

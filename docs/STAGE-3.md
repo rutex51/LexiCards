@@ -24,7 +24,8 @@ w sekcji „Testy”; to, czego nie udało się sprawdzić, jest wymienione osob
   „Pokaż odpowiedź”) obraca ją animacją.
 - Odwrót: tłumaczenie, pojęcie źródłowe, opis i przykład w obu językach. Brakujący opis
   lub przykład jest podpisany „Brak danych”. Długa treść przewija się wewnątrz fiszki.
-- Przyciski głośnika czytają pojęcie, tłumaczenie i przykłady głosem z urządzenia.
+- Przyciski głośnika czytają pojęcie, tłumaczenie, definicje i przykłady głosem z urządzenia
+  (od wersji 0.3.1 także definicje).
 
 **Trzy kafelki oceny**
 

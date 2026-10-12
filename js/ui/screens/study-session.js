@@ -365,13 +365,14 @@ export class StudySessionScreen {
       example: `Przykład ${LANGUAGE_LOCATIVE[content.source]}`
     }[content.front.kind];
 
-    const section = (title, items, speakable) => h('div', { class: 'flashcard__section' },
+    // Każdą linię opisu i przykładu można odsłuchać osobno, w jej języku.
+    const section = (id, title, items, speakLabel) => h('div', { class: 'flashcard__section', dataset: { section: id } },
       h('h3', { class: 'flashcard__section-title' }, title),
       items.length === 0
         ? h('p', { class: 'flashcard__missing' }, 'Brak danych')
         : items.map((item) => h('p', { class: 'flashcard__line', lang: item.lang },
             h('span', null, item.text),
-            speakable ? this.#speakerButton(item.text, item.lang, `Odtwórz przykład ${LANGUAGE_LOCATIVE[item.lang]}`) : null
+            this.#speakerButton(item.text, item.lang, `${speakLabel} ${LANGUAGE_LOCATIVE[item.lang]}`)
           ))
     );
 
@@ -402,8 +403,8 @@ export class StudySessionScreen {
       h('p', { class: `flashcard__text flashcard__text--answer ${sizeClass(content.back.answer.text)}`, lang: content.back.answer.lang },
         content.back.answer.text),
       h('p', { class: 'flashcard__question', lang: content.back.question.lang }, content.back.question.text),
-      section('Definicja', content.back.descriptions, false),
-      section('Przykład', content.back.examples, true),
+      section('description', 'Definicja', content.back.descriptions, 'Odtwórz definicję'),
+      section('example', 'Przykład', content.back.examples, 'Odtwórz przykład'),
       h('span', { class: 'flashcard__fade', 'aria-hidden': 'true' })
     );
 

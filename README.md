@@ -20,7 +20,7 @@ Adres: **https://rutex51.github.io/LexiCards/**
 - Nauka z fiszkami: wybór materiału, kierunku (PL → EN, EN → PL, mieszany), zakresu i liczby fiszek;
   obracana fiszka, trzy kafelki oceny (pojęcie, definicja, przykład), zatwierdzanie gestem albo
   przyciskiem, cofanie, podsumowanie i runda powtórkowa. Postępy są osobne dla każdego kierunku.
-- Wymowa pojęć i przykładów głosem z urządzenia; historia ocen każdego pojęcia.
+- Wymowa pojęć, definicji i przykładów głosem z urządzenia; historia ocen każdego pojęcia.
 - Kopia zapasowa do pliku i przywracanie z pliku (materiały, postępy, ustawienia).
 - Motyw jasny, ciemny albo zgodny z systemem; układ na telefon i na szeroki ekran.
 - Praca bez internetu po pierwszym otwarciu.
