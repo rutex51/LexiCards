@@ -6,12 +6,6 @@ import { h } from '../dom.js';
 import { routes } from '../router.js';
 
 const SCREENS = {
-  quiz: {
-    title: 'Quiz',
-    iconName: 'quiz',
-    heading: 'Quizy są w przygotowaniu',
-    text: 'Tutaj sprawdzisz się w testach jednokrotnego wyboru, łączeniu pojęć z tłumaczeniami i quizach mieszanych.'
-  },
   stats: {
     title: 'Statystyki',
     iconName: 'stats',

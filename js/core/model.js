@@ -59,7 +59,14 @@ export function defaultSettings() {
     appearance: 'system',          // system | light | dark
     preferredDirection: 'pl_en',   // pl_en | en_pl | mixed
     preferredFlashcardFront: 'term',
-    preferredQuizLength: 10,
+    preferredQuizLength: 10,       // liczba pytań quizu (0 = wszystkie pojęcia materiału)
+    quizType: 'choice',            // choice | matching | mixed
+    quizDirection: 'pl_en',        // pl_en | en_pl | mixed
+    quizChoiceShare: 0.6,          // udział pytań wyboru w teście mieszanym
+    quizTimeLimit: 0,              // sekundy; 0 – bez limitu
+    quizPassThreshold: 0.8,        // próg zaliczenia
+    quizSelection: null,           // ostatnio wybrany materiał quizu
+    activeQuiz: null,              // trwający albo właśnie zakończony quiz – do wznowienia i wyników
     dailyLearningGoal: 20,
     speechRate: 1,
     preferredVoicePL: null,

@@ -1,6 +1,6 @@
 {
   "name": "lexicards",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "LexiCards – aplikacja webowa do nauki terminologii polsko-angielskiej",

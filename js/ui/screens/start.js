@@ -82,6 +82,8 @@ export class StartScreen {
     const session = library.getStudySession();
     const resumable = session && !isSessionFinished(session);
     const repeatable = !resumable && summary.terms > 0 ? library.getRepeatableStudy() : null;
+    const quiz = library.getQuiz();
+    const quizOpen = quiz && !quiz.finishedAt ? quiz : null;
     // Powtórka na dziś (FSRS) ma pierwszeństwo przed nową nauką, gdy coś czeka.
     const reviewCount = resumable ? 0 : todaysReviewQueue(library).length;
     const forecast = resumable || reviewCount > 0 ? null : reviewForecast(library);
@@ -116,6 +118,11 @@ export class StartScreen {
             dataset: { testid: 'start-repeat-last' },
             onClick: () => this.#repeatLast()
           }, `Powtórz ostatnią sesję (${pluralCards(repeatable.queue.length)})`) : null,
+          quizOpen ? h('a', {
+            class: 'button button--secondary button--block',
+            href: routes.quizSession(),
+            dataset: { testid: 'start-quiz-resume' }
+          }, `Wznów quiz (pytanie ${Math.min(quizOpen.position + 1, quizOpen.items.length)} z ${quizOpen.items.length})`) : null,
           reviewNote ? h('p', { class: 'start-study__note', dataset: { testid: 'start-review-note' } }, reviewNote) : null
         ) : null,
         h('section', { class: 'group' },

@@ -475,7 +475,7 @@ test('wąski ekran 320 px: żaden ekran nie przewija się w poziomie', async ({ 
   await loadSamples(page);
   const base = page.url().split('#')[0];
   const lessonID = await page.evaluate(() => [...window.lexicards.library.maps.lessons.values()].find((lesson) => lesson.name === 'Negotiation Techniques').id);
-  for (const hash of ['#/start', '#/library', '#/library/glossary', `#/library/lesson/${lessonID}`, '#/settings', '#/study']) {
+  for (const hash of ['#/start', '#/library', '#/library/glossary', `#/library/lesson/${lessonID}`, '#/settings', '#/study', '#/quiz']) {
     await page.goto(base + hash);
     await page.waitForFunction((expected) => location.hash === expected, hash);
     const overflow = await overflowX(page);
@@ -1500,11 +1500,11 @@ test('fiszki: kierunek EN → PL ma osobne postępy; zakresy Nowe, Do powtórki,
   await waitUntil(async () => (await scopes()).includes('Ulubione (1)'), 'Zakres „Ulubione” powinien pokazać jedno pojęcie');
 
   // Kierunek zapamiętany z poprzedniej sesji: EN → PL.
-  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (3)', 'Do powtórki (1)', 'Częściowo zapamiętane (0)', 'Trudne (1)', 'Ulubione (1)', 'Losowe (6)']);
+  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (3)', 'Do powtórki (1)', 'Częściowo zapamiętane (0)', 'Trudne (1)', 'Błędy z quizów (0)', 'Ulubione (1)', 'Losowe (6)']);
   await choose(page, 'Kierunek nauki', 'PL → EN');
-  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (6)', 'Do powtórki (0)', 'Częściowo zapamiętane (0)', 'Trudne (0)', 'Ulubione (1)', 'Losowe (6)']);
+  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (6)', 'Do powtórki (0)', 'Częściowo zapamiętane (0)', 'Trudne (0)', 'Błędy z quizów (0)', 'Ulubione (1)', 'Losowe (6)']);
   await choose(page, 'Kierunek nauki', 'Mieszany');
-  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (6)', 'Do powtórki (1)', 'Częściowo zapamiętane (0)', 'Trudne (1)', 'Ulubione (1)', 'Losowe (6)']);
+  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (6)', 'Do powtórki (1)', 'Częściowo zapamiętane (0)', 'Trudne (1)', 'Błędy z quizów (0)', 'Ulubione (1)', 'Losowe (6)']);
 
   // Zakres bez fiszek: nie da się rozpocząć.
   await choose(page, 'Kierunek nauki', 'PL → EN');
@@ -2181,6 +2181,484 @@ test('fiszki: kopia zapasowa przenosi postępy, historię ocen i niedokończoną
 });
 
 const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1';
+
+// ---------------------------------------------------------------- quizy
+
+const quizPlanned = (page) => page.locator('[data-testid=quiz-planned]');
+const quizCounter = (page) => page.locator('[data-testid=quiz-counter]');
+const quizFeedback = (page) => page.locator('[data-testid=quiz-feedback]');
+const activeQuiz = (page) => page.evaluate(() => window.lexicards.library.getQuiz());
+const quizAnswers = (page) => page.evaluate(() => window.lexicards.library.adapter.readStore('quizAnswers'));
+const matchTile = (page, side, termID) => page.locator(`[data-testid=match-${side}][data-termid="${termID}"]`);
+
+/** Bieżące pytanie albo runda (null po zakończeniu quizu). */
+const currentQuizItem = (page) => page.evaluate(() => {
+  const quiz = window.lexicards.library.getQuiz();
+  return quiz && !quiz.finishedAt ? quiz.items[quiz.position] : null;
+});
+
+async function openQuizSetup(page, hash = '#/quiz') {
+  await page.evaluate((target) => { location.hash = target; }, hash);
+  await page.locator('[data-testid=quiz-start]').waitFor();
+}
+
+async function startQuiz(page) {
+  await page.click('[data-testid=quiz-start]');
+  await page.locator('[data-testid=quiz-session]').waitFor();
+}
+
+/** Odpowiada na bieżące pytanie wyboru (poprawnie albo pierwszą błędną odpowiedzią). */
+async function answerChoice(page, correct) {
+  const item = await currentQuizItem(page);
+  assert.equal(item?.kind, 'choice', 'bieżące pytanie powinno być pytaniem wyboru');
+  const index = correct ? item.correctIndex : (item.correctIndex + 1) % item.options.length;
+  await page.locator('[data-testid=quiz-option]').nth(index).click();
+  await quizFeedback(page).waitFor();
+  return { item, index };
+}
+
+/** Przechodzi do następnego pytania albo do wyniku. */
+async function quizNext(page) {
+  await page.click('[data-testid=quiz-next]');
+  await waitUntil(async () => (await quizFeedback(page).count()) === 0, 'Informacja zwrotna powinna zniknąć');
+}
+
+/** Łączy wszystkie pary bieżącej rundy bez pomyłek (dotykiem: najpierw prawa, potem lewa kolumna). */
+async function solveRound(page) {
+  const item = await currentQuizItem(page);
+  assert.equal(item?.kind, 'matching');
+  for (const termID of item.pairs) {
+    if (await matchTile(page, 'left', termID).isDisabled()) continue;
+    await matchTile(page, 'right', termID).tap();
+    await matchTile(page, 'left', termID).tap();
+  }
+  await quizFeedback(page).waitFor();
+  return item;
+}
+
+test('quiz: jednokrotny wybór – cztery odpowiedzi, oznaczenie poprawnej, podpowiedź, definicja, wynik i historia', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openQuizSetup(page);
+  await expectText(quizPlanned(page), '6 pytań z 6 pojęć');
+  await startQuiz(page);
+  await expectText(quizCounter(page), '1 z 6');
+  await expectText(page.locator('[data-testid=quiz-timer]'), '0:0');
+
+  const seen = new Set();
+  for (let number = 1; number <= 6; number += 1) {
+    await expectText(quizCounter(page), `${number} z 6`);
+    const item = await currentQuizItem(page);
+    seen.add(item.termID);
+    const texts = (await page.locator('[data-testid=quiz-option] .quiz-option__text').allTextContents()).map((text) => text.trim());
+    assert.equal(texts.length, 4, 'cztery odpowiedzi');
+    assert.equal(new Set(texts).size, 4, 'odpowiedzi się nie powtarzają');
+    assert.deepEqual(texts, item.options.map((option) => option.text));
+    await expectText(page.locator('[data-testid=quiz-prompt]'), item.prompt.text);
+
+    const hintButton = page.locator('[data-testid=quiz-hint-button]');
+    if (item.termID === ids.profit) assert.equal(await hintButton.count(), 0, 'pojęcie bez definicji i przykładu nie ma podpowiedzi');
+    if (item.termID === ids.assets) {
+      // Podpowiedź: definicja i przykład w języku pytania, bez tłumaczenia.
+      await hintButton.click();
+      const hint = page.locator('[data-testid=quiz-hint]');
+      await expectText(hint, 'Zasoby majątkowe firmy.');
+      await expectText(hint, 'Aktywa spółki wzrosły.');
+      assert.equal((await hint.textContent()).includes('Resources owned'), false);
+
+      const { index } = await answerChoice(page, false);
+      assert.equal(await quizFeedback(page).getAttribute('data-correct'), 'false');
+      await expectText(quizFeedback(page), 'Źle');
+      await expectText(quizFeedback(page), 'aktywa → assets');
+      // Po odpowiedzi: definicja i przykład w obu językach.
+      await expectText(quizFeedback(page), 'Resources owned by a company.');
+      await expectText(quizFeedback(page), 'The assets of the company increased.');
+      const options = page.locator('[data-testid=quiz-option]');
+      assert.match(await options.nth(index).getAttribute('class'), /quiz-option--wrong/);
+      assert.match(await options.nth(item.correctIndex).getAttribute('class'), /quiz-option--correct/);
+      assert.equal(await options.nth(item.correctIndex).getAttribute('data-correct'), 'true');
+      assert.equal(await options.first().isDisabled(), true, 'po odpowiedzi nie można zmienić wyboru');
+    } else {
+      await answerChoice(page, true);
+      await expectText(quizFeedback(page), 'Dobrze');
+    }
+    await expectText(page.locator('[data-testid=quiz-next]'), number === 6 ? 'Zobacz wynik' : 'Dalej');
+    await quizNext(page);
+  }
+  assert.equal(seen.size, 6, 'każde pojęcie pojawia się raz');
+
+  const result = page.locator('[data-testid=quiz-result]');
+  await result.waitFor();
+  await expectText(page.locator('[data-testid=quiz-percent]'), '83%');
+  await expectText(page.locator('[data-testid=quiz-verdict]'), 'Zaliczony');
+  await expectText(page.locator('[data-testid=quiz-correct]'), '5');
+  await expectText(page.locator('[data-testid=quiz-incorrect]'), '1');
+  assert.equal(await page.locator('[data-testid=quiz-unanswered]').count(), 0);
+  const wrong = page.locator('[data-testid=quiz-wrong-item]');
+  assert.equal(await wrong.count(), 1);
+  await expectText(wrong, 'aktywa → assets');
+  await expectText(wrong, 'Twoja odpowiedź:');
+  await expectText(page.locator('[data-testid=quiz-repeat-wrong]'), 'Powtórz błędne odpowiedzi (1)');
+
+  // Odpowiedzi zapisane osobno; harmonogram powtórek fiszek (FSRS) bez zmian.
+  const answers = await quizAnswers(page);
+  assert.equal(answers.length, 6);
+  assert.deepEqual(answers.filter((answer) => answer.usedHint).map((answer) => answer.termID), [ids.assets]);
+  assert.equal(answers.filter((answer) => !answer.isCorrect).length, 1);
+  assert.equal(await page.evaluate(() => window.lexicards.library.listProgress().length), 0);
+  assert.equal(await page.evaluate(() => window.lexicards.library.adapter.count('reviews')), 0);
+
+  await page.click('[data-testid=quiz-history-open]');
+  const history = sheet(page).locator('[data-testid=quiz-history]');
+  await waitUntil(async () => (await history.locator('[data-testid=quiz-history-entry]').count()) === 1, 'Historia powinna mieć jeden wpis');
+  await expectText(history, '83%');
+  await expectText(history, 'Zaliczony');
+  await expectText(history, 'Jednokrotny wybór, 5 z 6 poprawnie');
+  await sheet(page).getByRole('button', { name: 'Zamknij' }).click();
+
+  await page.click('[data-testid=quiz-new]');
+  await page.locator('[data-testid=quiz-start]').waitFor();
+  assert.equal(await activeQuiz(page), null, 'wynik zamknięty');
+  const recent = page.locator('.quiz-history [data-testid=quiz-history-entry]');
+  await waitUntil(async () => (await recent.count()) === 1, 'Ostatnie wyniki na ekranie Quiz');
+  await expectText(recent, '83%');
+});
+
+test('quiz: łączenie par – wybór w dowolnej kolejności, liczniki par i błędów, pomyłka obniża wynik', async ({ open }) => {
+  const page = await open();
+  await seedStudy(page);
+  await openQuizSetup(page);
+  await choose(page, 'Rodzaj quizu', 'Pary');
+  await choose(page, 'Liczba par', 'Wszystkie');
+  await expectText(quizPlanned(page), '6 par z 6 pojęć');
+  await startQuiz(page);
+
+  const quiz = await activeQuiz(page);
+  assert.deepEqual(quiz.items.map((item) => [item.kind, item.pairs.length]), [['matching', 3], ['matching', 3]]);
+  assert.equal(quiz.total, 6);
+  const round = await currentQuizItem(page);
+  assert.equal(await page.locator('[data-testid=match-left]').count(), 3);
+  assert.equal(await page.locator('[data-testid=match-right]').count(), 3);
+  const [a, b, c] = round.pairs;
+  const rightText = (termID) => round.right.find((entry) => entry.termID === termID).text;
+
+  // Błędna para: najpierw prawa kolumna, potem lewa.
+  await matchTile(page, 'right', b).tap();
+  assert.equal(await matchTile(page, 'right', b).getAttribute('aria-pressed'), 'true');
+  await matchTile(page, 'left', a).tap();
+  await expectText(page.locator('[data-testid=match-errors]'), '1');
+  await expectText(page.locator('[data-testid=match-matched]'), '0');
+  assert.equal(await page.locator('[data-testid=match-grid] [aria-pressed=true]').count(), 0, 'po próbie wybór znika');
+
+  // Zmiana wyboru w tej samej kolumnie, potem poprawna para.
+  await matchTile(page, 'left', a).tap();
+  await matchTile(page, 'left', b).tap();
+  assert.equal(await matchTile(page, 'left', a).getAttribute('aria-pressed'), 'false');
+  assert.equal(await matchTile(page, 'left', b).getAttribute('aria-pressed'), 'true');
+  await matchTile(page, 'right', b).tap();
+  await expectText(page.locator('[data-testid=match-matched]'), '1');
+  assert.equal(await matchTile(page, 'left', b).isDisabled(), true, 'połączona para jest zablokowana');
+  assert.match(await matchTile(page, 'right', b).getAttribute('class'), /match-tile--done/);
+
+  await matchTile(page, 'left', a).tap();
+  await matchTile(page, 'right', a).tap();
+  await matchTile(page, 'right', c).tap();
+  await matchTile(page, 'left', c).tap();
+  await quizFeedback(page).waitFor();
+  await expectText(quizFeedback(page), 'Bez pomyłki: 2 z 3');
+  await expectText(quizFeedback(page), 'Błędne połączenia w tej rundzie: 1');
+  const pairs = page.locator('[data-testid=pair-list] li');
+  assert.equal(await pairs.count(), 3);
+  assert.equal(await pairs.locator('xpath=self::*[@data-correct="false"]').count(), 1);
+  await expectText(pairs.filter({ has: page.locator('.pair-list__picked') }), `Twoje połączenie: ${rightText(b)}`);
+  await quizNext(page);
+
+  await expectText(quizCounter(page), '2 z 2');
+  await solveRound(page);
+  await expectText(quizFeedback(page), 'Wszystkie pary bez pomyłki');
+  await expectText(page.locator('[data-testid=quiz-next]'), 'Zobacz wynik');
+  await quizNext(page);
+  await expectText(page.locator('[data-testid=quiz-percent]'), '83%');
+  await expectText(page.locator('[data-testid=quiz-verdict]'), 'Zaliczony');
+
+  const answers = await quizAnswers(page);
+  assert.equal(answers.length, 6, 'każda para to osobna odpowiedź');
+  assert.ok(answers.every((answer) => answer.questionType === 'matching'));
+  assert.deepEqual(answers.filter((answer) => !answer.isCorrect).map((answer) => [answer.termID, answer.selectedAnswer]), [[a, rightText(b)]]);
+});
+
+test('quiz: test mieszany – proporcje wyboru i par, 8 par na szerokim ekranie, obsługa z klawiatury', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  await openQuizSetup(page);
+  await choose(page, 'Rodzaj quizu', 'Mieszany');
+  await choose(page, 'Liczba pytań', '20');
+  assert.equal(await page.locator('[data-testid=quiz-share]').inputValue(), '0.6');
+  await startQuiz(page);
+  const composition = (quiz) => ({
+    choice: quiz.items.filter((item) => item.kind === 'choice').length,
+    pairs: quiz.items.filter((item) => item.kind === 'matching').map((item) => item.pairs.length)
+  });
+  let quiz = await activeQuiz(page);
+  assert.equal(quiz.total, 20);
+  assert.deepEqual(composition(quiz), { choice: 12, pairs: [8] }, 'domyślnie 60% wyboru i 40% par');
+
+  // Zakończenie bez odpowiedzi nie zapisuje wyniku.
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await confirm(page);
+  await page.locator('[data-testid=quiz-start]').waitFor();
+  assert.equal(await activeQuiz(page), null);
+
+  await page.selectOption('[data-testid=quiz-share]', '0.4');
+  await startQuiz(page);
+  quiz = await activeQuiz(page);
+  assert.deepEqual(composition(quiz), { choice: 8, pairs: [6, 6] }, '40% wyboru: 12 par w dwóch rundach');
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await confirm(page);
+  await page.locator('[data-testid=quiz-start]').waitFor();
+
+  // Szeroki ekran: runda ma do 8 par.
+  await choose(page, 'Rodzaj quizu', 'Pary');
+  await choose(page, 'Liczba par', 'Wszystkie');
+  await startQuiz(page);
+  assert.equal(await page.locator('[data-testid=match-left]').count(), 8);
+  assert.equal(await page.locator('[data-testid=match-right]').count(), 8);
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await confirm(page);
+  await page.locator('[data-testid=quiz-start]').waitFor();
+
+  // Klawiatura: 1–4 albo A–D wybiera odpowiedź, Enter przechodzi dalej.
+  await choose(page, 'Rodzaj quizu', 'Wybór');
+  await choose(page, 'Liczba pytań', '10');
+  await startQuiz(page);
+  const first = await currentQuizItem(page);
+  await page.keyboard.press(String(first.correctIndex + 1));
+  await quizFeedback(page).waitFor();
+  assert.equal(await quizFeedback(page).getAttribute('data-correct'), 'true');
+  await page.keyboard.press('Enter');
+  await expectText(quizCounter(page), '2 z 10');
+  const second = await currentQuizItem(page);
+  await page.keyboard.press('abcd'[(second.correctIndex + 1) % second.options.length]);
+  await quizFeedback(page).waitFor();
+  assert.equal(await quizFeedback(page).getAttribute('data-correct'), 'false');
+  await page.keyboard.press('Enter');
+  await expectText(quizCounter(page), '3 z 10');
+  const answers = new Map((await quizAnswers(page)).map((answer) => [answer.termID, answer.isCorrect]));
+  assert.deepEqual([answers.size, answers.get(first.termID), answers.get(second.termID)], [2, true, false]);
+}, { device: DESKTOP });
+
+test('quiz: limit czasu – licznik odlicza, koniec czasu kończy quiz, brakujące odpowiedzi są błędne', async ({ open, context }) => {
+  await context.clock.install({ time: new Date('2026-10-12T10:00:00') });
+  const page = await open();
+  await seedStudy(page);
+  await openQuizSetup(page);
+  await page.selectOption('[data-testid=quiz-time-limit]', '120');
+  await startQuiz(page);
+  const timer = page.locator('[data-testid=quiz-timer]');
+  await expectText(timer, '2:00');
+  await answerChoice(page, true);
+  await quizNext(page);
+
+  await page.clock.fastForward('01:40');
+  await waitUntil(async () => /quiz-timer--low/.test(await timer.getAttribute('class')), 'Końcówka czasu powinna być wyróżniona');
+  assert.match(await timer.textContent(), /0:[0-2]\d/);
+
+  await page.clock.fastForward('00:30');
+  await page.locator('[data-testid=quiz-result]').waitFor();
+  await expectText(page.locator('.quiz-result__note'), 'Koniec czasu');
+  await expectText(page.locator('[data-testid=quiz-percent]'), '17%');
+  await expectText(page.locator('[data-testid=quiz-verdict]'), 'Niezaliczony');
+  await expectText(page.locator('[data-testid=quiz-correct]'), '1');
+  await expectText(page.locator('[data-testid=quiz-unanswered]'), '5');
+  await expectText(page.locator('[data-testid=quiz-duration]'), '2:00');
+  assert.equal(await page.locator('[data-testid=quiz-wrong-item]').count(), 5);
+  await expectText(page.locator('[data-testid=quiz-wrong]'), 'Bez odpowiedzi');
+  await expectText(page.locator('[data-testid=quiz-repeat-wrong]'), 'Powtórz błędne odpowiedzi (5)');
+
+  const [record] = await page.evaluate(() => window.lexicards.library.quizHistory());
+  assert.deepEqual([record.timedOut, record.finished, record.unanswered, record.duration], [true, false, 5, 120000]);
+  assert.equal((await quizAnswers(page)).length, 1, 'pytania bez odpowiedzi nie trafiają do statystyk pojęć');
+});
+
+test('quiz: wznowienie po ponownym otwarciu strony i zakończenie niedokończonego quizu', async ({ open }) => {
+  const page = await open();
+  await seedStudy(page);
+  await openQuizSetup(page);
+  await startQuiz(page);
+  await answerChoice(page, true);
+  await quizNext(page);
+  await answerChoice(page, false);
+  await quizNext(page);
+
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await expectText(quizCounter(page), '3 z 6');
+
+  // Niedokończony quiz można wznowić ze Startu i z ekranu Quiz.
+  await page.evaluate(() => { location.hash = '#/start'; });
+  await expectText(page.locator('[data-testid=start-quiz-resume]'), 'Wznów quiz (pytanie 3 z 6)');
+  await page.click('[data-testid=start-quiz-resume]');
+  await expectText(quizCounter(page), '3 z 6');
+
+  await openQuizSetup(page);
+  await expectText(page.locator('[data-testid=quiz-resume]'), 'Wznów quiz (pytanie 3 z 6)');
+  await page.click('[data-testid=quiz-resume]');
+  await expectText(quizCounter(page), '3 z 6');
+
+  await openQuizSetup(page);
+  await page.click('[data-testid=quiz-discard]');
+  await waitUntil(async () => (await page.locator('[data-testid=quiz-resume]').count()) === 0, 'Quiz powinien się zakończyć');
+  assert.equal(await activeQuiz(page), null);
+  const recent = page.locator('.quiz-history [data-testid=quiz-history-entry]');
+  await waitUntil(async () => (await recent.count()) === 1, 'Przerwany quiz w historii');
+  await expectText(recent, '17%');
+  await expectText(recent, 'Niezaliczony – przerwany');
+  await page.evaluate(() => { location.hash = '#/start'; });
+  await page.locator('.tiles').waitFor();
+  assert.equal(await page.locator('[data-testid=start-quiz-resume]').count(), 0);
+});
+
+test('quiz: „Powtórz błędne odpowiedzi”, zakres „Błędy z quizów” w nauce, wynik w szczegółach pojęcia; FSRS bez zmian', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openQuizSetup(page);
+  await choose(page, 'Liczba pytań', 'Wszystkie');
+  await startQuiz(page);
+  for (let number = 1; number <= 6; number += 1) {
+    const item = await currentQuizItem(page);
+    await answerChoice(page, item.termID !== ids.assets && item.termID !== ids.profit);
+    await quizNext(page);
+  }
+  await expectText(page.locator('[data-testid=quiz-percent]'), '67%');
+  await page.click('[data-testid=quiz-repeat-wrong]');
+  await expectText(quizCounter(page), '1 z 2');
+  let quiz = await activeQuiz(page);
+  assert.deepEqual(new Set(quiz.items.map((item) => item.termID)), new Set([ids.assets, ids.profit]));
+
+  // Druga runda: aktywa dobrze, zysk znowu źle.
+  for (let number = 1; number <= 2; number += 1) {
+    const item = await currentQuizItem(page);
+    await answerChoice(page, item.termID === ids.assets);
+    await quizNext(page);
+  }
+  await expectText(page.locator('[data-testid=quiz-percent]'), '50%');
+  await page.click('[data-testid=quiz-repeat-wrong]');
+  await expectText(quizCounter(page), '1 z 1');
+  quiz = await activeQuiz(page);
+  assert.deepEqual(quiz.items.map((item) => [item.kind, item.termID]), [['choice', ids.profit]]);
+  await answerChoice(page, false);
+  await quizNext(page);
+  await expectText(page.locator('[data-testid=quiz-percent]'), '0%');
+  await page.click('[data-testid=quiz-done]');
+  await page.locator('.tiles').waitFor();
+
+  const history = await page.evaluate(() => window.lexicards.library.quizHistory());
+  assert.deepEqual(history.map((record) => [record.percent, record.repeatOfWrong]), [[0, true], [50, true], [67, false]]);
+
+  // Nauka: zakres „Błędy z quizów” – pojęcia, na które ostatnio odpowiedziano źle.
+  await openStudySetup(page);
+  const scopes = (await page.locator('[data-testid=study-scope] option').allTextContents()).map((text) => text.trim());
+  assert.ok(scopes.includes('Błędy z quizów (1)'), scopes.join(', '));
+  await page.selectOption('[data-testid=study-scope]', 'quizErrors');
+  await choose(page, 'Liczba fiszek', 'Wszystkie');
+  await startStudy(page);
+  await expectText(page.locator('[data-testid=study-counter]'), '1 z 1');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'zysk');
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await page.locator('[data-testid=study-start]').waitFor();
+
+  // Szczegóły pojęcia: wyniki quizów.
+  await page.evaluate((id) => { location.hash = `#/library/lesson/${id}`; }, ids.basicsID);
+  const profitRow = termRows(page).filter({ hasText: 'zysk' });
+  await profitRow.locator('.term__toggle').click();
+  await expectText(profitRow.locator('[data-testid=term-quiz]'), '0 z 3 poprawnie, ostatnio błędnie');
+  const assetsRow = termRows(page).filter({ hasText: 'aktywa' });
+  await assetsRow.locator('.term__toggle').click();
+  await expectText(assetsRow.locator('[data-testid=term-quiz]'), '1 z 2 poprawnie, ostatnio poprawnie');
+
+  // Quizy nie tworzą postępów nauki ani wpisów powtórek.
+  assert.equal(await page.evaluate(() => window.lexicards.library.listProgress().length), 0);
+  assert.equal(await page.evaluate(() => window.lexicards.library.adapter.count('reviews')), 0);
+  assert.equal(await page.evaluate(() => window.lexicards.library.adapter.count('assessments')), 0);
+});
+
+test('quiz: wejście z lekcji i z menu biblioteki ustawia materiał, wybór jest zapamiętany', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await page.evaluate((id) => { location.hash = `#/library/lesson/${id}`; }, ids.basicsID);
+  await page.click('[data-testid=lesson-quiz]');
+  await page.locator('[data-testid=quiz-start]').waitFor();
+  assert.equal(await page.locator('[data-testid=quiz-domain]').inputValue(), ids.domainID);
+  assert.equal(await page.locator('[data-testid=quiz-module]').inputValue(), ids.financeID);
+  assert.equal(await page.locator('.group--compact .row', { hasText: 'Podstawy' }).locator('input').isChecked(), true);
+  await expectText(quizPlanned(page), '3 pytania z 3 pojęć');
+  await startQuiz(page);
+  const quiz = await activeQuiz(page);
+  assert.deepEqual(new Set(quiz.items.map((item) => item.termID)), new Set([ids.assets, ids.liabilities, ids.profit]));
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await confirm(page);
+  await page.locator('[data-testid=quiz-start]').waitFor();
+
+  // Ten sam materiał przy następnym otwarciu ekranu Quiz.
+  await page.evaluate(() => { location.hash = '#/start'; });
+  await page.locator('.tiles').waitFor();
+  await openQuizSetup(page);
+  await expectText(quizPlanned(page), '3 pytania z 3 pojęć');
+
+  // Menu modułu w bibliotece.
+  await page.evaluate((id) => { location.hash = `#/library/domain/${id}`; }, ids.domainID);
+  await page.getByRole('button', { name: 'Więcej poleceń: Finanse' }).click();
+  await menuItem(page, 'Quiz');
+  await page.locator('[data-testid=quiz-start]').waitFor();
+  assert.equal(await page.locator('[data-testid=quiz-module]').inputValue(), ids.financeID);
+  await expectText(quizPlanned(page), '5 pytań z 5 pojęć');
+});
+
+test('quiz: wąski ekran 320 px i długie pojęcia – wybór, pary i wynik nie wystają poza ekran', async ({ open }) => {
+  const page = await open();
+  await page.evaluate(async () => {
+    const { library } = window.lexicards;
+    const lesson = await library.createLesson({ name: 'Metrologia' }, { create: { name: 'Pomiary' }, domain: { create: { name: 'Technika' } } });
+    const terms = [
+      ['współrzędnościowa maszyna pomiarowa z głowicą skanującą', 'coordinate measuring machine with a scanning probe head'],
+      ['niepewność pomiaru rozszerzona', 'expanded measurement uncertainty'],
+      ['wzorzec', 'gauge'],
+      ['powtarzalność', 'repeatability'],
+      ['Odchyłkapołożeniabezspacjiwbardzodługimsłowie', 'Positionaldeviationwithoutanyspacesinaverylongword'],
+      ['chropowatość powierzchni', 'surface roughness']
+    ];
+    for (const [termPL, termEN] of terms) {
+      await library.createTerm({ termPL, termEN, descriptionPL: 'Opis pojęcia z dziedziny metrologii. '.repeat(4), descriptionEN: 'A metrology term. '.repeat(4) }, lesson.id);
+    }
+  });
+  const overflow = () => overflowX(page);
+  await openQuizSetup(page);
+  await choose(page, 'Rodzaj quizu', 'Mieszany');
+  assert.ok((await overflow()) <= 0, `konfiguracja: treść wystaje o ${await overflow()} px`);
+  await choose(page, 'Liczba pytań', 'Wszystkie');
+  await page.selectOption('[data-testid=quiz-share]', '0.5');
+  await startQuiz(page);
+  for (;;) {
+    const item = await currentQuizItem(page);
+    if (!item) break;
+    assert.ok((await overflow()) <= 0, `${item.kind}: treść wystaje o ${await overflow()} px`);
+    if (item.kind === 'choice') {
+      await answerChoice(page, false);
+    } else {
+      const tiles = await page.locator('[data-testid=match-grid] button').evaluateAll((buttons) => buttons.map((button) => {
+        const box = button.getBoundingClientRect();
+        return { left: box.left, right: box.right, height: box.height, inner: button.scrollWidth - button.clientWidth };
+      }));
+      assert.ok(tiles.every((box) => box.left >= 0 && box.right <= 320 && box.inner <= 0), 'kafelki par mieszczą się na ekranie');
+      assert.ok(tiles.every((box) => box.height >= 44), 'kafelki par mają wygodną wysokość');
+      await solveRound(page);
+    }
+    assert.ok((await overflow()) <= 0, `informacja zwrotna: treść wystaje o ${await overflow()} px`);
+    await quizNext(page);
+  }
+  await page.locator('[data-testid=quiz-result]').waitFor();
+  assert.ok((await overflow()) <= 0, `wynik: treść wystaje o ${await overflow()} px`);
+}, { device: { ...PHONE, viewport: { width: 320, height: 568 } } });
 
 test('iPhone: dotknięcie pola formularza nie powiększa strony (czcionka pól ≥ 16 px, maximum-scale)', async ({ open }) => {
   const page = await open();

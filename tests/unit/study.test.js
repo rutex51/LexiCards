@@ -187,7 +187,7 @@ test('zakresy: nowe, do powtórki, trudne, ulubione – osobno dla kierunku', as
   assert.deepEqual(names({ scope: 'new', direction: EN_PL }), ['bilans', 'aktywa', 'pasywa', 'trudne']);
   assert.deepEqual(names({ scope: 'repeat', direction: EN_PL }, Date.now() + 11 * minute), []);
 
-  assert.deepEqual(scopeCounts(library, config(), Date.now() + 11 * minute), { all: 4, new: 1, repeat: 3, partial: 1, hard: 2, favorites: 1, random: 4 });
+  assert.deepEqual(scopeCounts(library, config(), Date.now() + 11 * minute), { all: 4, new: 1, repeat: 3, partial: 1, hard: 2, quizErrors: 0, favorites: 1, random: 4 });
   assert.equal(isHard(hard, null), true);
   assert.equal(isHard(full, library.getProgress(full.id, PL_EN)), false);
 

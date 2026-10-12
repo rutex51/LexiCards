@@ -59,6 +59,14 @@ function learningState(ctx, progress) {
   return h('span', { class: 'term__learning' }, lines);
 }
 
+/** Wyniki quizów pojęcia: „2 z 3 poprawnie, ostatnio błędnie” (oba kierunki razem). */
+function quizState(ctx, term) {
+  const stats = ctx.library.getQuizStats(term.id);
+  if (!stats) return null;
+  const last = stats.lastCorrect ? 'ostatnio poprawnie' : 'ostatnio błędnie';
+  return h('span', { dataset: { testid: 'term-quiz' } }, `${stats.correct} z ${stats.attempts} poprawnie, ${last} (${shortDate(stats.lastAt)})`);
+}
+
 function termDetails(ctx, term) {
   const forward = ctx.library.getProgress(term.id, DIRECTIONS.PL_EN);
   const backward = ctx.library.getProgress(term.id, DIRECTIONS.EN_PL);
@@ -72,7 +80,8 @@ function termDetails(ctx, term) {
       detailItem('Trudność', term.difficulty ? `${term.difficulty} z ${DIFFICULTY_MAX}` : null),
       detailItem('Notatki', term.notes),
       detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.PL_EN]}`, learningState(ctx, forward)),
-      detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.EN_PL]}`, learningState(ctx, backward))
+      detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.EN_PL]}`, learningState(ctx, backward)),
+      detailItem('Quizy', quizState(ctx, term))
     ),
     forward || backward
       ? h('button', {
@@ -307,11 +316,18 @@ export class LessonScreen {
     } else {
       this.#renderResults();
       body = [
-        h('a', {
-          class: 'button button--primary button--block',
-          href: routes.study({ level: 'lesson', id: lesson.id }),
-          dataset: { testid: 'lesson-study' }
-        }, 'Ucz się tej lekcji'),
+        h('div', { class: 'lesson-actions' },
+          h('a', {
+            class: 'button button--primary',
+            href: routes.study({ level: 'lesson', id: lesson.id }),
+            dataset: { testid: 'lesson-study' }
+          }, 'Ucz się tej lekcji'),
+          h('a', {
+            class: 'button button--secondary',
+            href: routes.quiz({ level: 'lesson', id: lesson.id }),
+            dataset: { testid: 'lesson-quiz' }
+          }, 'Quiz z tej lekcji')
+        ),
         searchField({
           value: this.search,
           placeholder: 'Szukaj po polsku lub angielsku',

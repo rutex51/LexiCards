@@ -8,6 +8,8 @@ import { Router, routeKey } from './ui/router.js';
 import { GlossaryScreen } from './ui/screens/glossary.js';
 import { ImportScreen } from './ui/screens/import.js';
 import { DomainScreen, DomainsScreen, ModuleScreen } from './ui/screens/library.js';
+import { QuizSessionScreen } from './ui/screens/quiz-session.js';
+import { QuizSetupScreen } from './ui/screens/quiz-setup.js';
 import { SettingsScreen } from './ui/screens/settings.js';
 import { StartScreen } from './ui/screens/start.js';
 import { StudySessionScreen } from './ui/screens/study-session.js';
@@ -27,7 +29,8 @@ const SCREENS = {
   import: ImportScreen,
   study: StudySetupScreen,
   studySession: StudySessionScreen,
-  quiz: UpcomingScreen,
+  quiz: QuizSetupScreen,
+  quizSession: QuizSessionScreen,
   stats: UpcomingScreen,
   settings: SettingsScreen
 };

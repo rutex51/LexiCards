@@ -14,6 +14,7 @@ import {
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
 import { emptyChanges } from './storage.js';
 import { createScheduler } from './fsrs.js';
+import { quizResult } from './quiz.js';
 import {
   DECISIONS, REPEAT_KINDS, emptyTiles, fsrsRating, makeAssessment, makeSession, nextProgress, repeatQueue,
   reviewSchedule, summarizeSession
@@ -64,6 +65,8 @@ const errors = {
   emptyStudyQueue: () => new LibraryError('emptyStudyQueue', 'Brak fiszek pasujących do wybranych ustawień.'),
   noStudySession: () => new LibraryError('noStudySession', 'Nie ma trwającej sesji nauki.'),
   noLastStudy: () => new LibraryError('noLastStudy', 'Nie ma zakończonej sesji do powtórzenia albo jej pojęcia zostały usunięte.'),
+  emptyQuiz: () => new LibraryError('emptyQuiz', 'Z tego materiału nie da się ułożyć quizu – potrzebne są co najmniej dwa pojęcia o różnym brzmieniu.'),
+  noQuiz: () => new LibraryError('noQuiz', 'Nie ma trwającego quizu.'),
   nothingToUndo: () => new LibraryError('nothingToUndo', 'Nie ma decyzji do cofnięcia.'),
   invalidDecision: () => new LibraryError('invalidDecision', 'Nieznana decyzja – oczekiwano „Umiem” albo „Powtórz”.')
 };
@@ -195,6 +198,8 @@ export class Library {
   #derived = null;
   /** Planista FSRS dla bieżącej docelowej skuteczności. */
   #schedulerCache = null;
+  /** Wyniki quizów pojęć (termID → { attempts, correct, lastCorrect, lastAt }) – z dziennika quizAnswers. */
+  #quizStats = new Map();
   /** Posortowane listy pojęć dla glosariusza, według rodzaju sortowania. */
   #sorted = new Map();
 
@@ -211,7 +216,35 @@ export class Library {
       this.maps[name] = new Map((data[name] ?? []).map((record) => [record.id, record]));
     }
     await this.#migrateSchedules();
+    await this.#loadQuizStats();
     this.#changed();
+  }
+
+  async #loadQuizStats() {
+    this.#quizStats = new Map();
+    let answers = [];
+    try {
+      answers = await this.adapter.readStore('quizAnswers');
+    } catch (error) {
+      console.error(error);
+    }
+    answers.sort((a, b) => (a.answeredAt < b.answeredAt ? -1 : a.answeredAt > b.answeredAt ? 1 : 0));
+    for (const answer of answers) this.#countQuizAnswer(answer);
+  }
+
+  #countQuizAnswer(answer) {
+    const stats = this.#quizStats.get(answer.termID) ?? { attempts: 0, correct: 0, lastCorrect: null, lastAt: null };
+    stats.attempts += 1;
+    if (answer.isCorrect) stats.correct += 1;
+    stats.lastCorrect = Boolean(answer.isCorrect);
+    stats.lastAt = answer.answeredAt ?? null;
+    this.#quizStats.set(answer.termID, stats);
+  }
+
+  /** Wyniki quizów pojęcia (oba kierunki razem) albo null, gdy nie pojawiło się w quizie. */
+  getQuizStats(termID) {
+    const stats = this.#quizStats.get(termID);
+    return stats ? { ...stats } : null;
   }
 
   /**
@@ -911,6 +944,8 @@ export class Library {
         activeStudySession: null,
         lastStudySession: null,
         studySelection: null,
+        activeQuiz: null,
+        quizSelection: null,
         updatedAt: nowISO()
       };
       await this.adapter.commit({
@@ -920,6 +955,7 @@ export class Library {
       });
       for (const name of stores) this.maps[name] = new Map();
       this.maps.settings.set(SETTINGS_ID, settings);
+      this.#quizStats = new Map();
       this.#changed();
     };
     const next = this.#queue.then(run, run);
@@ -1395,6 +1431,189 @@ export class Library {
     return records
       .map((record) => ({ ...record, review: byAssessment.get(record.id) ?? null }))
       .sort((a, b) => (a.assessedAt < b.assessedAt ? 1 : a.assessedAt > b.assessedAt ? -1 : 0));
+  }
+
+  // ---------------------------------------------------------------- quizy
+
+  /** Trwający (albo właśnie zakończony, z wynikami na ekranie) quiz albo null. */
+  getQuiz() {
+    return this.getSettings().activeQuiz ?? null;
+  }
+
+  #putQuiz(unit, quiz) {
+    unit.put('settings', { ...this.getSettings(), id: SETTINGS_ID, activeQuiz: quiz, updatedAt: nowISO() });
+  }
+
+  /** Wpis w historii wyników (quizSessions) i podsumowanie quizu. */
+  #recordQuizSession(unit, quiz, { finishedAt, finished, timedOut }) {
+    const summary = quizResult(quiz);
+    unit.append('quizSessions', {
+      id: quiz.id,
+      startedAt: quiz.startedAt,
+      completedAt: finishedAt,
+      quizType: quiz.config.type,
+      direction: quiz.config.direction,
+      totalQuestions: summary.total,
+      correctAnswers: summary.correct,
+      incorrectAnswers: summary.incorrect,
+      unanswered: summary.unanswered,
+      percent: summary.percent,
+      passThreshold: summary.threshold,
+      passed: summary.passed,
+      duration: quiz.elapsedMs,
+      timeLimit: quiz.config.timeLimit ?? 0,
+      finished,
+      timedOut,
+      repeatOfWrong: Boolean(quiz.config.termIDs?.length),
+      selectedDomainIDs: quiz.config.domainID ? [quiz.config.domainID] : [],
+      selectedModuleIDs: quiz.config.moduleID ? [quiz.config.moduleID] : [],
+      selectedLessonIDs: [...(quiz.config.lessonIDs ?? [])],
+      wrongTermIDs: summary.wrongTermIDs
+    });
+    return summary;
+  }
+
+  /**
+   * Rozpoczyna quiz z gotowymi pytaniami (buildQuiz). Niedokończony poprzedni quiz z co
+   * najmniej jedną odpowiedzią trafia do historii jako przerwany.
+   */
+  startQuiz(config, { items, total }) {
+    return this.#mutate((unit) => {
+      if (!Array.isArray(items) || items.length === 0 || !(total > 0)) throw errors.emptyQuiz();
+      const previous = this.getQuiz();
+      if (previous && !previous.finishedAt && previous.answers.length > 0) {
+        this.#recordQuizSession(unit, previous, { finishedAt: nowISO(), finished: false, timedOut: false });
+      }
+      const quiz = {
+        id: newID(), config, items, total, position: 0, answers: [], elapsedMs: 0, startedAt: nowISO(), finishedAt: null
+      };
+      this.#putQuiz(unit, quiz);
+      return quiz;
+    });
+  }
+
+  /**
+   * Zapisuje odpowiedzi na bieżące pytanie (jedna odpowiedź) albo rundę (po jednej na parę)
+   * i przechodzi dalej. Po ostatnim pytaniu quiz kończy się w tej samej transakcji.
+   * Odpowiedzi trafiają do dziennika quizAnswers; harmonogram powtórek (FSRS) się nie zmienia.
+   */
+  /**
+   * Dopisuje odpowiedzi do dziennika quizAnswers. Odpowiedzi oznaczone `unanswered` (para,
+   * której nie zdążono połączyć) liczą się tylko w wyniku quizu, nie w statystykach pojęć.
+   */
+  #appendQuizAnswers(unit, quiz, answers, { responseTime, answeredAt }) {
+    const records = [];
+    const kept = [];
+    for (const answer of answers) {
+      const entry = {
+        termID: answer.termID,
+        direction: answer.direction,
+        questionType: answer.questionType,
+        selectedAnswer: answer.selectedAnswer ?? null,
+        correctAnswer: answer.correctAnswer,
+        isCorrect: Boolean(answer.isCorrect)
+      };
+      if (answer.unanswered) {
+        kept.push({ ...entry, isCorrect: false, unanswered: true });
+        continue;
+      }
+      const record = {
+        id: newID(),
+        sessionID: quiz.id,
+        ...entry,
+        usedHint: Boolean(answer.usedHint),
+        responseTime: Math.max(0, Math.round(answer.responseTime ?? responseTime)),
+        answeredAt
+      };
+      unit.append('quizAnswers', record);
+      records.push(record);
+      kept.push(entry);
+    }
+    return { records, kept };
+  }
+
+  recordQuizAnswers(answers, { elapsedMs = null, responseTime = 0, now = Date.now() } = {}) {
+    return this.#mutate((unit) => {
+      const quiz = this.getQuiz();
+      if (!quiz || quiz.finishedAt) throw errors.noQuiz();
+      const answeredAt = new Date(now).toISOString();
+      const { records, kept } = this.#appendQuizAnswers(unit, quiz, answers, { responseTime, answeredAt });
+      const updated = {
+        ...quiz,
+        position: quiz.position + 1,
+        answers: [...quiz.answers, ...kept],
+        elapsedMs: elapsedMs ?? quiz.elapsedMs + records.reduce((sum, record) => sum + record.responseTime, 0)
+      };
+      if (updated.position >= updated.items.length) {
+        updated.finishedAt = answeredAt;
+        this.#recordQuizSession(unit, updated, { finishedAt: answeredAt, finished: true, timedOut: false });
+      }
+      this.#putQuiz(unit, updated);
+      return { quiz: updated, records };
+    }).then((result) => {
+      for (const record of result.records) this.#countQuizAnswer(record);
+      return result.quiz;
+    });
+  }
+
+  /**
+   * Kończy quiz przed ostatnim pytaniem: koniec czasu (`timedOut`) albo przerwanie.
+   * `partial` to odpowiedzi z niedokończonej rundy dopasowywania (połączone pary; pary
+   * niepołączone z flagą `unanswered`) – runda liczy się wtedy jako rozegrana.
+   * Pytania bez odpowiedzi liczą się jako błędne w wyniku, ale nie trafiają do statystyk pojęć.
+   */
+  finishQuiz({ elapsedMs = null, timedOut = false, partial = [], now = Date.now() } = {}) {
+    return this.#mutate((unit) => {
+      const quiz = this.getQuiz();
+      if (!quiz) throw errors.noQuiz();
+      if (quiz.finishedAt) return { quiz, records: [] };
+      const finishedAt = new Date(now).toISOString();
+      let updated = { ...quiz, finishedAt, timedOut, elapsedMs: elapsedMs ?? quiz.elapsedMs };
+      let records = [];
+      if (partial.length > 0 && quiz.position < quiz.items.length) {
+        const appended = this.#appendQuizAnswers(unit, quiz, partial, { responseTime: 0, answeredAt: finishedAt });
+        records = appended.records;
+        updated = { ...updated, position: quiz.position + 1, answers: [...quiz.answers, ...appended.kept] };
+      }
+      this.#recordQuizSession(unit, updated, { finishedAt, finished: false, timedOut });
+      this.#putQuiz(unit, updated);
+      return { quiz: updated, records };
+    }).then((result) => {
+      for (const record of result.records) this.#countQuizAnswer(record);
+      return result.quiz;
+    });
+  }
+
+  /** Zapisuje czas trwającego quizu (ekran quizu zniknął albo aplikacja przeszła w tło). */
+  saveQuizTime(elapsedMs) {
+    return this.#mutate((unit) => {
+      const quiz = this.getQuiz();
+      if (!quiz || quiz.finishedAt || !(elapsedMs >= quiz.elapsedMs)) return quiz;
+      const updated = { ...quiz, elapsedMs: Math.round(elapsedMs) };
+      this.#putQuiz(unit, updated);
+      return updated;
+    });
+  }
+
+  /** Zamyka ekran wyników (albo porzuca quiz bez odpowiedzi). */
+  closeQuiz() {
+    return this.#mutate((unit) => {
+      const quiz = this.getQuiz();
+      if (!quiz) return null;
+      if (!quiz.finishedAt && quiz.answers.length > 0) {
+        this.#recordQuizSession(unit, quiz, { finishedAt: nowISO(), finished: false, timedOut: false });
+      }
+      this.#putQuiz(unit, null);
+      return null;
+    });
+  }
+
+  /** Historia wyników quizów, od najnowszego. */
+  async quizHistory(limit = 50) {
+    const sessions = await this.adapter.readStore('quizSessions');
+    return sessions
+      .sort((a, b) => (a.completedAt < b.completedAt ? 1 : a.completedAt > b.completedAt ? -1 : 0))
+      .slice(0, limit);
   }
 
   // ---------------------------------------------------------------- ustawienia

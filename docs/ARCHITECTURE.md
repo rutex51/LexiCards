@@ -1,6 +1,6 @@
 # Architektura LexiCards
 
-Dokument opisuje stan po etapie 4 oraz decyzje, które przygotowują kolejne etapy.
+Dokument opisuje stan po etapie 5 oraz decyzje, które przygotowują kolejne etapy.
 
 ## Założenia
 
@@ -22,6 +22,7 @@ js/ui/actions.js           formularze i przepływy wspólne dla wielu ekranów
 js/ui/dialogs.js           arkusze, pytania, menu, komunikaty (element <dialog>)
 js/ui/router.js            adresy po znaku # i historia przeglądarki
 js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
+js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspólny dla nauki i quizu
 js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
 js/core/model.js           kształt rekordów, wartości domyślne, stałe
@@ -34,6 +35,7 @@ js/core/importer.js        nagłówki → pola, wiersze pliku → wiersze import
 js/core/exporter.js        zakres eksportu → plik XLSX lub CSV
 js/core/study.js           fiszki: dobór do sesji, treść stron, ocena, postęp, podsumowanie
 js/core/fsrs.js            algorytm powtórek FSRS-6 (przeniesiony z py-fsrs 6.3.2)
+js/core/quiz.js            quizy: pytania wyboru, rundy par, test mieszany, odpowiedzi, wynik
 js/core/text.js            normalizacja tekstu, tagi, odmiana liczebników
 ```
 
@@ -52,10 +54,10 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | `progress` | ostatnia ocena pojęcia w danym kierunku i jego harmonogram FSRS (`schedule`) | `termID` + klucze zakresu |
 | `assessments` | historia ocen fiszek – jeden wpis na zatwierdzoną fiszkę | indeks `termID` |
 | `reviews` | dziennik powtórek FSRS – ocena 1–4, stan przed i po, stabilność, trudność, odstęp | indeks `termID` |
-| `quizAnswers` | odpowiedzi w quizach (etap 5) | indeks `termID` |
+| `quizAnswers` | odpowiedzi w quizach – jedna na pytanie wyboru albo parę: odpowiedź wybrana i poprawna, wynik, podpowiedź, czas | indeks `termID`, `sessionID` |
 | `studySessions` | dziennik zakończonych sesji nauki | – |
-| `quizSessions` | sesje quizów (etap 5) | – |
-| `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki, trwająca sesja | – |
+| `quizSessions` | historia wyników quizów: rodzaj, kierunek, liczby odpowiedzi, procent, próg, zaliczenie, czas, limit, błędne pojęcia | – |
+| `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki i quizu, trwająca sesja nauki i trwający quiz | – |
 
 Decyzje:
 
@@ -226,6 +228,41 @@ Gest korzysta ze zdarzeń wskaźnika; strona fiszki ma `touch-action: pan-y`, dz
 ruch w pionie przewija długą treść, a ruch w poziomie trafia do aplikacji. Wymowa używa
 `speechSynthesis` z głosami systemu – nic nie jest wysyłane do sieci.
 
+## Quizy
+
+Reguły są w `js/core/quiz.js` (bez przeglądarki), zapis w `Library`, ekrany w
+`js/ui/screens/quiz-setup.js`, `quiz-session.js` i `quiz-history.js`.
+
+- **Budowa quizu** (`buildQuiz()`): pojęcia z wybranego materiału (albo wskazane wprost –
+  `termIDs` przy powtórce błędnych) są tasowane i każde trafia do quizu najwyżej raz.
+  Typ `choice` – same pytania wyboru; `matching` – same rundy par; `mixed` – udział pytań
+  wyboru z ustawień (40–80%, domyślnie 60%), reszta w rundach par. Rundy mają do 5 par na
+  telefonie i do 8 na szerokim ekranie, rozkładane równo (`roundSizes()`: 6 → 3 + 3).
+  Pojęcia o tym samym brzmieniu nie trafiają do jednej rundy; pojęcie, którego nie da się
+  ułożyć w parę, dostaje pytanie wyboru. Kolejność pytań i rund jest losowa.
+- **Pytanie wyboru** (`choiceQuestion()`): poprawna odpowiedź i do trzech błędnych o innym
+  brzmieniu (porównanie bez wielkości liter i polskich znaków), najpierw z tej samej dziedziny,
+  potem z reszty biblioteki. Gdy różnych odpowiedzi jest mniej, pytanie ma ich mniej; przy
+  mniej niż dwóch jest pomijane.
+- **Ocena:** pytanie wyboru – jedna odpowiedź; runda par – jedna odpowiedź na parę, poprawna,
+  gdy parę połączono bez pomyłki. Lewa kolumna to pytanie, prawa odpowiedź: błędne połączenie
+  obciąża parę elementu z lewej kolumny niezależnie od kolejności dotknięć.
+- **Wynik** (`quizResult()`, `summarizeQuiz()`): procent względem wszystkich pytań quizu;
+  pytania bez odpowiedzi (koniec czasu, przerwanie) są błędne i trafiają na listę do powtórki.
+  Zaliczenie: procent ≥ próg (domyślnie 80%).
+- **Zapis:** trwający quiz (pytania, pozycja, odpowiedzi, czas) leży w ustawieniach
+  (`activeQuiz`), więc przeżywa zamknięcie strony. Każda odpowiedź to jedna transakcja:
+  wpisy `quizAnswers` i przesunięcie quizu; ostatnia odpowiedź w tej samej transakcji kończy
+  quiz i dopisuje wynik do `quizSessions`. Koniec czasu w trakcie rundy par zapisuje połączone
+  pary, a niepołączone liczy jako bez odpowiedzi (`finishQuiz({ partial })`). Nowy quiz
+  rozpoczęty w miejsce niedokończonego zapisuje jego wynik jako przerwany.
+- **Czas** płynie tylko, gdy ekran quizu jest widoczny: zegar ekranu zapisuje się przy każdej
+  odpowiedzi, przy wyjściu z ekranu i przy przejściu aplikacji w tło (`saveQuizTime()`).
+- **Bez wpływu na powtórki:** quiz nie zmienia `progress`, `assessments` ani `reviews`.
+  Biblioteka liczy przy wczytaniu statystyki pojęć z `quizAnswers` (`getQuizStats()`: próby,
+  poprawne, wynik ostatniej odpowiedzi). Z nich korzysta zakres nauki „Błędy z quizów”
+  (pojęcia, na które ostatnio odpowiedziano źle) i linia „Quizy” w szczegółach pojęcia.
+
 ## Kopia zapasowa
 
 Jeden plik JSON: nagłówek (format, wersje, data, liczniki) i zawartość wszystkich magazynów.
@@ -238,16 +275,16 @@ nieistniejące pojęcia są pomijane.
 
 - `tests/unit/` – Node.js (`node --test`), bez przeglądarki: reguły biblioteki, wycofywanie
   nieudanych zmian, glosariusz, odczyt i zapis plików, import i eksport, nauka z fiszkami,
-  FSRS (zgodność z py-fsrs i zapis powtórek), kopia zapasowa, spójność plików wydania.
+  FSRS (zgodność z py-fsrs i zapis powtórek), quizy, kopia zapasowa, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.
 - `tests/e2e/` – Chromium przez Playwright: pełne przepływy na ekranie telefonu i komputera,
   trwałość po przeładowaniu, praca offline, aktualizacja wydania, klawiatura. Gesty na fiszce
   są wykonywane zdarzeniami dotyku przeglądarki, a syntezator mowy zastępuje atrapa.
-  Upływ czasu przy powtórkach symuluje zegar Playwright (`context.clock`).
+  Upływ czasu przy powtórkach i limit czasu quizu symuluje zegar Playwright (`context.clock`).
 
 ## Przygotowanie kolejnych etapów
 
-- **Quizy (etap 5)** zapiszą odpowiedzi w `quizAnswers` i sesje w `quizSessions`.
 - **Statystyki (etap 6)** mają gotowe dane: `reviews` (oceny FSRS w czasie), `progress.schedule`
-  (terminy, poziomy) i `reviewForecast()` (plan na dziś i jutro).
+  (terminy, poziomy), `reviewForecast()` (plan na dziś i jutro), `quizSessions` (wyniki quizów
+  w czasie) i `quizAnswers` (pojęcia sprawiające kłopot w quizach).

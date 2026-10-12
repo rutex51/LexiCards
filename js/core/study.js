@@ -34,6 +34,7 @@ export const STUDY_SCOPES = Object.freeze([
   { id: 'repeat', label: 'Do powtórki' },
   { id: 'partial', label: 'Częściowo zapamiętane' },
   { id: 'hard', label: 'Trudne' },
+  { id: 'quizErrors', label: 'Błędy z quizów' },
   { id: 'favorites', label: 'Ulubione' },
   { id: 'random', label: 'Losowe' }
 ]);
@@ -165,6 +166,8 @@ function shuffled(items, random) {
 function matchingCards(library, config, random, now) {
   const cards = [];
   for (const term of selectTerms(library, config)) {
+    // Błędy z quizów: ostatnia odpowiedź w quizie była błędna (wyniki quizów są wspólne dla kierunków).
+    if (config.scope === 'quizErrors' && library.getQuizStats?.(term.id)?.lastCorrect !== false) continue;
     const fitting = directionsFor(config.direction)
       .filter((direction) => matchesScope(config.scope, term, library.getProgress(term.id, direction), now));
     if (fitting.length === 0) continue;

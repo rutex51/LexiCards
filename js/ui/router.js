@@ -21,7 +21,9 @@ export const routes = {
   /** Przygotowanie sesji nauki; preset: { level: 'domain' | 'module' | 'lesson', id } wybiera materiał. */
   study: (preset = null) => (preset ? `#/study/${preset.level}/${encodeURIComponent(preset.id)}` : '#/study'),
   studySession: () => '#/study/session',
-  quiz: () => '#/quiz',
+  /** Konfiguracja quizu; preset jak w nauce. */
+  quiz: (preset = null) => (preset ? `#/quiz/${preset.level}/${encodeURIComponent(preset.id)}` : '#/quiz'),
+  quizSession: () => '#/quiz/session',
   stats: () => '#/stats',
   settings: () => '#/settings'
 };
@@ -48,7 +50,12 @@ export function parseHash(hash) {
         return { tab: 'study', name: 'study', id: `${second}:${third}`, preset: { level: second, id: third } };
       }
       return { tab: 'study', name: 'study' };
-    case 'quiz': return { tab: 'quiz', name: 'quiz' };
+    case 'quiz':
+      if (second === 'session') return { tab: 'quiz', name: 'quizSession' };
+      if (['domain', 'module', 'lesson'].includes(second) && third) {
+        return { tab: 'quiz', name: 'quiz', id: `${second}:${third}`, preset: { level: second, id: third } };
+      }
+      return { tab: 'quiz', name: 'quiz' };
     case 'stats': return { tab: 'stats', name: 'stats' };
     case 'settings': return { tab: null, name: 'settings' };
     default: return { tab: 'start', name: 'start' };

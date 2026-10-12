@@ -6,7 +6,7 @@ są zapisywane wyłącznie w przeglądarce na Twoim urządzeniu.
 
 Adres: **https://rutex51.github.io/LexiCards/**
 
-## Co już działa (etapy 1–4)
+## Co już działa (etapy 1–5)
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -23,15 +23,18 @@ Adres: **https://rutex51.github.io/LexiCards/**
 - Powtórki w odstępach według algorytmu FSRS-6, osobno dla PL → EN i EN → PL: „Powtórka na dziś”
   na Starcie, zakres „Do powtórki” z fiszkami po terminie, podpowiedź przy przyciskach, za ile fiszka
   wróci, termin i poziom utrwalenia w szczegółach pojęcia, docelowa skuteczność w Ustawieniach.
+- Quizy: jednokrotny wybór (do czterech odpowiedzi), łączenie par i test mieszany; wybór materiału,
+  kierunku, liczby pytań, limitu czasu i progu zaliczenia. Wynik z listą błędów, „Powtórz błędne
+  odpowiedzi”, historia wyników. Quizy nie zmieniają terminów powtórek fiszek.
 - Wymowa pojęć, definicji i przykładów głosem z urządzenia; historia ocen każdego pojęcia.
 - Kopia zapasowa do pliku i przywracanie z pliku (materiały, postępy, ustawienia).
 - Motyw jasny, ciemny albo zgodny z systemem; układ na telefon i na szeroki ekran.
 - Praca bez internetu po pierwszym otwarciu.
 - 40 przykładowych pojęć (Business English, Metrology) do wczytania jednym przyciskiem.
 
-Zakładki Quiz i Statystyki są widoczne, ale ich funkcje powstaną w kolejnych etapach
+Zakładka Statystyki jest widoczna, ale jej funkcje powstaną w kolejnym etapie
 (plan niżej). Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md),
-[etap 2](docs/STAGE-2.md), [etap 3](docs/STAGE-3.md), [etap 4](docs/STAGE-4.md).
+[etap 2](docs/STAGE-2.md), [etap 3](docs/STAGE-3.md), [etap 4](docs/STAGE-4.md), [etap 5](docs/STAGE-5.md).
 
 ## Jak korzystać
 
@@ -98,6 +101,22 @@ biblioteki, od najdłużej czekających. Pod przyciskami „Umiem” i „Powtó
 | część bez pojęcia (tłumaczenia) | częściowo zapamiętane | Again |
 | wszystkie | odłożone | Hard |
 
+### Quizy
+
+1. W zakładce **Quiz** wybierz materiał, rodzaj quizu, kierunek i liczbę pytań (albo „Quiz z tej
+   lekcji” na ekranie lekcji, „Quiz” w menu dziedziny lub modułu). W „Ustawieniach” quizu są limit
+   czasu, próg zaliczenia i – w teście mieszanym – proporcje pytań wyboru i par.
+2. **Jednokrotny wybór:** dotknij jednej z odpowiedzi. Od razu widać, czy była poprawna, oraz
+   definicję i przykład. Przed odpowiedzią można odsłonić definicję i przykład w języku pytania.
+3. **Pary:** dotknij pojęcia, a potem jego tłumaczenia (albo odwrotnie). Para połączona z pomyłką
+   liczy się jako błędna odpowiedź.
+4. Po ostatnim pytaniu: wynik w procentach, zaliczony lub nie, lista błędów i **Powtórz błędne
+   odpowiedzi** – nowy quiz tylko z tych pojęć.
+
+Niedokończony quiz można wznowić ze Startu albo z zakładki Quiz. Quizy nie zmieniają terminów
+powtórek fiszek; pojęcia, na które ostatnio odpowiedziałeś źle, znajdziesz w Nauce w zakresie
+**Błędy z quizów**. Na komputerze działa klawiatura: 1–4 lub A–D wybiera odpowiedź, Enter – dalej.
+
 ### Gdzie są dane
 
 - Dane zostają w przeglądarce na danym urządzeniu. Nic nie jest wysyłane do internetu.
@@ -151,7 +170,7 @@ z przyciskiem „Uruchom ją”.
 2. **Import i eksport plików CSV oraz XLSX** – gotowe.
 3. **Fiszki: obracana karta, ocena pojęcia, definicji i przykładu, gesty, cofanie** – gotowe.
 4. **Powtórki w odstępach (FSRS), osobno dla kierunków PL→EN i EN→PL** – gotowe.
-5. Quizy: jednokrotny wybór, dopasowywanie, mieszany.
+5. **Quizy: jednokrotny wybór, dopasowywanie, mieszany** – gotowe.
 6. Ekran startowy z planem dnia i statystyki.
 7. Dopracowanie: dostępność, wydajność przy dużych bibliotekach.
 
