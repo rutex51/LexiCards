@@ -68,11 +68,14 @@ export function reorderRow({ leading = null, title, isFirst, isLast, onUp, onDow
 }
 
 /** Wiersz-polecenie (przycisk na całą szerokość listy). */
-export function actionRow({ label, iconName = null, onClick, destructive = false, testID = null }) {
+export function actionRow({ label, subtitle = null, iconName = null, onClick, destructive = false, testID = null }) {
   return h('li', { class: 'row' },
     h('button', { type: 'button', class: `row__main row__button${destructive ? ' row__button--danger' : ''}`, onClick, dataset: { testid: testID } },
       iconName ? h('span', { class: 'row__leading row__leading--icon' }, icon(iconName)) : null,
-      h('span', { class: 'row__text' }, h('span', { class: 'row__title' }, label))
+      h('span', { class: 'row__text' },
+        h('span', { class: 'row__title' }, label),
+        subtitle ? h('span', { class: 'row__subtitle' }, subtitle) : null
+      )
     )
   );
 }

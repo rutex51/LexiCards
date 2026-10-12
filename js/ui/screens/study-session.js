@@ -248,7 +248,24 @@ export class StudySessionScreen {
     if (this.busy) return;
     this.busy = true;
     try {
-      await this.ctx.library.startStudy(session.config, summary.repeatQueue, { round: (session.round ?? 1) + 1 });
+      await this.ctx.library.startStudy(session.config, summary.repeatQueue, {
+        round: (session.round ?? 1) + 1,
+        baseQueue: session.baseQueue ?? session.queue
+      });
+    } catch (error) {
+      await showError(error);
+    } finally {
+      this.busy = false;
+      if (!this.disposed) this.ctx.refresh();
+    }
+  }
+
+  /** Te same fiszki od początku – także te ocenione jako „Umiem” – żeby utrwalić materiał. */
+  async #repeatAll() {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      await this.ctx.library.repeatStudy();
     } catch (error) {
       await showError(error);
     } finally {
@@ -446,6 +463,7 @@ export class StudySessionScreen {
   #summaryView(session) {
     const summary = summarizeSession(session);
     const hasRepeat = summary.repeatQueue.length > 0;
+    const repeatable = this.ctx.library.getRepeatableStudy();
     const parts = STATUS_ORDER.filter((status) => summary.statuses[status] > 0);
 
     return {
@@ -477,8 +495,12 @@ export class StudySessionScreen {
             type: 'button', class: 'button button--primary', dataset: { testid: 'summary-repeat' },
             onClick: () => this.#repeatRound(session, summary)
           }, `Powtórz odłożone (${summary.repeatQueue.length})`) : null,
+          repeatable ? h('button', {
+            type: 'button', class: `button ${hasRepeat ? 'button--secondary' : 'button--primary'}`, dataset: { testid: 'summary-repeat-all' },
+            onClick: () => this.#repeatAll()
+          }, `Powtórz całą sesję (${repeatable.queue.length})`) : null,
           h('button', {
-            type: 'button', class: `button ${hasRepeat ? 'button--secondary' : 'button--primary'}`, dataset: { testid: 'summary-new' },
+            type: 'button', class: 'button button--secondary', dataset: { testid: 'summary-new' },
             onClick: () => this.#closeSummary(routes.study())
           }, 'Nowa sesja'),
           h('button', {

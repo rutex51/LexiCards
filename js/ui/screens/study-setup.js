@@ -2,7 +2,8 @@
 
 import { pluralCards, pluralTerms } from '../../core/text.js';
 import {
-  MIXED, STUDY_COUNTS, STUDY_DIRECTIONS, STUDY_FRONTS, STUDY_SCOPES, buildQueue, isSessionFinished, scopeCounts
+  DIRECTION_NAMES, MIXED, STUDY_COUNTS, STUDY_DIRECTIONS, STUDY_FRONTS, STUDY_SCOPES, buildQueue, describeStudyMaterial,
+  isSessionFinished, scopeCounts
 } from '../../core/study.js';
 import {
   actionRow, checkRow, emptyState, field, formGroup, group, segmented, selectInput, settingsAction
@@ -19,7 +20,13 @@ export class StudySetupScreen {
     const { library } = ctx;
     const settings = library.getSettings();
 
-    this.selection = { domainID: ALL, moduleID: ALL, lessonIDs: new Set() };
+    // Bez wskazania z biblioteki ekran otwiera się z materiałem wybranym ostatnio.
+    const remembered = settings.studySelection;
+    this.selection = {
+      domainID: remembered?.domainID ?? ALL,
+      moduleID: remembered?.moduleID ?? ALL,
+      lessonIDs: new Set(remembered?.lessonIDs ?? [])
+    };
     const preset = route.preset;
     if (preset?.level === 'lesson') {
       const lesson = library.getLesson(preset.id);
@@ -83,7 +90,8 @@ export class StudySetupScreen {
         studyScope: this.scope,
         studyCount: this.count,
         shuffleCards: this.shuffle,
-        preferredFlashcardFront: this.front
+        preferredFlashcardFront: this.front,
+        studySelection: { domainID: config.domainID, moduleID: config.moduleID, lessonIDs: config.lessonIDs }
       });
       await library.startStudy(config, queue);
       ctx.navigate(routes.studySession());
@@ -150,6 +158,39 @@ export class StudySetupScreen {
     );
   }
 
+  /** Ostatnia zakończona sesja do powtórzenia jednym dotknięciem – te same fiszki i ustawienia. */
+  #lastSessionGroup(repeatable) {
+    const { ctx } = this;
+    const { config, queue } = repeatable;
+    const direction = config.direction === MIXED ? 'kierunek mieszany' : DIRECTION_NAMES[config.direction];
+    return group({
+      title: 'Ostatnia sesja',
+      footer: 'Te same fiszki i ustawienia, także fiszki ocenione jako „Umiem”.'
+    },
+      actionRow({
+        label: `Powtórz ostatnią sesję (${pluralCards(queue.length)})`,
+        subtitle: `${describeStudyMaterial(ctx.library, config)}, ${direction}`,
+        iconName: 'undo',
+        testID: 'study-repeat-last',
+        onClick: () => this.#repeatLast()
+      })
+    );
+  }
+
+  async #repeatLast() {
+    const { ctx } = this;
+    if (this.starting) return;
+    this.starting = true;
+    try {
+      await ctx.library.repeatStudy();
+      ctx.navigate(routes.studySession());
+    } catch (error) {
+      await showError(error);
+    } finally {
+      this.starting = false;
+    }
+  }
+
   #sessionGroup(session) {
     const { ctx } = this;
     const { library } = ctx;
@@ -203,6 +244,7 @@ export class StudySetupScreen {
     const planned = this.count > 0 ? Math.min(this.count, matching) : matching;
     const session = library.getStudySession();
     const active = session && !isSessionFinished(session) ? session : null;
+    const repeatable = active ? null : library.getRepeatableStudy();
 
     const startButton = h('button', {
       type: 'button',
@@ -217,6 +259,7 @@ export class StudySetupScreen {
       actions: [settingsAction()],
       body: [
         active ? this.#sessionGroup(active) : null,
+        repeatable ? this.#lastSessionGroup(repeatable) : null,
         this.#materialGroup(),
         this.#lessonsGroup(),
         h('section', { class: 'group' },

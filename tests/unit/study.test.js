@@ -6,8 +6,9 @@ import { createBackup, restoreBackup } from '../../js/core/backup.js';
 import { Library, LibraryError } from '../../js/core/library.js';
 import { availableElementCount } from '../../js/core/model.js';
 import {
-  DECISIONS, buildQueue, cardContent, describeProgress, emptyTiles, isHard, isSessionFinished, learningGroup,
-  makeAssessment, nextProgress, scopeCounts, scoreTiles, selectTerms, setAllTiles, summarizeSession
+  DECISIONS, buildQueue, cardContent, describeProgress, describeStudyMaterial, emptyTiles, isHard, isSessionFinished,
+  learningGroup, makeAssessment, nextProgress, repeatQueue, scopeCounts, scoreTiles, selectTerms, setAllTiles,
+  summarizeSession
 } from '../../js/core/study.js';
 import { addTerm, makeBranch, makeLibrary } from './helpers.js';
 
@@ -388,6 +389,92 @@ test('zakończenie sesji: podsumowanie, wpis w dzienniku sesji i fiszki do rundy
   // Runda powtórkowa z odłożonymi fiszkami.
   const round = await library.startStudy(config(), summary.repeatQueue, { round: 2 });
   assert.deepEqual([round.round, round.queue.length], [2, 2]);
+});
+
+// ---------------------------------------------------------------- powtórzenie całej sesji
+
+const ALL_KNOWN = { term: true, description: true, example: true };
+
+test('„Powtórz całą sesję”: te same fiszki od nowa, także gdy wszystkie oceniono jako „Umiem”', async () => {
+  const { library, adapter, full, noExample, bare } = await setup();
+  const queue = [full, noExample, bare].map((term) => ({ termID: term.id, direction: PL_EN }));
+  const first = await library.startStudy(config({ front: 'example' }), queue);
+  for (let index = 0; index < queue.length; index += 1) {
+    await library.recordStudyDecision({ tiles: ALL_KNOWN, decision: DECISIONS.KNOW });
+  }
+  assert.equal(summarizeSession(library.getStudySession()).repeatQueue.length, 0, 'nic nie odłożono do powtórki');
+  assert.deepEqual(library.getRepeatableStudy().queue, queue);
+
+  const again = await library.repeatStudy();
+  assert.notEqual(again.id, first.id);
+  assert.deepEqual(again.queue, queue, 'kolejność jak w lekcjach zostaje');
+  assert.deepEqual([again.position, again.round, again.config.front], [0, 1, 'example']);
+  // Poprzednia sesja trafiła do dziennika i jest zapamiętana jako ostatnia.
+  assert.equal(await adapter.count('studySessions'), 1);
+  assert.deepEqual(library.getSettings().lastStudySession.queue, queue);
+});
+
+test('runda powtórkowa pamięta pełny zestaw fiszek, więc da się wrócić do całej sesji', async () => {
+  const { library, full, noExample, bare } = await setup();
+  const queue = [full, noExample, bare].map((term) => ({ termID: term.id, direction: PL_EN }));
+  const first = await library.startStudy(config(), queue);
+  await library.recordStudyDecision({ tiles: ALL_KNOWN, decision: DECISIONS.KNOW });
+  await library.recordStudyDecision({ tiles: {}, decision: DECISIONS.REPEAT });
+  await library.recordStudyDecision({ tiles: ALL_KNOWN, decision: DECISIONS.KNOW });
+  const repeat = summarizeSession(library.getStudySession()).repeatQueue;
+  const round = await library.startStudy(first.config, repeat, { round: 2, baseQueue: first.baseQueue });
+  assert.deepEqual(round.queue, [queue[1]]);
+  await library.recordStudyDecision({ tiles: ALL_KNOWN, decision: DECISIONS.KNOW });
+
+  assert.deepEqual(library.getRepeatableStudy().queue, queue, 'cała sesja, nie tylko runda powtórkowa');
+  const whole = await library.repeatStudy();
+  assert.deepEqual([whole.queue, whole.round], [queue, 1]);
+});
+
+test('ostatnią sesję można powtórzyć także po jej zamknięciu i ponownym otwarciu aplikacji', async () => {
+  const { library, adapter, branch, full, noExample, bare } = await setup();
+  const queue = [full, noExample, bare].map((term) => ({ termID: term.id, direction: EN_PL }));
+  await library.startStudy(config({ direction: EN_PL, shuffle: true, lessonIDs: [branch.lesson.id] }), queue);
+  await library.recordStudyDecision({ tiles: ALL_KNOWN, decision: DECISIONS.KNOW });
+  await library.finishStudy();
+  assert.equal(library.getStudySession(), null);
+
+  const reopened = new Library(adapter);
+  await reopened.load();
+  const repeatable = reopened.getRepeatableStudy();
+  assert.deepEqual(repeatable.queue, queue, 'pełny zestaw, także fiszki, do których nie doszło');
+  assert.equal(describeStudyMaterial(reopened, repeatable.config), 'Lekcja L1');
+
+  // Kolejność losowa: te same fiszki w nowym porządku, ten sam kierunek.
+  const session = await reopened.repeatStudy(seeded(7));
+  assert.deepEqual(
+    session.queue.map((card) => card.termID).sort(),
+    queue.map((card) => card.termID).sort()
+  );
+  assert.ok(session.queue.every((card) => card.direction === EN_PL));
+  assert.deepEqual(repeatQueue(queue, { shuffle: false, scope: 'all' }), queue);
+});
+
+test('powtórka pomija usunięte pojęcia; bez sesji do powtórzenia jest czytelny błąd', async () => {
+  const { library, full, noExample, bare } = await setup();
+  await assert.rejects(library.repeatStudy(), (error) => error instanceof LibraryError && error.code === 'noLastStudy');
+  assert.equal(library.getRepeatableStudy(), null);
+
+  const queue = [full, noExample, bare].map((term) => ({ termID: term.id, direction: PL_EN }));
+  await library.startStudy(config(), queue);
+  // Sesja bez żadnej oceny nie staje się „ostatnią”.
+  await library.finishStudy();
+  assert.equal(library.getRepeatableStudy(), null);
+
+  await library.startStudy(config(), queue);
+  await library.recordStudyDecision({ tiles: ALL_KNOWN, decision: DECISIONS.KNOW });
+  await library.finishStudy();
+  await library.delete({ kind: 'terms', ids: [noExample.id] });
+  assert.deepEqual(library.getRepeatableStudy().queue.map((card) => card.termID), [full.id, bare.id]);
+
+  await library.deleteAllContent();
+  assert.equal(library.getSettings().lastStudySession, null);
+  assert.equal(library.getRepeatableStudy(), null);
 });
 
 test('sesja przerwana przed końcem zapisuje to, co oceniono; sesja bez ocen nie zostawia śladu', async () => {

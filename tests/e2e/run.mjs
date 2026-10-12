@@ -1579,11 +1579,18 @@ test('fiszki: przygotowanie sesji – materiał, wiele lekcji, liczba fiszek, ko
   await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
   await page.locator('[data-testid=study-start]').waitFor();
 
-  // Ustawienia sesji są zapamiętane.
+  // Ustawienia sesji są zapamiętane – także wybrany materiał, również po ponownym otwarciu strony.
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await page.locator('[data-testid=study-start]').waitFor();
   assert.equal(await page.getByRole('radiogroup', { name: 'Pierwsza strona fiszki' }).getByRole('radio', { name: 'Definicja', exact: true }).isChecked(), true);
   assert.equal(await page.getByRole('radiogroup', { name: 'Liczba fiszek' }).getByRole('radio', { name: 'Wszystkie', exact: true }).isChecked(), true);
+  assert.equal(await lessonBox(lessons[0].name).isChecked(), true);
+  assert.equal(await lessonBox(lessons[1].name).isChecked(), true);
+  await expectText(planned(page), `${two} fisz`);
 
   // Kolejność losowa: ten sam zestaw pojęć.
+  await page.selectOption('[data-testid=study-domain]', '');
   await choose(page, 'Kolejność fiszek', 'Losowa');
   await choose(page, 'Liczba fiszek', '10');
   await expectText(planned(page), '10 fiszek z 40 pasujących');
@@ -1591,6 +1598,60 @@ test('fiszki: przygotowanie sesji – materiał, wiele lekcji, liczba fiszek, ko
   session = await activeSession(page);
   assert.equal(session.queue.length, 10);
   assert.equal(new Set(session.queue.map((card) => card.termID)).size, 10, 'fiszki się nie powtarzają');
+});
+
+test('fiszki: powtórka całej sesji z podsumowania, z ekranu Nauka i ze Startu', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page, `#/study/lesson/${ids.basicsID}`);
+  await startStudy(page);
+  for (let card = 0; card < 3; card += 1) await assess(page, 'all', 'know');
+
+  // Wszystko „Umiem”: nie ma czego odkładać, ale całą sesję można powtórzyć.
+  await page.locator('[data-testid=study-summary]').waitFor();
+  assert.equal(await page.locator('[data-testid=summary-repeat]').count(), 0);
+  const repeatAll = page.locator('[data-testid=summary-repeat-all]');
+  await expectText(repeatAll, 'Powtórz całą sesję (3)');
+  assert.ok((await repeatAll.getAttribute('class')).includes('button--primary'), 'to główne polecenie podsumowania');
+  await repeatAll.click();
+  await expectText(counter(page), '1 z 3');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'aktywa');
+  assert.equal((await stored(page)).studySessions.length, 1, 'poprzednia sesja jest w dzienniku');
+
+  // Po zakończeniu przed czasem ekran Nauka proponuje powtórkę tej samej sesji.
+  await assess(page, 'all', 'know');
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  const repeatLast = page.locator('[data-testid=study-repeat-last]');
+  await expectText(repeatLast, 'Powtórz ostatnią sesję (3 fiszki)');
+  await expectText(repeatLast, 'Lekcja Podstawy, PL → EN');
+  // Materiał ostatniej sesji jest też wybrany w formularzu.
+  assert.equal(await page.locator('[data-testid=study-module]').inputValue(), ids.financeID);
+  assert.equal(await page.locator('.group--compact .row', { hasText: 'Podstawy' }).locator('input').isChecked(), true);
+  await expectText(planned(page), '3 fiszki');
+
+  // Po ponownym otwarciu strony: jedno dotknięcie na Starcie.
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await tab(page, 'Start');
+  await expectText(page.locator('[data-testid=start-repeat-last]'), 'Powtórz ostatnią sesję (3 fiszki)');
+  await page.click('[data-testid=start-repeat-last]');
+  await expectText(counter(page), '1 z 3');
+  await expectText(page.locator('[data-testid=study-lesson]'), 'Podstawy');
+
+  // Po rundzie powtórkowej „cała sesja” to nadal wszystkie trzy fiszki.
+  await assess(page, 'all', 'know');
+  await assess(page, [], 'repeat');
+  await assess(page, 'all', 'know');
+  await expectText(page.locator('[data-testid=summary-repeat]'), 'Powtórz odłożone (1)');
+  await expectText(repeatAll, 'Powtórz całą sesję (3)');
+  assert.ok((await repeatAll.getAttribute('class')).includes('button--secondary'));
+  await page.click('[data-testid=summary-repeat]');
+  await expectText(counter(page), '1 z 1');
+  await assess(page, 'all', 'know');
+  await expectText(page.locator('.empty__title'), 'Runda powtórkowa zakończona');
+  await expectText(repeatAll, 'Powtórz całą sesję (3)');
+  await repeatAll.click();
+  await expectText(counter(page), '1 z 3');
 });
 
 test('fiszki: wejście z lekcji i z menu biblioteki ustawia materiał', async ({ open }) => {

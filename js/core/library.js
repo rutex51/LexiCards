@@ -13,7 +13,7 @@ import {
 } from './model.js';
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
 import { emptyChanges } from './storage.js';
-import { DECISIONS, emptyTiles, makeAssessment, makeSession, nextProgress, summarizeSession } from './study.js';
+import { DECISIONS, emptyTiles, makeAssessment, makeSession, nextProgress, repeatQueue, summarizeSession } from './study.js';
 
 const LEVEL_GENITIVE = { domain: 'dziedziny', module: 'modułu', lesson: 'lekcji', term: 'pojęcia' };
 const LEVEL_STORE = { domain: 'domains', module: 'modules', lesson: 'lessons', term: 'terms' };
@@ -38,6 +38,7 @@ const errors = {
   nothingSelected: () => new LibraryError('nothingSelected', 'Nie wybrano żadnych pojęć.'),
   emptyStudyQueue: () => new LibraryError('emptyStudyQueue', 'Brak fiszek pasujących do wybranych ustawień.'),
   noStudySession: () => new LibraryError('noStudySession', 'Nie ma trwającej sesji nauki.'),
+  noLastStudy: () => new LibraryError('noLastStudy', 'Nie ma zakończonej sesji do powtórzenia albo jej pojęcia zostały usunięte.'),
   nothingToUndo: () => new LibraryError('nothingToUndo', 'Nie ma decyzji do cofnięcia.'),
   invalidDecision: () => new LibraryError('invalidDecision', 'Nieznana decyzja – oczekiwano „Umiem” albo „Powtórz”.')
 };
@@ -817,8 +818,15 @@ export class Library {
   async deleteAllContent() {
     const stores = ['domains', 'modules', 'lessons', 'terms', 'progress'];
     const run = async () => {
-      // Trwająca sesja nauki wskazuje na usuwane pojęcia, więc znika razem z nimi.
-      const settings = { ...this.getSettings(), id: SETTINGS_ID, activeStudySession: null, updatedAt: nowISO() };
+      // Sesje i wybór materiału wskazują na usuwane elementy, więc znikają razem z nimi.
+      const settings = {
+        ...this.getSettings(),
+        id: SETTINGS_ID,
+        activeStudySession: null,
+        lastStudySession: null,
+        studySelection: null,
+        updatedAt: nowISO()
+      };
       await this.adapter.commit({
         ...emptyChanges(),
         puts: { settings: [settings] },
@@ -1039,10 +1047,19 @@ export class Library {
     unit.put('settings', { ...this.getSettings(), id: SETTINGS_ID, activeStudySession: session, updatedAt: nowISO() });
   }
 
-  /** Wpis o sesji w dzienniku; sesja bez żadnej oceny nie zostawia śladu. */
+  /**
+   * Wpis o sesji w dzienniku; sesja bez żadnej oceny nie zostawia śladu. Sesja z ocenami
+   * zostaje też zapamiętana jako „ostatnia” – z pełnym zestawem fiszek, do powtórzenia.
+   */
   #archiveStudySession(unit, session) {
     const summary = summarizeSession(session);
     if (summary.assessed === 0) return summary;
+    unit.put('settings', {
+      ...this.getSettings(),
+      id: SETTINGS_ID,
+      lastStudySession: { config: session.config, queue: session.baseQueue ?? session.queue, finishedAt: nowISO() },
+      updatedAt: nowISO()
+    });
     unit.append('studySessions', {
       id: session.id,
       startedAt: session.startedAt,
@@ -1068,12 +1085,44 @@ export class Library {
    * Rozpoczyna sesję z gotową kolejką [{ termID, direction }]. Poprzednia, niedokończona
    * sesja jest przy tym zamykana i trafia do dziennika.
    */
-  startStudy(config, queue, { round = 1 } = {}) {
+  startStudy(config, queue, { round = 1, baseQueue = null } = {}) {
     return this.#mutate((unit) => {
       if (!Array.isArray(queue) || queue.length === 0) throw errors.emptyStudyQueue();
       const previous = this.getStudySession();
       if (previous) this.#archiveStudySession(unit, previous);
-      const session = makeSession({ config, queue, round });
+      const session = makeSession({ config, queue, round, baseQueue });
+      this.#putStudySession(unit, session);
+      return session;
+    });
+  }
+
+  /**
+   * Fiszki, które dałoby się powtórzyć: pełny zestaw trwającej (zwykle właśnie zakończonej)
+   * sesji albo, gdy jej nie ma, ostatniej zakończonej. Pomija usunięte pojęcia.
+   * Zwraca { config, queue } albo null.
+   */
+  getRepeatableStudy() {
+    const active = this.getStudySession();
+    const source = active
+      ? { config: active.config, queue: active.baseQueue ?? active.queue }
+      : this.getSettings().lastStudySession;
+    if (!source?.config || !Array.isArray(source.queue)) return null;
+    const queue = source.queue.filter((card) => this.getTerm(card.termID));
+    return queue.length > 0 ? { config: source.config, queue } : null;
+  }
+
+  /**
+   * Rozpoczyna od nowa te same fiszki z tymi samymi ustawieniami (patrz getRepeatableStudy),
+   * niezależnie od tego, jak zostały ocenione. Bieżąca sesja jest zamykana i trafia do dziennika.
+   */
+  repeatStudy(random = Math.random) {
+    return this.#mutate((unit) => {
+      const source = this.getRepeatableStudy();
+      if (!source) throw errors.noLastStudy();
+      const active = this.getStudySession();
+      if (active) this.#archiveStudySession(unit, active);
+      const queue = repeatQueue(source.queue, source.config, random);
+      const session = makeSession({ config: source.config, queue, baseQueue: queue });
       this.#putStudySession(unit, session);
       return session;
     });

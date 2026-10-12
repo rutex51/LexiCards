@@ -172,6 +172,9 @@ Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany 
   ustala, które elementy pojęcie ma, więc ocena brakującego elementu nie może trafić do bazy.
 - **Opanowane** jest tylko pojęcie z kompletem zaliczonych elementów i decyzją „Umiem”.
   „Umiem” przy niepełnym wyniku zachowuje status częściowy.
+- **Powtórzenie sesji:** sesja przechowuje `baseQueue` – pełny zestaw fiszek, także w rundzie
+  powtórkowej. Zamknięta sesja z ocenami trafia do ustawień jako `lastStudySession`
+  (`config` + `queue`), a `repeatStudy()` zaczyna z niej nową sesję jedną transakcją.
 - **Cofnięcie** usuwa ostatni wpis historii i przywraca poprzedni rekord postępu, zapamiętany
   w wyniku fiszki. Działa także z ekranu podsumowania.
 - **Dzienniki** (`assessments`, `studySessions`) nie są trzymane w pamięci: zapis idzie przez

@@ -286,9 +286,34 @@ export function describeProgress(progress) {
 
 // ---------------------------------------------------------------- sesja
 
-/** Nowa sesja nauki. `results[i]` opisuje decyzję dla `queue[i]`. */
-export function makeSession({ config, queue, round = 1, now = nowISO() }) {
-  return { id: newID(), startedAt: now, config, queue, position: 0, results: [], round };
+/**
+ * Nowa sesja nauki. `results[i]` opisuje decyzję dla `queue[i]`.
+ * `baseQueue` to pełny zestaw fiszek sesji – runda powtórkowa ma krótszą kolejkę,
+ * ale „Powtórz całą sesję” wraca do wszystkich fiszek.
+ */
+export function makeSession({ config, queue, round = 1, baseQueue = null, now = nowISO() }) {
+  return { id: newID(), startedAt: now, config, queue, baseQueue: baseQueue ?? queue, position: 0, results: [], round };
+}
+
+/**
+ * Kolejka do powtórzenia tych samych fiszek: przy losowej kolejności tasowana na nowo,
+ * przy kolejności „jak w lekcjach” bez zmian.
+ */
+export function repeatQueue(queue, config, random = Math.random) {
+  const cards = queue.map((card) => ({ termID: card.termID, direction: card.direction }));
+  return config.shuffle || config.scope === 'random' ? shuffled(cards, random) : cards;
+}
+
+/** Krótki opis materiału sesji, np. „Lekcja Leadership” albo „Wszystkie dziedziny”. */
+export function describeStudyMaterial(library, config) {
+  const lessons = (config.lessonIDs ?? []).map((id) => library.getLesson(id)).filter(Boolean);
+  if (lessons.length === 1) return `Lekcja ${lessons[0].name}`;
+  if (lessons.length > 1) return `Lekcje: ${lessons.map((lesson) => lesson.name).join(', ')}`;
+  const module = config.moduleID ? library.getModule(config.moduleID) : null;
+  if (module) return `Moduł ${module.name}`;
+  const domain = config.domainID ? library.getDomain(config.domainID) : null;
+  if (domain) return `Dziedzina ${domain.name}`;
+  return 'Wszystkie dziedziny';
 }
 
 export function isSessionFinished(session) {

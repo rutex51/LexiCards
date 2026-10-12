@@ -2,9 +2,10 @@
 
 import { sampleTermCount } from '../../core/samples.js';
 import { isSessionFinished } from '../../core/study.js';
-import { pluralLessons, pluralModules, pluralTerms } from '../../core/text.js';
+import { pluralCards, pluralLessons, pluralModules, pluralTerms } from '../../core/text.js';
 import { loadSampleData, openDomainForm, openLessonForm, openTermForm } from '../actions.js';
 import { actionRow, domainBadge, emptyState, group, primaryButton, settingsAction } from '../components.js';
+import { showError } from '../dialogs.js';
 import { h } from '../dom.js';
 import { icon } from '../icons.js';
 import { routes } from '../router.js';
@@ -34,6 +35,22 @@ function domainTile(library, domain) {
 export class StartScreen {
   constructor(ctx) {
     this.ctx = ctx;
+    this.starting = false;
+  }
+
+  /** Powtórka ostatniej sesji jednym dotknięciem: te same fiszki i ustawienia. */
+  async #repeatLast() {
+    const { ctx } = this;
+    if (this.starting) return;
+    this.starting = true;
+    try {
+      await ctx.library.repeatStudy();
+      ctx.navigate(routes.studySession());
+    } catch (error) {
+      await showError(error);
+    } finally {
+      this.starting = false;
+    }
   }
 
   view() {
@@ -62,19 +79,28 @@ export class StartScreen {
     const domains = library.listDomains();
     const session = library.getStudySession();
     const resumable = session && !isSessionFinished(session);
+    const repeatable = !resumable && summary.terms > 0 ? library.getRepeatableStudy() : null;
 
     return {
       title: 'Start',
       subtitle: summarySentence(summary),
       actions,
       body: [
-        summary.terms > 0 ? h('a', {
-          class: 'button button--primary button--block',
-          href: resumable ? routes.studySession() : routes.study(),
-          dataset: { testid: 'start-study' }
-        }, resumable
-          ? `Wznów naukę (fiszka ${session.position + 1} z ${session.queue.length})`
-          : 'Rozpocznij naukę') : null,
+        summary.terms > 0 ? h('div', { class: 'start-study' },
+          h('a', {
+            class: 'button button--primary button--block',
+            href: resumable ? routes.studySession() : routes.study(),
+            dataset: { testid: 'start-study' }
+          }, resumable
+            ? `Wznów naukę (fiszka ${session.position + 1} z ${session.queue.length})`
+            : 'Rozpocznij naukę'),
+          repeatable ? h('button', {
+            type: 'button',
+            class: 'button button--secondary button--block',
+            dataset: { testid: 'start-repeat-last' },
+            onClick: () => this.#repeatLast()
+          }, `Powtórz ostatnią sesję (${pluralCards(repeatable.queue.length)})`) : null
+        ) : null,
         h('section', { class: 'group' },
           h('h2', { class: 'group__title' }, 'Twoje dziedziny'),
           h('ul', { class: 'tiles', role: 'list' }, domains.map((domain) => domainTile(library, domain)))

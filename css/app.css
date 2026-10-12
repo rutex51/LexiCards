@@ -1706,6 +1706,11 @@ a.row__main:active,
 
 .study__keys { display: none; }
 
+.start-study {
+  display: grid;
+  gap: 10px;
+}
+
 /* Niski ekran (np. iPhone w Safari z widocznymi paskami): ciaśniej, żeby fiszka była jak największa. */
 @media (max-height: 760px) {
   .study {

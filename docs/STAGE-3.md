@@ -58,6 +58,17 @@ w sekcji „Testy”; to, czego nie udało się sprawdzić, jest wymienione osob
   albo z zakładki Nauka – także po ponownym otwarciu strony i po przywróceniu kopii
   zapasowej na innym urządzeniu. „Zakończ” kończy sesję przed czasem.
 
+**Powtórka tej samej sesji** (wersja 0.3.2)
+
+- Na podsumowaniu „Powtórz całą sesję” uruchamia od nowa wszystkie fiszki sesji – także
+  ocenione jako „Umiem” – z tymi samymi ustawieniami. Po rundzie powtórkowej oznacza to
+  pełny zestaw z pierwszej rundy, nie tylko odłożone fiszki.
+- Ostatnia zakończona sesja (z co najmniej jedną oceną) jest zapamiętywana: na Starcie
+  i w zakładce Nauka jest przycisk „Powtórz ostatnią sesję”, także po ponownym otwarciu strony.
+- Przy kolejności losowej fiszki są tasowane na nowo, kierunek każdej fiszki zostaje ten sam.
+  Pojęcia usunięte w międzyczasie są pomijane.
+- Formularz sesji pamięta ostatnio wybrany materiał (dziedzinę, moduł, lekcje).
+
 **Historia ocen i stan nauki**
 
 - Każda zatwierdzona fiszka dopisuje wpis do historii (wynik, liczba ocenianych elementów,

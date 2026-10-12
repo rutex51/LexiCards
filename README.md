@@ -73,6 +73,8 @@ trzeba najpierw zapisać w Excelu jako `.xlsx`.
 4. Przesuń fiszkę **w lewo – Umiem** albo **w prawo – Powtórz** (są też przyciski).
 
 Strzałka w pasku u góry cofa ostatnią decyzję. Przerwaną sesję można wznowić ze Startu.
+Te same fiszki da się powtórzyć jednym dotknięciem – „Powtórz całą sesję” na podsumowaniu albo
+„Powtórz ostatnią sesję” na Starcie i w zakładce Nauka. Formularz sesji pamięta ostatnio wybrany materiał.
 Na komputerze działa klawiatura: spacja odwraca, 1 2 3 przełączają kafelki, ← i → zatwierdzają, Z cofa.
 
 ### Gdzie są dane

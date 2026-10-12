@@ -69,6 +69,8 @@ export function defaultSettings() {
     studyScope: 'all',             // ostatnio wybrany zakres fiszek
     studyCount: 20,                // ostatnio wybrana liczba fiszek (0 = wszystkie)
     activeStudySession: null,      // trwająca sesja nauki – do wznowienia po ponownym otwarciu
+    lastStudySession: null,        // ostatnia zakończona sesja: { config, queue, finishedAt } – do powtórzenia
+    studySelection: null,          // ostatnio wybrany materiał: { domainID, moduleID, lessonIDs }
     lastBackupAt: null,
     createdAt: now,
     updatedAt: now
