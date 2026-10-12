@@ -199,6 +199,15 @@ export class StudySetupScreen {
           })
         ) : null,
         repeatable ? this.#lastSessionGroup(repeatable) : null,
+        group({ title: 'Słuchanie' },
+          actionRow({
+            label: 'Słuchaj, np. w samochodzie',
+            subtitle: 'Aplikacja czyta pojęcie, daje chwilę na zastanowienie i czyta odpowiedź',
+            iconName: 'headphones',
+            testID: 'study-listen',
+            onClick: () => ctx.navigate(routes.listen())
+          })
+        ),
         materialGroup(ctx, this.selection, 'study'),
         lessonsGroup(ctx, this.selection, 'study'),
         h('section', { class: 'group' },

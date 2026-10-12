@@ -70,6 +70,16 @@ export function defaultSettings() {
     statsDirection: null,          // kierunek w statystykach: pl_en | en_pl | both; null – jak w nauce
     statsRange: 30,                // dni na wykresach: 7 | 30 | 90
     statsLevel: 'domain',          // zestawienie opanowania: domain | module | lesson
+    listenSelection: null,         // słuchanie: ostatnio wybrany materiał
+    listenDirection: 'mixed',      // pl_en | en_pl | mixed
+    listenScope: 'all',
+    listenCount: 20,
+    listenPause: 5,                // sekundy na zastanowienie
+    listenDescription: true,       // czytać definicję po odpowiedzi
+    listenExample: true,           // czytać przykład po odpowiedzi
+    listenRepeatAnswer: false,     // powtórzyć odpowiedź drugi raz
+    listenDetailLanguage: 'en',    // język definicji i przykładu: en | pl
+    listenBackground: null,        // wynik sprawdzenia czytania przy zablokowanym ekranie: { result, testedAt }
     dailyLearningGoal: 20,
     speechRate: 1,
     preferredVoicePL: null,

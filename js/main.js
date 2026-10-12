@@ -7,6 +7,7 @@ import { h, replaceChildren } from './ui/dom.js';
 import { Router, routeKey } from './ui/router.js';
 import { GlossaryScreen } from './ui/screens/glossary.js';
 import { ImportScreen } from './ui/screens/import.js';
+import { ListenScreen } from './ui/screens/listen.js';
 import { DomainScreen, DomainsScreen, ModuleScreen } from './ui/screens/library.js';
 import { QuizSessionScreen } from './ui/screens/quiz-session.js';
 import { QuizSetupScreen } from './ui/screens/quiz-setup.js';
@@ -29,6 +30,7 @@ const SCREENS = {
   import: ImportScreen,
   study: StudySetupScreen,
   studySession: StudySessionScreen,
+  listen: ListenScreen,
   quiz: QuizSetupScreen,
   quizSession: QuizSessionScreen,
   stats: StatsScreen,

@@ -37,16 +37,9 @@ export function onVoicesChanged(listener) {
  * więc ponowne dotknięcie głośnika odtwarza tekst od początku.
  * settings: { speechRate, preferredVoicePL, preferredVoiceEN } – identyfikatory głosów z listVoices().
  */
-export function speak(text, language, settings = {}) {
-  if (!speechAvailable() || !text) return false;
-  const synthesis = window.speechSynthesis;
-  // Przerywamy tylko wtedy, gdy coś jest czytane: w części przeglądarek cancel() tuż przed
-  // speak() potrafi zgubić nową wypowiedź.
-  if (synthesis.speaking || synthesis.pending) synthesis.cancel();
+/** Wypowiedź z językiem, głosem i szybkością z ustawień. */
+function makeUtterance(text, language, settings) {
   const utterance = new window.SpeechSynthesisUtterance(text);
-  // Odwołanie trzymane do końca czytania – bez niego przeglądarka może urwać wypowiedź w połowie.
-  current = utterance;
-  utterance.onend = utterance.onerror = () => { if (current === utterance) current = null; };
   utterance.lang = LANGUAGE_TAGS[language] ?? language;
   const preferred = language === 'pl' ? settings.preferredVoicePL : settings.preferredVoiceEN;
   const voice = preferred ? listVoices(language).find((item) => item.voiceURI === preferred) : null;
@@ -55,8 +48,53 @@ export function speak(text, language, settings = {}) {
     utterance.lang = voice.lang;
   }
   utterance.rate = Number(settings.speechRate) > 0 ? Number(settings.speechRate) : 1;
+  return utterance;
+}
+
+export function speak(text, language, settings = {}) {
+  if (!speechAvailable() || !text) return false;
+  const synthesis = window.speechSynthesis;
+  // Przerywamy tylko wtedy, gdy coś jest czytane: w części przeglądarek cancel() tuż przed
+  // speak() potrafi zgubić nową wypowiedź.
+  if (synthesis.speaking || synthesis.pending) synthesis.cancel();
+  const utterance = makeUtterance(text, language, settings);
+  // Odwołanie trzymane do końca czytania – bez niego przeglądarka może urwać wypowiedź w połowie.
+  current = utterance;
+  utterance.onend = utterance.onerror = () => { if (current === utterance) current = null; };
   synthesis.speak(utterance);
   return true;
+}
+
+/**
+ * Czyta tekst i wywołuje `onDone`, gdy skończy (także po błędzie). Nie przerywa niczego –
+ * kolejność wypowiedzi pilnuje wywołujący. Gdy przeglądarka nie zgłosi końca (zdarza się
+ * w Safari), `onDone` wywołuje zapasowy licznik czasu dopasowany do długości tekstu.
+ * Zwraca funkcję, która unieważnia oczekiwanie (np. przy pauzie).
+ */
+export function speakThen(text, language, settings, onDone) {
+  if (!speechAvailable() || !text) {
+    const timer = setTimeout(onDone, 0);
+    return () => clearTimeout(timer);
+  }
+  let finished = false;
+  const rate = Number(settings.speechRate) > 0 ? Number(settings.speechRate) : 1;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(fallback);
+    if (current === utterance) current = null;
+    onDone();
+  };
+  const utterance = makeUtterance(text, language, settings);
+  current = utterance;
+  utterance.onend = finish;
+  utterance.onerror = finish;
+  const fallback = setTimeout(finish, 4000 + (text.length * 160) / rate);
+  window.speechSynthesis.speak(utterance);
+  return () => {
+    finished = true;
+    clearTimeout(fallback);
+  };
 }
 
 export function stopSpeaking() {

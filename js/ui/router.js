@@ -21,6 +21,8 @@ export const routes = {
   /** Przygotowanie sesji nauki; preset: { level: 'domain' | 'module' | 'lesson', id } wybiera materiał. */
   study: (preset = null) => (preset ? `#/study/${preset.level}/${encodeURIComponent(preset.id)}` : '#/study'),
   studySession: () => '#/study/session',
+  /** Słuchanie: aplikacja czyta pojęcia i odpowiedzi (np. w samochodzie). */
+  listen: () => '#/study/listen',
   /** Konfiguracja quizu; preset jak w nauce. */
   quiz: (preset = null) => (preset ? `#/quiz/${preset.level}/${encodeURIComponent(preset.id)}` : '#/quiz'),
   quizSession: () => '#/quiz/session',
@@ -47,6 +49,7 @@ export function parseHash(hash) {
       return { tab: 'library', name: 'domains' };
     case 'study':
       if (second === 'session') return { tab: 'study', name: 'studySession' };
+      if (second === 'listen') return { tab: 'study', name: 'listen' };
       if (['domain', 'module', 'lesson'].includes(second) && third) {
         return { tab: 'study', name: 'study', id: `${second}:${third}`, preset: { level: second, id: third } };
       }

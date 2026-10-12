@@ -2877,6 +2877,190 @@ test('statystyki: wąski ekran 320 px, ciemny motyw i pusta biblioteka', async (
   assert.ok((await overflowX(page)) <= 0, `lekcja: treść wystaje o ${await overflowX(page)} px`);
 }, { device: { ...PHONE, viewport: { width: 320, height: 568 } } });
 
+// ---------------------------------------------------------------- słuchanie
+
+/** Atrapa syntezatora: zapisuje wypowiedzi (tekst, język, chwila) i kończy każdą po 200 ms. */
+async function fakeSpeechForListening(context) {
+  await context.addInitScript(() => {
+    const spoken = [];
+    let timer = null;
+    let current = null;
+    window.SpeechSynthesisUtterance = class {
+      constructor(text) { this.text = text; this.lang = ''; this.rate = 1; this.voice = null; }
+    };
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        getVoices: () => [],
+        speaking: false,
+        pending: false,
+        speak(utterance) {
+          spoken.push({ text: utterance.text, lang: utterance.lang, at: Date.now() });
+          current = utterance;
+          timer = setTimeout(() => { current = null; utterance.onend?.(); }, 200);
+        },
+        cancel() {
+          clearTimeout(timer);
+          const utterance = current;
+          current = null;
+          utterance?.onerror?.({ error: 'interrupted' });
+        },
+        addEventListener() {},
+        removeEventListener() {}
+      }
+    });
+    window.spokenTexts = spoken;
+    window.wakeLockRequests = 0;
+    Object.defineProperty(navigator, 'wakeLock', {
+      configurable: true,
+      value: { request: async () => { window.wakeLockRequests += 1; return { release: async () => {}, addEventListener() {} }; } }
+    });
+  });
+}
+
+const spokenTexts = (page) => page.evaluate(() => window.spokenTexts.map(({ text, lang, at }) => ({ text, lang, at })));
+
+async function openListening(page, ids) {
+  await page.evaluate((selection) => window.lexicards.library.updateSettings({ listenSelection: selection }),
+    { domainID: ids.domainID, moduleID: ids.financeID, lessonIDs: [ids.basicsID] });
+  await openStudySetup(page);
+  await page.click('[data-testid=study-listen]');
+  await page.locator('[data-testid=listen-start]').waitFor();
+}
+
+test('słuchanie: pojęcie, czas na zastanowienie, odpowiedź, definicja i przykład; koniec; powtórki bez zmian', async ({ open, context }) => {
+  await fakeSpeechForListening(context);
+  await context.clock.install({ time: new Date('2026-10-12T10:00:00') });
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openListening(page, ids);
+
+  // Domyślnie: kierunek mieszany, definicja i przykład po angielsku.
+  assert.equal(await page.getByRole('radiogroup', { name: 'Kierunek słuchania' }).getByRole('radio', { name: 'Mieszany', exact: true }).isChecked(), true);
+  assert.equal(await page.locator('[data-testid=listen-description]').isChecked(), true);
+  assert.equal(await page.locator('[data-testid=listen-example]').isChecked(), true);
+  assert.equal(await page.getByRole('radiogroup', { name: 'Język definicji i przykładu' }).getByRole('radio', { name: 'Po angielsku' }).isChecked(), true);
+  await choose(page, 'Kierunek słuchania', 'PL → EN');
+  await choose(page, 'Liczba pojęć', 'Wszystkie');
+  await choose(page, 'Czas na zastanowienie', '3 s');
+  await expectText(page.locator('[data-testid=listen-planned]'), '3 pojęcia, ok. 1 min');
+
+  await page.click('[data-testid=listen-start]');
+  await page.locator('[data-testid=listen-player]').waitFor();
+  await waitUntil(async () => {
+    await page.clock.runFor(500);
+    return page.locator('[data-testid=listen-done]').count();
+  }, 'Słuchanie powinno dojść do końca', 20000);
+  await expectText(page.locator('[data-testid=listen-summary]'), 'Odsłuchane pojęcia: 3 z 3.');
+
+  const spoken = await spokenTexts(page);
+  assert.deepEqual(spoken[0], { ...spoken[0], text: 'Zaczynamy. 3 pojęcia.', lang: 'pl-PL' });
+  assert.deepEqual(spoken.at(-1), { ...spoken.at(-1), text: 'Koniec. Odsłuchano 3 pojęcia.', lang: 'pl-PL' });
+  const after = (text) => {
+    const index = spoken.findIndex((item) => item.text === text);
+    assert.ok(index > 0, `brak wypowiedzi „${text}”`);
+    return spoken.slice(index);
+  };
+  const assets = after('aktywa');
+  assert.deepEqual(assets.slice(0, 4).map(({ text, lang }) => `${lang} ${text}`), [
+    'pl-PL aktywa', 'en-US assets', 'en-US Resources owned by a company.', 'en-US The assets of the company increased.'
+  ]);
+  assert.ok(assets[1].at - assets[0].at >= 3200, `czas na zastanowienie: ${assets[1].at - assets[0].at} ms`);
+  // Bez angielskiej definicji – polska; bez przykładu – nic.
+  assert.deepEqual(after('pasywa').slice(0, 3).map(({ text, lang }) => `${lang} ${text}`), [
+    'pl-PL pasywa', 'en-US liabilities', 'pl-PL Źródła finansowania majątku.'
+  ]);
+  assert.deepEqual(after('zysk').slice(0, 2).map(({ text, lang }) => `${lang} ${text}`), ['pl-PL zysk', 'en-US profit']);
+  assert.equal(spoken.length, 1 + 4 + 3 + 2 + 1);
+
+  assert.ok(await page.evaluate(() => window.wakeLockRequests) >= 1, 'prośba o niewygaszanie ekranu');
+  assert.equal(await page.evaluate(() => window.lexicards.library.listProgress().length), 0);
+  assert.equal(await page.evaluate(() => window.lexicards.library.adapter.count('assessments')), 0);
+  const settings = await page.evaluate(() => window.lexicards.library.getSettings());
+  assert.deepEqual([settings.listenDirection, settings.listenPause, settings.listenCount], ['pl_en', 3, 0]);
+});
+
+test('słuchanie: pauza, wznowienie, dalej, powtórz i sprawdzenie czytania przy wyłączonym ekranie', async ({ open, context }) => {
+  await fakeSpeechForListening(context);
+  await context.clock.install({ time: new Date('2026-10-12T10:00:00') });
+  const page = await open();
+  const ids = await seedStudy(page);
+  await page.evaluate(() => window.lexicards.library.updateSettings({ listenDirection: 'pl_en', listenCount: 0, listenPause: 8 }));
+  await openListening(page, ids);
+  await expectText(page.locator('[data-testid=listen-background-note]'), 'Jeszcze nie sprawdzone');
+  await page.click('[data-testid=listen-start]');
+  const player = page.locator('[data-testid=listen-player]');
+  await waitUntil(async () => {
+    await page.clock.runFor(100);
+    return (await player.getAttribute('data-step')) === 'think';
+  }, 'Po pojęciu – czas na zastanowienie');
+  await expectText(page.locator('[data-testid=listen-wake]'), 'Ekran nie zgaśnie');
+
+  // Pauza: nic nie jest czytane; wznowienie – czas na zastanowienie od nowa.
+  await page.click('[data-testid=listen-toggle]');
+  assert.equal(await player.getAttribute('data-phase'), 'paused');
+  const before = (await spokenTexts(page)).length;
+  await page.clock.runFor(20000);
+  assert.equal((await spokenTexts(page)).length, before, 'w pauzie cisza');
+  await page.click('[data-testid=listen-toggle]');
+  assert.equal(await player.getAttribute('data-phase'), 'playing');
+  await page.clock.runFor(7000);
+  assert.equal((await spokenTexts(page)).length, before, 'pełne 8 s na zastanowienie po wznowieniu');
+  await page.clock.runFor(1500);
+  assert.equal((await spokenTexts(page)).length, before + 1, 'potem odpowiedź');
+
+  // Dalej: następne pojęcie od razu; powtórz – to samo jeszcze raz.
+  await page.click('[data-testid=listen-next]');
+  await page.clock.runFor(400);
+  const next = (await spokenTexts(page)).at(-1);
+  assert.equal(next.lang, 'pl-PL');
+  await page.click('[data-testid=listen-repeat]');
+  await page.clock.runFor(400);
+  assert.equal((await spokenTexts(page)).at(-1).text, next.text);
+
+  // Ekran wyłączony na 10 s (strona w tle), czytanie trwa – wynik zapamiętany.
+  const setVisibility = (state) => page.evaluate((value) => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => value });
+    document.dispatchEvent(new window.Event('visibilitychange'));
+  }, state);
+  await setVisibility('hidden');
+  await page.clock.runFor(10000);
+  await setVisibility('visible');
+  await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().listenBackground?.result === 'continues'), 'Wynik sprawdzenia powinien się zapisać');
+  await expectText(page.locator('.toast').last(), 'Czytanie trwało');
+
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await page.locator('[data-testid=listen-start]').waitFor();
+  await expectText(page.locator('[data-testid=listen-background-note]'), 'czytanie trwa także przy wyłączonym ekranie');
+});
+
+test('słuchanie: wąski ekran 320 px – ustawienia i odtwarzacz mieszczą się, przyciski są duże', async ({ open, context }) => {
+  await fakeSpeechForListening(context);
+  const page = await open();
+  await page.evaluate(async () => {
+    const { library } = window.lexicards;
+    const lesson = await library.createLesson({ name: 'Metrologia' }, { create: { name: 'Pomiary' }, domain: { create: { name: 'Technika' } } });
+    await library.createTerm({
+      termPL: 'współrzędnościowa maszyna pomiarowa z głowicą skanującą',
+      termEN: 'coordinate measuring machine with a scanning probe head',
+      descriptionEN: 'A device for determining dimensions and geometric deviations of workpieces. '.repeat(3)
+    }, lesson.id);
+    await library.createTerm({ termPL: 'wzorzec', termEN: 'gauge' }, lesson.id);
+  });
+  await openStudySetup(page);
+  await page.click('[data-testid=study-listen]');
+  await page.locator('[data-testid=listen-start]').waitFor();
+  assert.ok((await overflowX(page)) <= 0, `ustawienia: treść wystaje o ${await overflowX(page)} px`);
+  await page.click('[data-testid=listen-start]');
+  await page.locator('[data-testid=listen-player]').waitFor();
+  assert.ok((await overflowX(page)) <= 0, `odtwarzacz: treść wystaje o ${await overflowX(page)} px`);
+  for (const id of ['listen-previous', 'listen-toggle', 'listen-next', 'listen-repeat']) {
+    const box = await page.locator(`[data-testid=${id}]`).boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= 320 && box.y + box.height <= 568, `${id} mieści się na ekranie`);
+    assert.ok(box.height >= 44 && box.width >= 44, `${id} jest duży (${box.width}×${box.height})`);
+  }
+}, { device: { ...PHONE, viewport: { width: 320, height: 568 } } });
+
 test('iPhone: dotknięcie pola formularza nie powiększa strony (czcionka pól ≥ 16 px, maximum-scale)', async ({ open }) => {
   const page = await open();
   // Na iPhonie widok dostaje maximum-scale=1 – Safari nie powiększa strony przy polach formularza.

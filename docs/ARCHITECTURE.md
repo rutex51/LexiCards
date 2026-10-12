@@ -24,6 +24,7 @@ js/ui/router.js            adresy po znaku # i historia przeglądarki
 js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
 js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspólny dla nauki i quizu
 js/ui/charts.js            wykresy SVG (w czasie, pasek udziałów, miernik) z podpowiedzią i tabelą danych
+js/ui/listen-player.js     odtwarzacz słuchania: kolejne kroki czytane syntezatorem mowy, pauza, dalej, powtórz
 js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
 js/core/model.js           kształt rekordów, wartości domyślne, stałe
@@ -38,6 +39,7 @@ js/core/study.js           fiszki: dobór do sesji, treść stron, ocena, postę
 js/core/fsrs.js            algorytm powtórek FSRS-6 (przeniesiony z py-fsrs 6.3.2)
 js/core/quiz.js            quizy: pytania wyboru, rundy par, test mieszany, odpowiedzi, wynik
 js/core/stats.js           statystyki: statusy w kierunkach, elementy, szeregi dzienne, zestawienia, czas nauki
+js/core/listen.js          słuchanie: kroki pojęcia (pojęcie, przerwa, odpowiedź, definicja, przykład), szacunek czasu
 js/core/text.js            normalizacja tekstu, tagi, odmiana liczebników
 ```
 
@@ -266,6 +268,26 @@ Reguły są w `js/core/quiz.js` (bez przeglądarki), zapis w `Library`, ekrany w
   Biblioteka liczy przy wczytaniu statystyki pojęć z `quizAnswers` (`getQuizStats()`: próby,
   poprawne, wynik ostatniej odpowiedzi). Z nich korzysta zakres nauki „Błędy z quizów”
   (pojęcia, na które ostatnio odpowiedziano źle) i linia „Quizy” w szczegółach pojęcia.
+
+## Słuchanie
+
+- **Scenariusz** (`listenSteps()` w `js/core/listen.js`): pojęcie w języku pytania, czas na
+  zastanowienie, odpowiedź, opcjonalnie odpowiedź drugi raz, definicja i przykład w wybranym
+  języku (gdy brak – w drugim). Kolejka pojęć powstaje tak jak w nauce (`buildQueue()`: materiał,
+  kierunek, zakres, liczba), w losowej kolejności.
+- **Odtwarzacz** (`js/ui/listen-player.js`) czyta kroki po kolei przez `speakThen()` z
+  `js/ui/speech.js`: wypowiedź zgłasza koniec, a gdy przeglądarka go nie zgłosi, zapasowy licznik
+  czasu dopasowany do długości tekstu przechodzi dalej. Każde przejście ma „bilet” – pauza,
+  „dalej”, „wstecz” i „powtórz” wydają nowy, więc spóźnione zdarzenia przerwanej wypowiedzi nic
+  nie przestawiają. Wznowienie czyta bieżący krok od początku.
+- **Safari:** pierwsza wypowiedź pada bezpośrednio w obsłudze dotknięcia „Rozpocznij słuchanie”
+  (wymóg przeglądarki). Ekran nie gaśnie dzięki Screen Wake Lock (`navigator.wakeLock`),
+  o który aplikacja prosi ponownie po powrocie strony na ekran.
+- **Sprawdzenie na urządzeniu:** gdy strona zniknie z ekranu w trakcie czytania na co najmniej
+  8 s, po powrocie aplikacja porównuje liczbę ukończonych kroków i zapisuje w ustawieniach
+  (`listenBackground`), czy czytanie trwało. Po powrocie bieżący krok jest czytany od nowa –
+  system mógł przerwać wypowiedź bez zgłoszenia końca.
+- Słuchanie nie zapisuje ocen ani powtórek.
 
 ## Statystyki
 

@@ -26,6 +26,8 @@ Adres: **https://rutex51.github.io/LexiCards/**
 - Quizy: jednokrotny wybór (do czterech odpowiedzi), łączenie par i test mieszany; wybór materiału,
   kierunku, liczby pytań, limitu czasu i progu zaliczenia. Wynik z listą błędów, „Powtórz błędne
   odpowiedzi”, historia wyników. Quizy nie zmieniają terminów powtórek fiszek.
+- Słuchanie, np. w samochodzie: aplikacja czyta pojęcie, daje chwilę na zastanowienie, czyta odpowiedź,
+  definicję i przykład; ekran nie gaśnie, a duże przyciski pozwalają zatrzymać, cofnąć albo pominąć pojęcie.
 - Statystyki: opanowane pojęcia, do powtórki, skuteczność quizów, czas nauki, znajomość pojęć,
   definicji i przykładów (osobno dla każdego kierunku), wykresy postępu, powtórek i quizów w czasie,
   opanowanie według dziedzin, modułów i lekcji z przejściem w głąb. Najważniejsze liczby także na Starcie.
@@ -118,6 +120,18 @@ biblioteki, od najdłużej czekających. Pod przyciskami „Umiem” i „Powtó
 Niedokończony quiz można wznowić ze Startu albo z zakładki Quiz. Quizy nie zmieniają terminów
 powtórek fiszek; pojęcia, na które ostatnio odpowiedziałeś źle, znajdziesz w Nauce w zakresie
 **Błędy z quizów**. Na komputerze działa klawiatura: 1–4 lub A–D wybiera odpowiedź, Enter – dalej.
+
+### Słuchanie (np. w samochodzie)
+
+W zakładce **Nauka** wybierz **Słuchaj, np. w samochodzie**, ustaw materiał, kierunek (domyślnie mieszany),
+zakres, liczbę pojęć i czas na zastanowienie (3–12 s), a potem **Rozpocznij słuchanie** – jeszcze przed
+jazdą. Aplikacja czyta pojęcie, czeka, czyta odpowiedź, a potem definicję i przykład (po angielsku albo
+po polsku). Duży przycisk w środku zatrzymuje i wznawia, boczne przechodzą do poprzedniego i następnego
+pojęcia. Słuchanie nie zmienia terminów powtórek.
+
+Na iPhonie strona mówi tylko wtedy, gdy jest na ekranie; aplikacja nie pozwala ekranowi zgasnąć. Czy
+czytanie trwa przy zablokowanym ekranie, aplikacja sprawdza sama: zablokuj telefon na około 30 sekund
+w trakcie słuchania, a po odblokowaniu zobaczysz wynik (zapamiętany w ustawieniach słuchania).
 
 ### Statystyki
 

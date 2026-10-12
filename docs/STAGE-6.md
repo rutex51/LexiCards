@@ -129,9 +129,43 @@ testowym, nie na telefonie).
 - Statystyki liczą się przy każdym otwarciu i zmianie ustawień ekranu; przy bardzo dużych
   bibliotekach na telefonie może to być zauważalne – to temat etapu 7.
 
+## Uzupełnienie w wersji 0.6.1: słuchanie (np. w samochodzie)
+
+Na Twoją prośbę – wariant A z propozycji: tryb w aplikacji, po odpowiedzi definicja i przykład,
+domyślnie kierunek mieszany.
+
+- **Gdzie:** zakładka Nauka → „Słuchaj, np. w samochodzie”.
+- **Ustawienia:** materiał, kierunek (domyślnie mieszany), zakres (te same co w nauce, np. „Do
+  powtórki”, „Błędy z quizów”), liczba pojęć, czas na zastanowienie (3, 5, 8 albo 12 s), po
+  odpowiedzi: definicja, przykład, odpowiedź drugi raz; język definicji i przykładu (domyślnie
+  angielski; gdy brak – wersja polska). Pod przyciskiem startu – liczba pojęć i szacowany czas.
+- **Czytanie:** „Zaczynamy. N pojęć.”, potem dla każdego pojęcia: pojęcie → cisza na
+  zastanowienie (pasek odlicza czas) → odpowiedź → definicja → przykład → krótka przerwa;
+  na końcu „Koniec. Odsłuchano N pojęć.”
+- **Sterowanie:** duży przycisk pauzy i wznowienia (wznowienie czyta bieżący krok od początku),
+  poprzednie i następne pojęcie, „Powtórz to pojęcie”. Ekran nie gaśnie (Screen Wake Lock); gdy
+  przeglądarka na to nie pozwala, ekran mówi, jak wyłączyć automatyczną blokadę.
+- **Sprawdzenie, czy czytanie trwa przy zablokowanym ekranie:** gdy w trakcie słuchania zablokujesz
+  telefon na co najmniej 8 s, po odblokowaniu aplikacja powie, czy czytanie trwało, i zapamięta wynik
+  (widoczny w ustawieniach słuchania).
+- Słuchanie nie zmienia terminów powtórek ani postępów.
+
+**Testy (12 października 2026):** 181 testów logiki (4 nowe: kroki pojęcia, zapowiedzi i szacunek
+czasu, odtwarzacz z atrapą zegara – kolejność kroków, przerwy, pauza, dalej, wstecz, powtórz)
+i 65 testów w przeglądarce (3 nowe, z atrapą syntezatora mowy i zegarem Playwright: kolejność
+i język wypowiedzi, co najmniej 3 s na zastanowienie, polska definicja zamiast brakującej
+angielskiej, pauza bez dźwięku przez 20 s, pełny czas na zastanowienie po wznowieniu, „dalej”
+i „powtórz”, zapis wyniku sprawdzenia pracy w tle, ekran 320 px i przyciski co najmniej 44 px).
+Wszystkie zaliczone w dwóch kolejnych przebiegach. Kontrast tekstu na ekranie słuchania:
+najniżej 5,44:1.
+
+**Nie sprawdzono:** prawdziwego głosu iPhone'a, dźwięku przez Bluetooth i CarPlay, blokady
+wygaszania ekranu w Safari ani tego, czy czytanie trwa przy zablokowanym ekranie – to ostatnie
+aplikacja sprawdzi sama przy pierwszym słuchaniu.
+
 ## Jak uruchomić
 
 - W przeglądarce: adres z pliku [README](../README.md); w Safari odśwież stronę dwa razy albo
-  użyj przycisku „Uruchom ją”. W Ustawieniach powinna być widoczna wersja 0.6.0.
+  użyj przycisku „Uruchom ją”. W Ustawieniach powinna być widoczna wersja 0.6.1.
 - Wypróbowanie: zakładka Statystyki; na Starcie grupa „Postępy”.
 - Testy: `npm test`, `npm run test:e2e` (wymaga Playwright z Chromium).
