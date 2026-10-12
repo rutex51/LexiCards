@@ -2180,6 +2180,37 @@ test('fiszki: kopia zapasowa przenosi postępy, historię ocen i niedokończoną
   }
 });
 
+const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1';
+
+test('iPhone: dotknięcie pola formularza nie powiększa strony (czcionka pól ≥ 16 px, maximum-scale)', async ({ open }) => {
+  const page = await open();
+  // Na iPhonie widok dostaje maximum-scale=1 – Safari nie powiększa strony przy polach formularza.
+  assert.match(await page.locator('meta[name=viewport]').getAttribute('content'), /maximum-scale=1/);
+
+  await loadSamples(page);
+  // Mniejszy rozmiar tekstu w systemie (Dynamic Type): treść 14 px, pola nadal 16 px.
+  await page.evaluate(() => { document.documentElement.style.fontSize = '14px'; });
+  await page.click('[data-testid=start-add-term]');
+  await sheet(page).waitFor();
+  const sizes = await sheet(page).locator('input.input, textarea.input, select.input')
+    .evaluateAll((fields) => fields.map((field) => parseFloat(getComputedStyle(field).fontSize)));
+  assert.ok(sizes.length >= 6, `pól: ${sizes.length}`);
+  assert.ok(sizes.every((size) => size >= 16), `rozmiary pól: ${sizes.join(', ')}`);
+  // Pola opisów i przykładów nie podpowiadają danych kontaktowych.
+  const autocomplete = await sheet(page).locator('textarea').evaluateAll((fields) => fields.map((field) => field.getAttribute('autocomplete')));
+  assert.ok(autocomplete.every((value) => value === 'off'));
+}, { device: { ...PHONE, userAgent: IPHONE_UA } });
+
+test('poza iPhone\'em znacznik widoku pozwala swobodnie powiększać', async ({ open }) => {
+  const page = await open();
+  assert.doesNotMatch(await page.locator('meta[name=viewport]').getAttribute('content'), /maximum-scale/);
+  // Przy domyślnym rozmiarze tekstu pola mają rozmiar treści, nie mniej.
+  await page.click('[data-testid=start-add-domain]');
+  const size = await sheet(page).locator('input.input').first().evaluate((field) => parseFloat(getComputedStyle(field).fontSize));
+  const body = await page.evaluate(() => parseFloat(getComputedStyle(document.body).fontSize));
+  assert.equal(size, Math.max(16, body));
+});
+
 test('zmiana w jednej karcie pojawia się w drugiej', async ({ open }) => {
   const first = await open();
   const second = await open();

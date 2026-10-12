@@ -33,6 +33,22 @@ const SCREENS = {
 };
 
 const WIDE_QUERY = '(min-width: 900px)';
+
+/**
+ * iPhone i iPad: Safari nie powiększa strony przy dotknięciu pola formularza, gdy widok ma
+ * maximum-scale=1. Powiększanie dwoma palcami nadal działa – Safari ignoruje to ograniczenie
+ * dla gestów użytkownika. Na innych urządzeniach znacznik zostaje bez zmian, bo tam
+ * maximum-scale blokowałoby też ręczne powiększanie.
+ */
+function preventInputZoom() {
+  const agent = navigator.userAgent;
+  const apple = /iPhone|iPad|iPod/.test(agent) || (/Macintosh/.test(agent) && navigator.maxTouchPoints > 1);
+  const meta = document.querySelector('meta[name="viewport"]');
+  if (!apple || !meta || /maximum-scale/.test(meta.content)) return;
+  meta.content = `${meta.content}, maximum-scale=1`;
+}
+
+preventInputZoom();
 const APPEARANCE_KEY = 'lexicards-appearance';
 const THEME_COLORS = { light: '#f2f2f7', dark: '#000000' };
 

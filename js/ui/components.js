@@ -191,6 +191,8 @@ export function textArea({ value = '', placeholder = '', onInput, rows = 2, lang
     rows,
     placeholder,
     lang,
+    // Bez podpowiedzi „Autouzupełnij kontakt” nad klawiaturą iPhone'a.
+    autocomplete: 'off',
     dataset: { testid: testID },
     onInput: (event) => onInput?.(event.target.value)
   });

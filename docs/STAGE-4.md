@@ -182,6 +182,18 @@ w samym teście, nie w aplikacji; pomocnik czyta teraz stan strony jednym odczyt
 - Podpowiedź pod „Umiem” zawsze pokazuje odstęp dla kompletu; pod „Powtórz” zależy od kafelków.
 - Testy: 159 testów logiki i 48 w przeglądarce (dwa kolejne przebiegi), bez błędów.
 
+## Poprawka w wersji 0.4.3: powiększanie formularzy na iPhonie
+
+- Objaw: po dotknięciu pola w formularzu (np. „Nowe pojęcie”) Safari powiększało stronę,
+  przyciski „Zapisz” i „Anuluj” wychodziły poza ekran, a powiększenie zostawało po zamknięciu.
+- Przyczyna: Safari powiększa stronę przy polu z tekstem mniejszym niż 16 px; pola dziedziczą
+  rozmiar tekstu z ustawień systemu (Dynamic Type), który może być mniejszy.
+- Poprawka: pola tekstowe i listy wyboru mają zawsze co najmniej 16 px, a na iPhonie i iPadzie
+  znacznik widoku dostaje `maximum-scale=1` (Safari nadal pozwala powiększać dwoma palcami).
+  Pola opisów i przykładów nie podpowiadają już danych kontaktowych.
+- Test w przeglądarce z tekstem systemowym 14 px sprawdza, że pola formularza mają 16 px; bez
+  poprawki pokazywał 14 px. Na prawdziwym iPhonie poprawki nie sprawdzono.
+
 ## Jak uruchomić
 
 - W przeglądarce: adres z pliku [README](../README.md); w Safari odśwież stronę dwa razy albo

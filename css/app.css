@@ -202,6 +202,15 @@ textarea {
   letter-spacing: inherit;
 }
 
+/*
+ * Safari na iPhonie powiększa stronę po dotknięciu pola z tekstem mniejszym niż 16 px
+ * (np. przy mniejszym rozmiarze tekstu w ustawieniach systemu) i nie cofa powiększenia po
+ * zamknięciu formularza. Pola tekstowe i listy wyboru mają więc zawsze co najmniej 16 px.
+ */
+input,
+select,
+textarea { font-size: max(16px, 1em); }
+
 button {
   margin: 0;
   padding: 0;
