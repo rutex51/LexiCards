@@ -8,7 +8,10 @@ import {
 } from '../core/model.js';
 import { EXPORT_FORMATS, buildExportFile, collectExportRows } from '../core/exporter.js';
 import { ASSESSMENT_STATUS_NAMES } from '../core/model.js';
-import { DECISION_NAMES, DIRECTION_NAMES } from '../core/study.js';
+import { RATING_NAMES } from '../core/fsrs.js';
+import {
+  DECISION_NAMES, DIRECTION_NAMES, RATING_LABELS, buildQueue, formatInterval, reviewConfig
+} from '../core/study.js';
 import { installSampleData } from '../core/samples.js';
 import { formatTags, isBlank, parseTags, pluralTerms } from '../core/text.js';
 import { field, formGroup, message, segmented, selectInput, textArea, textInput, toggle } from './components.js';
@@ -16,6 +19,7 @@ import { confirmDialog, openFormSheet, showError, toast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { deliverFile } from './files.js';
 import { icon } from './icons.js';
+import { routes } from './router.js';
 
 const NEW = '__new__';
 const NONE = '';
@@ -581,6 +585,23 @@ export async function requestDeletion(ctx, target) {
 
 // ---------------------------------------------------------------- historia ocen
 
+/** Kolejka „Powtórki na dziś”: zaległe fiszki z całej biblioteki (jedno pojęcie raz). */
+export function todaysReviewQueue(library, now = Date.now()) {
+  return buildQueue(library, reviewConfig(library.getSettings()), Math.random, now);
+}
+
+/** Rozpoczyna powtórkę zaległych fiszek i przechodzi do sesji. */
+export async function startTodaysReview(ctx) {
+  const { library } = ctx;
+  try {
+    const queue = todaysReviewQueue(library);
+    await library.startStudy(reviewConfig(library.getSettings()), queue);
+    ctx.navigate(routes.studySession());
+  } catch (error) {
+    await showError(error);
+  }
+}
+
 /** Arkusz z historią ocen pojęcia (od najnowszej). Wpisy są tylko do odczytu. */
 export function openAssessmentHistory(ctx, term) {
   const list = h('div', { class: 'history', dataset: { testid: 'history' } }, h('p', { class: 'picker__empty' }, 'Wczytywanie…'));
@@ -608,6 +629,8 @@ export function openAssessmentHistory(ctx, term) {
           h('span', { class: 'row__title' }, ASSESSMENT_STATUS_NAMES[entry.assessmentStatus] ?? ''),
           h('span', { class: 'row__subtitle' },
             `${DIRECTION_NAMES[entry.direction] ?? ''}, decyzja: ${DECISION_NAMES[entry.swipeDecision] ?? ''}`),
+          entry.review ? h('span', { class: 'row__subtitle', dataset: { testid: 'history-fsrs' } },
+            `FSRS: ${RATING_LABELS[entry.review.rating]} (${RATING_NAMES[entry.review.rating]}), następna powtórka za ${formatInterval(entry.review.interval)}`) : null,
           h('span', { class: 'row__subtitle' }, new Date(entry.assessedAt).toLocaleString('pl-PL', {
             day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
           }))

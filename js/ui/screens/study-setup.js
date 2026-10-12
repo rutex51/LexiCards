@@ -5,6 +5,7 @@ import {
   DIRECTION_NAMES, MIXED, STUDY_COUNTS, STUDY_DIRECTIONS, STUDY_FRONTS, STUDY_SCOPES, buildQueue, describeStudyMaterial,
   isSessionFinished, scopeCounts
 } from '../../core/study.js';
+import { startTodaysReview, todaysReviewQueue } from '../actions.js';
 import {
   actionRow, checkRow, emptyState, field, formGroup, group, segmented, selectInput, settingsAction
 } from '../components.js';
@@ -245,6 +246,7 @@ export class StudySetupScreen {
     const session = library.getStudySession();
     const active = session && !isSessionFinished(session) ? session : null;
     const repeatable = active ? null : library.getRepeatableStudy();
+    const reviewCount = active ? 0 : todaysReviewQueue(library).length;
 
     const startButton = h('button', {
       type: 'button',
@@ -259,6 +261,15 @@ export class StudySetupScreen {
       actions: [settingsAction()],
       body: [
         active ? this.#sessionGroup(active) : null,
+        reviewCount > 0 ? group({ title: 'Powtórka na dziś' },
+          actionRow({
+            label: `Powtórz zaległe (${pluralCards(reviewCount)})`,
+            subtitle: 'Fiszki z całej biblioteki, których termin minął',
+            iconName: 'clock',
+            testID: 'study-review',
+            onClick: () => startTodaysReview(ctx)
+          })
+        ) : null,
         repeatable ? this.#lastSessionGroup(repeatable) : null,
         this.#materialGroup(),
         this.#lessonsGroup(),
@@ -285,8 +296,8 @@ export class StudySetupScreen {
             hint: {
               all: 'Wszystkie pojęcia z wybranego materiału.',
               new: 'Pojęcia, których w tym kierunku jeszcze nie oceniałeś.',
-              repeat: 'Pojęcia odłożone do powtórki albo zatwierdzone z niepełnym wynikiem.',
-              hard: 'Pojęcia z trudnością 4–5 albo ostatnio ocenione poniżej połowy.',
+              repeat: 'Fiszki, których termin powtórki według FSRS już minął – najpierw najdłużej czekające.',
+              hard: 'Pojęcia z trudnością 4–5, sprawiające kłopot w powtórkach albo ostatnio ocenione poniżej połowy.',
               favorites: 'Pojęcia oznaczone gwiazdką.',
               random: 'Losowy wybór z całego materiału.'
             }[this.scope]

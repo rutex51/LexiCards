@@ -167,16 +167,25 @@ test('zakresy: nowe, do powtórki, trudne, ulubione – osobno dla kierunku', as
   await library.recordStudyDecision({ tiles: { term: false }, decision: DECISIONS.KNOW });
   await library.finishStudy();
 
-  const names = (extra) => buildQueue(library, config(extra)).map((card) => library.getTerm(card.termID).termPL);
+  const names = (extra, now = Date.now()) => buildQueue(library, config(extra), Math.random, now)
+    .map((card) => library.getTerm(card.termID).termPL);
   assert.deepEqual(names({ scope: 'new' }), ['trudne']);
-  assert.deepEqual(names({ scope: 'repeat' }), ['aktywa', 'pasywa']);
+  // „Do powtórki” według terminów FSRS (domyślne kroki nauki): pasywa – Again, wraca po 1 min;
+  // aktywa – komplet, ale „Powtórz”, czyli Hard: 5,5 min; bilans – Good: 10 min.
+  // Kolejność: najpierw najdłużej czekające.
+  assert.deepEqual(names({ scope: 'repeat' }), []);
+  const minute = 60_000;
+  assert.deepEqual(names({ scope: 'repeat' }, Date.now() + 2 * minute), ['pasywa']);
+  assert.deepEqual(names({ scope: 'repeat' }, Date.now() + 6 * minute), ['pasywa', 'aktywa']);
+  assert.deepEqual(names({ scope: 'repeat' }, Date.now() + 11 * minute), ['pasywa', 'aktywa', 'bilans']);
+  assert.deepEqual(names({ scope: 'repeat', count: 2 }, Date.now() + 11 * minute), ['pasywa', 'aktywa'], 'limit bierze najbardziej zaległe');
   assert.deepEqual(names({ scope: 'hard' }), ['pasywa', 'trudne']);
   assert.deepEqual(names({ scope: 'favorites' }), ['pasywa']);
   // W drugim kierunku wszystko jest jeszcze nowe.
   assert.deepEqual(names({ scope: 'new', direction: EN_PL }), ['bilans', 'aktywa', 'pasywa', 'trudne']);
-  assert.deepEqual(names({ scope: 'repeat', direction: EN_PL }), []);
+  assert.deepEqual(names({ scope: 'repeat', direction: EN_PL }, Date.now() + 11 * minute), []);
 
-  assert.deepEqual(scopeCounts(library, config()), { all: 4, new: 1, repeat: 2, hard: 2, favorites: 1, random: 4 });
+  assert.deepEqual(scopeCounts(library, config(), Date.now() + 11 * minute), { all: 4, new: 1, repeat: 3, hard: 2, favorites: 1, random: 4 });
   assert.equal(isHard(hard, null), true);
   assert.equal(isHard(full, library.getProgress(full.id, PL_EN)), false);
 

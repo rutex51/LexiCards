@@ -38,7 +38,9 @@ export async function addLearningData(library, adapter, term, direction = DIRECT
   const sessionID = newID();
   const progress = {
     id: newID(), termID: term.id, lessonID: term.lessonID, moduleID: term.moduleID, domainID: term.domainID,
-    direction, reviewCount: 1, createdAt: nowISO(), updatedAt: nowISO()
+    direction, reviewCount: 1, createdAt: nowISO(), updatedAt: nowISO(),
+    // Harmonogram FSRS jak w danych od wersji 0.4 – bez niego biblioteka przeliczyłaby postęp z historii.
+    schedule: { state: 'review', step: null, stability: 3, difficulty: 5, due: nowISO(), lastReview: nowISO(), reps: 1, lapses: 0 }
   };
   await adapter.commit({
     puts: {

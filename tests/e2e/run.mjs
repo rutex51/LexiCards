@@ -1067,10 +1067,16 @@ async function assess(page, tiles, decision) {
   if (tiles === 'all') await page.click('[data-testid=know-all]');
   else for (const id of tiles) await tile(page, id).click();
   await page.click(`[data-testid=decide-${decision}]`);
-  await waitUntil(async () => {
-    if (await page.locator('[data-testid=study-summary]').count()) return true;
-    return (await counter(page).textContent()) !== before;
-  }, 'Po decyzji powinna pojawić się następna fiszka albo podsumowanie');
+  await waitUntil(() => movedOn(page, before), 'Po decyzji powinna pojawić się następna fiszka albo podsumowanie');
+}
+
+/**
+ * Czy sesja przeszła dalej: inny numer fiszki albo podsumowanie. Sprawdzane jednym odczytem
+ * strony – osobne zapytania mogłyby trafić w chwilę, w której licznik już zniknął.
+ */
+function movedOn(page, before) {
+  return page.evaluate((previous) => Boolean(document.querySelector('[data-testid=study-summary]'))
+    || (document.querySelector('[data-testid=study-counter]')?.textContent ?? previous) !== previous, before);
 }
 
 const progressOf = (page, termID, direction) => page.evaluate(
@@ -1458,7 +1464,9 @@ test('fiszki: przerwaną sesję można wznowić po ponownym otwarciu strony albo
   await expectText(page.locator('.empty__title'), 'Nie ma trwającej sesji');
 });
 
-test('fiszki: kierunek EN → PL ma osobne postępy; zakresy Nowe, Do powtórki, Trudne, Ulubione', async ({ open }) => {
+test('fiszki: kierunek EN → PL ma osobne postępy; zakresy Nowe, Do powtórki, Trudne, Ulubione', async ({ open, context }) => {
+  // Zegar przeglądarki pod kontrolą testu – „Do powtórki” zależy od terminów FSRS.
+  await context.clock.install();
   const page = await open();
   const ids = await seedStudy(page);
   await openStudySetup(page);
@@ -1484,6 +1492,9 @@ test('fiszki: kierunek EN → PL ma osobne postępy; zakresy Nowe, Do powtórki,
   assert.equal(await progressOf(page, ids.assets, 'pl_en'), null, 'kierunek PL → EN pozostaje nieoceniony');
 
   const scopes = async () => (await page.locator('[data-testid=study-scope] option').allTextContents()).map((text) => text.trim());
+  // Zaraz po sesji nic nie jest jeszcze zaległe: „Powtórz” przy 0/2 to Again – fiszka wraca po minucie.
+  assert.ok((await scopes()).includes('Do powtórki (0)'));
+  await page.clock.fastForward('02:00');
   await page.evaluate((id) => window.lexicards.library.setFavorite(true, [id]), ids.contract);
   await waitUntil(async () => (await scopes()).includes('Ulubione (1)'), 'Zakres „Ulubione” powinien pokazać jedno pojęcie');
 
@@ -1664,8 +1675,7 @@ test('fiszki: przyciski podsumowania działają po jednym dotknięciu, bez podw�
       await page.tap('[data-testid=know-all]');
       const before = await counter(page).textContent();
       await page.tap('[data-testid=decide-know]');
-      await waitUntil(async () => (await page.locator('[data-testid=study-summary]').count()) > 0
-        || (await counter(page).textContent()) !== before, 'Po decyzji powinna pojawić się następna fiszka');
+      await waitUntil(() => movedOn(page, before), 'Po decyzji powinna pojawić się następna fiszka');
     }
   };
   // Licznik wywołań powtórki – jedno dotknięcie ma uruchomić ją dokładnie raz.
@@ -1692,6 +1702,81 @@ test('fiszki: przyciski podsumowania działają po jednym dotknięciu, bez podw�
   await page.waitForTimeout(500);
   assert.equal(await page.evaluate(() => location.hash), '#/start');
   assert.equal(await activeSession(page), null);
+});
+
+test('powtórki FSRS: podpowiedź odstępu, powtórka na dziś ze Startu, termin i ocena w szczegółach pojęcia', async ({ open, context }) => {
+  // Stała godzina w środku dnia – prognoza „dziś / jutro” nie zależy od pory uruchomienia testu.
+  await context.clock.install({ time: new Date('2026-10-12T10:00:00') });
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page, `#/study/lesson/${ids.basicsID}`);
+  await startStudy(page);
+  const whenKnow = page.locator('[data-testid=when-know]');
+  const whenRepeat = page.locator('[data-testid=when-repeat]');
+
+  // Przed odkryciem odpowiedzi nie ma podpowiedzi; potem zależy od kafelków.
+  assert.equal((await whenKnow.textContent()).trim(), '');
+  await flip(page);
+  await expectText(whenKnow, 'wróci za 1 min');          // nic nie zaznaczone: Again
+  await page.click('[data-testid=know-all]');
+  await expectText(whenKnow, 'wróci za 10 min');         // komplet + Umiem: Good
+  await expectText(whenRepeat, 'wróci za 6 min');        // komplet + Powtórz: Hard (5,5 min)
+  await page.click('[data-testid=decide-know]');
+  await expectText(counter(page), '2 z 3');
+
+  await flip(page);
+  await tile(page, 'term').click();
+  await expectText(whenKnow, 'wróci za 6 min');          // 1/2 + Umiem: Hard
+  await expectText(whenRepeat, 'wróci za 1 min');        // 1/2 + Powtórz: Again
+  await page.click('[data-testid=decide-know]');
+  await assess(page, [], 'repeat');                      // zysk: Again
+  await page.click('[data-testid=summary-done]');
+  await page.waitForFunction(() => location.hash === '#/start');
+
+  // Na Starcie: nic zaległego, ale wiadomo, kiedy będzie.
+  assert.equal(await page.locator('[data-testid=start-review]').count(), 0);
+  await expectText(page.locator('[data-testid=start-review-note]'), 'Na teraz nic do powtórki. Dziś jeszcze: 3 fiszki, najbliższa za 1 min.');
+
+  // Po 11 minutach wszystkie trzy są zaległe; powtórka zaczyna od najdłużej czekającej.
+  await page.clock.fastForward('11:00');
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await expectText(page.locator('[data-testid=start-review]'), 'Powtórka na dziś (3 fiszki)');
+  await tab(page, 'Nauka');
+  await expectText(page.locator('[data-testid=study-review]'), 'Powtórz zaległe (3 fiszki)');
+  await tab(page, 'Start');
+  await page.click('[data-testid=start-review]');
+  await expectText(counter(page), '1 z 3');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'zysk');
+  await assess(page, 'all', 'know');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'pasywa');
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await page.locator('[data-testid=study-start]').waitFor();
+  const session = await page.evaluate(() => window.lexicards.library.getSettings().lastStudySession);
+  assert.equal(session.config.review, true);
+
+  // Szczegóły pojęcia: ostatnia ocena osobno, a pod nią termin i poziom z FSRS.
+  await page.evaluate((id) => { location.hash = `#/library/lesson/${id}`; }, ids.basicsID);
+  const row = termRows(page).filter({ hasText: 'aktywa' });
+  await row.locator('.term__toggle').click();
+  const details = row.locator('.term__details');
+  await expectText(details, '3/3 – Opanowane');
+  await expectText(details, 'Powtórka: teraz');
+  await expectText(details, 'Poziom: W nauce');
+  await row.locator('[data-testid=term-history]').click();
+  await expectText(sheet(page).locator('[data-testid=history-fsrs]'), 'FSRS: Dobrze (Good), następna powtórka za 10 min');
+  await sheet(page).getByRole('button', { name: 'Zamknij' }).click();
+
+  // Dziennik powtórek: jeden wpis na zatwierdzoną fiszkę, z oceną FSRS.
+  const data = await stored(page);
+  assert.deepEqual(data.reviews.map((review) => review.rating).sort(), [1, 2, 3, 3]);
+  assert.ok(data.progress.every((progress) => progress.schedule && progress.schedule.due));
+
+  // Ustawienia: docelowa skuteczność.
+  await page.evaluate(() => { location.hash = '#/settings'; });
+  assert.equal(await page.locator('[data-testid=desired-retention]').inputValue(), '0.9');
+  await page.selectOption('[data-testid=desired-retention]', '0.95');
+  await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().desiredRetention === 0.95), 'Ustawienie powinno się zapisać');
 });
 
 test('fiszki: wejście z lekcji i z menu biblioteki ustawia materiał', async ({ open }) => {

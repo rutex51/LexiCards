@@ -58,6 +58,37 @@ export class SettingsScreen {
     this.stopWatchingVoices();
   }
 
+  /** Powtórki FSRS: docelowa skuteczność, czyli jak często fiszki wracają. */
+  #reviewGroup() {
+    const { library } = this.ctx;
+    const current = Number(library.getSettings().desiredRetention) || 0.9;
+    const options = [
+      { value: '0.8', label: '80% – rzadsze powtórki' },
+      { value: '0.85', label: '85%' },
+      { value: '0.9', label: '90% – zalecane' },
+      { value: '0.95', label: '95% – częstsze powtórki' }
+    ];
+    return h('div', { class: 'settings-review' },
+      formGroup('Powtórki',
+        field('Docelowa skuteczność', selectInput({
+          value: options.some((option) => Number(option.value) === current) ? String(current) : '0.9',
+          testID: 'desired-retention',
+          options,
+          onChange: async (value) => {
+            try {
+              await library.updateSettings({ desiredRetention: Number(value) });
+            } catch (error) {
+              await showError(error);
+            }
+          }
+        }))
+      ),
+      h('p', { class: 'form-note' },
+        'Szansa, że w dniu powtórki będziesz pamiętać fiszkę. Wyższa wartość oznacza częstsze powtórki. '
+        + 'Zmiana dotyczy kolejnych ocen. Terminy wyznacza algorytm FSRS-6, osobno dla PL → EN i EN → PL.')
+    );
+  }
+
   #speechGroup() {
     const { ctx } = this;
     const { library } = ctx;
@@ -259,6 +290,7 @@ export class SettingsScreen {
           actionRow({ label: 'Importuj pojęcia z pliku XLSX lub CSV', iconName: 'upload', onClick: () => ctx.navigate(routes.importFile()), testID: 'settings-import' }),
           library.isEmpty() ? null : actionRow({ label: 'Eksportuj bibliotekę do pliku', iconName: 'download', onClick: () => openExportSheet(ctx, { kind: 'all' }), testID: 'settings-export' })
         ),
+        this.#reviewGroup(),
         this.#speechGroup(),
         this.#storageGroup(),
         this.#installGroup(),

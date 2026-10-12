@@ -2,7 +2,10 @@
 
 import { normalizeKey, pluralTerms, formatTags } from '../../core/text.js';
 import { DIFFICULTY_MAX, DIRECTIONS } from '../../core/model.js';
-import { DIRECTION_NAMES, describeProgress } from '../../core/study.js';
+import { STATES } from '../../core/fsrs.js';
+import {
+  DIRECTION_NAMES, MASTERY_NAMES, describeDue, describeProgress, dueTime, masteryLevel
+} from '../../core/study.js';
 import {
   copyLesson, copyTerms, moveLesson, moveTerms, openAssessmentHistory, openExportSheet, openLessonForm, openTermForm,
   requestDeletion, setFavorite
@@ -30,12 +33,30 @@ function detailItem(label, value, { lang = null, required = false } = {}) {
   );
 }
 
-/** Ostatnia ocena pojęcia w kierunku, z datą: „2/3 – Częściowo opanowane, 12 paź 2026”. */
-function learningState(progress) {
+const shortDate = (time) => new Date(time).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/**
+ * Stan nauki w kierunku: ostatnia ocena („2/3 – Częściowo opanowane, 12 paź 2026”),
+ * a pod nią – osobno – harmonogram FSRS: termin powtórki i poziom długoterminowy.
+ */
+function learningState(ctx, progress) {
   const state = describeProgress(progress);
   if (!progress?.lastReviewedAt) return state;
-  const date = new Date(progress.lastReviewedAt).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
-  return `${state}, ${date}`;
+  const lines = [h('span', { class: 'term__state' }, `${state}, ${shortDate(progress.lastReviewedAt)}`)];
+  const schedule = progress.schedule;
+  if (schedule) {
+    const due = dueTime(progress);
+    const when = describeDue(progress);
+    lines.push(h('span', { class: 'term__schedule' },
+      when === 'teraz' ? 'Powtórka: teraz' : `Powtórka: ${shortDate(due)} (${when})`));
+    const level = MASTERY_NAMES[masteryLevel(progress)];
+    const recall = schedule.state === STATES.REVIEW
+      ? Math.round(ctx.library.scheduler().retrievability({ ...schedule, lastReview: Date.parse(schedule.lastReview) }, Date.now()) * 100)
+      : null;
+    lines.push(h('span', { class: 'term__schedule' },
+      recall === null ? `Poziom: ${level}` : `Poziom: ${level}, szansa przypomnienia dziś ${recall}%`));
+  }
+  return h('span', { class: 'term__learning' }, lines);
 }
 
 function termDetails(ctx, term) {
@@ -50,8 +71,8 @@ function termDetails(ctx, term) {
       detailItem('Tagi', formatTags(term.tags)),
       detailItem('Trudność', term.difficulty ? `${term.difficulty} z ${DIFFICULTY_MAX}` : null),
       detailItem('Notatki', term.notes),
-      detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.PL_EN]}`, learningState(forward)),
-      detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.EN_PL]}`, learningState(backward))
+      detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.PL_EN]}`, learningState(ctx, forward)),
+      detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.EN_PL]}`, learningState(ctx, backward))
     ),
     forward || backward
       ? h('button', {

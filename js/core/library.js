@@ -13,7 +13,32 @@ import {
 } from './model.js';
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
 import { emptyChanges } from './storage.js';
-import { DECISIONS, emptyTiles, makeAssessment, makeSession, nextProgress, repeatQueue, summarizeSession } from './study.js';
+import { createScheduler } from './fsrs.js';
+import {
+  DECISIONS, emptyTiles, fsrsRating, makeAssessment, makeSession, nextProgress, repeatQueue, reviewSchedule,
+  summarizeSession
+} from './study.js';
+
+/** Wpis dziennika powtórek FSRS – jeden na zatwierdzoną fiszkę. */
+function reviewRecord({ assessment, rating, reviewed, migrated = false }) {
+  return {
+    id: newID(),
+    termID: assessment.termID,
+    direction: assessment.direction,
+    assessmentID: assessment.id,
+    sessionID: assessment.sessionID ?? null,
+    rating,
+    stateBefore: reviewed.stateBefore,
+    stateAfter: reviewed.schedule.state,
+    retrievability: reviewed.retrievability,
+    stability: reviewed.schedule.stability,
+    difficulty: reviewed.schedule.difficulty,
+    interval: reviewed.interval,
+    due: reviewed.schedule.due,
+    reviewedAt: assessment.assessedAt,
+    ...(migrated ? { migrated: true } : {})
+  };
+}
 
 const LEVEL_GENITIVE = { domain: 'dziedziny', module: 'modułu', lesson: 'lekcji', term: 'pojęcia' };
 const LEVEL_STORE = { domain: 'domains', module: 'modules', lesson: 'lessons', term: 'terms' };
@@ -168,6 +193,8 @@ export class Library {
   #queue = Promise.resolve();
   /** Liczniki i listy wyliczane z danych; unieważniane po każdej zmianie. */
   #derived = null;
+  /** Planista FSRS dla bieżącej docelowej skuteczności. */
+  #schedulerCache = null;
   /** Posortowane listy pojęć dla glosariusza, według rodzaju sortowania. */
   #sorted = new Map();
 
@@ -183,7 +210,66 @@ export class Library {
     for (const name of MEMORY_STORES) {
       this.maps[name] = new Map((data[name] ?? []).map((record) => [record.id, record]));
     }
+    await this.#migrateSchedules();
     this.#changed();
+  }
+
+  /**
+   * Postępy zapisane przed wprowadzeniem FSRS (wersje 0.3.x) nie mają harmonogramu.
+   * Odtwarzamy go z historii ocen – każda ocena to powtórka w tej samej chwili co wtedy –
+   * i dopisujemy brakujące wpisy dziennika powtórek. Bez rozmycia, więc wynik jest powtarzalny.
+   */
+  async #migrateSchedules() {
+    const pending = [...this.maps.progress.values()].filter((progress) => progress.reviewCount > 0 && !progress.schedule);
+    if (pending.length === 0) return;
+    const history = new Map();
+    for (const assessment of await this.adapter.readStore('assessments')) {
+      const key = `${assessment.termID}\n${assessment.direction}`;
+      if (!history.has(key)) history.set(key, []);
+      history.get(key).push(assessment);
+    }
+    const scheduler = createScheduler({ desiredRetention: this.#desiredRetention(), enableFuzzing: false });
+    const unit = new UnitOfWork(this.maps);
+    for (const progress of pending) {
+      const entries = (history.get(`${progress.termID}\n${progress.direction}`) ?? [])
+        .sort((a, b) => (a.assessedAt < b.assessedAt ? -1 : a.assessedAt > b.assessedAt ? 1 : 0));
+      if (entries.length === 0) continue;
+      let schedule = null;
+      for (const assessment of entries) {
+        const rating = fsrsRating(assessment);
+        const reviewed = reviewSchedule(scheduler, schedule, rating, Date.parse(assessment.assessedAt));
+        unit.append('reviews', reviewRecord({ assessment, rating, reviewed, migrated: true }));
+        schedule = reviewed.schedule;
+      }
+      unit.put('progress', { ...progress, schedule });
+    }
+    try {
+      await this.adapter.commit(unit.changes());
+    } catch (error) {
+      // Bez harmonogramu aplikacja nadal działa (fiszki są traktowane jak nowe w FSRS);
+      // przeliczenie zostanie ponowione przy następnym otwarciu.
+      unit.rollback();
+      console.error(error);
+    }
+  }
+
+  #desiredRetention() {
+    const value = Number(this.getSettings().desiredRetention);
+    return value >= 0.7 && value <= 0.99 ? value : 0.9;
+  }
+
+  /** Planista FSRS z docelową skutecznością z ustawień. */
+  scheduler() {
+    const retention = this.#desiredRetention();
+    if (this.#schedulerCache?.retention !== retention) {
+      this.#schedulerCache = { retention, scheduler: createScheduler({ desiredRetention: retention }) };
+    }
+    return this.#schedulerCache.scheduler;
+  }
+
+  /** Wszystkie rekordy postępu (pojęcie + kierunek). */
+  listProgress() {
+    return [...this.maps.progress.values()];
   }
 
   /** Rejestruje funkcję wywoływaną po każdej zmianie danych. Zwraca funkcję wyrejestrowującą. */
@@ -1133,7 +1219,7 @@ export class Library {
    * fiszki i przesuwa sesję – wszystko jedną transakcją.
    * tiles: { term, description, example } (true – „Umiem”), decision: 'know' | 'repeat'.
    */
-  recordStudyDecision({ tiles, decision }) {
+  recordStudyDecision({ tiles, decision, random = Math.random, now = Date.now() }) {
     return this.#mutate((unit) => {
       if (decision !== DECISIONS.KNOW && decision !== DECISIONS.REPEAT) throw errors.invalidDecision();
       const session = this.getStudySession();
@@ -1141,15 +1227,12 @@ export class Library {
       const card = session.queue[session.position];
       const term = this.#require('term', card.termID);
 
-      // Kafelek elementu, którego pojęcie nie ma, pozostaje „Brak danych” niezależnie od wejścia.
-      const available = emptyTiles(term);
-      const checked = {};
-      for (const key of Object.keys(available)) checked[key] = available[key] === null ? null : Boolean(tiles?.[key]);
-
       const previous = this.getProgress(term.id, card.direction);
-      const assessment = makeAssessment({ term, direction: card.direction, tiles: checked, decision, sessionID: session.id });
-      const progress = nextProgress(previous, term, assessment);
+      const { assessment, rating, reviewed } = this.#evaluate(term, card.direction, previous, tiles, decision, session.id, random, now);
+      const progress = nextProgress(previous, term, assessment, reviewed.schedule);
+      const review = reviewRecord({ assessment, rating, reviewed });
       unit.append('assessments', assessment);
+      unit.append('reviews', review);
       unit.put('progress', progress);
 
       const updated = {
@@ -1157,6 +1240,8 @@ export class Library {
         position: session.position + 1,
         results: [...session.results, {
           assessmentID: assessment.id,
+          reviewID: review.id,
+          rating,
           decision,
           status: assessment.assessmentStatus,
           score: assessment.totalScore,
@@ -1170,6 +1255,42 @@ export class Library {
     });
   }
 
+  /**
+   * Ocena fiszki: kafelki (brakujący element pozostaje „Brak danych” niezależnie od wejścia),
+   * wpis historii, ocena FSRS i nowy harmonogram w kierunku fiszki.
+   */
+  #evaluate(term, direction, previous, tiles, decision, sessionID, random, now) {
+    const available = emptyTiles(term);
+    const checked = {};
+    for (const key of Object.keys(available)) checked[key] = available[key] === null ? null : Boolean(tiles?.[key]);
+    const assessment = makeAssessment({
+      term, direction, tiles: checked, decision, sessionID, now: new Date(now).toISOString()
+    });
+    const rating = fsrsRating(assessment);
+    const reviewed = reviewSchedule(this.scheduler(), previous?.schedule ?? null, rating, now, random);
+    return { assessment, rating, reviewed };
+  }
+
+  /**
+   * Podgląd przed zatwierdzeniem: za ile wróci bieżąca fiszka po „Umiem” i po „Powtórz”
+   * przy obecnym stanie kafelków. Niczego nie zapisuje. `random` powinno być tym samym
+   * źródłem, które dostanie recordStudyDecision – wtedy podgląd zgadza się z wynikiem.
+   */
+  previewStudyDecision(tiles, { random = Math.random, now = Date.now() } = {}) {
+    const session = this.getStudySession();
+    if (!session || session.position >= session.queue.length) return null;
+    const card = session.queue[session.position];
+    const term = this.getTerm(card.termID);
+    if (!term) return null;
+    const previous = this.getProgress(term.id, card.direction);
+    const result = {};
+    for (const decision of [DECISIONS.KNOW, DECISIONS.REPEAT]) {
+      const { rating, reviewed } = this.#evaluate(term, card.direction, previous, tiles, decision, session.id, random, now);
+      result[decision] = { rating, interval: reviewed.interval, schedule: reviewed.schedule };
+    }
+    return result;
+  }
+
   /** Cofa ostatnią decyzję w sesji: usuwa jej wpis z historii i przywraca poprzedni postęp. */
   undoStudyDecision() {
     return this.#mutate((unit) => {
@@ -1179,6 +1300,7 @@ export class Library {
       const card = session.queue[session.position - 1];
       if (!last.skipped) {
         unit.erase('assessments', last.assessmentID);
+        if (last.reviewID) unit.erase('reviews', last.reviewID);
         const term = this.getTerm(card.termID);
         if (last.previousProgress && term) {
           // Pojęcie mogło w międzyczasie zmienić lekcję – klucze zakresu bierzemy z jego stanu.
@@ -1223,10 +1345,16 @@ export class Library {
     });
   }
 
-  /** Historia ocen pojęcia, od najnowszej. */
+  /** Historia ocen pojęcia, od najnowszej. Każdy wpis ma dołączoną powtórkę FSRS (`review`), jeśli była. */
   async termAssessments(termID) {
-    const records = await this.adapter.readByTerm('assessments', termID);
-    return records.sort((a, b) => (a.assessedAt < b.assessedAt ? 1 : a.assessedAt > b.assessedAt ? -1 : 0));
+    const [records, reviews] = await Promise.all([
+      this.adapter.readByTerm('assessments', termID),
+      this.adapter.readByTerm('reviews', termID)
+    ]);
+    const byAssessment = new Map(reviews.map((review) => [review.assessmentID, review]));
+    return records
+      .map((record) => ({ ...record, review: byAssessment.get(record.id) ?? null }))
+      .sort((a, b) => (a.assessedAt < b.assessedAt ? 1 : a.assessedAt > b.assessedAt ? -1 : 0));
   }
 
   // ---------------------------------------------------------------- ustawienia

@@ -1,6 +1,6 @@
 # Architektura LexiCards
 
-Dokument opisuje stan po etapie 3 oraz decyzje, które przygotowują kolejne etapy.
+Dokument opisuje stan po etapie 4 oraz decyzje, które przygotowują kolejne etapy.
 
 ## Założenia
 
@@ -33,6 +33,7 @@ js/core/tablefile.js       rozpoznanie formatu pliku, wspólna postać tabeli
 js/core/importer.js        nagłówki → pola, wiersze pliku → wiersze importu, walidacja
 js/core/exporter.js        zakres eksportu → plik XLSX lub CSV
 js/core/study.js           fiszki: dobór do sesji, treść stron, ocena, postęp, podsumowanie
+js/core/fsrs.js            algorytm powtórek FSRS-6 (przeniesiony z py-fsrs 6.3.2)
 js/core/text.js            normalizacja tekstu, tagi, odmiana liczebników
 ```
 
@@ -48,9 +49,10 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | `modules` | moduły | `domainID` |
 | `lessons` | lekcje | `moduleID`, `domainID` |
 | `terms` | pojęcia: 6 pól treści, tagi, trudność, notatki, ulubione | `lessonID`, `moduleID`, `domainID` |
-| `progress` | ostatnia ocena pojęcia w danym kierunku; od etapu 4 także harmonogram powtórek | `termID` + klucze zakresu |
+| `progress` | ostatnia ocena pojęcia w danym kierunku i jego harmonogram FSRS (`schedule`) | `termID` + klucze zakresu |
 | `assessments` | historia ocen fiszek – jeden wpis na zatwierdzoną fiszkę | indeks `termID` |
-| `reviews`, `quizAnswers` | dzienniki powtórek i quizów (etapy 4–5) | indeks `termID` |
+| `reviews` | dziennik powtórek FSRS – ocena 1–4, stan przed i po, stabilność, trudność, odstęp | indeks `termID` |
+| `quizAnswers` | odpowiedzi w quizach (etap 5) | indeks `termID` |
 | `studySessions` | dziennik zakończonych sesji nauki | – |
 | `quizSessions` | sesje quizów (etap 5) | – |
 | `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki, trwająca sesja | – |
@@ -180,9 +182,37 @@ Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany 
 - **Dzienniki** (`assessments`, `studySessions`) nie są trzymane w pamięci: zapis idzie przez
   `UnitOfWork.append()` / `erase()` w tej samej transakcji co reszta zmian, a odczyt historii
   pojęcia przez indeks `termID`.
-- **Zakresy** „Nowe”, „Do powtórki” i „Trudne” wynikają na razie z ostatniej oceny
-  (`learningGroup()`, `isHard()`). W etapie 4 „Do powtórki” przejdzie na terminy z FSRS;
-  status ostatniej oceny pozostanie osobnym polem.
+- **Zakresy:** „Nowe” – bez żadnej oceny w kierunku; „Do powtórki” – termin FSRS minął
+  (kolejka od najdłużej czekających, limit liczby fiszek bierze najbardziej zaległe);
+  „Trudne” – trudność 4–5 ustawiona przez użytkownika, trudność FSRS ≥ 7 albo ostatnia ocena
+  poniżej połowy.
+
+## Powtórki (FSRS)
+
+- **Algorytm:** `js/core/fsrs.js` to wierne przeniesienie klasy `Scheduler` z py-fsrs 6.3.2
+  (FSRS-6, 21 parametrów, krótkoterminowa stabilność dla powtórek tego samego dnia, kroki nauki,
+  rozmycie odstępów). Zaokrąglenia odtwarzają `round()` z Pythona. Zgodność sprawdza
+  `tests/unit/fsrs.test.js` na 1113 powtórkach policzonych przez oryginał
+  (`tools/gen_fsrs_reference.py` → `tests/fixtures/fsrs-reference.json`).
+- **Ustawienia:** domyślne parametry, docelowa skuteczność z Ustawień (domyślnie 90%), kroki
+  nauki 1 i 10 min, ponowna nauka 10 min, najdłuższy odstęp 36500 dni, rozmycie włączone.
+- **Ocena 1–4** (`fsrsRating()`): pojęcie nieznane – Again; komplet – Good; pojęcie znane bez
+  kompletu – Hard; decyzja „Powtórz” obniża o stopień; Easy nigdy automatycznie.
+- **Harmonogram** leży w `progress.schedule` (stan, krok, stabilność, trudność, termin,
+  ostatnia powtórka, liczba powtórek i zapomnień), osobno dla pary pojęcie + kierunek.
+  Zatwierdzenie fiszki zapisuje w jednej transakcji: ocenę (`assessments`), powtórkę
+  (`reviews`), postęp z harmonogramem i stan sesji. Cofnięcie usuwa oba wpisy i przywraca
+  poprzedni postęp razem z harmonogramem.
+- **Podgląd i zapis zgodne:** ekran losuje jedną wartość rozmycia na fiszkę i podaje ją zarówno
+  do `previewStudyDecision()`, jak i do `recordStudyDecision()`.
+- **Status a poziom:** status ostatniej oceny (`lastStatus`) i poziom długoterminowy z FSRS
+  (`masteryLevel()`: nowe, w nauce, utrwalane, utrwalone od stabilności 21 dni) są osobno.
+- **Dane sprzed FSRS:** przy wczytaniu biblioteka szuka postępów bez harmonogramu i odtwarza
+  go z historii ocen (te same chwile, bez rozmycia), dopisując wpisy `reviews` z `migrated: true`.
+  Dotyczy to też przywrócenia starszej kopii zapasowej.
+- **Powtórka na dziś** (`reviewConfig()`): zaległe fiszki z całej biblioteki, w trybie
+  mieszanym jedno pojęcie raz – w kierunku, który czeka dłużej. `reviewForecast()` liczy
+  zaległe, dzisiejsze i jutrzejsze według czasu urządzenia.
 
 Ekran sesji przebudowuje widok tylko po zmianie danych (zatwierdzenie, cofnięcie). Obrót,
 kafelki i przeciąganie zmieniają istniejące elementy, żeby animacje nie zaczynały się od nowa.
@@ -202,16 +232,16 @@ nieistniejące pojęcia są pomijane.
 
 - `tests/unit/` – Node.js (`node --test`), bez przeglądarki: reguły biblioteki, wycofywanie
   nieudanych zmian, glosariusz, odczyt i zapis plików, import i eksport, nauka z fiszkami,
-  kopia zapasowa, spójność plików wydania.
+  FSRS (zgodność z py-fsrs i zapis powtórek), kopia zapasowa, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.
 - `tests/e2e/` – Chromium przez Playwright: pełne przepływy na ekranie telefonu i komputera,
   trwałość po przeładowaniu, praca offline, aktualizacja wydania, klawiatura. Gesty na fiszce
   są wykonywane zdarzeniami dotyku przeglądarki, a syntezator mowy zastępuje atrapa.
+  Upływ czasu przy powtórkach symuluje zegar Playwright (`context.clock`).
 
 ## Przygotowanie kolejnych etapów
 
-- **Powtórki (etap 4)** dopiszą do `progress` stan harmonogramu FSRS, osobno dla każdego
-  kierunku, a każdą powtórkę do `reviews`. Ocena z kafelków jest już zapisywana razem
-  z liczbą dostępnych elementów, więc da się ją odwzorować na oceny FSRS bez zgadywania.
-- **Quizy i statystyki (etapy 5–6)** korzystają z magazynów sesji i dzienników.
+- **Quizy (etap 5)** zapiszą odpowiedzi w `quizAnswers` i sesje w `quizSessions`.
+- **Statystyki (etap 6)** mają gotowe dane: `reviews` (oceny FSRS w czasie), `progress.schedule`
+  (terminy, poziomy) i `reviewForecast()` (plan na dziś i jutro).

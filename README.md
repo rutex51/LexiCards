@@ -6,7 +6,7 @@ są zapisywane wyłącznie w przeglądarce na Twoim urządzeniu.
 
 Adres: **https://rutex51.github.io/LexiCards/**
 
-## Co już działa (etapy 1–3)
+## Co już działa (etapy 1–4)
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -20,6 +20,9 @@ Adres: **https://rutex51.github.io/LexiCards/**
 - Nauka z fiszkami: wybór materiału, kierunku (PL → EN, EN → PL, mieszany), zakresu i liczby fiszek;
   obracana fiszka, trzy kafelki oceny (pojęcie, definicja, przykład), zatwierdzanie gestem albo
   przyciskiem, cofanie, podsumowanie i runda powtórkowa. Postępy są osobne dla każdego kierunku.
+- Powtórki w odstępach według algorytmu FSRS-6, osobno dla PL → EN i EN → PL: „Powtórka na dziś”
+  na Starcie, zakres „Do powtórki” z fiszkami po terminie, podpowiedź przy przyciskach, za ile fiszka
+  wróci, termin i poziom utrwalenia w szczegółach pojęcia, docelowa skuteczność w Ustawieniach.
 - Wymowa pojęć, definicji i przykładów głosem z urządzenia; historia ocen każdego pojęcia.
 - Kopia zapasowa do pliku i przywracanie z pliku (materiały, postępy, ustawienia).
 - Motyw jasny, ciemny albo zgodny z systemem; układ na telefon i na szeroki ekran.
@@ -28,7 +31,7 @@ Adres: **https://rutex51.github.io/LexiCards/**
 
 Zakładki Quiz i Statystyki są widoczne, ale ich funkcje powstaną w kolejnych etapach
 (plan niżej). Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md),
-[etap 2](docs/STAGE-2.md), [etap 3](docs/STAGE-3.md).
+[etap 2](docs/STAGE-2.md), [etap 3](docs/STAGE-3.md), [etap 4](docs/STAGE-4.md).
 
 ## Jak korzystać
 
@@ -76,6 +79,18 @@ Strzałka w pasku u góry cofa ostatnią decyzję. Przerwaną sesję można wzno
 Te same fiszki da się powtórzyć jednym dotknięciem – „Powtórz całą sesję” na podsumowaniu albo
 „Powtórz ostatnią sesję” na Starcie i w zakładce Nauka. Formularz sesji pamięta ostatnio wybrany materiał.
 Na komputerze działa klawiatura: spacja odwraca, 1 2 3 przełączają kafelki, ← i → zatwierdzają, Z cofa.
+
+### Powtórki
+
+Każda zatwierdzona fiszka dostaje termin następnej powtórki (algorytm FSRS), osobno dla każdego
+kierunku. Gdy termin minie, na Starcie pojawia się **Powtórka na dziś** – zaległe fiszki z całej
+biblioteki, od najdłużej czekających. Pod przyciskami „Umiem” i „Powtórz” widać, za ile fiszka wróci
+przy obecnie zaznaczonych kafelkach. Ocena dla algorytmu wynika z kafelków i decyzji:
+
+| | wszystko zaznaczone | pojęcie znane, reszta nie w całości | pojęcie nieznane |
+| --- | --- | --- | --- |
+| **Umiem** | Good – dłuższy odstęp | Hard – krótszy odstęp | Again – wraca po chwili |
+| **Powtórz** | Hard | Again | Again |
 
 ### Gdzie są dane
 
@@ -129,7 +144,7 @@ z przyciskiem „Uruchom ją”.
 1. **Biblioteka, glosariusz, kopia zapasowa** – gotowe.
 2. **Import i eksport plików CSV oraz XLSX** – gotowe.
 3. **Fiszki: obracana karta, ocena pojęcia, definicji i przykładu, gesty, cofanie** – gotowe.
-4. Powtórki w odstępach (FSRS), osobno dla kierunków PL→EN i EN→PL.
+4. **Powtórki w odstępach (FSRS), osobno dla kierunków PL→EN i EN→PL** – gotowe.
 5. Quizy: jednokrotny wybór, dopasowywanie, mieszany.
 6. Ekran startowy z planem dnia i statystyki.
 7. Dopracowanie: dostępność, wydajność przy dużych bibliotekach.

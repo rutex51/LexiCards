@@ -1697,6 +1697,27 @@ a.row__main:active,
 .button--know { background: var(--success-fill); color: #ffffff; }
 .button--repeat { background: var(--warning-soft); color: var(--warning); }
 
+.decision {
+  flex-direction: column;
+  gap: 0;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.decision__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Wiersz zawsze ma wysokość, żeby przycisk nie skakał po odsłonięciu odpowiedzi. */
+.decision__when {
+  min-height: 1.2em;
+  font-size: var(--size-foot);
+  font-weight: 500;
+  line-height: 1.2;
+}
+
 .study__hint {
   flex: none;
   font-size: var(--size-foot);
@@ -1706,9 +1727,24 @@ a.row__main:active,
 
 .study__keys { display: none; }
 
+.term__learning {
+  display: grid;
+  gap: 2px;
+}
+
+.term__schedule {
+  font-size: var(--size-sub);
+  color: var(--text-2);
+}
+
 .start-study {
   display: grid;
   gap: 10px;
+}
+
+.start-study__note {
+  font-size: var(--size-sub);
+  color: var(--text-2);
 }
 
 /* Niski ekran (np. iPhone w Safari z widocznymi paskami): ciaśniej, żeby fiszka była jak największa. */
@@ -1815,11 +1851,13 @@ a.row__main:active,
   font-variant-numeric: tabular-nums;
 }
 
+.settings-review,
 .settings-speech {
   display: grid;
   gap: 8px;
 }
 
+.settings-review .form-note,
 .settings-speech .form-note { margin-top: 0; }
 
 /* ------------------------------------------------------------------ 8. okna */

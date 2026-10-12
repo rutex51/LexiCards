@@ -7,7 +7,7 @@
 
 import { ASSESSMENT_STATUS_NAMES } from '../../core/model.js';
 import {
-  DECISIONS, TILES, cardContent, emptyTiles, isSessionFinished, scoreTiles, setAllTiles, summarizeSession
+  DECISIONS, TILES, cardContent, emptyTiles, formatInterval, isSessionFinished, scoreTiles, setAllTiles, summarizeSession
 } from '../../core/study.js';
 import { emptyState, iconButton, navButton } from '../components.js';
 import { showError, toast } from '../dialogs.js';
@@ -57,6 +57,8 @@ export class StudySessionScreen {
     this.elements = {};
     this.drag = null;
     this.suppressClick = false;
+    /** Losowanie do rozmycia odstępu FSRS – jedno na fiszkę, żeby podgląd zgadzał się z zapisem. */
+    this.fuzz = Math.random();
 
     this.onKeyDown = (event) => this.#handleKey(event);
     document.addEventListener('keydown', this.onKeyDown);
@@ -113,6 +115,19 @@ export class StudySessionScreen {
     }
     for (const control of this.elements.afterReveal ?? []) control.disabled = !this.revealed || this.busy;
     if (this.elements.hint) this.elements.hint.hidden = this.revealed;
+    this.#updatePreview();
+  }
+
+  /** Pod przyciskami decyzji: za ile fiszka wróci według FSRS przy obecnych kafelkach. */
+  #updatePreview() {
+    const { when } = this.elements;
+    if (!when) return;
+    const preview = this.revealed ? this.ctx.library.previewStudyDecision(this.tiles, { random: () => this.fuzz }) : null;
+    for (const decision of [DECISIONS.KNOW, DECISIONS.REPEAT]) {
+      const target = when[decision];
+      const interval = preview?.[decision]?.interval;
+      target.textContent = interval ? `wróci za ${formatInterval(interval)}` : '';
+    }
   }
 
   #toggleTile(id) {
@@ -193,7 +208,7 @@ export class StudySessionScreen {
     vibrate(14);
     await this.#flyOut(decision);
     try {
-      await this.ctx.library.recordStudyDecision({ tiles: this.tiles, decision });
+      await this.ctx.library.recordStudyDecision({ tiles: this.tiles, decision, random: () => this.fuzz });
     } catch (error) {
       await showError(error);
     } finally {
@@ -545,6 +560,7 @@ export class StudySessionScreen {
       this.showingBack = false;
       this.tiles = emptyTiles(term);
       this.drag = null;
+      this.fuzz = Math.random();
       stopSpeaking();
     }
 
@@ -562,10 +578,17 @@ export class StudySessionScreen {
 
     const allButton = h('button', { type: 'button', class: 'button button--quick', dataset: { testid: 'know-all' }, onClick: () => this.#setAll(true) }, 'Umiem wszystko');
     const noneButton = h('button', { type: 'button', class: 'button button--quick', dataset: { testid: 'know-none' }, onClick: () => this.#setAll(false) }, 'Nie umiem niczego');
-    const knowButton = h('button', { type: 'button', class: 'button button--know', dataset: { testid: 'decide-know' }, onClick: () => this.#decide(DECISIONS.KNOW) },
-      icon('arrowLeft', { size: 20 }), h('span', null, 'Umiem'));
-    const repeatButton = h('button', { type: 'button', class: 'button button--repeat', dataset: { testid: 'decide-repeat' }, onClick: () => this.#decide(DECISIONS.REPEAT) },
-      h('span', null, 'Powtórz'), icon('arrowRight', { size: 20 }));
+    // Pod nazwą decyzji – kiedy fiszka wróci (FSRS); puste, dopóki odpowiedź jest zakryta.
+    this.elements.when = {
+      [DECISIONS.KNOW]: h('span', { class: 'decision__when', dataset: { testid: 'when-know' } }),
+      [DECISIONS.REPEAT]: h('span', { class: 'decision__when', dataset: { testid: 'when-repeat' } })
+    };
+    const knowButton = h('button', { type: 'button', class: 'button button--know decision', dataset: { testid: 'decide-know' }, onClick: () => this.#decide(DECISIONS.KNOW) },
+      h('span', { class: 'decision__label' }, icon('arrowLeft', { size: 20 }), h('span', null, 'Umiem')),
+      this.elements.when[DECISIONS.KNOW]);
+    const repeatButton = h('button', { type: 'button', class: 'button button--repeat decision', dataset: { testid: 'decide-repeat' }, onClick: () => this.#decide(DECISIONS.REPEAT) },
+      h('span', { class: 'decision__label' }, h('span', null, 'Powtórz'), icon('arrowRight', { size: 20 })),
+      this.elements.when[DECISIONS.REPEAT]);
     this.elements.afterReveal = [allButton, noneButton, knowButton, repeatButton];
     this.elements.hint = h('p', { class: 'study__hint', dataset: { testid: 'study-hint' } },
       'Odwróć fiszkę, a potem zaznacz, co umiesz. Przesuń ją w lewo („Umiem”) albo w prawo („Powtórz”).');

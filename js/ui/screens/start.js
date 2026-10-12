@@ -1,9 +1,11 @@
 // Ekran Start: podsumowanie biblioteki i najkrótsza droga do dodania materiałów.
 
 import { sampleTermCount } from '../../core/samples.js';
-import { isSessionFinished } from '../../core/study.js';
+import { formatInterval, isSessionFinished, reviewForecast } from '../../core/study.js';
 import { pluralCards, pluralLessons, pluralModules, pluralTerms } from '../../core/text.js';
-import { loadSampleData, openDomainForm, openLessonForm, openTermForm } from '../actions.js';
+import {
+  loadSampleData, openDomainForm, openLessonForm, openTermForm, startTodaysReview, todaysReviewQueue
+} from '../actions.js';
 import { actionRow, domainBadge, emptyState, group, primaryButton, settingsAction } from '../components.js';
 import { showError } from '../dialogs.js';
 import { h } from '../dom.js';
@@ -80,6 +82,14 @@ export class StartScreen {
     const session = library.getStudySession();
     const resumable = session && !isSessionFinished(session);
     const repeatable = !resumable && summary.terms > 0 ? library.getRepeatableStudy() : null;
+    // Powtórka na dziś (FSRS) ma pierwszeństwo przed nową nauką, gdy coś czeka.
+    const reviewCount = resumable ? 0 : todaysReviewQueue(library).length;
+    const forecast = resumable || reviewCount > 0 ? null : reviewForecast(library);
+    const reviewNote = forecast?.next
+      ? (forecast.laterToday > 0
+          ? `Na teraz nic do powtórki. Dziś jeszcze: ${pluralCards(forecast.laterToday)}, najbliższa za ${formatInterval(forecast.next - Date.now())}.`
+          : `Na teraz nic do powtórki. Najbliższa powtórka za ${formatInterval(forecast.next - Date.now())}${forecast.tomorrow > 0 ? `, jutro: ${pluralCards(forecast.tomorrow)}` : ''}.`)
+      : null;
 
     return {
       title: 'Start',
@@ -87,8 +97,14 @@ export class StartScreen {
       actions,
       body: [
         summary.terms > 0 ? h('div', { class: 'start-study' },
-          h('a', {
+          reviewCount > 0 ? h('button', {
+            type: 'button',
             class: 'button button--primary button--block',
+            dataset: { testid: 'start-review' },
+            onClick: () => startTodaysReview(ctx)
+          }, `Powtórka na dziś (${pluralCards(reviewCount)})`) : null,
+          h('a', {
+            class: `button ${reviewCount > 0 ? 'button--secondary' : 'button--primary'} button--block`,
             href: resumable ? routes.studySession() : routes.study(),
             dataset: { testid: 'start-study' }
           }, resumable
@@ -99,7 +115,8 @@ export class StartScreen {
             class: 'button button--secondary button--block',
             dataset: { testid: 'start-repeat-last' },
             onClick: () => this.#repeatLast()
-          }, `Powtórz ostatnią sesję (${pluralCards(repeatable.queue.length)})`) : null
+          }, `Powtórz ostatnią sesję (${pluralCards(repeatable.queue.length)})`) : null,
+          reviewNote ? h('p', { class: 'start-study__note', dataset: { testid: 'start-review-note' } }, reviewNote) : null
         ) : null,
         h('section', { class: 'group' },
           h('h2', { class: 'group__title' }, 'Twoje dziedziny'),
