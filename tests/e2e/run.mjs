@@ -475,7 +475,7 @@ test('wąski ekran 320 px: żaden ekran nie przewija się w poziomie', async ({ 
   await loadSamples(page);
   const base = page.url().split('#')[0];
   const lessonID = await page.evaluate(() => [...window.lexicards.library.maps.lessons.values()].find((lesson) => lesson.name === 'Negotiation Techniques').id);
-  for (const hash of ['#/start', '#/library', '#/library/glossary', `#/library/lesson/${lessonID}`, '#/settings', '#/study', '#/quiz']) {
+  for (const hash of ['#/start', '#/library', '#/library/glossary', `#/library/lesson/${lessonID}`, '#/settings', '#/study', '#/quiz', '#/stats']) {
     await page.goto(base + hash);
     await page.waitForFunction((expected) => location.hash === expected, hash);
     const overflow = await overflowX(page);
@@ -2658,6 +2658,223 @@ test('quiz: wąski ekran 320 px i długie pojęcia – wybór, pary i wynik nie 
   }
   await page.locator('[data-testid=quiz-result]').waitFor();
   assert.ok((await overflow()) <= 0, `wynik: treść wystaje o ${await overflow()} px`);
+}, { device: { ...PHONE, viewport: { width: 320, height: 568 } } });
+
+// ---------------------------------------------------------------- statystyki
+
+const statsValue = (page, testID) => page.locator(`[data-testid=${testID}]`);
+
+async function openStats(page, hash = '#/stats') {
+  await page.evaluate((target) => { location.hash = target; }, hash);
+  await page.locator('[data-testid=stats]').waitFor();
+}
+
+/** Ocena trzech fiszek lekcji Podstawy (PL → EN): aktywa – Umiem, pasywa – tylko pojęcie, zysk – nic. */
+async function studyBasics(page, ids) {
+  await openStudySetup(page, `#/study/lesson/${ids.basicsID}`);
+  await startStudy(page);
+  await assess(page, 'all', 'know');
+  await assess(page, ['term'], 'repeat');
+  await assess(page, [], 'repeat');
+  await page.locator('[data-testid=study-summary]').waitFor();
+  await page.click('[data-testid=summary-done]');
+  await page.locator('.tiles').waitFor();
+}
+
+test('statystyki: wskaźniki, znajomość elementów, kierunki i przejście dziedzina → moduł → lekcja zgadzają się z ocenami', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await studyBasics(page, ids);
+  await page.evaluate(() => window.lexicards.library.updateSettings({ statsDirection: 'pl_en' }));
+
+  await openStats(page);
+  await expectText(statsValue(page, 'stats-mastered-percent'), '17%');
+  await expectText(statsValue(page, 'stats-mastered'), '1 z 6');
+  const counts = {};
+  for (const status of ['mastered', 'partiallyMastered', 'inProgress', 'toLearn', 'new']) {
+    counts[status] = Number(await statsValue(page, `stats-status-${status}`).textContent());
+  }
+  assert.deepEqual(counts, { mastered: 1, partiallyMastered: 1, inProgress: 0, toLearn: 1, new: 3 });
+  await expectText(statsValue(page, 'kpi-terms'), '6');
+  await expectText(statsValue(page, 'kpi-due'), '0');
+  await expectText(statsValue(page, 'kpi-quiz'), '–');
+  await waitUntil(async () => /min/.test(await statsValue(page, 'kpi-time').textContent()), 'Czas nauki powinien się wczytać');
+
+  // Znajomość elementów: ostatnia ocena; brakujący element nie wchodzi do mianownika.
+  await expectText(statsValue(page, 'element-term-pl_en'), '67%');
+  await expectText(statsValue(page, 'element-term-pl_en'), '2 z 3');
+  await expectText(statsValue(page, 'element-description-pl_en'), '1 z 2');
+  await expectText(statsValue(page, 'element-example-pl_en'), '1 z 1');
+
+  // Powtórki dziennie: dzisiejsze trzy oceny w tabeli pod wykresem.
+  const reviews = page.locator('[data-testid=chart-reviews]');
+  await reviews.locator('svg').waitFor();
+  await reviews.locator('summary').click();
+  const rows = reviews.locator('tbody tr');
+  assert.equal(await rows.count(), 1);
+  assert.equal((await rows.first().locator('td').textContent()).trim(), '3');
+  const progressTable = page.locator('[data-testid=chart-progress]');
+  await progressTable.locator('summary').click();
+  assert.deepEqual((await progressTable.locator('tbody tr').last().locator('td').allTextContents()).map((text) => text.trim()), ['1', '3']);
+  await page.locator('[data-testid=chart-quiz-empty]').waitFor();
+
+  // Drugi kierunek jeszcze nieoceniany; oba kierunki – słabszy wynik i opis sposobu liczenia.
+  await choose(page, 'Kierunek', 'EN → PL');
+  await expectText(statsValue(page, 'stats-mastered-percent'), '0%');
+  await expectText(statsValue(page, 'stats-status-new'), '6');
+  await expectText(statsValue(page, 'stats-elements'), 'W tym kierunku nic jeszcze nie oceniono.');
+  await choose(page, 'Kierunek', 'Oba kierunki');
+  await statsValue(page, 'stats-both-note').waitFor();
+  await expectText(statsValue(page, 'stats-status-mastered'), '0');
+  assert.equal(await page.locator('[data-testid^=element-term-]').count(), 2, 'elementy osobno dla każdego kierunku');
+  assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().statsDirection), 'both');
+
+  // Zestawienie: moduły dziedziny, przejście do modułu i lekcji, powrót.
+  await choose(page, 'Kierunek', 'PL → EN');
+  await choose(page, 'Poziom zestawienia', 'Moduły');
+  const breakdownRows = page.locator('[data-testid=breakdown-row]');
+  await waitUntil(async () => (await breakdownRows.count()) === 2, 'Dwa moduły w zestawieniu');
+  await expectText(breakdownRows.first(), 'Finanse');
+  await expectText(breakdownRows.first(), '20%');
+  await expectText(breakdownRows.nth(1), 'Prawo');
+  await breakdownRows.first().locator('a').click();
+  await waitUntil(() => page.evaluate(() => location.hash.startsWith('#/stats/module/')), 'Statystyki modułu');
+  await expectText(title(page), 'Finanse');
+  await expectText(page.locator('.screen__subtitle'), 'Statystyki modułu, Biznes');
+  await expectText(statsValue(page, 'stats-mastered'), '1 z 5');
+  await waitUntil(async () => (await breakdownRows.count()) === 2, 'Dwie lekcje modułu');
+  await expectText(breakdownRows.first(), 'Podstawy');
+  await expectText(breakdownRows.first(), '33%');
+  await breakdownRows.first().locator('a').click();
+  await waitUntil(() => page.evaluate(() => location.hash.startsWith('#/stats/lesson/')), 'Statystyki lekcji');
+  await expectText(statsValue(page, 'stats-mastered'), '1 z 3');
+  assert.equal(await page.locator('[data-testid=stats-breakdown]').count(), 0, 'lekcja nie ma zestawienia niżej');
+  await page.locator('.navbar__backlink').click();
+  await waitUntil(() => page.evaluate(() => location.hash.startsWith('#/stats/module/')), 'Powrót do modułu');
+
+  // Wejście z menu Biblioteki.
+  await page.evaluate((id) => { location.hash = `#/library/domain/${id}`; }, ids.domainID);
+  await page.getByRole('button', { name: 'Więcej poleceń: Prawo' }).click();
+  await menuItem(page, 'Statystyki');
+  await page.locator('[data-testid=stats]').waitFor();
+  await expectText(title(page), 'Prawo');
+  await expectText(statsValue(page, 'stats-mastered'), '0 z 1');
+});
+
+test('statystyki: skuteczność quizów i czas nauki (fiszki i quizy), także na Starcie', async ({ open, context }) => {
+  await context.clock.install({ time: new Date('2026-10-12T10:00:00') });
+  const page = await open();
+  const ids = await seedStudy(page);
+  await page.evaluate(() => window.lexicards.library.updateSettings({ statsDirection: 'pl_en' }));
+
+  // Dwie fiszki po 30 s.
+  await openStudySetup(page, `#/study/lesson/${ids.advancedID}`);
+  await startStudy(page);
+  for (let card = 0; card < 2; card += 1) {
+    await page.clock.fastForward('00:30');
+    await assess(page, 'all', 'know');
+  }
+  await page.click('[data-testid=summary-done]');
+  await page.locator('.tiles').waitFor();
+
+  // Quiz z lekcji Podstawy: trzy pytania po 20 s, jedno błędne.
+  await openQuizSetup(page, `#/quiz/lesson/${ids.basicsID}`);
+  await startQuiz(page);
+  for (let number = 1; number <= 3; number += 1) {
+    await page.clock.fastForward('00:20');
+    await answerChoice(page, number !== 2);
+    await quizNext(page);
+  }
+  await page.click('[data-testid=quiz-done]');
+  await page.locator('.tiles').waitFor();
+
+  await expectText(page.locator('[data-testid=start-kpi-quiz]'), '67%');
+  await expectText(page.locator('[data-testid=start-kpi-time]'), '2 min');
+  await page.click('[data-testid=start-stats]');
+  await page.locator('[data-testid=stats]').waitFor();
+  await expectText(statsValue(page, 'kpi-quiz'), '67%');
+  await expectText(page.locator('.kpi', { has: statsValue(page, 'kpi-quiz') }), '2 z 3 odpowiedzi poprawnie');
+  await expectText(statsValue(page, 'kpi-time'), '2 min');
+  await expectText(page.locator('.kpi', { has: statsValue(page, 'kpi-time') }), 'ostatnie 7 dni: 2 min');
+
+  const quiz = page.locator('[data-testid=chart-quiz]');
+  await quiz.locator('svg').waitFor();
+  await quiz.locator('summary').click();
+  assert.equal((await quiz.locator('tbody td').first().textContent()).trim(), '67%');
+  // Zapisany czas fiszek (30 s) i odpowiedzi (20 s).
+  const stored = await page.evaluate(async () => {
+    const journals = await window.lexicards.library.journals();
+    return { cards: journals.assessments.map((item) => item.duration), answers: journals.quizAnswers.map((item) => item.responseTime) };
+  });
+  // Zegar testu płynie też sam (obrót i animacje trwają ułamki sekundy), stąd tolerancja.
+  assert.ok(stored.cards.length === 2 && stored.cards.every((value) => value >= 30000 && value < 33000), stored.cards.join(', '));
+  assert.ok(stored.answers.length === 3 && stored.answers.every((value) => value >= 20000 && value < 23000), stored.answers.join(', '));
+});
+
+test('statystyki: wykres – podpowiedź z klawiatury i zakres dni; historia z kilku dni', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  // Oceny z trzech ostatnich dni (zapisane bezpośrednio z podaną chwilą).
+  await page.evaluate(async ({ assets, liabilities, profit }) => {
+    const { library } = window.lexicards;
+    const day = (offset) => { const date = new Date(); date.setDate(date.getDate() - offset); date.setHours(9, 0, 0, 0); return date.getTime(); };
+    const assess = async (termID, decision, now) => {
+      await library.startStudy({ direction: 'pl_en', scope: 'all', count: 0, shuffle: false, front: 'term' }, [{ termID, direction: 'pl_en' }]);
+      await library.recordStudyDecision({ tiles: {}, decision, now, duration: 10000 });
+    };
+    await assess(assets, 'repeat', day(10));
+    await assess(assets, 'know', day(2));
+    await assess(liabilities, 'know', day(1));
+    await assess(profit, 'repeat', day(1));
+    await library.finishStudy();
+    await library.updateSettings({ statsDirection: 'pl_en', statsRange: 7 });
+  }, ids);
+  await openStats(page);
+  const chart = page.locator('[data-testid=chart-progress]');
+  await chart.locator('svg').waitFor();
+  assert.equal(await page.getByRole('radiogroup', { name: 'Okres' }).getByRole('radio', { name: '7 dni' }).isChecked(), true);
+
+  // Klawiatura: End – dzisiejszy dzień, strzałka w lewo – wczoraj.
+  const plot = chart.locator('.chart__plot');
+  await plot.focus();
+  await page.keyboard.press('End');
+  const tooltip = chart.locator('.chart__tooltip');
+  await expectText(tooltip, 'Opanowane');
+  assert.match(await tooltip.textContent(), /2Opanowane3Ocenione/);
+  await page.keyboard.press('ArrowLeft');
+  assert.match(await tooltip.textContent(), /2Opanowane3Ocenione/);
+  await page.keyboard.press('ArrowLeft');
+  assert.match(await tooltip.textContent(), /1Opanowane1Ocenione/, 'przedwczoraj: aktywa opanowane');
+  await page.keyboard.press('Escape');
+  assert.equal(await tooltip.isHidden(), true);
+
+  // Tabela: tydzień zaczyna się od oceny sprzed 10 dni (aktywa „Do nauki”), więc „Ocenione” = 1 od początku.
+  await chart.locator('summary').click();
+  const rows = chart.locator('tbody tr');
+  assert.equal(await rows.count(), 7, 'siedem dni z jakąkolwiek wartością');
+  await choose(page, 'Okres', '30 dni');
+  await waitUntil(async () => (await chart.locator('tbody tr').count()) === 11, 'Zakres 30 dni: od dnia pierwszej oceny');
+  const reviewRows = page.locator('[data-testid=chart-reviews] tbody tr');
+  assert.equal(await reviewRows.count(), 3);
+}, { device: DESKTOP });
+
+test('statystyki: wąski ekran 320 px, ciemny motyw i pusta biblioteka', async ({ open }) => {
+  const page = await open();
+  await page.evaluate(() => { location.hash = '#/stats'; });
+  await expectText(page.locator('.empty__title'), 'Statystyki pojawią się po pierwszej nauce');
+  const ids = await seedStudy(page);
+  await studyBasics(page, ids);
+  assert.ok((await overflowX(page)) <= 0, `Start: treść wystaje o ${await overflowX(page)} px`);
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
+  for (const direction of ['PL → EN', 'Oba kierunki']) {
+    await openStats(page);
+    await choose(page, 'Kierunek', direction);
+    await page.locator('[data-testid=chart-reviews] svg').waitFor();
+    if (direction === 'Oba kierunki') await expectText(page.locator('[data-testid=chart-progress-empty]'), 'w obu kierunkach');
+    assert.ok((await overflowX(page)) <= 0, `${direction}: treść wystaje o ${await overflowX(page)} px`);
+  }
+  await openStats(page, `#/stats/lesson/${ids.basicsID}`);
+  assert.ok((await overflowX(page)) <= 0, `lekcja: treść wystaje o ${await overflowX(page)} px`);
 }, { device: { ...PHONE, viewport: { width: 320, height: 568 } } });
 
 test('iPhone: dotknięcie pola formularza nie powiększa strony (czcionka pól ≥ 16 px, maximum-scale)', async ({ open }) => {

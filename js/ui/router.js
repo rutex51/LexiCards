@@ -24,7 +24,8 @@ export const routes = {
   /** Konfiguracja quizu; preset jak w nauce. */
   quiz: (preset = null) => (preset ? `#/quiz/${preset.level}/${encodeURIComponent(preset.id)}` : '#/quiz'),
   quizSession: () => '#/quiz/session',
-  stats: () => '#/stats',
+  /** Statystyki całej biblioteki albo – ze scope: { level, id } – dziedziny, modułu lub lekcji. */
+  stats: (scope = null) => (scope && scope.level !== 'library' ? `#/stats/${scope.level}/${encodeURIComponent(scope.id)}` : '#/stats'),
   settings: () => '#/settings'
 };
 
@@ -56,7 +57,11 @@ export function parseHash(hash) {
         return { tab: 'quiz', name: 'quiz', id: `${second}:${third}`, preset: { level: second, id: third } };
       }
       return { tab: 'quiz', name: 'quiz' };
-    case 'stats': return { tab: 'stats', name: 'stats' };
+    case 'stats':
+      if (['domain', 'module', 'lesson'].includes(second) && third) {
+        return { tab: 'stats', name: 'stats', id: `${second}:${third}`, scope: { level: second, id: third } };
+      }
+      return { tab: 'stats', name: 'stats', scope: { level: 'library' } };
     case 'settings': return { tab: null, name: 'settings' };
     default: return { tab: 'start', name: 'start' };
   }

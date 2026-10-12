@@ -1,6 +1,7 @@
 // Ekran Start: podsumowanie biblioteki i najkrótsza droga do dodania materiałów.
 
 import { sampleTermCount } from '../../core/samples.js';
+import { BOTH, formatStudyTime, overview, percent } from '../../core/stats.js';
 import { formatInterval, isSessionFinished, reviewForecast } from '../../core/study.js';
 import { pluralCards, pluralLessons, pluralModules, pluralTerms } from '../../core/text.js';
 import {
@@ -11,6 +12,7 @@ import { showError } from '../dialogs.js';
 import { h } from '../dom.js';
 import { icon } from '../icons.js';
 import { routes } from '../router.js';
+import { JournalsLoader, kpiTile, statsDirection } from './stats.js';
 
 /** Zdanie podsumowujące bibliotekę, np. „Masz 40 pojęć w 13 lekcjach.” */
 export function summarySentence(summary) {
@@ -38,6 +40,36 @@ export class StartScreen {
   constructor(ctx) {
     this.ctx = ctx;
     this.starting = false;
+    this.journals = new JournalsLoader(ctx);
+  }
+
+  dispose() {
+    this.journals.dispose();
+  }
+
+  /** Najważniejsze wskaźniki (w kierunku wybranym w Statystykach) z przejściem do Statystyk. */
+  #progress() {
+    const { library } = this.ctx;
+    const direction = statsDirection(library.getSettings());
+    const data = overview(library, { level: 'library' }, direction, this.journals.get());
+    const quiz = data.quiz;
+    const directionLabel = direction === BOTH ? 'oba kierunki' : direction === 'en_pl' ? 'EN\u00a0→\u00a0PL' : 'PL\u00a0→\u00a0EN';
+    return h('section', { class: 'group' },
+      h('div', { class: 'stats-section__header' },
+        h('h2', { class: 'group__title' }, 'Postępy'),
+        h('a', { class: 'button button--plain', href: routes.stats(), dataset: { testid: 'start-stats' } }, 'Statystyki')),
+      h('div', { class: 'start-stats' },
+        kpiTile('Opanowane', `${percent(data.statuses.mastered, data.statuses.total) ?? 0}%`, {
+          sub: `${data.statuses.mastered} z ${data.statuses.total}, ${directionLabel}`, testID: 'start-kpi-mastered', href: routes.stats()
+        }),
+        kpiTile('Quizy', !quiz ? '…' : quiz.total === 0 ? '–' : `${percent(quiz.correct, quiz.total)}%`, {
+          sub: !quiz ? null : quiz.total === 0 ? 'bez odpowiedzi' : 'poprawnych odpowiedzi', testID: 'start-kpi-quiz', href: routes.stats()
+        }),
+        kpiTile('Czas nauki', data.recentTime ? formatStudyTime(data.recentTime.total) : '…', {
+          sub: 'ostatnie 7 dni', testID: 'start-kpi-time', href: routes.stats()
+        })
+      )
+    );
   }
 
   /** Powtórka ostatniej sesji jednym dotknięciem: te same fiszki i ustawienia. */
@@ -125,6 +157,7 @@ export class StartScreen {
           }, `Wznów quiz (pytanie ${Math.min(quizOpen.position + 1, quizOpen.items.length)} z ${quizOpen.items.length})`) : null,
           reviewNote ? h('p', { class: 'start-study__note', dataset: { testid: 'start-review-note' } }, reviewNote) : null
         ) : null,
+        summary.terms > 0 ? this.#progress() : null,
         h('section', { class: 'group' },
           h('h2', { class: 'group__title' }, 'Twoje dziedziny'),
           h('ul', { class: 'tiles', role: 'list' }, domains.map((domain) => domainTile(library, domain)))

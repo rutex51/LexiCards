@@ -284,6 +284,7 @@ export class LessonScreen {
         { label: 'Kopiuj do…', icon: 'copy', onSelect: () => copyLesson(ctx, lesson.id) },
         { label: 'Importuj z pliku…', icon: 'upload', onSelect: () => ctx.navigate(routes.importFile(lesson.id)) },
         terms.length > 0 ? { label: 'Eksportuj lekcję…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'lesson', id: lesson.id }) } : null,
+        terms.length > 0 ? { label: 'Statystyki lekcji', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'lesson', id: lesson.id })) } : null,
         'separator',
         {
           label: 'Usuń lekcję', icon: 'trash', destructive: true,

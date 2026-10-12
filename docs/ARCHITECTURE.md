@@ -1,6 +1,6 @@
 # Architektura LexiCards
 
-Dokument opisuje stan po etapie 5 oraz decyzje, które przygotowują kolejne etapy.
+Dokument opisuje stan po etapie 6 oraz decyzje, które przygotowują kolejny etap.
 
 ## Założenia
 
@@ -23,6 +23,7 @@ js/ui/dialogs.js           arkusze, pytania, menu, komunikaty (element <dialog>)
 js/ui/router.js            adresy po znaku # i historia przeglądarki
 js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
 js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspólny dla nauki i quizu
+js/ui/charts.js            wykresy SVG (w czasie, pasek udziałów, miernik) z podpowiedzią i tabelą danych
 js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
 js/core/model.js           kształt rekordów, wartości domyślne, stałe
@@ -36,6 +37,7 @@ js/core/exporter.js        zakres eksportu → plik XLSX lub CSV
 js/core/study.js           fiszki: dobór do sesji, treść stron, ocena, postęp, podsumowanie
 js/core/fsrs.js            algorytm powtórek FSRS-6 (przeniesiony z py-fsrs 6.3.2)
 js/core/quiz.js            quizy: pytania wyboru, rundy par, test mieszany, odpowiedzi, wynik
+js/core/stats.js           statystyki: statusy w kierunkach, elementy, szeregi dzienne, zestawienia, czas nauki
 js/core/text.js            normalizacja tekstu, tagi, odmiana liczebników
 ```
 
@@ -52,7 +54,7 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | `lessons` | lekcje | `moduleID`, `domainID` |
 | `terms` | pojęcia: 6 pól treści, tagi, trudność, notatki, ulubione | `lessonID`, `moduleID`, `domainID` |
 | `progress` | ostatnia ocena pojęcia w danym kierunku i jego harmonogram FSRS (`schedule`) | `termID` + klucze zakresu |
-| `assessments` | historia ocen fiszek – jeden wpis na zatwierdzoną fiszkę | indeks `termID` |
+| `assessments` | historia ocen fiszek – jeden wpis na zatwierdzoną fiszkę, od wersji 0.6.0 z czasem nad fiszką (`duration`, ms, najwyżej 3 min) | indeks `termID` |
 | `reviews` | dziennik powtórek FSRS – ocena 1–4, stan przed i po, stabilność, trudność, odstęp | indeks `termID` |
 | `quizAnswers` | odpowiedzi w quizach – jedna na pytanie wyboru albo parę: odpowiedź wybrana i poprawna, wynik, podpowiedź, czas | indeks `termID`, `sessionID` |
 | `studySessions` | dziennik zakończonych sesji nauki | – |
@@ -242,8 +244,10 @@ Reguły są w `js/core/quiz.js` (bez przeglądarki), zapis w `Library`, ekrany w
   ułożyć w parę, dostaje pytanie wyboru. Kolejność pytań i rund jest losowa.
 - **Pytanie wyboru** (`choiceQuestion()`): poprawna odpowiedź i do trzech błędnych o innym
   brzmieniu (porównanie bez wielkości liter i polskich znaków), najpierw z tej samej dziedziny,
-  potem z reszty biblioteki. Gdy różnych odpowiedzi jest mniej, pytanie ma ich mniej; przy
-  mniej niż dwóch jest pomijane.
+  potem z reszty biblioteki. Pomijane są pojęcia, które w języku pytania brzmią tak samo jak
+  pytanie (to samo pojęcie zapisane drugi raz z innym tłumaczeniem – to tłumaczenie też byłoby
+  poprawne). Gdy różnych odpowiedzi jest mniej, pytanie ma ich mniej; przy mniej niż dwóch jest
+  pomijane.
 - **Ocena:** pytanie wyboru – jedna odpowiedź; runda par – jedna odpowiedź na parę, poprawna,
   gdy parę połączono bez pomyłki. Lewa kolumna to pytanie, prawa odpowiedź: błędne połączenie
   obciąża parę elementu z lewej kolumny niezależnie od kolejności dotknięć.
@@ -263,6 +267,40 @@ Reguły są w `js/core/quiz.js` (bez przeglądarki), zapis w `Library`, ekrany w
   poprawne, wynik ostatniej odpowiedzi). Z nich korzysta zakres nauki „Błędy z quizów”
   (pojęcia, na które ostatnio odpowiedziano źle) i linia „Quizy” w szczegółach pojęcia.
 
+## Statystyki
+
+Obliczenia są w `js/core/stats.js` (bez przeglądarki), ekran w `js/ui/screens/stats.js`,
+wykresy w `js/ui/charts.js`.
+
+- **Zakres:** cała biblioteka albo dziedzina, moduł lub lekcja (`#/stats/<poziom>/<id>`).
+  Zestawienie „Opanowanie według…” prowadzi o poziom niżej, więc te same wskaźniki i wykresy
+  są dostępne na każdym poziomie hierarchii. Zestawienie liczy status każdego pojęcia raz
+  i sumuje po kluczach `domainID` / `moduleID` / `lessonID` zapisanych w pojęciu.
+- **Kierunki** (punkt 12.2 specyfikacji – bez mieszania bez oznaczenia): wybrany kierunek
+  liczy tylko siebie; „oba kierunki” daje pojęciu słabszy z dwóch statusów (pojęcie nieocenione
+  w jednym kierunku jest w nim „nowe”), a do powtórki jest, gdy czeka w którymkolwiek. Zdarzenia
+  (powtórki, odpowiedzi, czas) są wtedy sumowane, a na wykresach powtórek i quizów oba kierunki
+  mają osobne serie. Znajomość pojęć, definicji i przykładów jest zawsze osobno dla kierunku.
+- **Wskaźniki** pochodzą z danych w pamięci (`progress`: ostatni status, ostatnia ocena każdego
+  elementu, termin FSRS) i z dzienników (`quizAnswers` – skuteczność; `assessments` i
+  `quizAnswers` – czas).
+- **Postęp w czasie** jest odtwarzany z historii ocen: oceny w kolejności chronologicznej
+  zmieniają status pary pojęcie + kierunek, a liczniki statusów są zapisywane na koniec każdego
+  dnia (czas urządzenia). Stan ostatniego dnia równa się bieżącym postępom – sprawdza to test.
+- **Czas nauki:** fiszka zapisuje czas od pokazania do decyzji (najwyżej 3 minuty, bo fiszka
+  mogła czekać na ekranie); quiz – czas odpowiedzi. Dla ocen sprzed wersji 0.6.0 czas jest
+  szacowany z odstępu od poprzedniej oceny tej samej sesji (najwyżej 2 minuty).
+- **Dzienniki** czyta `Library.journals()`. Wynik jest zapamiętany do następnej zmiany dzienników:
+  `journalRevision` rośnie tylko wtedy, gdy operacja dopisuje lub usuwa wpisy dziennika
+  (zmiana ustawień, np. kierunku w statystykach, nie wymusza ponownego odczytu).
+- **Wykresy** są rysowane w SVG w rzeczywistej szerokości kontenera (ResizeObserver), bez
+  bibliotek. Kolory to zmienne `--viz-*`, osobne dla jasnego i ciemnego motywu, sprawdzone
+  walidatorem palet (kontrast z tłem, rozróżnialność przy protanopii i deuteranopii): statusy
+  pojęć to stopnie jednej niebieskiej skali (opanowane najmocniej, w ciemnym motywie
+  najjaśniej), kierunki – fiolet (PL → EN) i pomarańcz (EN → PL), tło porównawcze – szarość.
+  Każdy wykres ma podpowiedź (wskaźnik, dotyk, strzałki na klawiaturze) i tabelę z tymi samymi
+  liczbami („Dane w tabeli”).
+
 ## Kopia zapasowa
 
 Jeden plik JSON: nagłówek (format, wersje, data, liczniki) i zawartość wszystkich magazynów.
@@ -275,7 +313,7 @@ nieistniejące pojęcia są pomijane.
 
 - `tests/unit/` – Node.js (`node --test`), bez przeglądarki: reguły biblioteki, wycofywanie
   nieudanych zmian, glosariusz, odczyt i zapis plików, import i eksport, nauka z fiszkami,
-  FSRS (zgodność z py-fsrs i zapis powtórek), quizy, kopia zapasowa, spójność plików wydania.
+  FSRS (zgodność z py-fsrs i zapis powtórek), quizy, statystyki, kopia zapasowa, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.
 - `tests/e2e/` – Chromium przez Playwright: pełne przepływy na ekranie telefonu i komputera,
@@ -285,6 +323,6 @@ nieistniejące pojęcia są pomijane.
 
 ## Przygotowanie kolejnych etapów
 
-- **Statystyki (etap 6)** mają gotowe dane: `reviews` (oceny FSRS w czasie), `progress.schedule`
-  (terminy, poziomy), `reviewForecast()` (plan na dziś i jutro), `quizSessions` (wyniki quizów
-  w czasie) i `quizAnswers` (pojęcia sprawiające kłopot w quizach).
+- **Dopracowanie (etap 7):** statystyki liczą się w jednym przebiegu po pojęciach zakresu
+  i po dziennikach; przy bardzo dużych bibliotekach (dziesiątki tysięcy pojęć, setki tysięcy
+  ocen) kolejnym krokiem byłoby liczenie szeregów dziennych przyrostowo albo w tle.

@@ -8,7 +8,7 @@
 // kaskadowe: dziedzina → moduły → lekcje → pojęcia → dane nauki pojęć.
 
 import {
-  ALL_STORES, DIFFICULTY_MAX, DIFFICULTY_MIN, MEMORY_STORES, SETTINGS_ID,
+  ALL_STORES, DIFFICULTY_MAX, DIFFICULTY_MIN, HISTORY_STORES, MEMORY_STORES, SETTINGS_ID,
   defaultSettings, makeDomain, makeLesson, makeModule, makeTerm, newID, nowISO, termFieldsFromDraft, termToDraft
 } from './model.js';
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
@@ -16,7 +16,7 @@ import { emptyChanges } from './storage.js';
 import { createScheduler } from './fsrs.js';
 import { quizResult } from './quiz.js';
 import {
-  DECISIONS, REPEAT_KINDS, emptyTiles, fsrsRating, makeAssessment, makeSession, nextProgress, repeatQueue,
+  DECISIONS, MAX_CARD_TIME, REPEAT_KINDS, emptyTiles, fsrsRating, makeAssessment, makeSession, nextProgress, repeatQueue,
   reviewSchedule, summarizeSession
 } from './study.js';
 
@@ -165,6 +165,11 @@ class UnitOfWork {
     this.purgeTermIDs.push(...ids);
   }
 
+  /** Czy operacja zmienia dzienniki nauki (zapis, usunięcie, usunięcie pojęć). */
+  touchesJournals() {
+    return this.journalPuts.size > 0 || this.journalDeletes.size > 0 || this.purgeTermIDs.length > 0;
+  }
+
   /** Zmiany względem stanu sprzed operacji (każdy rekord najwyżej raz). */
   changes() {
     const changes = emptyChanges();
@@ -200,6 +205,8 @@ export class Library {
   #schedulerCache = null;
   /** Wyniki quizów pojęć (termID → { attempts, correct, lastCorrect, lastAt }) – z dziennika quizAnswers. */
   #quizStats = new Map();
+  /** Dzienniki do statystyk: { revision, promise } – czytane z bazy raz na zmianę dzienników. */
+  #journals = null;
   /** Posortowane listy pojęć dla glosariusza, według rodzaju sortowania. */
   #sorted = new Map();
 
@@ -207,6 +214,8 @@ export class Library {
     this.adapter = adapter;
     this.maps = Object.fromEntries(MEMORY_STORES.map((name) => [name, new Map()]));
     this.revision = 0;
+    /** Rośnie przy każdej zmianie dzienników nauki (statystyki czytają je wtedy na nowo). */
+    this.journalRevision = 0;
   }
 
   /** Wczytuje dane z adaptera do pamięci. */
@@ -217,7 +226,24 @@ export class Library {
     }
     await this.#migrateSchedules();
     await this.#loadQuizStats();
+    this.journalRevision += 1;
     this.#changed();
+  }
+
+  /**
+   * Wszystkie dzienniki nauki ({ assessments, reviews, quizAnswers, studySessions, quizSessions })
+   * do statystyk. Wynik jest zapamiętany do następnej zmiany dzienników (`journalRevision`).
+   */
+  journals() {
+    if (this.#journals?.revision === this.journalRevision) return this.#journals.promise;
+    const promise = Promise.all(HISTORY_STORES.map((name) => this.adapter.readStore(name)))
+      .then((stores) => Object.fromEntries(HISTORY_STORES.map((name, index) => [name, stores[index]])));
+    const entry = { revision: this.journalRevision, promise };
+    this.#journals = entry;
+    promise.catch(() => {
+      if (this.#journals === entry) this.#journals = null;
+    });
+    return promise;
   }
 
   async #loadQuizStats() {
@@ -346,6 +372,7 @@ export class Library {
         if (committing) this.#changed();
         throw error;
       }
+      if (unit.touchesJournals()) this.journalRevision += 1;
       this.#changed();
       return result;
     };
@@ -956,6 +983,7 @@ export class Library {
       for (const name of stores) this.maps[name] = new Map();
       this.maps.settings.set(SETTINGS_ID, settings);
       this.#quizStats = new Map();
+      this.journalRevision += 1;
       this.#changed();
     };
     const next = this.#queue.then(run, run);
@@ -1291,7 +1319,7 @@ export class Library {
    * fiszki i przesuwa sesję – wszystko jedną transakcją.
    * tiles: { term, description, example } (true – „Umiem”), decision: 'know' | 'repeat'.
    */
-  recordStudyDecision({ tiles, decision, random = Math.random, now = Date.now() }) {
+  recordStudyDecision({ tiles, decision, random = Math.random, now = Date.now(), duration = null }) {
     return this.#mutate((unit) => {
       if (decision !== DECISIONS.KNOW && decision !== DECISIONS.REPEAT) throw errors.invalidDecision();
       const session = this.getStudySession();
@@ -1301,6 +1329,8 @@ export class Library {
 
       const previous = this.getProgress(term.id, card.direction);
       const { assessment, rating, reviewed } = this.#evaluate(term, card.direction, previous, tiles, decision, session.id, random, now);
+      // Czas nad fiszką (do statystyk) – z górnym limitem, bo fiszka mogła czekać na ekranie.
+      if (Number.isFinite(duration)) assessment.duration = Math.round(Math.min(Math.max(duration, 0), MAX_CARD_TIME));
       const progress = nextProgress(previous, term, assessment, reviewed.schedule);
       const review = reviewRecord({ assessment, rating, reviewed });
       unit.append('assessments', assessment);

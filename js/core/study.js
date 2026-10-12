@@ -412,6 +412,9 @@ export const MASTERY_NAMES = Object.freeze({
   new: 'Nowe', learning: 'W nauce', young: 'Utrwalane', mature: 'Utrwalone'
 });
 
+/** Najdłuższy czas liczony dla jednej fiszki (statystyka „Czas nauki”): 3 minuty. */
+export const MAX_CARD_TIME = 180_000;
+
 /** Stabilność (w dniach), od której fiszkę uznajemy za utrwaloną – jak „dojrzała” karta w Anki. */
 export const MATURE_STABILITY = 21;
 

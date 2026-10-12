@@ -107,6 +107,7 @@ export class DomainsScreen {
               items: [
                 { label: 'Ucz się', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'domain', id: domain.id })) },
                 { label: 'Quiz', icon: 'quiz', onSelect: () => ctx.navigate(routes.quiz({ level: 'domain', id: domain.id })) },
+                { label: 'Statystyki', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'domain', id: domain.id })) },
                 { label: 'Edytuj', icon: 'edit', onSelect: () => openDomainForm(ctx, domain.id) },
                 { label: 'Dodaj moduł', icon: 'plus', onSelect: () => openModuleForm(ctx, { domainID: domain.id }) },
                 { label: 'Eksportuj…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'domain', id: domain.id }) },
@@ -159,6 +160,7 @@ export class DomainScreen {
       items: [
         { label: 'Ucz się tej dziedziny', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'domain', id: domain.id })) },
         { label: 'Quiz z tej dziedziny', icon: 'quiz', onSelect: () => ctx.navigate(routes.quiz({ level: 'domain', id: domain.id })) },
+        { label: 'Statystyki dziedziny', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'domain', id: domain.id })) },
         { label: 'Edytuj dziedzinę', icon: 'edit', onSelect: () => openDomainForm(ctx, domain.id) },
         modules.length > 1 ? { label: 'Zmień kolejność modułów', icon: 'reorder', onSelect: () => { this.reordering = true; ctx.refresh(); } } : null,
         { label: 'Eksportuj dziedzinę…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'domain', id: domain.id }) },
@@ -209,6 +211,7 @@ export class DomainScreen {
                 items: [
                   { label: 'Ucz się', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'module', id: module.id })) },
                   { label: 'Quiz', icon: 'quiz', onSelect: () => ctx.navigate(routes.quiz({ level: 'module', id: module.id })) },
+                  { label: 'Statystyki', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'module', id: module.id })) },
                   { label: 'Edytuj', icon: 'edit', onSelect: () => openModuleForm(ctx, { moduleID: module.id }) },
                   { label: 'Przenieś do innej dziedziny', icon: 'move', onSelect: () => moveModule(ctx, module.id) },
                   { label: 'Dodaj lekcję', icon: 'plus', onSelect: () => openLessonForm(ctx, { moduleID: module.id }) },
@@ -257,6 +260,7 @@ export class ModuleScreen {
       items: [
         { label: 'Ucz się tego modułu', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'module', id: module.id })) },
         { label: 'Quiz z tego modułu', icon: 'quiz', onSelect: () => ctx.navigate(routes.quiz({ level: 'module', id: module.id })) },
+        { label: 'Statystyki modułu', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'module', id: module.id })) },
         { label: 'Edytuj moduł', icon: 'edit', onSelect: () => openModuleForm(ctx, { moduleID: module.id }) },
         { label: 'Przenieś do innej dziedziny', icon: 'move', onSelect: () => moveModule(ctx, module.id) },
         lessons.length > 1 ? { label: 'Zmień kolejność lekcji', icon: 'reorder', onSelect: () => { this.reordering = true; ctx.refresh(); } } : null,
@@ -298,6 +302,7 @@ export class ModuleScreen {
               items: [
                 { label: 'Ucz się', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'lesson', id: lesson.id })) },
                 { label: 'Quiz', icon: 'quiz', onSelect: () => ctx.navigate(routes.quiz({ level: 'lesson', id: lesson.id })) },
+                { label: 'Statystyki', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'lesson', id: lesson.id })) },
                 { label: 'Edytuj', icon: 'edit', onSelect: () => openLessonForm(ctx, { lessonID: lesson.id }) },
                 { label: 'Przenieś do innego modułu', icon: 'move', onSelect: () => moveLesson(ctx, lesson.id) },
                 { label: 'Kopiuj do…', icon: 'copy', onSelect: () => copyLesson(ctx, lesson.id) },

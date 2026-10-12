@@ -86,6 +86,24 @@ test('pytanie wyboru: brakujące błędne odpowiedzi z innych dziedzin, mniej od
   assert.equal(choiceQuestion(law[0], PL_EN, [law[0], twin], seeded(5)), null);
 });
 
+test('pytanie wyboru: pojęcie zapisane drugi raz z innym tłumaczeniem nie jest błędną odpowiedzią', async () => {
+  const { library, finance, ratios } = await setup();
+  // „aktywa” drugi raz (np. dodane przy imporcie duplikatów) i „Aktywa” z inną wielkością liter.
+  const duplicate = await addTerm(library, ratios, 'aktywa', 'property');
+  const capitalized = await addTerm(library, ratios, 'Aktywa ', 'holdings');
+  const pool = [...finance, duplicate, capitalized];
+  for (let seed = 1; seed <= 30; seed += 1) {
+    const question = choiceQuestion(finance[0], PL_EN, pool, seeded(seed));
+    const texts = question.options.map((option) => option.text);
+    assert.ok(!texts.includes('property') && !texts.includes('holdings'), `odpowiedzi: ${texts.join(', ')}`);
+    assert.equal(question.options.length, 4);
+  }
+  // Odwrotnie: dla „property” jedno z „aktywa” byłoby jedyną poprawną odpowiedzią, ale drugie
+  // (w EN → PL brzmi tak samo po polsku) nie może trafić jako błędna – odpowiedzi się nie powtarzają.
+  const reverse = choiceQuestion(duplicate, EN_PL, pool, seeded(7));
+  assert.equal(reverse.options.filter((option) => normalizeKey(option.text) === 'aktywa').length, 1);
+});
+
 // ---------------------------------------------------------------- dopasowywanie i budowanie quizu
 
 test('rundy dopasowywania: po 5 par na telefonie, po 8 na szerokim ekranie, równy podział', () => {

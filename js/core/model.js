@@ -67,6 +67,9 @@ export function defaultSettings() {
     quizPassThreshold: 0.8,        // próg zaliczenia
     quizSelection: null,           // ostatnio wybrany materiał quizu
     activeQuiz: null,              // trwający albo właśnie zakończony quiz – do wznowienia i wyników
+    statsDirection: null,          // kierunek w statystykach: pl_en | en_pl | both; null – jak w nauce
+    statsRange: 30,                // dni na wykresach: 7 | 30 | 90
+    statsLevel: 'domain',          // zestawienie opanowania: domain | module | lesson
     dailyLearningGoal: 20,
     speechRate: 1,
     preferredVoicePL: null,

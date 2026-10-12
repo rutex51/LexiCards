@@ -6,7 +6,7 @@ są zapisywane wyłącznie w przeglądarce na Twoim urządzeniu.
 
 Adres: **https://rutex51.github.io/LexiCards/**
 
-## Co już działa (etapy 1–5)
+## Co już działa (etapy 1–6)
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -26,15 +26,17 @@ Adres: **https://rutex51.github.io/LexiCards/**
 - Quizy: jednokrotny wybór (do czterech odpowiedzi), łączenie par i test mieszany; wybór materiału,
   kierunku, liczby pytań, limitu czasu i progu zaliczenia. Wynik z listą błędów, „Powtórz błędne
   odpowiedzi”, historia wyników. Quizy nie zmieniają terminów powtórek fiszek.
+- Statystyki: opanowane pojęcia, do powtórki, skuteczność quizów, czas nauki, znajomość pojęć,
+  definicji i przykładów (osobno dla każdego kierunku), wykresy postępu, powtórek i quizów w czasie,
+  opanowanie według dziedzin, modułów i lekcji z przejściem w głąb. Najważniejsze liczby także na Starcie.
 - Wymowa pojęć, definicji i przykładów głosem z urządzenia; historia ocen każdego pojęcia.
 - Kopia zapasowa do pliku i przywracanie z pliku (materiały, postępy, ustawienia).
 - Motyw jasny, ciemny albo zgodny z systemem; układ na telefon i na szeroki ekran.
 - Praca bez internetu po pierwszym otwarciu.
 - 40 przykładowych pojęć (Business English, Metrology) do wczytania jednym przyciskiem.
 
-Zakładka Statystyki jest widoczna, ale jej funkcje powstaną w kolejnym etapie
-(plan niżej). Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md),
-[etap 2](docs/STAGE-2.md), [etap 3](docs/STAGE-3.md), [etap 4](docs/STAGE-4.md), [etap 5](docs/STAGE-5.md).
+Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2](docs/STAGE-2.md),
+[etap 3](docs/STAGE-3.md), [etap 4](docs/STAGE-4.md), [etap 5](docs/STAGE-5.md), [etap 6](docs/STAGE-6.md).
 
 ## Jak korzystać
 
@@ -117,6 +119,16 @@ Niedokończony quiz można wznowić ze Startu albo z zakładki Quiz. Quizy nie z
 powtórek fiszek; pojęcia, na które ostatnio odpowiedziałeś źle, znajdziesz w Nauce w zakresie
 **Błędy z quizów**. Na komputerze działa klawiatura: 1–4 lub A–D wybiera odpowiedź, Enter – dalej.
 
+### Statystyki
+
+Zakładka **Statystyki** pokazuje całą bibliotekę; wiersz w zestawieniu „Opanowanie według…” (albo
+„Statystyki” w menu dziedziny, modułu lub lekcji w Bibliotece) otwiera te same statystyki dla jednego
+elementu. U góry wybierasz kierunek: PL → EN, EN → PL albo oba – wtedy pojęcie jest opanowane dopiero
+w obu kierunkach. Znajomość pojęć, definicji i przykładów jest zawsze podana osobno dla każdego kierunku.
+Wykresy obejmują 7, 30 albo 90 dni; dotknij wykresu (albo użyj strzałek), żeby zobaczyć wartości dnia,
+a „Dane w tabeli” pokazuje te same liczby bez wykresu. Czas nauki to czas nad fiszkami i odpowiedziami
+w quizach – od wersji 0.6.0 mierzony, dla starszych ocen szacowany.
+
 ### Gdzie są dane
 
 - Dane zostają w przeglądarce na danym urządzeniu. Nic nie jest wysyłane do internetu.
@@ -171,7 +183,7 @@ z przyciskiem „Uruchom ją”.
 3. **Fiszki: obracana karta, ocena pojęcia, definicji i przykładu, gesty, cofanie** – gotowe.
 4. **Powtórki w odstępach (FSRS), osobno dla kierunków PL→EN i EN→PL** – gotowe.
 5. **Quizy: jednokrotny wybór, dopasowywanie, mieszany** – gotowe.
-6. Ekran startowy z planem dnia i statystyki.
+6. **Statystyki: wskaźniki, wykresy, zestawienia według dziedzin, modułów i lekcji** – gotowe.
 7. Dopracowanie: dostępność, wydajność przy dużych bibliotekach.
 
 Synchronizacja między urządzeniami nie jest planowana; urządzenia łączy kopia zapasowa w pliku.

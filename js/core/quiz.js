@@ -68,17 +68,23 @@ export function quizTerms(library, config) {
 
 /**
  * Pytanie jednokrotnego wyboru: pojęcie w języku pytania i do 4 odpowiedzi w drugim języku.
- * `pool` to wszystkie pojęcia, z których można brać błędne odpowiedzi. Zwraca null, gdy nie
- * da się ułożyć co najmniej dwóch różnych odpowiedzi.
+ * `pool` to wszystkie pojęcia, z których można brać błędne odpowiedzi; pomijane są pojęcia
+ * o tym samym brzmieniu w języku pytania. Zwraca null, gdy nie da się ułożyć co najmniej
+ * dwóch różnych odpowiedzi.
  */
 export function choiceQuestion(term, direction, pool, random = Math.random) {
+  const source = SOURCE[direction];
   const target = TARGET[direction];
   const correct = termText(term, target);
+  const question = normalizeKey(termText(term, source));
   const used = new Set([normalizeKey(correct)]);
   const sameDomain = [];
   const others = [];
   for (const candidate of pool) {
     if (candidate.id === term.id) continue;
+    // To samo pojęcie zapisane drugi raz (np. „bilans” → „balance” obok „bilans” → „balance sheet”)
+    // ma tłumaczenie, które też jest poprawne – nie może udawać błędnej odpowiedzi.
+    if (normalizeKey(termText(candidate, source)) === question) continue;
     (candidate.domainID === term.domainID ? sameDomain : others).push(candidate);
   }
   const options = [{ termID: term.id, text: correct }];
@@ -98,7 +104,7 @@ export function choiceQuestion(term, direction, pool, random = Math.random) {
     kind: 'choice',
     termID: term.id,
     direction,
-    prompt: { text: termText(term, SOURCE[direction]), lang: SOURCE[direction] },
+    prompt: { text: termText(term, source), lang: source },
     answerLang: target,
     options: order,
     correctIndex: order.findIndex((option) => option.termID === term.id)

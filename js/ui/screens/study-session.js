@@ -68,6 +68,8 @@ export class StudySessionScreen {
     this.suppressClick = false;
     /** Losowanie do rozmycia odstępu FSRS – jedno na fiszkę, żeby podgląd zgadzał się z zapisem. */
     this.fuzz = Math.random();
+    /** Chwila pokazania bieżącej fiszki – czas nad fiszką trafia do statystyk. */
+    this.cardShownAt = Date.now();
 
     this.onKeyDown = (event) => this.#handleKey(event);
     document.addEventListener('keydown', this.onKeyDown);
@@ -219,7 +221,9 @@ export class StudySessionScreen {
     vibrate(14);
     await this.#flyOut(decision);
     try {
-      await this.ctx.library.recordStudyDecision({ tiles: this.tiles, decision, random: () => this.fuzz });
+      await this.ctx.library.recordStudyDecision({
+        tiles: this.tiles, decision, random: () => this.fuzz, duration: Date.now() - this.cardShownAt
+      });
     } catch (error) {
       await showError(error);
     } finally {
@@ -561,6 +565,7 @@ export class StudySessionScreen {
       this.tiles = emptyTiles(term);
       this.drag = null;
       this.fuzz = Math.random();
+      this.cardShownAt = Date.now();
       stopSpeaking();
     }
 

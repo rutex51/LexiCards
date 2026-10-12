@@ -12,10 +12,10 @@ import { QuizSessionScreen } from './ui/screens/quiz-session.js';
 import { QuizSetupScreen } from './ui/screens/quiz-setup.js';
 import { SettingsScreen } from './ui/screens/settings.js';
 import { StartScreen } from './ui/screens/start.js';
+import { StatsScreen } from './ui/screens/stats.js';
 import { StudySessionScreen } from './ui/screens/study-session.js';
 import { StudySetupScreen } from './ui/screens/study-setup.js';
 import { LessonScreen } from './ui/screens/terms.js';
-import { UpcomingScreen } from './ui/screens/upcoming.js';
 import { Shell } from './ui/shell.js';
 import { APP_VERSION, BUILD_ID } from './version.js';
 
@@ -31,7 +31,7 @@ const SCREENS = {
   studySession: StudySessionScreen,
   quiz: QuizSetupScreen,
   quizSession: QuizSessionScreen,
-  stats: UpcomingScreen,
+  stats: StatsScreen,
   settings: SettingsScreen
 };
 
