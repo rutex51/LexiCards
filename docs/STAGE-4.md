@@ -149,6 +149,19 @@ w samym teście, nie w aplikacji; pomocnik czyta teraz stan strony jednym odczyt
 - **Easy nie jest używane**, więc najdłuższe odstępy rosną wolniej niż w aplikacjach,
   w których użytkownik sam wybiera „Łatwe”.
 
+## Uzupełnienie w wersji 0.4.1: powtórka częściowo zapamiętanych
+
+- Na podsumowaniu sesji obok „Powtórz odłożone” i „Powtórz całą sesję” jest
+  **„Powtórz częściowo zapamiętane”** – fiszki zatwierdzone jako „Umiem”, ale bez kompletu kafelków.
+- Obie grupy (odłożone i częściowo zapamiętane) są liczone z najnowszej oceny każdej fiszki
+  sesji, więc obejmują wszystkie jej rundy: fiszka odłożona w pierwszej rundzie czeka, dopóki
+  nie zostanie powtórzona, a fiszka poprawiona do kompletu znika z grupy.
+- W zakładce Nauka grupa **„Ostatnia sesja”** ma te same trzy polecenia dla ostatniej
+  zamkniętej sesji, z tymi samymi ustawieniami.
+- Nowy zakres w formularzu sesji: **„Częściowo zapamiętane”** dla dowolnego materiału.
+- Testy: nowy test logiki, rozszerzony test zakresów i nowy test w przeglądarce (podsumowanie,
+  runda, zakładka Nauka, zakres). Wszystkie: 159 testów logiki i 48 w przeglądarce, bez błędów.
+
 ## Jak uruchomić
 
 - W przeglądarce: adres z pliku [README](../README.md); w Safari odśwież stronę dwa razy albo

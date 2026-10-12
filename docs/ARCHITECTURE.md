@@ -176,7 +176,10 @@ Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany 
   „Umiem” przy niepełnym wyniku zachowuje status częściowy.
 - **Powtórzenie sesji:** sesja przechowuje `baseQueue` – pełny zestaw fiszek, także w rundzie
   powtórkowej. Zamknięta sesja z ocenami trafia do ustawień jako `lastStudySession`
-  (`config` + `queue`), a `repeatStudy()` zaczyna z niej nową sesję jedną transakcją.
+  (`config` + `queue`). `repeatStudy(random, kind)` zaczyna jedną transakcją: całą sesję
+  (`all`, nowa sesja) albo kolejną rundę z odłożonymi (`repeat`) lub częściowo zapamiętanymi
+  (`partial`). Dwie ostatnie grupy wynikają z najnowszej oceny każdej fiszki pełnego zestawu
+  (`learningGroup()`), więc obejmują wszystkie rundy sesji.
 - **Cofnięcie** usuwa ostatni wpis historii i przywraca poprzedni rekord postępu, zapamiętany
   w wyniku fiszki. Działa także z ekranu podsumowania.
 - **Dzienniki** (`assessments`, `studySessions`) nie są trzymane w pamięci: zapis idzie przez

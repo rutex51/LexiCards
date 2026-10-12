@@ -1499,11 +1499,11 @@ test('fiszki: kierunek EN → PL ma osobne postępy; zakresy Nowe, Do powtórki,
   await waitUntil(async () => (await scopes()).includes('Ulubione (1)'), 'Zakres „Ulubione” powinien pokazać jedno pojęcie');
 
   // Kierunek zapamiętany z poprzedniej sesji: EN → PL.
-  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (3)', 'Do powtórki (1)', 'Trudne (1)', 'Ulubione (1)', 'Losowe (6)']);
+  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (3)', 'Do powtórki (1)', 'Częściowo zapamiętane (0)', 'Trudne (1)', 'Ulubione (1)', 'Losowe (6)']);
   await choose(page, 'Kierunek nauki', 'PL → EN');
-  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (6)', 'Do powtórki (0)', 'Trudne (0)', 'Ulubione (1)', 'Losowe (6)']);
+  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (6)', 'Do powtórki (0)', 'Częściowo zapamiętane (0)', 'Trudne (0)', 'Ulubione (1)', 'Losowe (6)']);
   await choose(page, 'Kierunek nauki', 'Mieszany');
-  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (6)', 'Do powtórki (1)', 'Trudne (1)', 'Ulubione (1)', 'Losowe (6)']);
+  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (6)', 'Do powtórki (1)', 'Częściowo zapamiętane (0)', 'Trudne (1)', 'Ulubione (1)', 'Losowe (6)']);
 
   // Zakres bez fiszek: nie da się rozpocząć.
   await choose(page, 'Kierunek nauki', 'PL → EN');
@@ -1633,8 +1633,8 @@ test('fiszki: powtórka całej sesji z podsumowania, z ekranu Nauka i ze Startu'
   await assess(page, 'all', 'know');
   await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
   const repeatLast = page.locator('[data-testid=study-repeat-last]');
-  await expectText(repeatLast, 'Powtórz ostatnią sesję (3 fiszki)');
-  await expectText(repeatLast, 'Lekcja Podstawy, PL → EN');
+  await expectText(repeatLast, 'Powtórz całą sesję (3 fiszki)');
+  await expectText(page.locator('.group', { has: repeatLast }).locator('.group__footer'), 'Lekcja Podstawy, PL → EN');
   // Materiał ostatniej sesji jest też wybrany w formularzu.
   assert.equal(await page.locator('[data-testid=study-module]').inputValue(), ids.financeID);
   assert.equal(await page.locator('.group--compact .row', { hasText: 'Podstawy' }).locator('input').isChecked(), true);
@@ -1777,6 +1777,56 @@ test('powtórki FSRS: podpowiedź odstępu, powtórka na dziś ze Startu, termin
   assert.equal(await page.locator('[data-testid=desired-retention]').inputValue(), '0.9');
   await page.selectOption('[data-testid=desired-retention]', '0.95');
   await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().desiredRetention === 0.95), 'Ustawienie powinno się zapisać');
+});
+
+test('fiszki: powtórka częściowo zapamiętanych i odłożonych – z podsumowania i z zakładki Nauka', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page, `#/study/lesson/${ids.basicsID}`);
+  await startStudy(page);
+  await assess(page, ['term'], 'know');     // aktywa: 1/3, „Umiem” – częściowo zapamiętane
+  await assess(page, [], 'repeat');         // pasywa: odłożone
+  await assess(page, 'all', 'know');        // zysk: opanowane
+
+  await page.locator('[data-testid=study-summary]').waitFor();
+  const postponed = page.locator('[data-testid=summary-repeat]');
+  const partial = page.locator('[data-testid=summary-repeat-partial]');
+  await expectText(postponed, 'Powtórz odłożone (1)');
+  await expectText(partial, 'Powtórz częściowo zapamiętane (1)');
+  await expectText(page.locator('[data-testid=summary-repeat-all]'), 'Powtórz całą sesję (3)');
+  assert.ok((await partial.getAttribute('class')).includes('button--secondary'));
+
+  // Runda z częściowo zapamiętanymi: tylko „aktywa”.
+  await partial.click();
+  await expectText(counter(page), '1 z 1');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'aktywa');
+  await assess(page, 'all', 'know');
+  await expectText(page.locator('.empty__title'), 'Runda powtórkowa zakończona');
+  assert.equal(await partial.count(), 0, 'aktywa są już opanowane');
+  // Odłożone z pierwszej rundy nadal czekają i są teraz głównym poleceniem.
+  await expectText(postponed, 'Powtórz odłożone (1)');
+  assert.ok((await postponed.getAttribute('class')).includes('button--primary'));
+  await expectText(page.locator('[data-testid=summary-repeat-all]'), 'Powtórz całą sesję (3)');
+
+  // Po zamknięciu podsumowania to samo jest w zakładce Nauka.
+  await page.click('[data-testid=summary-new]');
+  await expectText(page.locator('[data-testid=study-repeat-last]'), 'Powtórz całą sesję (3 fiszki)');
+  await expectText(page.locator('[data-testid=study-repeat-postponed]'), 'Powtórz odłożone (1 fiszka)');
+  assert.equal(await page.locator('[data-testid=study-repeat-partial]').count(), 0);
+  await page.click('[data-testid=study-repeat-postponed]');
+  await expectText(counter(page), '1 z 1');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'pasywa');
+
+  // Fiszka zatwierdzona jako „Umiem” bez kompletu trafia do częściowo zapamiętanych.
+  await assess(page, ['term'], 'know');      // pasywa: 1/2
+  await page.click('[data-testid=summary-new]');
+  await expectText(page.locator('[data-testid=study-repeat-partial]'), 'Powtórz częściowo zapamiętane (1 fiszka)');
+  assert.equal(await page.locator('[data-testid=study-repeat-postponed]').count(), 0);
+  const scopeOptions = (await page.locator('[data-testid=study-scope] option').allTextContents()).map((text) => text.trim());
+  assert.ok(scopeOptions.includes('Częściowo zapamiętane (1)'), scopeOptions.join(', '));
+  await page.click('[data-testid=study-repeat-partial]');
+  await expectText(counter(page), '1 z 1');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'pasywa');
 });
 
 test('fiszki: wejście z lekcji i z menu biblioteki ustawia materiał', async ({ open }) => {

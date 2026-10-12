@@ -259,28 +259,15 @@ export class StudySessionScreen {
     }
   }
 
-  async #repeatRound(session, summary) {
+  /**
+   * Kolejna runda z fiszkami tej sesji: 'repeat' – odłożone, 'partial' – częściowo
+   * zapamiętane, 'all' – wszystkie od początku (także ocenione jako „Umiem”).
+   */
+  async #repeat(kind) {
     if (this.busy) return;
     this.busy = true;
     try {
-      await this.ctx.library.startStudy(session.config, summary.repeatQueue, {
-        round: (session.round ?? 1) + 1,
-        baseQueue: session.baseQueue ?? session.queue
-      });
-    } catch (error) {
-      await showError(error);
-    } finally {
-      this.busy = false;
-      if (!this.disposed) this.ctx.refresh();
-    }
-  }
-
-  /** Te same fiszki od początku – także te ocenione jako „Umiem” – żeby utrwalić materiał. */
-  async #repeatAll() {
-    if (this.busy) return;
-    this.busy = true;
-    try {
-      await this.ctx.library.repeatStudy();
+      await this.ctx.library.repeatStudy(Math.random, kind);
     } catch (error) {
       await showError(error);
     } finally {
@@ -477,8 +464,13 @@ export class StudySessionScreen {
 
   #summaryView(session) {
     const summary = summarizeSession(session);
-    const hasRepeat = summary.repeatQueue.length > 0;
-    const repeatable = this.ctx.library.getRepeatableStudy();
+    const { library } = this.ctx;
+    // Liczone z najnowszej oceny każdej fiszki, więc obejmują wszystkie rundy tej sesji.
+    const postponed = library.getRepeatableStudy('repeat');
+    const partial = library.getRepeatableStudy('partial');
+    const repeatable = library.getRepeatableStudy();
+    const primary = postponed ? 'repeat' : (partial ? 'partial' : 'all');
+    const kind = (name) => (name === primary ? 'button--primary' : 'button--secondary');
     const action = (kind, testID, label, handler) => onTap(
       h('button', { type: 'button', class: `button ${kind}`, dataset: { testid: testID } }, label),
       handler
@@ -512,10 +504,12 @@ export class StudySessionScreen {
         // Podsumowanie pojawia się w miejscu fiszki tuż po dotknięciu – przyciski reagują
         // już na samo dotknięcie (onTap), bo Safari gubi tu czasem pierwsze kliknięcie.
         h('div', { class: 'empty__actions' },
-          hasRepeat ? action('button--primary', 'summary-repeat', `Powtórz odłożone (${summary.repeatQueue.length})`,
-            () => this.#repeatRound(session, summary)) : null,
-          repeatable ? action(hasRepeat ? 'button--secondary' : 'button--primary', 'summary-repeat-all',
-            `Powtórz całą sesję (${repeatable.queue.length})`, () => this.#repeatAll()) : null,
+          postponed ? action(kind('repeat'), 'summary-repeat', `Powtórz odłożone (${postponed.queue.length})`,
+            () => this.#repeat('repeat')) : null,
+          partial ? action(kind('partial'), 'summary-repeat-partial', `Powtórz częściowo zapamiętane (${partial.queue.length})`,
+            () => this.#repeat('partial')) : null,
+          repeatable ? action(kind('all'), 'summary-repeat-all',
+            `Powtórz całą sesję (${repeatable.queue.length})`, () => this.#repeat('all')) : null,
           action('button--secondary', 'summary-new', 'Nowa sesja', () => this.#closeSummary(routes.study())),
           action('button--secondary', 'summary-done', 'Zakończ', () => this.#closeSummary(routes.start())),
           session.results.length > 0 ? action('button--plain', 'summary-undo', 'Cofnij ostatnią decyzję', () => this.#undo()) : null

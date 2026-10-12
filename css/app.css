@@ -1786,6 +1786,9 @@ a.row__main:active,
 
 .study-summary__line { display: block; }
 
+/* Podsumowanie ma dłuższe polecenia („Powtórz częściowo zapamiętane”) – szerszy rząd przycisków. */
+.study-summary .empty__actions { width: min(100%, 360px); }
+
 .status-bar {
   display: flex;
   gap: 2px;

@@ -29,6 +29,7 @@ export const STUDY_SCOPES = Object.freeze([
   { id: 'all', label: 'Wszystkie' },
   { id: 'new', label: 'Nowe' },
   { id: 'repeat', label: 'Do powtórki' },
+  { id: 'partial', label: 'Częściowo zapamiętane' },
   { id: 'hard', label: 'Trudne' },
   { id: 'favorites', label: 'Ulubione' },
   { id: 'random', label: 'Losowe' }
@@ -101,6 +102,8 @@ function matchesScope(scope, term, progress, now) {
   switch (scope) {
     case 'new': return learningGroup(progress) === 'new';
     case 'repeat': return isDue(progress, now);
+    // Ostatnio zatwierdzone jako „Umiem”, ale bez kompletu kafelków.
+    case 'partial': return learningGroup(progress) === 'learning';
     case 'hard': return isHard(term, progress);
     case 'favorites': return Boolean(term.isFavorite);
     default: return true;
@@ -481,6 +484,7 @@ export function repeatQueue(queue, config, random = Math.random) {
 
 /** Krótki opis materiału sesji, np. „Lekcja Leadership” albo „Wszystkie dziedziny”. */
 export function describeStudyMaterial(library, config) {
+  if (config.review) return 'Powtórka na dziś';
   const lessons = (config.lessonIDs ?? []).map((id) => library.getLesson(id)).filter(Boolean);
   if (lessons.length === 1) return `Lekcja ${lessons[0].name}`;
   if (lessons.length > 1) return `Lekcje: ${lessons.map((lesson) => lesson.name).join(', ')}`;

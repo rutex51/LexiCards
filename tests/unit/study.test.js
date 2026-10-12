@@ -181,11 +181,13 @@ test('zakresy: nowe, do powtórki, trudne, ulubione – osobno dla kierunku', as
   assert.deepEqual(names({ scope: 'repeat', count: 2 }, Date.now() + 11 * minute), ['pasywa', 'aktywa'], 'limit bierze najbardziej zaległe');
   assert.deepEqual(names({ scope: 'hard' }), ['pasywa', 'trudne']);
   assert.deepEqual(names({ scope: 'favorites' }), ['pasywa']);
+  // Częściowo zapamiętane: „Umiem” bez kompletu (pasywa 0/1); aktywa odłożone, bilans opanowany.
+  assert.deepEqual(names({ scope: 'partial' }), ['pasywa']);
   // W drugim kierunku wszystko jest jeszcze nowe.
   assert.deepEqual(names({ scope: 'new', direction: EN_PL }), ['bilans', 'aktywa', 'pasywa', 'trudne']);
   assert.deepEqual(names({ scope: 'repeat', direction: EN_PL }, Date.now() + 11 * minute), []);
 
-  assert.deepEqual(scopeCounts(library, config(), Date.now() + 11 * minute), { all: 4, new: 1, repeat: 3, hard: 2, favorites: 1, random: 4 });
+  assert.deepEqual(scopeCounts(library, config(), Date.now() + 11 * minute), { all: 4, new: 1, repeat: 3, partial: 1, hard: 2, favorites: 1, random: 4 });
   assert.equal(isHard(hard, null), true);
   assert.equal(isHard(full, library.getProgress(full.id, PL_EN)), false);
 
@@ -438,6 +440,43 @@ test('runda powtórkowa pamięta pełny zestaw fiszek, więc da się wrócić do
   assert.deepEqual(library.getRepeatableStudy().queue, queue, 'cała sesja, nie tylko runda powtórkowa');
   const whole = await library.repeatStudy();
   assert.deepEqual([whole.queue, whole.round], [queue, 1]);
+});
+
+test('powtórka odłożonych i częściowo zapamiętanych: z całej sesji, według najnowszej oceny', async () => {
+  const { library, branch, full, noExample, bare } = await setup();
+  const extra = await addTerm(library, branch.lesson, 'zysk', 'profit', FULL);
+  const queue = [full, noExample, bare, extra].map((term) => ({ termID: term.id, direction: PL_EN }));
+  const first = await library.startStudy(config(), queue);
+  await library.recordStudyDecision({ tiles: ALL_KNOWN, decision: DECISIONS.KNOW });           // bilans: opanowane
+  await library.recordStudyDecision({ tiles: { term: true }, decision: DECISIONS.KNOW });      // aktywa: 1/2, „Umiem”
+  await library.recordStudyDecision({ tiles: {}, decision: DECISIONS.REPEAT });                // pasywa: odłożone
+  await library.recordStudyDecision({ tiles: { term: true }, decision: DECISIONS.KNOW });      // zysk: 1/3, „Umiem”
+
+  const ids = (kind) => library.getRepeatableStudy(kind)?.queue.map((card) => library.getTerm(card.termID).termPL) ?? [];
+  assert.deepEqual(ids('repeat'), ['pasywa']);
+  assert.deepEqual(ids('partial'), ['aktywa', 'zysk']);
+  assert.deepEqual(ids('all'), ['bilans', 'aktywa', 'pasywa', 'zysk']);
+
+  // Runda z częściowo zapamiętanymi to kolejna runda tej samej sesji – pełny zestaw zostaje.
+  const round = await library.repeatStudy(Math.random, 'partial');
+  assert.deepEqual([round.round, round.queue.length, round.baseQueue.length], [2, 2, 4]);
+  assert.deepEqual(round.baseQueue, first.baseQueue);
+  await library.recordStudyDecision({ tiles: ALL_KNOWN, decision: DECISIONS.KNOW });           // aktywa: teraz komplet
+  await library.recordStudyDecision({ tiles: { term: true, description: true }, decision: DECISIONS.KNOW }); // zysk: 2/3
+  // Odłożone z pierwszej rundy nadal czekają, mimo że nie było ich w tej rundzie.
+  assert.deepEqual(ids('repeat'), ['pasywa']);
+  assert.deepEqual(ids('partial'), ['zysk']);
+
+  // Po zamknięciu sesji to samo jest dostępne z ostatniej sesji.
+  await library.finishStudy();
+  assert.equal(library.getStudySession(), null);
+  assert.deepEqual(ids('partial'), ['zysk']);
+  const again = await library.repeatStudy(Math.random, 'repeat');
+  assert.deepEqual([again.round, again.queue.length, again.baseQueue.length], [2, 1, 4]);
+  assert.equal(library.getTerm(again.queue[0].termID).termPL, 'pasywa');
+  await library.recordStudyDecision({ tiles: ALL_KNOWN, decision: DECISIONS.KNOW });
+  assert.equal(library.getRepeatableStudy('repeat'), null, 'nic już nie czeka');
+  await assert.rejects(library.repeatStudy(Math.random, 'repeat'), (error) => error.code === 'noLastStudy');
 });
 
 test('ostatnią sesję można powtórzyć także po jej zamknięciu i ponownym otwarciu aplikacji', async () => {

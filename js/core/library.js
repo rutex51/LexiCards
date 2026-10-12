@@ -15,9 +15,15 @@ import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.j
 import { emptyChanges } from './storage.js';
 import { createScheduler } from './fsrs.js';
 import {
-  DECISIONS, emptyTiles, fsrsRating, makeAssessment, makeSession, nextProgress, repeatQueue, reviewSchedule,
-  summarizeSession
+  DECISIONS, emptyTiles, fsrsRating, learningGroup, makeAssessment, makeSession, nextProgress, repeatQueue,
+  reviewSchedule, summarizeSession
 } from './study.js';
+
+/**
+ * Które fiszki sesji powtórzyć: wszystkie, odłożone (ostatnia decyzja „Powtórz”) albo
+ * częściowo zapamiętane (ostatnio „Umiem”, ale bez kompletu kafelków).
+ */
+const REPEAT_GROUPS = { repeat: 'repeat', partial: 'learning' };
 
 /** Wpis dziennika powtórek FSRS – jeden na zatwierdzoną fiszkę. */
 function reviewRecord({ assessment, rating, reviewed, migrated = false }) {
@@ -1183,32 +1189,45 @@ export class Library {
   }
 
   /**
-   * Fiszki, które dałoby się powtórzyć: pełny zestaw trwającej (zwykle właśnie zakończonej)
-   * sesji albo, gdy jej nie ma, ostatniej zakończonej. Pomija usunięte pojęcia.
-   * Zwraca { config, queue } albo null.
+   * Fiszki, które dałoby się powtórzyć: z pełnego zestawu trwającej (zwykle właśnie
+   * zakończonej) sesji albo, gdy jej nie ma, ostatniej zakończonej. Pomija usunięte pojęcia.
+   * kind: 'all' – wszystkie, 'repeat' – odłożone, 'partial' – częściowo zapamiętane; dwa
+   * ostatnie według najnowszej oceny fiszki, więc obejmują wszystkie rundy sesji.
+   * Zwraca { config, queue, baseQueue } albo null.
    */
-  getRepeatableStudy() {
+  getRepeatableStudy(kind = 'all') {
     const active = this.getStudySession();
     const source = active
       ? { config: active.config, queue: active.baseQueue ?? active.queue }
       : this.getSettings().lastStudySession;
     if (!source?.config || !Array.isArray(source.queue)) return null;
-    const queue = source.queue.filter((card) => this.getTerm(card.termID));
-    return queue.length > 0 ? { config: source.config, queue } : null;
+    const baseQueue = source.queue.filter((card) => this.getTerm(card.termID));
+    const group = REPEAT_GROUPS[kind];
+    const queue = group
+      ? baseQueue.filter((card) => learningGroup(this.getProgress(card.termID, card.direction)) === group)
+      : baseQueue;
+    return queue.length > 0 ? { config: source.config, queue, baseQueue } : null;
   }
 
   /**
-   * Rozpoczyna od nowa te same fiszki z tymi samymi ustawieniami (patrz getRepeatableStudy),
-   * niezależnie od tego, jak zostały ocenione. Bieżąca sesja jest zamykana i trafia do dziennika.
+   * Rozpoczyna od nowa fiszki sesji z tymi samymi ustawieniami (patrz getRepeatableStudy).
+   * Powtórka odłożonych i częściowo zapamiętanych jest kolejną rundą tej samej sesji
+   * (zachowuje pełny zestaw), powtórka całości – nową sesją. Bieżąca sesja trafia do dziennika.
    */
-  repeatStudy(random = Math.random) {
+  repeatStudy(random = Math.random, kind = 'all') {
     return this.#mutate((unit) => {
-      const source = this.getRepeatableStudy();
+      const source = this.getRepeatableStudy(kind);
       if (!source) throw errors.noLastStudy();
       const active = this.getStudySession();
       if (active) this.#archiveStudySession(unit, active);
       const queue = repeatQueue(source.queue, source.config, random);
-      const session = makeSession({ config: source.config, queue, baseQueue: queue });
+      const whole = kind === 'all';
+      const session = makeSession({
+        config: source.config,
+        queue,
+        baseQueue: whole ? queue : source.baseQueue,
+        round: whole ? 1 : (active?.round ?? 1) + 1
+      });
       this.#putStudySession(unit, session);
       return session;
     });
