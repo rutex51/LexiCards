@@ -109,6 +109,18 @@ w sekcji „Testy”; to, czego nie udało się sprawdzić, jest wymienione osob
   z wartością, która w trybie telefonu rośnie razem z treścią, więc nie mógł niczego wykryć.
   Teraz porównuje z szerokością urządzenia; wcześniejsze ekrany przeszły poprawioną wersję.
 
+## Poprawki po pierwszym użyciu na iPhonie
+
+- 0.3.1 – głośnik także przy definicjach; ikony głośników wyrównane przy długim tekście.
+- 0.3.2 – powtórka całej sesji i ostatniej sesji, zapamiętany materiał (opis wyżej).
+- 0.3.3 – na podsumowaniu sesji Safari na iPhonie reagowało dopiero na drugie dotknięcie
+  przycisku. Przyczyny nie dało się odtworzyć w testowej przeglądarce; objaw odpowiada
+  błędowi WebKit w iOS 26 (pierwsze dotknięcie elementu, który pojawił się po zmianie
+  treści, nie wywołuje kliknięcia). Przyciski podsumowania reagują teraz na samo dotknięcie
+  (`onTap` w `js/ui/dom.js`), a syntetyczne kliknięcie jest wyłączane, żeby nie trafiło
+  w następny ekran. Test w przeglądarce sprawdza, że jedno dotknięcie wywołuje akcję
+  dokładnie raz. Skuteczność na iPhonie wymaga potwierdzenia.
+
 ## Pliki
 
 | Plik | Zawartość |

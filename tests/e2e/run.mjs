@@ -1654,6 +1654,46 @@ test('fiszki: powtórka całej sesji z podsumowania, z ekranu Nauka i ze Startu'
   await expectText(counter(page), '1 z 3');
 });
 
+test('fiszki: przyciski podsumowania działają po jednym dotknięciu, bez podwójnego wywołania', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  const finishByTouch = async () => {
+    while (!(await page.locator('[data-testid=study-summary]').count())) {
+      await page.tap('[data-testid=card-flip]');
+      await waitUntil(async () => (await side(page)) === 'back', 'Fiszka powinna się obrócić');
+      await page.tap('[data-testid=know-all]');
+      const before = await counter(page).textContent();
+      await page.tap('[data-testid=decide-know]');
+      await waitUntil(async () => (await page.locator('[data-testid=study-summary]').count()) > 0
+        || (await counter(page).textContent()) !== before, 'Po decyzji powinna pojawić się następna fiszka');
+    }
+  };
+  // Licznik wywołań powtórki – jedno dotknięcie ma uruchomić ją dokładnie raz.
+  await page.evaluate(() => {
+    const { library } = window.lexicards;
+    const original = library.repeatStudy.bind(library);
+    window.repeatCalls = 0;
+    library.repeatStudy = (...args) => { window.repeatCalls += 1; return original(...args); };
+  });
+
+  await openStudySetup(page, `#/study/lesson/${ids.basicsID}`);
+  await page.tap('[data-testid=study-start]');
+  await page.locator('[data-testid=study-session]').waitFor();
+  await finishByTouch();
+  await page.tap('[data-testid=summary-repeat-all]');
+  await expectText(counter(page), '1 z 3');
+  await page.waitForTimeout(400);
+  assert.equal(await page.evaluate(() => window.repeatCalls), 1);
+
+  // „Zakończ” przenosi na Start; kliknięcie nie trafia potem w element nowego ekranu.
+  await finishByTouch();
+  await page.tap('[data-testid=summary-done]');
+  await page.waitForFunction(() => location.hash === '#/start');
+  await page.waitForTimeout(500);
+  assert.equal(await page.evaluate(() => location.hash), '#/start');
+  assert.equal(await activeSession(page), null);
+});
+
 test('fiszki: wejście z lekcji i z menu biblioteki ustawia materiał', async ({ open }) => {
   const page = await open();
   const ids = await seedStudy(page);

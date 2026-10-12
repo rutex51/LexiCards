@@ -106,3 +106,41 @@ export function debounce(fn, delay) {
     timer = setTimeout(() => fn(...args), delay);
   };
 }
+
+const TAP_SLOP = 10;
+const TAP_MAX_DURATION = 800;
+
+/**
+ * Wywołuje `handler` po dotknięciu albo kliknięciu elementu.
+ *
+ * Safari na iPhonie potrafi zgubić zdarzenie click przy pierwszym dotknięciu przycisku,
+ * który pojawił się w miejscu treści zmienionej po poprzednim dotknięciu (błąd WebKit
+ * w iOS 26: ekran reaguje dopiero na drugie dotknięcie). Dlatego krótkie dotknięcie bez
+ * przesunięcia obsługujemy już przy touchend, a preventDefault() wyłącza syntetyczny
+ * click, który inaczej mógłby trafić w nowy ekran. Mysz, klawiatura i VoiceOver nadal
+ * działają przez zwykły click.
+ */
+export function onTap(element, handler) {
+  let start = null;
+  element.addEventListener('touchstart', (event) => {
+    const touch = event.touches.length === 1 ? event.touches[0] : null;
+    start = touch ? { x: touch.clientX, y: touch.clientY, time: event.timeStamp } : null;
+  }, { passive: true });
+  element.addEventListener('touchmove', (event) => {
+    const touch = event.touches[0];
+    if (start && touch && Math.hypot(touch.clientX - start.x, touch.clientY - start.y) > TAP_SLOP) start = null;
+  }, { passive: true });
+  element.addEventListener('touchcancel', () => { start = null; });
+  element.addEventListener('touchend', (event) => {
+    const begin = start;
+    start = null;
+    const touch = event.changedTouches[0];
+    if (!begin || !touch || element.disabled) return;
+    if (event.timeStamp - begin.time > TAP_MAX_DURATION) return;
+    if (Math.hypot(touch.clientX - begin.x, touch.clientY - begin.y) > TAP_SLOP) return;
+    event.preventDefault();
+    handler(event);
+  });
+  element.addEventListener('click', handler);
+  return element;
+}

@@ -11,7 +11,7 @@ import {
 } from '../../core/study.js';
 import { emptyState, iconButton, navButton } from '../components.js';
 import { showError, toast } from '../dialogs.js';
-import { h, replaceChildren } from '../dom.js';
+import { h, onTap, replaceChildren } from '../dom.js';
 import { icon } from '../icons.js';
 import { routes } from '../router.js';
 import { speak, speechAvailable, stopSpeaking } from '../speech.js';
@@ -464,6 +464,10 @@ export class StudySessionScreen {
     const summary = summarizeSession(session);
     const hasRepeat = summary.repeatQueue.length > 0;
     const repeatable = this.ctx.library.getRepeatableStudy();
+    const action = (kind, testID, label, handler) => onTap(
+      h('button', { type: 'button', class: `button ${kind}`, dataset: { testid: testID } }, label),
+      handler
+    );
     const parts = STATUS_ORDER.filter((status) => summary.statuses[status] > 0);
 
     return {
@@ -490,27 +494,16 @@ export class StudySessionScreen {
             h('strong', null, String(summary.statuses[status]))
           ))
         ),
+        // Podsumowanie pojawia się w miejscu fiszki tuż po dotknięciu – przyciski reagują
+        // już na samo dotknięcie (onTap), bo Safari gubi tu czasem pierwsze kliknięcie.
         h('div', { class: 'empty__actions' },
-          hasRepeat ? h('button', {
-            type: 'button', class: 'button button--primary', dataset: { testid: 'summary-repeat' },
-            onClick: () => this.#repeatRound(session, summary)
-          }, `Powtórz odłożone (${summary.repeatQueue.length})`) : null,
-          repeatable ? h('button', {
-            type: 'button', class: `button ${hasRepeat ? 'button--secondary' : 'button--primary'}`, dataset: { testid: 'summary-repeat-all' },
-            onClick: () => this.#repeatAll()
-          }, `Powtórz całą sesję (${repeatable.queue.length})`) : null,
-          h('button', {
-            type: 'button', class: 'button button--secondary', dataset: { testid: 'summary-new' },
-            onClick: () => this.#closeSummary(routes.study())
-          }, 'Nowa sesja'),
-          h('button', {
-            type: 'button', class: 'button button--secondary', dataset: { testid: 'summary-done' },
-            onClick: () => this.#closeSummary(routes.start())
-          }, 'Zakończ'),
-          session.results.length > 0 ? h('button', {
-            type: 'button', class: 'button button--plain', dataset: { testid: 'summary-undo' },
-            onClick: () => this.#undo()
-          }, 'Cofnij ostatnią decyzję') : null
+          hasRepeat ? action('button--primary', 'summary-repeat', `Powtórz odłożone (${summary.repeatQueue.length})`,
+            () => this.#repeatRound(session, summary)) : null,
+          repeatable ? action(hasRepeat ? 'button--secondary' : 'button--primary', 'summary-repeat-all',
+            `Powtórz całą sesję (${repeatable.queue.length})`, () => this.#repeatAll()) : null,
+          action('button--secondary', 'summary-new', 'Nowa sesja', () => this.#closeSummary(routes.study())),
+          action('button--secondary', 'summary-done', 'Zakończ', () => this.#closeSummary(routes.start())),
+          session.results.length > 0 ? action('button--plain', 'summary-undo', 'Cofnij ostatnią decyzję', () => this.#undo()) : null
         )
       )
     };
