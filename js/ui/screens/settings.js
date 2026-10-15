@@ -6,10 +6,13 @@ import { joinList, pluralDomains, pluralLessons, pluralModules, pluralTerms } fr
 import { loadSampleData, openExportSheet } from '../actions.js';
 import { actionRow, field, formGroup, group, segmented, selectInput, valueRow } from '../components.js';
 import { confirmDialog, showError, toast } from '../dialogs.js';
-import { h } from '../dom.js';
+import { h, onTap } from '../dom.js';
 import { deliverFile, pickFile } from '../files.js';
+import { icon } from '../icons.js';
 import { routes } from '../router.js';
-import { SPEECH_RATES, listVoices, onVoicesChanged, speak, speechAvailable } from '../speech.js';
+import {
+  SPEECH_RATES, checkSpeech, describeCheck, forgetSilentVoices, listVoices, onVoicesChanged, silentVoice, speak, speechAvailable
+} from '../speech.js';
 
 const APPEARANCE_OPTIONS = [
   { value: 'system', label: 'Automatyczny' },
@@ -32,6 +35,19 @@ function contentList(counts) {
   ]);
 }
 
+/** Podsumowanie sprawdzenia wymowy: co zrobić dalej. */
+function checkSummary(results) {
+  if (results.every((result) => result.started && !result.replaced)) {
+    return 'Oba głosy działają, także po zmianie języka. Jeśli mimo to nic nie słychać, sprawdź głośność multimediów i to, '
+      + 'czy dźwięk nie trafia do słuchawek albo samochodu.';
+  }
+  if (results.some((result) => !result.started)) {
+    return 'Syntezator nie odezwał się. Zamknij kartę LexiCards, otwórz ją ponownie i sprawdź jeszcze raz; '
+      + 'pomaga też ustawienie „Domyślny głos systemu”.';
+  }
+  return 'Aplikacja sama przełącza się na głos zastępczy, ale lepiej wybrać inny głos w polu powyżej.';
+}
+
 function isStandalone() {
   return window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
 }
@@ -48,6 +64,8 @@ export class SettingsScreen {
     /** null – jeszcze nie sprawdzono, true/false – stan ochrony danych przed usunięciem. */
     this.persisted = null;
     this.disposed = false;
+    /** Sprawdzenie wymowy: { results, finished, stop } albo null. */
+    this.check = null;
     this.#checkPersistence();
     // Lista głosów systemu bywa dostępna dopiero po chwili.
     this.stopWatchingVoices = onVoicesChanged(() => { if (!this.disposed) this.ctx.refresh(); });
@@ -56,6 +74,7 @@ export class SettingsScreen {
   dispose() {
     this.disposed = true;
     this.stopWatchingVoices();
+    this.#stopCheck();
   }
 
   /** Powtórki FSRS: docelowa skuteczność, czyli jak często fiszki wracają. */
@@ -106,18 +125,27 @@ export class SettingsScreen {
     const voiceField = (label, language, key, sample) => {
       const voices = listVoices(language);
       const current = voices.some((voice) => voice.voiceURI === settings[key]) ? settings[key] : '';
-      return field(label, selectInput({
-        value: current,
-        testID: `voice-${language}`,
-        options: [
-          { value: '', label: voices.length > 0 ? 'Domyślny głos systemu' : 'Domyślny (brak listy głosów)' },
-          ...voices.map((voice) => ({ value: voice.voiceURI, label: `${voice.name} (${voice.lang})` }))
-        ],
-        onChange: async (value) => {
-          await save({ [key]: value || null });
-          speak(sample, language, library.getSettings());
-        }
-      }));
+      const silent = silentVoice(language, settings);
+      return [
+        field(label, selectInput({
+          value: current,
+          testID: `voice-${language}`,
+          options: [
+            { value: '', label: voices.length > 0 ? 'Domyślny głos systemu' : 'Domyślny (brak listy głosów)' },
+            ...voices.map((voice) => ({ value: voice.voiceURI, label: `${voice.name} (${voice.lang})` }))
+          ],
+          onChange: async (value) => {
+            this.#stopCheck();
+            // Ponownie wybrany głos dostaje nową szansę.
+            if (value) forgetSilentVoices(value);
+            await save({ [key]: value || null });
+            speak(sample, language, library.getSettings());
+          }
+        })),
+        silent ? h('p', { class: 'form-message form-message--warning', role: 'status', dataset: { testid: `voice-${language}-silent` } },
+          icon('warning', { size: 18 }),
+          h('span', null, `Głos „${silent}” nie odzywa się w tej przeglądarce – zamiast niego czyta głos zastępczy. Wybierz inny głos.`)) : null
+      ];
     };
 
     return h('div', { class: 'settings-speech' },
@@ -131,8 +159,48 @@ export class SettingsScreen {
         voiceField('Głos polski', 'pl', 'preferredVoicePL', 'Dzień dobry, to jest próbka głosu.'),
         voiceField('Głos angielski', 'en', 'preferredVoiceEN', 'Hello, this is a voice sample.')
       ),
-      h('p', { class: 'form-note' }, 'Głosy pochodzą z systemu urządzenia; nic nie jest wysyłane do internetu. Po wybraniu głosu usłyszysz próbkę.')
+      h('p', { class: 'form-note' }, 'Głosy pochodzą z systemu urządzenia; nic nie jest wysyłane do internetu. Po wybraniu głosu usłyszysz próbkę.'),
+      this.#checkView()
     );
+  }
+
+  /** „Sprawdź wymowę”: polski, angielski i znowu polski – jak w słuchaniu, z wynikiem każdego kroku. */
+  #checkView() {
+    const check = this.check;
+    const running = Boolean(check && !check.finished);
+    const results = check?.results ?? [];
+    return h('div', { class: 'speech-check' },
+      onTap(h('button', {
+        type: 'button', class: 'button button--secondary', disabled: running, dataset: { testid: 'speech-check' }
+      }, icon('speaker', { size: 18 }), h('span', null, running ? 'Sprawdzam…' : 'Sprawdź wymowę')), () => this.#startCheck()),
+      results.length > 0 ? h('ul', { class: 'speech-check__results', role: 'list', 'aria-live': 'polite' },
+        results.map((result) => h('li', {
+          class: `speech-check__result${result.started && !result.replaced ? '' : ' speech-check__result--problem'}`,
+          dataset: { testid: 'speech-check-result', ok: String(result.started && !result.replaced) }
+        }, icon(result.started && !result.replaced ? 'check' : 'warning', { size: 16 }), h('span', null, describeCheck(result))))) : null,
+      check?.finished ? h('p', { class: 'form-note', dataset: { testid: 'speech-check-summary' } }, checkSummary(results)) : null
+    );
+  }
+
+  #startCheck() {
+    this.#stopCheck();
+    const check = { results: [], finished: false, stop: null };
+    this.check = check;
+    // Pierwsza wypowiedź pada od razu, w obsłudze dotknięcia (wymóg Safari).
+    check.stop = checkSpeech(() => this.ctx.library.getSettings(), (results, finished) => {
+      if (this.check !== check) return;
+      check.results = [...results];
+      check.finished = finished;
+      if (!this.disposed) this.ctx.refresh();
+    });
+    this.ctx.refresh();
+  }
+
+  #stopCheck() {
+    if (this.check && !this.check.finished) {
+      this.check.stop?.();
+      this.check = null;
+    }
   }
 
   async #checkPersistence() {

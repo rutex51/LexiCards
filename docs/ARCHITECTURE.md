@@ -232,6 +232,23 @@ Gest korzysta ze zdarzeń wskaźnika; strona fiszki ma `touch-action: pan-y`, dz
 ruch w pionie przewija długą treść, a ruch w poziomie trafia do aplikacji. Wymowa używa
 `speechSynthesis` z głosami systemu – nic nie jest wysyłane do sieci.
 
+Safari potrafi „zawiesić” wypowiedź: nie zaczyna jej, nie zgłasza końca ani błędu, a następne
+czekają za nią w kolejce, więc syntezator milknie do przeładowania strony. Dlatego każda
+wypowiedź w `js/ui/speech.js` ma strażnika:
+
+- gdy nie zacznie się w ciągu 4 s (`START_TIMEOUT`) albo zgłosi błąd przed startem, kolejka jest
+  czyszczona (`cancel()`), a po 150 ms tekst czytany jeszcze raz głosem zastępczym – najlepszym
+  innym głosem języka (bez głosów-efektów Apple), a gdy go brak – domyślnym głosem systemu;
+- głos, który dwa razy się nie odezwał, choć zastępczy tak, jest do końca sesji pomijany
+  (`silentVoice()`), o czym mówią ustawienia i ekran słuchania; ponowny wybór głosu w ustawieniach
+  daje mu nową szansę; nieudany start przy zablokowanym ekranie nie obciąża głosu;
+- gdy po starcie koniec nie nadejdzie w czasie dopasowanym do długości tekstu, kolejka jest
+  czyszczona i czytanie idzie dalej;
+- przed wypowiedzią pozostałości w kolejce są usuwane, a wstrzymany syntezator – wznawiany;
+- **Sprawdź wymowę** w ustawieniach (`checkSpeech()`) czyta po polsku, po angielsku i znowu po
+  polsku – jak w słuchaniu – i pokazuje wynik każdego kroku; głos, który się w niej nie odezwie,
+  jest od razu pomijany.
+
 ## Quizy
 
 Reguły są w `js/core/quiz.js` (bez przeglądarki), zapis w `Library`, ekrany w
@@ -276,8 +293,8 @@ Reguły są w `js/core/quiz.js` (bez przeglądarki), zapis w `Library`, ekrany w
   języku (gdy brak – w drugim). Kolejka pojęć powstaje tak jak w nauce (`buildQueue()`: materiał,
   kierunek, zakres, liczba), w losowej kolejności.
 - **Odtwarzacz** (`js/ui/listen-player.js`) czyta kroki po kolei przez `speakThen()` z
-  `js/ui/speech.js`: wypowiedź zgłasza koniec, a gdy przeglądarka go nie zgłosi, zapasowy licznik
-  czasu dopasowany do długości tekstu przechodzi dalej. Każde przejście ma „bilet” – pauza,
+  `js/ui/speech.js`: wypowiedź zgłasza koniec (także nieudana – po strażniku startu i głosie
+  zastępczym, opisanych przy wymowie), więc czytanie nigdy nie staje w miejscu. Każde przejście ma „bilet” – pauza,
   „dalej”, „wstecz” i „powtórz” wydają nowy, więc spóźnione zdarzenia przerwanej wypowiedzi nic
   nie przestawiają. Wznowienie czyta bieżący krok od początku.
 - **Safari:** pierwsza wypowiedź pada bezpośrednio w obsłudze dotknięcia „Rozpocznij słuchanie”

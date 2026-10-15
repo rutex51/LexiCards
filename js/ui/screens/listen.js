@@ -16,11 +16,13 @@ import { icon } from '../icons.js';
 import { ListenPlayer } from '../listen-player.js';
 import { initialSelection, lessonsGroup, materialGroup, sanitizeSelection, selectionConfig } from '../material.js';
 import { routes } from '../router.js';
-import { speechAvailable } from '../speech.js';
+import { silentVoice, speechAvailable } from '../speech.js';
 
 const DIRECTION_SHORT = { [DIRECTIONS.PL_EN]: 'PL → EN', [DIRECTIONS.EN_PL]: 'EN → PL' };
 /** Najkrótsza nieobecność, po której wiadomo, czy czytanie trwało przy zablokowanym ekranie. */
 const BACKGROUND_TEST_MS = 8000;
+
+const LANGUAGE_ADJECTIVES = { pl: 'polski', en: 'angielski' };
 
 const known = (list, value, fallback) => (list.some((item) => (item.id ?? item) === value) ? value : fallback);
 
@@ -216,6 +218,20 @@ export class ListenScreen {
       + 'zablokuj telefon na około 30 sekund i odblokuj go – aplikacja zapamięta wynik.';
   }
 
+  /** Uwaga, gdy wybrany głos się nie odzywa i czyta za niego głos zastępczy. */
+  #voiceNote() {
+    const settings = this.ctx.library.getSettings();
+    const silent = ['pl', 'en'].map((language) => ({ language, name: silentVoice(language, settings) })).filter((item) => item.name);
+    if (silent.length === 0) return null;
+    const names = silent.map((item) => `${LANGUAGE_ADJECTIVES[item.language]} „${item.name}”`).join(' i ');
+    return h('p', { class: 'form-message form-message--warning listen__voice', role: 'status', dataset: { testid: 'listen-voice-note' } },
+      icon('warning', { size: 18 }),
+      h('span', null, silent.length > 1
+        ? `Głosy ${names} nie odzywają się – czytają głosy zastępcze. Inne głosy wybierzesz w `
+        : `Głos ${names} nie odzywa się – czyta głos zastępczy. Inny głos wybierzesz w `,
+        h('a', { href: routes.settings() }, 'Ustawieniach'), '.'));
+  }
+
   #setupView() {
     const { ctx } = this;
     const { library } = ctx;
@@ -337,6 +353,7 @@ export class ListenScreen {
           h('div', { class: 'empty__icon' }, icon('headphones', { size: 40 })),
           h('h2', { class: 'empty__title' }, 'Koniec słuchania'),
           h('p', { class: 'empty__text', dataset: { testid: 'listen-summary' } }, `Odsłuchane pojęcia: ${player.listened.size} z ${player.total}.`),
+          this.#voiceNote(),
           h('div', { class: 'empty__actions' },
             onTap(h('button', { type: 'button', class: 'button button--primary', dataset: { testid: 'listen-again' } }, 'Jeszcze raz'), () => this.#again()),
             onTap(h('button', { type: 'button', class: 'button button--secondary', dataset: { testid: 'listen-settings' } }, 'Zmień ustawienia'), () => this.#close()),
@@ -396,7 +413,8 @@ export class ListenScreen {
         ),
         onTap(h('button', { type: 'button', class: 'button button--quick listen__repeat', dataset: { testid: 'listen-repeat' } },
           icon('undo', { size: 18 }), h('span', null, 'Powtórz to pojęcie')), () => player.repeat()),
-        h('p', { class: 'listen__note', dataset: { testid: 'listen-wake' } }, wakeNote)
+        h('p', { class: 'listen__note', dataset: { testid: 'listen-wake' } }, wakeNote),
+        this.#voiceNote()
       )
     };
   }

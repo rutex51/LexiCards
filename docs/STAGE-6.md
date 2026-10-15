@@ -163,9 +163,45 @@ najniżej 5,44:1.
 wygaszania ekranu w Safari ani tego, czy czytanie trwa przy zablokowanym ekranie – to ostatnie
 aplikacja sprawdzi sama przy pierwszym słuchaniu.
 
+## Poprawka w wersji 0.6.2: wymowa milkła po pierwszym polskim zdaniu
+
+**Zgłoszenie (15 października 2026):** w słuchaniu na iPhonie słychać było tylko początek po polsku;
+od pierwszej angielskiej wypowiedzi – i dalej przy kolejnych pojęciach – cisza.
+
+**Prawdopodobna przyczyna:** Safari potrafi „zawiesić” wypowiedź (np. głosem, którego nie umie
+użyć): nie zaczyna jej czytać i nie zgłasza ani końca, ani błędu. Aplikacja po zapasowym czasie
+przechodziła dalej, ale nie czyściła kolejki syntezatora, więc każda następna wypowiedź – także
+polska – czekała za zawieszoną. Ten przebieg odtworzyłem w przeglądarce testowej atrapą syntezatora
+z kolejką jak w Safari: stara wersja milkła dokładnie tak, jak w zgłoszeniu.
+
+**Zmiany:**
+
+- Strażnik każdej wypowiedzi: gdy nie zacznie się w ciągu 4 s albo zgłosi błąd, kolejka jest
+  czyszczona, a tekst czyta głos zastępczy (najlepszy inny głos języka, nigdy głos-efekt typu
+  „Albert” czy „Bubbles”; gdy go brak – domyślny głos systemu). Głos, który nie odezwał się dwa
+  razy, jest do końca sesji pomijany – bez kolejnych 4 s ciszy.
+- Gdy po starcie wypowiedź nie skończy się w rozsądnym czasie – czyszczenie kolejki i dalej;
+  pozostałości w kolejce są usuwane przed każdą nową wypowiedzią.
+- **Ustawienia → Wymowa → Sprawdź wymowę:** zdanie po polsku, po angielsku i znowu po polsku, z wynikiem
+  każdego kroku („działa”, „nie odezwał się – przeczytał zastępczy”, „brak dźwięku”). Przy głosie,
+  który się nie odzywa, pojawia się uwaga; ta sama uwaga jest na ekranie słuchania.
+- To samo zabezpieczenie działa przy przycisku głośnika na fiszkach i w quizach.
+
+**Testy (15 października 2026):** 187 testów logiki (6 nowych: zawieszony głos → głos zastępczy
+i pomijanie po dwóch razach, błąd przed startem, wybór zastępcy bez głosów-efektów, czyszczenie
+pozostałości i wznowienie wstrzymanego syntezatora, brak końca po starcie, syntezator, który nie
+mówi wcale, przerwanie, sprawdzenie wymowy) i 67 testów w przeglądarce (2 nowe: słuchanie z głosem,
+który się zawiesza – wszystkie pojęcia słychać, angielskie głosem zastępczym, uwaga na ekranie
+i w ustawieniach, sprawdzenie wymowy; sprawdzenie wymowy, gdy wszystko działa). Nowy test
+słuchania nie przechodził na wersji 0.6.1 (po pierwszym polskim pojęciu – cisza), na 0.6.2
+przechodzi. Wszystkie zaliczone w dwóch kolejnych przebiegach.
+
+**Nie sprawdzono:** na prawdziwym iPhonie. Nie wiem na pewno, który głos zawiesza się na Twoim
+telefonie – pokaże to „Sprawdź wymowę”.
+
 ## Jak uruchomić
 
 - W przeglądarce: adres z pliku [README](../README.md); w Safari odśwież stronę dwa razy albo
-  użyj przycisku „Uruchom ją”. W Ustawieniach powinna być widoczna wersja 0.6.1.
+  użyj przycisku „Uruchom ją”. W Ustawieniach powinna być widoczna wersja 0.6.2.
 - Wypróbowanie: zakładka Statystyki; na Starcie grupa „Postępy”.
 - Testy: `npm test`, `npm run test:e2e` (wymaga Playwright z Chromium).

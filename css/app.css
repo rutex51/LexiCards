@@ -1907,6 +1907,37 @@ a.row__main:active,
 .settings-review .form-note,
 .settings-speech .form-note { margin-top: 0; }
 
+/* Sprawdzenie wymowy: przycisk i wynik każdego kroku. */
+.speech-check {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+
+.speech-check__results {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.speech-check__result {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--size-sub);
+  color: var(--text);
+}
+
+.speech-check__result svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--success);
+}
+
+.speech-check__result--problem svg { color: var(--warning); }
+
 .lesson-actions {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -2486,6 +2517,9 @@ a.row__main:active,
   color: var(--text-2);
   text-align: center;
 }
+
+.listen__voice { text-align: left; }
+.listen--done .listen__voice { max-width: 420px; }
 
 .listen--done {
   align-items: center;

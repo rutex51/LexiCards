@@ -133,6 +133,11 @@ Na iPhonie strona mówi tylko wtedy, gdy jest na ekranie; aplikacja nie pozwala 
 czytanie trwa przy zablokowanym ekranie, aplikacja sprawdza sama: zablokuj telefon na około 30 sekund
 w trakcie słuchania, a po odblokowaniu zobaczysz wynik (zapamiętany w ustawieniach słuchania).
 
+Głos i szybkość czytania ustawisz w **Ustawieniach → Wymowa**. Przycisk **Sprawdź wymowę** czyta zdanie
+po polsku, po angielsku i znowu po polsku i pokazuje, który głos działa. Gdy wybrany głos się nie
+odzywa (zdarza się w Safari na iPhonie), aplikacja po kilku sekundach czyta tekst głosem zastępczym
+i informuje o tym – wtedy wybierz inny głos.
+
 ### Statystyki
 
 Zakładka **Statystyki** pokazuje całą bibliotekę; wiersz w zestawieniu „Opanowanie według…” (albo

@@ -7,10 +7,7 @@
 // bywa w Safari zawodna.
 
 import { CARD_GAP, DETAIL_GAP, introText, listenSteps, outroText } from '../core/listen.js';
-import { speakThen, stopSpeaking } from './speech.js';
-
-/** Po przerwaniu mowy Safari potrafi zgubić wypowiedź podaną od razu – krótki odstęp. */
-const AFTER_CANCEL = 150;
+import { AFTER_CANCEL, speakThen, stopSpeaking } from './speech.js';
 
 export class ListenPlayer {
   /**

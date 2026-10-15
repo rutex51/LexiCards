@@ -1942,7 +1942,12 @@ test('fiszki: wymowa – przycisk głośnika, szybkość i głos z ustawień', a
       configurable: true,
       value: {
         getVoices: () => voices,
-        speak: (utterance) => spoken.push({ text: utterance.text, lang: utterance.lang, rate: utterance.rate, voice: utterance.voice?.voiceURI ?? null }),
+        speak: (utterance) => {
+          spoken.push({ text: utterance.text, lang: utterance.lang, rate: utterance.rate, voice: utterance.voice?.voiceURI ?? null });
+          // Jak w przeglądarce: najpierw „start”, potem „end”.
+          setTimeout(() => utterance.onstart?.({}), 0);
+          setTimeout(() => utterance.onend?.({}), 50);
+        },
         cancel: () => {},
         addEventListener: () => {},
         removeEventListener: () => {}
@@ -2897,7 +2902,10 @@ async function fakeSpeechForListening(context) {
         speak(utterance) {
           spoken.push({ text: utterance.text, lang: utterance.lang, at: Date.now() });
           current = utterance;
-          timer = setTimeout(() => { current = null; utterance.onend?.(); }, 200);
+          timer = setTimeout(() => {
+            utterance.onstart?.({});
+            timer = setTimeout(() => { current = null; utterance.onend?.(); }, 200);
+          }, 0);
         },
         cancel() {
           clearTimeout(timer);
@@ -3060,6 +3068,153 @@ test('słuchanie: wąski ekran 320 px – ustawienia i odtwarzacz mieszczą się
     assert.ok(box.height >= 44 && box.width >= 44, `${id} jest duży (${box.width}×${box.height})`);
   }
 }, { device: { ...PHONE, viewport: { width: 320, height: 568 } } });
+
+/**
+ * Atrapa syntezatora z kolejką jak w Safari: wypowiedzi czekają jedna za drugą, a wypowiedź
+ * głosem z listy `hanging` nie zaczyna się i nie kończy – blokuje kolejkę do wywołania cancel().
+ * `window.heard` – to, co faktycznie zabrzmiało.
+ */
+async function fakeQueuedSpeech(context, hanging = []) {
+  await context.addInitScript((hangingURIs) => {
+    const voices = [
+      { voiceURI: 'pl-zosia', name: 'Zosia', lang: 'pl-PL', default: true, localService: true },
+      { voiceURI: 'com.apple.speech.synthesis.voice.Albert', name: 'Albert', lang: 'en-US', default: false, localService: true },
+      { voiceURI: 'en-bells', name: 'Bells', lang: 'en-US', default: false, localService: true },
+      { voiceURI: 'en-daniel', name: 'Daniel', lang: 'en-GB', default: false, localService: true },
+      { voiceURI: 'en-samantha', name: 'Samantha', lang: 'en-US', default: false, localService: true }
+    ];
+    const heard = [];
+    const queue = [];
+    let current = null;
+    let timer = null;
+    const next = () => {
+      current = queue.shift() ?? null;
+      const utterance = current;
+      if (!utterance || hangingURIs.includes(utterance.voice?.voiceURI)) return;
+      timer = setTimeout(() => {
+        heard.push({ text: utterance.text, lang: utterance.lang, voice: utterance.voice?.voiceURI ?? null, at: Date.now() });
+        utterance.onstart?.({ type: 'start' });
+        timer = setTimeout(() => {
+          current = null;
+          utterance.onend?.({ type: 'end' });
+          next();
+        }, 200);
+      }, 20);
+    };
+    window.SpeechSynthesisUtterance = class {
+      constructor(text) { this.text = text; this.lang = ''; this.rate = 1; this.voice = null; }
+    };
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        getVoices: () => voices,
+        get speaking() { return current !== null; },
+        get pending() { return queue.length > 0; },
+        paused: false,
+        speak(utterance) {
+          queue.push(utterance);
+          if (!current) next();
+        },
+        cancel() {
+          clearTimeout(timer);
+          const stopped = [current, ...queue].filter((item) => item && !hangingURIs.includes(item.voice?.voiceURI));
+          current = null;
+          queue.length = 0;
+          for (const utterance of stopped) utterance.onerror?.({ error: 'interrupted' });
+        },
+        resume() {},
+        addEventListener() {},
+        removeEventListener() {}
+      }
+    });
+    window.heard = heard;
+    Object.defineProperty(navigator, 'wakeLock', {
+      configurable: true,
+      value: { request: async () => ({ release: async () => {}, addEventListener() {} }) }
+    });
+  }, hanging);
+}
+
+test('słuchanie: wybrany głos, który się nie odzywa, nie wycisza reszty – czyta głos zastępczy', async ({ open, context }) => {
+  await fakeQueuedSpeech(context, ['en-daniel']);
+  await context.clock.install({ time: new Date('2026-10-12T10:00:00') });
+  const page = await open();
+  const ids = await seedStudy(page);
+  await page.evaluate(() => window.lexicards.library.updateSettings({
+    preferredVoicePL: 'pl-zosia', preferredVoiceEN: 'en-daniel',
+    listenDirection: 'pl_en', listenCount: 0, listenPause: 3, listenDescription: false, listenExample: false
+  }));
+  await openListening(page, ids);
+  await page.click('[data-testid=listen-start]');
+  await page.locator('[data-testid=listen-player]').waitFor();
+  await waitUntil(async () => {
+    await page.clock.runFor(500);
+    return page.locator('[data-testid=listen-done]').count();
+  }, 'Słuchanie powinno dojść do końca', 30000);
+  const heard = await page.evaluate(() => window.heard.map(({ text, voice }) => `${voice} ${text}`));
+  // Wszystko słychać: polskie pojęcia głosem Zosia, angielskie odpowiedzi głosem zastępczym.
+  assert.deepEqual(heard, [
+    'pl-zosia Zaczynamy. 3 pojęcia.',
+    ...heard.slice(1, 7),
+    'pl-zosia Koniec. Odsłuchano 3 pojęcia.'
+  ]);
+  const pairs = heard.slice(1, 7);
+  for (const [polish, english] of [['aktywa', 'assets'], ['pasywa', 'liabilities'], ['zysk', 'profit']]) {
+    const index = pairs.indexOf(`pl-zosia ${polish}`);
+    assert.ok(index >= 0, `brak „${polish}”: ${heard.join(' | ')}`);
+    assert.equal(pairs[index + 1], `en-samantha ${english}`);
+  }
+  // Po dwóch nieudanych startach aplikacja mówi, który głos nie działa.
+  await expectText(page.locator('[data-testid=listen-voice-note]'), 'Głos angielski „Daniel” nie odzywa się – czyta głos zastępczy. Inny głos wybierzesz w Ustawieniach.');
+
+  // Ustawienia: ta sama uwaga przy wyborze głosu i sprawdzenie wymowy krok po kroku.
+  await page.evaluate(() => { location.hash = '#/settings'; });
+  await expectText(page.locator('[data-testid=voice-en-silent]'), 'Głos „Daniel” nie odzywa się w tej przeglądarce – zamiast niego czyta głos zastępczy. Wybierz inny głos.');
+  assert.equal(await page.locator('[data-testid=voice-pl-silent]').count(), 0);
+  await page.click('[data-testid=speech-check]');
+  await expectText(page.locator('[data-testid=speech-check]'), 'Sprawdzam…');
+  await waitUntil(async () => {
+    await page.clock.runFor(250);
+    return page.locator('[data-testid=speech-check-summary]').count();
+  }, 'Sprawdzenie wymowy powinno się zakończyć', 20000);
+  assert.deepEqual(await page.locator('[data-testid=speech-check-result]').allTextContents(), [
+    'Głos polski: działa („Zosia”).',
+    'Głos angielski: „Daniel” nie odezwał się – przeczytał zastępczy „Samantha”.',
+    'Głos polski: działa („Zosia”).'
+  ]);
+  assert.deepEqual(await page.locator('[data-testid=speech-check-result]').evaluateAll((items) => items.map((item) => item.dataset.ok)), ['true', 'false', 'true']);
+  await expectText(page.locator('[data-testid=speech-check-summary]'), 'Aplikacja sama przełącza się na głos zastępczy, ale lepiej wybrać inny głos w polu powyżej.');
+  await expectText(page.locator('[data-testid=speech-check]'), 'Sprawdź wymowę');
+  assert.equal(await page.locator('[data-testid=voice-en-silent]').count(), 1, 'uwaga przy głosie zostaje po sprawdzeniu');
+  // Wybór innego głosu: próbka zabrzmi od razu, uwaga znika.
+  await page.selectOption('[data-testid=voice-en]', 'en-samantha');
+  await waitUntil(async () => {
+    await page.clock.runFor(100);
+    return (await page.evaluate(() => window.heard.at(-1)?.text)) === 'Hello, this is a voice sample.';
+  }, 'Po wyborze głosu powinna zabrzmieć próbka');
+  assert.equal(await page.locator('[data-testid=voice-en-silent]').count(), 0);
+}, { device: PHONE });
+
+test('ustawienia: sprawdzenie wymowy, gdy wszystko działa', async ({ open, context }) => {
+  await fakeQueuedSpeech(context);
+  await context.clock.install({ time: new Date('2026-10-12T10:00:00') });
+  const page = await open();
+  await page.evaluate(() => { location.hash = '#/settings'; });
+  await page.click('[data-testid=speech-check]');
+  await waitUntil(async () => {
+    await page.clock.runFor(250);
+    return page.locator('[data-testid=speech-check-summary]').count();
+  }, 'Sprawdzenie wymowy powinno się zakończyć');
+  assert.deepEqual(await page.locator('[data-testid=speech-check-result]').allTextContents(), [
+    'Głos polski: działa („domyślny głos systemu”).',
+    'Głos angielski: działa („domyślny głos systemu”).',
+    'Głos polski: działa („domyślny głos systemu”).'
+  ]);
+  await expectText(page.locator('[data-testid=speech-check-summary]'), 'Oba głosy działają, także po zmianie języka.');
+  // Przerwa między krokami jak w słuchaniu; pierwszy krok pada od razu po dotknięciu.
+  const heard = await page.evaluate(() => window.heard.map(({ text, lang }) => `${lang} ${text}`));
+  assert.deepEqual(heard, ['pl-PL Sprawdzam polski głos.', 'en-US Now the English voice.', 'pl-PL I znowu po polsku.']);
+});
 
 test('iPhone: dotknięcie pola formularza nie powiększa strony (czcionka pól ≥ 16 px, maximum-scale)', async ({ open }) => {
   const page = await open();
