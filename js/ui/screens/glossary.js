@@ -2,13 +2,17 @@
 // Wąski ekran – lista z rozwijanymi szczegółami; szeroki – tabela wielokolumnowa.
 // Wyniki są dociągane porcjami podczas przewijania.
 
+import { BOTH, STATS_DIRECTIONS, TERM_STATUS_FILTERS } from '../../core/stats.js';
 import { normalizeKey, pluralTerms } from '../../core/text.js';
 import { setFavorite } from '../actions.js';
-import { emptyState, field, formGroup, iconButton, navButton, primaryButton, selectInput, textInput, toggle } from '../components.js';
+import {
+  emptyState, field, formGroup, iconButton, navButton, primaryButton, segmented, selectInput, textInput, toggle
+} from '../components.js';
 import { openFormSheet } from '../dialogs.js';
 import { h, replaceChildren } from '../dom.js';
 import { routes } from '../router.js';
-import { createTermListState, searchField, selectionBar, termList, termMenu } from './terms.js';
+import { statsDirection } from './stats.js';
+import { STATUS_NOTE, createTermListState, searchField, selectionBar, statusChips, termList, termMenu } from './terms.js';
 
 const PAGE_SIZE = 100;
 const ALL = '';
@@ -20,15 +24,20 @@ const SORT_OPTIONS = [
   { value: 'oldest', label: 'Najstarsze' }
 ];
 
-function emptyFilter() {
-  return { domainID: ALL, moduleID: ALL, lessonID: ALL, favoritesOnly: false, tag: '' };
+const statusLabel = (id) => TERM_STATUS_FILTERS.find((item) => item.id === id)?.label ?? '';
+const directionLabel = (id) => STATS_DIRECTIONS.find((item) => item.id === id)?.label ?? '';
+
+/** Filtr bez ograniczeń; status pokazywany w kierunku ze Statystyk (jak na Starcie). */
+function emptyFilter(statusDirection = BOTH) {
+  return { domainID: ALL, moduleID: ALL, lessonID: ALL, favoritesOnly: false, tag: '', status: ALL, statusDirection };
 }
 
 export class GlossaryScreen {
   constructor(ctx) {
     this.ctx = ctx;
     this.search = '';
-    this.filter = emptyFilter();
+    this.defaultDirection = statsDirection(ctx.library.getSettings());
+    this.filter = emptyFilter(this.defaultDirection);
     this.sort = 'polish';
     this.limit = PAGE_SIZE;
     this.list = createTermListState();
@@ -42,7 +51,8 @@ export class GlossaryScreen {
 
   #isFilterActive() {
     const filter = this.filter;
-    return Boolean(filter.domainID || filter.moduleID || filter.lessonID || filter.favoritesOnly || normalizeKey(filter.tag));
+    return Boolean(filter.domainID || filter.moduleID || filter.lessonID || filter.favoritesOnly || normalizeKey(filter.tag)
+      || filter.status || filter.statusDirection !== this.defaultDirection);
   }
 
   #query() {
@@ -51,7 +61,10 @@ export class GlossaryScreen {
     if (filter.lessonID) scope = { kind: 'lesson', id: filter.lessonID };
     else if (filter.moduleID) scope = { kind: 'module', id: filter.moduleID };
     else if (filter.domainID) scope = { kind: 'domain', id: filter.domainID };
-    return { scope, searchText: this.search, favoritesOnly: filter.favoritesOnly, tag: filter.tag, sort: this.sort };
+    return {
+      scope, searchText: this.search, favoritesOnly: filter.favoritesOnly, tag: filter.tag, sort: this.sort,
+      status: filter.status, statusDirection: filter.statusDirection
+    };
   }
 
   #page() {
@@ -74,6 +87,10 @@ export class GlossaryScreen {
     else if (this.filter.domainID) parts.push(library.getDomain(this.filter.domainID)?.name ?? '');
     if (this.filter.favoritesOnly) parts.push('tylko ulubione');
     if (normalizeKey(this.filter.tag)) parts.push(`tag „${this.filter.tag.trim()}”`);
+    if (this.filter.status) parts.push(`status „${statusLabel(this.filter.status)}”`);
+    if (this.filter.statusDirection !== this.defaultDirection) {
+      parts.push(this.filter.statusDirection === BOTH ? 'status z obu kierunków' : `status w kierunku ${directionLabel(this.filter.statusDirection)}`);
+    }
     return parts.join(', ');
   }
 
@@ -115,6 +132,23 @@ export class GlossaryScreen {
         };
         renderScope();
 
+        const statusSlot = h('div', { class: 'form-group__slot' });
+        const renderStatus = () => replaceChildren(statusSlot,
+          field('Status', selectInput({
+            value: draft.status,
+            testID: 'filter-status',
+            options: [{ value: ALL, label: 'Wszystkie' }, ...TERM_STATUS_FILTERS.map((item) => ({ value: item.id, label: item.label }))],
+            onChange: (value) => { draft.status = value; }
+          })),
+          segmented({
+            name: 'filter-status-direction', label: 'Kierunek statusu', value: draft.statusDirection,
+            options: STATS_DIRECTIONS.map((item) => ({ value: item.id, label: item.label })),
+            onChange: (value) => { draft.statusDirection = value; }
+          }),
+          h('p', { class: 'field__hint' }, 'Oba kierunki: słabszy status z dwóch; „Do powtórki”, gdy pojęcie czeka w którymkolwiek.')
+        );
+        renderStatus();
+
         const rest = h('div', { class: 'form-group__slot' });
         const renderRest = () => replaceChildren(rest,
           toggle({ checked: draft.favoritesOnly, label: 'Tylko ulubione', onChange: (value) => { draft.favoritesOnly = value; } }),
@@ -125,12 +159,14 @@ export class GlossaryScreen {
         return [
           formGroup('Sortowanie', field('Kolejność', selectInput({ value: draft.sort, options: SORT_OPTIONS, testID: 'filter-sort', onChange: (value) => { draft.sort = value; } }))),
           formGroup('Zakres', scopeSlot),
+          formGroup('Status nauki', statusSlot),
           formGroup('Pozostałe', rest),
           h('button', {
             type: 'button', class: 'button button--secondary button--block',
             onClick: () => {
-              Object.assign(draft, emptyFilter());
+              Object.assign(draft, emptyFilter(this.defaultDirection));
               renderScope();
+              renderStatus();
               renderRest();
             }
           }, 'Wyczyść filtry')
@@ -176,7 +212,8 @@ export class GlossaryScreen {
                 ctx.refresh();
               }
             })) : null,
-            h('th', { scope: 'row', lang: 'pl' }, term.termPL),
+            // Status pod pojęciem – bez osobnej kolumny, która ścisnęłaby opisy.
+            h('th', { scope: 'row' }, h('span', { lang: 'pl' }, term.termPL), statusChips(library, term, this.filter.statusDirection)),
             h('td', { lang: 'en' }, term.termEN),
             cell(term.descriptionPL, 'pl'),
             cell(term.descriptionEN, 'en'),
@@ -212,7 +249,7 @@ export class GlossaryScreen {
           ? 'Żadne pojęcie nie spełnia wybranych kryteriów.'
           : 'Dodaj pojęcia w lekcjach albo wczytaj dane przykładowe na ekranie Start.',
         actions: this.#isFilterActive()
-          ? [primaryButton('Wyczyść filtry', () => { this.filter = emptyFilter(); ctx.refresh(); }, { kind: 'secondary' })]
+          ? [primaryButton('Wyczyść filtry', () => { this.filter = emptyFilter(this.defaultDirection); ctx.refresh(); }, { kind: 'secondary' })]
           : []
       }));
       return;
@@ -232,7 +269,10 @@ export class GlossaryScreen {
         h('h2', { class: 'group__title', dataset: { testid: 'glossary-count' } }, status),
         ctx.isWide()
           ? this.#table(page)
-          : termList(ctx, this.list, page.items, { path: (term) => library.lessonPath(term.lessonID) })
+          : termList(ctx, this.list, page.items, {
+              path: (term) => library.lessonPath(term.lessonID), statusDirection: this.filter.statusDirection
+            }),
+        h('p', { class: 'group__footer', dataset: { testid: 'glossary-status-note' } }, STATUS_NOTE[this.filter.statusDirection])
       ),
       more
     );
@@ -290,7 +330,7 @@ export class GlossaryScreen {
         filterActive
           ? h('p', { class: 'filter-summary', dataset: { testid: 'filter-summary' } },
               h('span', null, `Filtr: ${this.#filterSummary()}`),
-              h('button', { type: 'button', class: 'button button--plain', onClick: () => { this.filter = emptyFilter(); ctx.refresh(); } }, 'Wyczyść')
+              h('button', { type: 'button', class: 'button button--plain', onClick: () => { this.filter = emptyFilter(this.defaultDirection); ctx.refresh(); } }, 'Wyczyść')
             )
           : null,
         this.results

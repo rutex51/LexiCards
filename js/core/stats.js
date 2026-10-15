@@ -72,6 +72,29 @@ export function termStatus(library, termID, direction) {
     .reduce(weakerStatus);
 }
 
+/** Czy pojęcie czeka na powtórkę (termin FSRS minął) w kierunku albo – dla obu – w którymkolwiek. */
+export function isTermDue(library, termID, direction, now = Date.now()) {
+  return directionsOf(direction).some((way) => {
+    const time = dueTime(library.getProgress(termID, way));
+    return time !== null && time <= now;
+  });
+}
+
+/**
+ * Statusy do filtrowania i oznaczania pojęć (glosariusz): poziom ostatniej oceny oraz osobno
+ * „Do powtórki” – stan harmonogramu, który nie zastępuje poziomu opanowania.
+ */
+export const TERM_STATUS_FILTERS = Object.freeze([
+  ...[...STATUS_ORDER].reverse().map((id) => ({ id, label: STATUS_LABELS[id] })),
+  { id: 'due', label: 'Do powtórki' }
+]);
+
+/** Czy pojęcie ma status z TERM_STATUS_FILTERS w kierunku (albo – dla obu – według zasad wyżej). */
+export function matchesTermStatus(library, termID, status, direction, now = Date.now()) {
+  if (status === 'due') return isTermDue(library, termID, direction, now);
+  return termStatus(library, termID, direction) === status;
+}
+
 /** Liczba pojęć w każdym statusie: { mastered, partiallyMastered, inProgress, toLearn, new, total }. */
 export function statusCounts(library, terms, direction) {
   const counts = { mastered: 0, partiallyMastered: 0, inProgress: 0, toLearn: 0, new: 0, total: terms.length };
@@ -82,13 +105,7 @@ export function statusCounts(library, terms, direction) {
 /** Pojęcia do powtórki (termin FSRS minął): w wybranym kierunku albo w którymkolwiek. */
 export function dueCount(library, terms, direction, now = Date.now()) {
   let count = 0;
-  for (const term of terms) {
-    const due = directionsOf(direction).some((way) => {
-      const time = dueTime(library.getProgress(term.id, way));
-      return time !== null && time <= now;
-    });
-    if (due) count += 1;
-  }
+  for (const term of terms) if (isTermDue(library, term.id, direction, now)) count += 1;
   return count;
 }
 

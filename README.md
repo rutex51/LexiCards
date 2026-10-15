@@ -1,25 +1,33 @@
-# LexiCards
+# LexiCards 1.0
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
 są zapisywane wyłącznie w przeglądarce na Twoim urządzeniu.
 
-Adres: **https://rutex51.github.io/LexiCards/**
+Adres (gdy strona jest opublikowana): **https://rutex51.github.io/LexiCards/**. Repozytorium jest
+prywatne, więc strona jest publikowana tylko na czas instalacji albo aktualizacji – zobacz
+[Aktualizacje](#aktualizacje). Zainstalowana aplikacja działa bez niej.
 
-## Co już działa (etapy 1–6)
+Sprawdzenie całości i zgodność ze specyfikacją: [docs/RELEASE-1.0.md](docs/RELEASE-1.0.md).
+
+## Co potrafi wersja 1.0
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
 - Pojęcie ma nazwę po polsku i po angielsku oraz opcjonalnie opis i przykład w obu językach,
   tagi, trudność, notatki i oznaczenie „ulubione”.
 - Glosariusz wszystkich pojęć: wyszukiwanie bez polskich znaków („plynnosc” znajduje
-  „płynność”), filtry (dziedzina, moduł, lekcja, ulubione, tag), sortowanie, zaznaczanie wielu pojęć.
+  „płynność”), filtry (dziedzina, moduł, lekcja, status nauki, ulubione, tag), sortowanie, zaznaczanie
+  wielu pojęć. Przy każdym pojęciu – także w lekcji – status nauki (Nowe, Do nauki, W trakcie nauki,
+  Częściowo opanowane, Opanowane) i osobno „Do powtórki”.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
 - Eksport do XLSX lub CSV: cała biblioteka, dziedzina, moduł, lekcja albo zaznaczone pojęcia.
 - Nauka z fiszkami: wybór materiału, kierunku (PL → EN, EN → PL, mieszany), zakresu i liczby fiszek;
   obracana fiszka, trzy kafelki oceny (pojęcie, definicja, przykład), zatwierdzanie gestem albo
   przyciskiem, cofanie, podsumowanie i runda powtórkowa. Postępy są osobne dla każdego kierunku.
+  Zakresy „Nie znam pojęcia”, „Nie znam definicji” i „Nie znam przykładu” zbierają fiszki
+  z konkretnym brakiem z ostatniej oceny.
 - Powtórki w odstępach według algorytmu FSRS-6, osobno dla PL → EN i EN → PL: „Powtórka na dziś”
   na Starcie, zakres „Do powtórki” z fiszkami po terminie, podpowiedź przy przyciskach, za ile fiszka
   wróci, termin i poziom utrwalenia w szczegółach pojęcia, docelowa skuteczność w Ustawieniach.
@@ -30,8 +38,10 @@ Adres: **https://rutex51.github.io/LexiCards/**
   definicję i przykład; ekran nie gaśnie, a duże przyciski pozwalają zatrzymać, cofnąć albo pominąć pojęcie.
 - Statystyki: opanowane pojęcia, do powtórki, skuteczność quizów, czas nauki, znajomość pojęć,
   definicji i przykładów (osobno dla każdego kierunku), wykresy postępu, powtórek i quizów w czasie,
-  opanowanie według dziedzin, modułów i lekcji z przejściem w głąb. Najważniejsze liczby także na Starcie.
-- Wymowa pojęć, definicji i przykładów głosem z urządzenia; historia ocen każdego pojęcia.
+  opanowanie według dziedzin, modułów i lekcji z przejściem w głąb. Na Starcie: pojęcia nowe,
+  w trakcie nauki, do powtórki i opanowane, skuteczność quizów i czas nauki.
+- Wymowa pojęć, definicji i przykładów głosem z urządzenia, z głosem zastępczym, gdy wybrany się
+  nie odzywa, i sprawdzeniem wymowy w Ustawieniach; historia ocen każdego pojęcia.
 - Kopia zapasowa do pliku i przywracanie z pliku (materiały, postępy, ustawienia).
 - Motyw jasny, ciemny albo zgodny z systemem i kolor aplikacji do wyboru (niebieski, antracytowy,
   pomarańczowy, zielony, czerwony); układ na telefon i na szeroki ekran.
@@ -39,7 +49,8 @@ Adres: **https://rutex51.github.io/LexiCards/**
 - 40 przykładowych pojęć (Business English, Metrology) do wczytania jednym przyciskiem.
 
 Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2](docs/STAGE-2.md),
-[etap 3](docs/STAGE-3.md), [etap 4](docs/STAGE-4.md), [etap 5](docs/STAGE-5.md), [etap 6](docs/STAGE-6.md).
+[etap 3](docs/STAGE-3.md), [etap 4](docs/STAGE-4.md), [etap 5](docs/STAGE-5.md), [etap 6](docs/STAGE-6.md),
+[wersja 1.0](docs/RELEASE-1.0.md).
 
 ## Jak korzystać
 
@@ -56,6 +67,26 @@ niż karta Safari. Dane wprowadzone wcześniej w Safari przeniesiesz kopią zapa
 
 Otwórz adres w Chrome albo Edge. Ikona instalacji w pasku adresu pozwala otwierać
 aplikację w osobnym oknie, ale nie jest to konieczne.
+
+### Aktualizacje
+
+Na darmowym koncie GitHub strona jest publikowana tylko z repozytorium publicznego. Zainstalowana
+aplikacja działa bez niej, ale nowa wersja dotrze do urządzenia tylko wtedy, gdy strona jest dostępna:
+
+1. GitHub → **Settings → General → Change visibility → Public**.
+2. **Settings → Pages**: źródło – gałąź `main`, katalog `/ (root)`; po chwili strona jest dostępna.
+3. Otwórz aplikację na urządzeniu z internetem. Gdy pojawi się „Pobrano nową wersję aplikacji”,
+   dotknij **Uruchom ją**. Numer wersji jest na dole Ustawień.
+4. Przywróć repozytorium do **Private**.
+
+Strona nie trafia do wyszukiwarek (znacznik `noindex`), a Twoje materiały nigdy nie opuszczają urządzenia.
+
+### Glosariusz i statusy
+
+Przy każdym pojęciu widać status nauki z ostatniej oceny: Nowe, Do nauki, W trakcie nauki, Częściowo
+opanowane albo Opanowane, a obok – osobno – „Do powtórki”, gdy minął termin powtórki. Status dotyczy
+kierunku wybranego w Statystykach (jak liczby na Starcie); w filtrach glosariusza możesz wybrać inny
+kierunek albo oba – wtedy liczy się słabszy z dwóch. Filtr „Status” pokazuje tylko pojęcia w danym stanie.
 
 ### Import z arkusza
 
@@ -82,6 +113,9 @@ trzeba najpierw zapisać w Excelu jako `.xlsx`.
 2. Przypomnij sobie odpowiedź i dotknij fiszki, żeby ją odwrócić.
 3. Zaznacz kafelki tego, co umiesz: pojęcie, definicję, przykład.
 4. Przesuń fiszkę **w lewo – Umiem** albo **w prawo – Powtórz** (są też przyciski).
+
+Zakresy „Nie znam pojęcia”, „Nie znam definicji” i „Nie znam przykładu” zbierają fiszki, przy których
+w ostatniej ocenie w danym kierunku ten kafelek został niezaznaczony – sesja tylko z jednym rodzajem braków.
 
 Strzałka w pasku u góry cofa ostatnią decyzję. Przerwaną sesję można wznowić ze Startu.
 Po sesji można jednym dotknięciem powtórzyć fiszki odłożone (wszystkie z „Powtórz”), częściowo
@@ -192,9 +226,9 @@ Opis budowy: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### Publikacja
 
-Strona jest serwowana przez GitHub Pages z gałęzi `main` (katalog główny). Po wysłaniu zmian
-nowa wersja pojawia się po kilku minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat
-z przyciskiem „Uruchom ją”.
+Strona jest serwowana przez GitHub Pages z gałęzi `main` (katalog główny), gdy repozytorium jest
+publiczne (zobacz [Aktualizacje](#aktualizacje)). Po wysłaniu zmian nowa wersja pojawia się po kilku
+minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem „Uruchom ją”.
 
 ## Plan etapów
 
@@ -204,6 +238,7 @@ z przyciskiem „Uruchom ją”.
 4. **Powtórki w odstępach (FSRS), osobno dla kierunków PL→EN i EN→PL** – gotowe.
 5. **Quizy: jednokrotny wybór, dopasowywanie, mieszany** – gotowe.
 6. **Statystyki: wskaźniki, wykresy, zestawienia według dziedzin, modułów i lekcji** – gotowe.
-7. Dopracowanie: dostępność, wydajność przy dużych bibliotekach.
+7. **Wersja 1.0: sprawdzenie całości ze specyfikacją, uzupełnienia, przegląd ekranów** – gotowe.
 
-Synchronizacja między urządzeniami nie jest planowana; urządzenia łączy kopia zapasowa w pliku.
+Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
+w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

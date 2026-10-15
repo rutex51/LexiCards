@@ -236,6 +236,10 @@ export class StudySetupScreen {
               repeat: 'Fiszki, których termin powtórki według FSRS już minął – najpierw najdłużej czekające.',
               partial: 'Pojęcia ostatnio przesunięte na „Powtórz” z częścią zaznaczonych kafelków.',
               hard: 'Pojęcia z trudnością 4–5, sprawiające kłopot w powtórkach albo ostatnio ocenione poniżej połowy.',
+              unknownTerm: 'Pojęcia, których tłumaczenia nie znałeś przy ostatniej ocenie w tym kierunku.',
+              unknownDescription: 'Pojęcia z definicją, której nie znałeś przy ostatniej ocenie w tym kierunku.',
+              unknownExample: 'Pojęcia z przykładem, którego nie znałeś przy ostatniej ocenie w tym kierunku.',
+              quizErrors: 'Pojęcia, na które ostatnio odpowiedziałeś w quizie błędnie.',
               favorites: 'Pojęcia oznaczone gwiazdką.',
               random: 'Losowy wybór z całego materiału.'
             }[this.scope]

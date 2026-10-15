@@ -47,28 +47,44 @@ export class StartScreen {
     this.journals.dispose();
   }
 
-  /** Najważniejsze wskaźniki (w kierunku wybranym w Statystykach) z przejściem do Statystyk. */
+  /**
+   * Najważniejsze wskaźniki (w kierunku wybranym w Statystykach) z przejściem do Statystyk:
+   * pojęcia nowe, w trakcie nauki, do powtórki i opanowane, a pod nimi quizy i czas nauki.
+   */
   #progress() {
     const { library } = this.ctx;
     const direction = statsDirection(library.getSettings());
     const data = overview(library, { level: 'library' }, direction, this.journals.get());
     const quiz = data.quiz;
+    const { statuses } = data;
     const directionLabel = direction === BOTH ? 'oba kierunki' : direction === 'en_pl' ? 'EN\u00a0→\u00a0PL' : 'PL\u00a0→\u00a0EN';
+    // „W trakcie nauki” – oceniane, ale jeszcze nie opanowane (do nauki, w trakcie, częściowo).
+    const counts = [
+      { id: 'new', label: 'Nowe', value: statuses.new },
+      { id: 'learning', label: 'W trakcie nauki', value: statuses.toLearn + statuses.inProgress + statuses.partiallyMastered },
+      { id: 'due', label: 'Do powtórki', value: data.due },
+      { id: 'mastered', label: 'Opanowane', value: statuses.mastered, sub: `${percent(statuses.mastered, statuses.total) ?? 0}%` }
+    ];
     return h('section', { class: 'group' },
       h('div', { class: 'stats-section__header' },
         h('h2', { class: 'group__title' }, 'Postępy'),
         h('a', { class: 'button button--plain', href: routes.stats(), dataset: { testid: 'start-stats' } }, 'Statystyki')),
+      h('a', { class: 'status-strip', href: routes.stats(), 'aria-label': `Postępy, ${directionLabel}: ${counts.map((item) => `${item.label} ${item.value}`).join(', ')}` },
+        counts.map((item) => h('span', { class: `status-strip__cell status-strip__cell--${item.id}`, 'aria-hidden': 'true' },
+          h('span', { class: 'status-strip__top' },
+            h('span', { class: 'status-chip__dot' }),
+            h('span', { class: 'status-strip__value', dataset: { testid: `start-count-${item.id}` } }, String(item.value)),
+            item.sub ? h('span', { class: 'status-strip__sub' }, item.sub) : null),
+          h('span', { class: 'status-strip__label' }, item.label)))),
       h('div', { class: 'start-stats' },
-        kpiTile('Opanowane', `${percent(data.statuses.mastered, data.statuses.total) ?? 0}%`, {
-          sub: `${data.statuses.mastered} z ${data.statuses.total}, ${directionLabel}`, testID: 'start-kpi-mastered', href: routes.stats()
-        }),
         kpiTile('Quizy', !quiz ? '…' : quiz.total === 0 ? '–' : `${percent(quiz.correct, quiz.total)}%`, {
           sub: !quiz ? null : quiz.total === 0 ? 'bez odpowiedzi' : 'poprawnych odpowiedzi', testID: 'start-kpi-quiz', href: routes.stats()
         }),
         kpiTile('Czas nauki', data.recentTime ? formatStudyTime(data.recentTime.total) : '…', {
           sub: 'ostatnie 7 dni', testID: 'start-kpi-time', href: routes.stats()
         })
-      )
+      ),
+      h('p', { class: 'group__footer', dataset: { testid: 'start-direction' } }, `Kierunek: ${directionLabel} – zmienisz go w Statystykach.`)
     );
   }
 

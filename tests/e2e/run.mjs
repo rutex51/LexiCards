@@ -1547,11 +1547,24 @@ test('fiszki: kierunek EN → PL ma osobne postępy; zakresy Nowe, Do powtórki,
   await waitUntil(async () => (await scopes()).includes('Ulubione (1)'), 'Zakres „Ulubione” powinien pokazać jedno pojęcie');
 
   // Kierunek zapamiętany z poprzedniej sesji: EN → PL.
-  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (3)', 'Do powtórki (1)', 'Częściowo zapamiętane (0)', 'Trudne (1)', 'Błędy z quizów (0)', 'Ulubione (1)', 'Losowe (6)']);
+  // liabilities: „Powtórz” bez kafelków przy pojęciu i definicji (brak przykładu) – nie zna pojęcia i definicji.
+  assert.deepEqual(await scopes(), [
+    'Wszystkie (6)', 'Nowe (3)', 'Do powtórki (1)', 'Częściowo zapamiętane (0)', 'Trudne (1)',
+    'Nie znam pojęcia (1)', 'Nie znam definicji (1)', 'Nie znam przykładu (0)', 'Błędy z quizów (0)', 'Ulubione (1)', 'Losowe (6)'
+  ]);
+  await page.selectOption('[data-testid=study-scope]', 'unknownDescription');
+  await expectText(page.locator('.field__hint').filter({ hasText: 'definicją' }), 'Pojęcia z definicją, której nie znałeś przy ostatniej ocenie w tym kierunku.');
+  await page.selectOption('[data-testid=study-scope]', 'all');
   await choose(page, 'Kierunek nauki', 'PL → EN');
-  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (6)', 'Do powtórki (0)', 'Częściowo zapamiętane (0)', 'Trudne (0)', 'Błędy z quizów (0)', 'Ulubione (1)', 'Losowe (6)']);
+  assert.deepEqual(await scopes(), [
+    'Wszystkie (6)', 'Nowe (6)', 'Do powtórki (0)', 'Częściowo zapamiętane (0)', 'Trudne (0)',
+    'Nie znam pojęcia (0)', 'Nie znam definicji (0)', 'Nie znam przykładu (0)', 'Błędy z quizów (0)', 'Ulubione (1)', 'Losowe (6)'
+  ]);
   await choose(page, 'Kierunek nauki', 'Mieszany');
-  assert.deepEqual(await scopes(), ['Wszystkie (6)', 'Nowe (6)', 'Do powtórki (1)', 'Częściowo zapamiętane (0)', 'Trudne (1)', 'Błędy z quizów (0)', 'Ulubione (1)', 'Losowe (6)']);
+  assert.deepEqual(await scopes(), [
+    'Wszystkie (6)', 'Nowe (6)', 'Do powtórki (1)', 'Częściowo zapamiętane (0)', 'Trudne (1)',
+    'Nie znam pojęcia (1)', 'Nie znam definicji (1)', 'Nie znam przykładu (0)', 'Błędy z quizów (0)', 'Ulubione (1)', 'Losowe (6)'
+  ]);
 
   // Zakres bez fiszek: nie da się rozpocząć.
   await choose(page, 'Kierunek nauki', 'PL → EN');
@@ -1882,6 +1895,71 @@ test('fiszki: „Umiem” zaznacza wszystko; „Powtórz” dzieli na częściow
   const scopeOptions = (await page.locator('[data-testid=study-scope] option').allTextContents()).map((text) => text.trim());
   assert.ok(scopeOptions.includes('Częściowo zapamiętane (0)'), scopeOptions.join(', '));
 });
+
+test('status nauki: liczby na Starcie, oznaczenia w glosariuszu i lekcji, filtr statusu i kierunku', async ({ open, context }) => {
+  await context.clock.install({ time: new Date('2026-10-12T10:00:00') });
+  const page = await open();
+  const ids = await seedStudy(page);
+  // PL → EN: aktywa – „Umiem”, pasywa – „Powtórz” z pojęciem, zysk – „Powtórz” bez kafelków; reszta nowa.
+  await openStudySetup(page);
+  await startStudy(page);
+  await assess(page, 'all', 'know');
+  await assess(page, ['term'], 'repeat');
+  await assess(page, [], 'repeat');
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await page.locator('[data-testid=study-start]').waitFor();
+
+  await page.evaluate(() => { location.hash = '#/start'; });
+  const count = (id) => page.locator(`[data-testid=start-count-${id}]`).textContent();
+  await expectText(page.locator('[data-testid=start-count-new]'), '3');
+  assert.deepEqual([await count('learning'), await count('due'), await count('mastered')], ['2', '0', '1']);
+  await expectText(page.locator('.status-strip__cell--mastered'), '17%');
+  await expectText(page.locator('[data-testid=start-direction]'), 'Kierunek: PL → EN – zmienisz go w Statystykach.');
+  assert.match(await page.locator('.status-strip').getAttribute('aria-label'), /Nowe 3, W trakcie nauki 2, Do powtórki 0, Opanowane 1/);
+
+  // Glosariusz: status przy każdym pojęciu w kierunku ze Statystyk.
+  await page.evaluate(() => { location.hash = '#/library/glossary'; });
+  const statusOf = (name) => termRows(page).filter({ hasText: name }).first().locator('[data-testid=term-status]');
+  await expectText(statusOf('aktywa'), 'Opanowane');
+  await expectText(statusOf('zysk'), 'Do nauki');
+  await expectText(statusOf('umowa'), 'Nowe');
+  assert.equal(await statusOf('zysk').getAttribute('data-due'), 'false');
+  await expectText(page.locator('[data-testid=glossary-status-note]'), 'Status w kierunku PL → EN.');
+
+  // Filtr: „Do nauki” w PL → EN – tylko zysk.
+  await page.getByRole('button', { name: 'Filtry i sortowanie' }).click();
+  await page.selectOption('[data-testid=filter-status]', 'toLearn');
+  await page.getByRole('button', { name: 'Zastosuj' }).click();
+  await expectText(page.locator('[data-testid=glossary-count]'), '1 pojęcie');
+  await expectText(page.locator('[data-testid=filter-summary]'), 'status „Do nauki”');
+  // Ten sam status w EN → PL: nic; „Nowe” w EN → PL – wszystkie.
+  await page.getByRole('button', { name: 'Filtry i sortowanie (aktywne)' }).click();
+  await choose(page, 'Kierunek statusu', 'EN → PL');
+  await page.getByRole('button', { name: 'Zastosuj' }).click();
+  await expectText(page.locator('.empty__title'), 'Nic nie znaleziono');
+  await page.getByRole('button', { name: 'Filtry i sortowanie (aktywne)' }).click();
+  await page.selectOption('[data-testid=filter-status]', 'new');
+  await page.getByRole('button', { name: 'Zastosuj' }).click();
+  await expectText(page.locator('[data-testid=glossary-count]'), '6 pojęć');
+  await expectText(page.locator('[data-testid=filter-summary]'), 'status w kierunku EN → PL');
+  await expectText(page.locator('[data-testid=glossary-status-note]'), 'Status w kierunku EN → PL.');
+
+  // Po dwóch minutach „zysk” (Again – wraca po minucie) czeka na powtórkę: osobne oznaczenie i filtr.
+  await page.clock.fastForward('02:00');
+  await page.locator('[data-testid=filter-summary] button').click();
+  await page.getByRole('button', { name: 'Filtry i sortowanie' }).click();
+  await page.selectOption('[data-testid=filter-status]', 'due');
+  await page.getByRole('button', { name: 'Zastosuj' }).click();
+  await expectText(page.locator('[data-testid=glossary-count]'), '1 pojęcie');
+  await expectText(statusOf('zysk'), 'Do nauki');
+  await expectText(statusOf('zysk'), 'Do powtórki');
+  assert.equal(await statusOf('zysk').getAttribute('data-due'), 'true');
+
+  // Lekcja: te same oznaczenia.
+  await page.evaluate((id) => { location.hash = `#/library/lesson/${id}`; }, ids.basicsID);
+  await expectText(statusOf('aktywa'), 'Opanowane');
+  await expectText(statusOf('zysk'), 'Do powtórki');
+}, { device: PHONE });
 
 test('fiszki: wejście z lekcji i z menu biblioteki ustawia materiał', async ({ open }) => {
   const page = await open();

@@ -34,6 +34,10 @@ export const STUDY_SCOPES = Object.freeze([
   { id: 'repeat', label: 'Do powtórki' },
   { id: 'partial', label: 'Częściowo zapamiętane' },
   { id: 'hard', label: 'Trudne' },
+  // Braki według ostatniej oceny w kierunku fiszki (kafelek niezaznaczony; brak treści się nie liczy).
+  { id: 'unknownTerm', label: 'Nie znam pojęcia' },
+  { id: 'unknownDescription', label: 'Nie znam definicji' },
+  { id: 'unknownExample', label: 'Nie znam przykładu' },
   { id: 'quizErrors', label: 'Błędy z quizów' },
   { id: 'favorites', label: 'Ulubione' },
   { id: 'random', label: 'Losowe' }
@@ -122,6 +126,10 @@ function matchesScope(scope, term, progress, now) {
     // Ostatnio zatwierdzone jako „Umiem”, ale bez kompletu kafelków.
     case 'partial': return REPEAT_KINDS.partial(progress);
     case 'hard': return isHard(term, progress);
+    // false – element oceniony jako nieznany; null – element nie istnieje (nie jest brakiem wiedzy).
+    case 'unknownTerm': return Boolean(progress?.reviewCount) && progress.knowsTerm === false;
+    case 'unknownDescription': return Boolean(progress?.reviewCount) && progress.knowsDescription === false;
+    case 'unknownExample': return Boolean(progress?.reviewCount) && progress.knowsExample === false;
     case 'favorites': return Boolean(term.isFavorite);
     default: return true;
   }

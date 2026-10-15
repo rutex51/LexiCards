@@ -1,6 +1,7 @@
 # Architektura LexiCards
 
-Dokument opisuje stan po etapie 6 oraz decyzje, które przygotowują kolejny etap.
+Dokument opisuje stan wersji 1.0. Zgodność ze specyfikacją i wyniki sprawdzenia całości:
+[RELEASE-1.0.md](RELEASE-1.0.md).
 
 ## Założenia
 
@@ -205,7 +206,13 @@ Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany 
 - **Zakresy:** „Nowe” – bez żadnej oceny w kierunku; „Do powtórki” – termin FSRS minął
   (kolejka od najdłużej czekających, limit liczby fiszek bierze najbardziej zaległe);
   „Trudne” – trudność 4–5 ustawiona przez użytkownika, trudność FSRS ≥ 7 albo ostatnia ocena
-  poniżej połowy.
+  poniżej połowy; „Nie znam pojęcia / definicji / przykładu” – w ostatniej ocenie w kierunku
+  fiszki dany kafelek był niezaznaczony (`knowsTerm`, `knowsDescription`, `knowsExample`
+  równe `false`; `null` – element nie istnieje – nie jest brakiem wiedzy).
+- **Status w glosariuszu i lekcji** (`statusChips()` w `js/ui/screens/terms.js`): poziom
+  ostatniej oceny (`termStatus()`) i osobno „Do powtórki” (`isTermDue()`), w kierunku ze
+  Statystyk albo – dla obu – słabszy z dwóch. Filtr glosariusza (`status`, `statusDirection`
+  w `Library.glossary()`) używa tych samych reguł (`matchesTermStatus()`).
 
 ## Powtórki (FSRS)
 
@@ -368,8 +375,13 @@ nieistniejące pojęcia są pomijane.
   są wykonywane zdarzeniami dotyku przeglądarki, a syntezator mowy zastępuje atrapa.
   Upływ czasu przy powtórkach i limit czasu quizu symuluje zegar Playwright (`context.clock`).
 
-## Przygotowanie kolejnych etapów
+## Możliwy dalszy rozwój
 
-- **Dopracowanie (etap 7):** statystyki liczą się w jednym przebiegu po pojęciach zakresu
-  i po dziennikach; przy bardzo dużych bibliotekach (dziesiątki tysięcy pojęć, setki tysięcy
-  ocen) kolejnym krokiem byłoby liczenie szeregów dziennych przyrostowo albo w tle.
+- **Wydajność:** statystyki liczą się w jednym przebiegu po pojęciach zakresu i po dziennikach;
+  przy setkach tysięcy ocen kolejnym krokiem byłoby liczenie szeregów dziennych przyrostowo
+  albo w tle (Web Worker), tak samo import bardzo dużych plików.
+- **Głosy neuronowe (Piper):** wstępnie sprawdzone są fonemy espeak-ng w WebAssembly
+  (w przeglądarce) i model głosu w ONNX Runtime (poza przeglądarką); do sprawdzenia zostaje
+  ONNX Runtime Web w przeglądarce i pobieranie głosów (ok. 60 MB na język) do pamięci urządzenia.
+- **Wersja na Windows w jednym pliku:** 47 modułów bez zależności cyklicznych można złożyć
+  w jeden `LexiCards.html`, otwierany z dysku bez serwera.

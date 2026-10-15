@@ -900,6 +900,50 @@ a.row__main:active,
   color: var(--text-2);
 }
 
+/* Status nauki: kropka w kolorze poziomu i nazwa (nie sam kolor); „Do powtórki” osobno. */
+.term__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-top: 5px;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px 1px 7px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-2);
+  font-size: var(--size-foot);
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.status-chip__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-dot, var(--text-3));
+}
+
+.status-chip--mastered { --status-dot: var(--status-mastered); }
+.status-chip--partiallyMastered { --status-dot: var(--status-partial); }
+.status-chip--inProgress { --status-dot: var(--status-progress); }
+.status-chip--toLearn { --status-dot: var(--status-learn); }
+.status-chip--new { --status-dot: var(--text-3); }
+
+.status-chip--due {
+  gap: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.table tbody th .term__status { margin-top: 6px; font-weight: 400; }
+
 .term__chevron {
   flex: none;
   color: var(--text-3);
@@ -3050,19 +3094,72 @@ a.row__main:active,
 .breakdown__chevron { flex: none; color: var(--text-3); }
 .breakdown__bar { height: 8px; }
 
+/* Start: cztery liczby pojęć w jednym pasku, pod nim quizy i czas nauki. */
+/* Telefon: dwa na dwa (nazwy mieszczą się w jednym wierszu), szerszy ekran: cztery w rzędzie.
+   Linie między polami to tło paska widoczne w odstępach siatki. */
+.status-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--separator);
+  color: inherit;
+  text-decoration: none;
+}
+
+@media (min-width: 560px) {
+  .status-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.status-strip__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px 11px;
+  background: var(--surface);
+}
+
+.status-strip__top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 6px;
+}
+
+.status-strip__value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.status-strip__label {
+  font-size: var(--size-foot);
+  color: var(--text-2);
+  line-height: 1.25;
+}
+
+.status-strip__sub { font-size: var(--size-foot); color: var(--text-2); }
+
+.status-strip__cell--learning { --status-dot: var(--status-partial); }
+.status-strip__cell--due { --status-dot: var(--accent); }
+.status-strip__cell--mastered { --status-dot: var(--status-mastered); }
+
+@media (hover: hover) {
+  .status-strip:hover .status-strip__cell { background: color-mix(in srgb, var(--surface) 94%, var(--text)); }
+}
+
 .start-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
 .start-stats .kpi { padding: 10px 12px; }
 .start-stats .kpi__value { font-size: 1.3rem; }
-
-@media (max-width: 380px) {
-  .start-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .start-stats .kpi:last-child { grid-column: 1 / -1; }
-}
 
 @media (min-width: 900px) {
   .stats-top { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: stretch; }

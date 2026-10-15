@@ -187,7 +187,17 @@ test('zakresy: nowe, do powtórki, trudne, ulubione – osobno dla kierunku', as
   assert.deepEqual(names({ scope: 'new', direction: EN_PL }), ['bilans', 'aktywa', 'pasywa', 'trudne']);
   assert.deepEqual(names({ scope: 'repeat', direction: EN_PL }, Date.now() + 11 * minute), []);
 
-  assert.deepEqual(scopeCounts(library, config(), Date.now() + 11 * minute), { all: 4, new: 1, repeat: 3, partial: 1, hard: 2, quizErrors: 0, favorites: 1, random: 4 });
+  // Braki według ostatniej oceny: pasywa – nieznane pojęcie, aktywa – znane pojęcie bez definicji;
+  // aktywa nie ma przykładu, a bilans ma komplet – żadne nie trafia do „Nie znam przykładu”.
+  assert.deepEqual(names({ scope: 'unknownTerm' }), ['pasywa']);
+  assert.deepEqual(names({ scope: 'unknownDescription' }), ['aktywa']);
+  assert.deepEqual(names({ scope: 'unknownExample' }), []);
+  assert.deepEqual(names({ scope: 'unknownTerm', direction: EN_PL }), [], 'drugi kierunek nie był oceniany');
+
+  assert.deepEqual(scopeCounts(library, config(), Date.now() + 11 * minute), {
+    all: 4, new: 1, repeat: 3, partial: 1, hard: 2, unknownTerm: 1, unknownDescription: 1, unknownExample: 0,
+    quizErrors: 0, favorites: 1, random: 4
+  });
   assert.equal(isHard(hard, null), true);
   assert.equal(isHard(full, library.getProgress(full.id, PL_EN)), false);
 

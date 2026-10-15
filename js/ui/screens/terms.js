@@ -3,6 +3,7 @@
 import { normalizeKey, pluralTerms, formatTags } from '../../core/text.js';
 import { DIFFICULTY_MAX, DIRECTIONS } from '../../core/model.js';
 import { STATES } from '../../core/fsrs.js';
+import { BOTH, STATUS_LABELS, isTermDue, termStatus } from '../../core/stats.js';
 import {
   DIRECTION_NAMES, MASTERY_NAMES, describeDue, describeProgress, dueTime, masteryLevel
 } from '../../core/study.js';
@@ -16,6 +17,28 @@ import { h, replaceChildren } from '../dom.js';
 import { icon } from '../icons.js';
 import { routes } from '../router.js';
 import { missingView } from './library.js';
+import { statsDirection } from './stats.js';
+
+/**
+ * Status nauki pojęcia: poziom ostatniej oceny (kolor kropki i nazwa – nie sam kolor) oraz
+ * osobno „Do powtórki”, gdy minął termin FSRS. Kierunek: PL → EN, EN → PL albo oba
+ * (słabszy z dwóch, powtórka w którymkolwiek) – jak w Statystykach.
+ */
+export function statusChips(library, term, direction = BOTH) {
+  const status = termStatus(library, term.id, direction);
+  const due = isTermDue(library, term.id, direction);
+  return h('span', { class: 'term__status', dataset: { testid: 'term-status', status, due: String(due) } },
+    h('span', { class: `status-chip status-chip--${status}` },
+      h('span', { class: 'status-chip__dot', 'aria-hidden': 'true' }), STATUS_LABELS[status]),
+    due ? h('span', { class: 'status-chip status-chip--due' }, icon('clock', { size: 13 }), 'Do powtórki') : null);
+}
+
+/** Objaśnienie statusu pod listą pojęć. */
+export const STATUS_NOTE = Object.freeze({
+  [BOTH]: 'Status z obu kierunków: słabszy z dwóch, a „Do powtórki”, gdy pojęcie czeka w którymkolwiek.',
+  [DIRECTIONS.PL_EN]: 'Status w kierunku PL\u00a0→\u00a0EN.',
+  [DIRECTIONS.EN_PL]: 'Status w kierunku EN\u00a0→\u00a0PL.'
+});
 
 /** Stan listy pojęć przechowywany przez ekran między odświeżeniami. */
 export function createTermListState() {
@@ -112,9 +135,10 @@ export function termMenu(ctx, term) {
 
 /**
  * Lista pojęć z rozwijanymi szczegółami. W trybie zaznaczania wiersz działa jak pole wyboru.
- * options.path(term) zwraca ścieżkę lekcji pokazywaną pod pojęciem (glosariusz).
+ * options.path(term) zwraca ścieżkę lekcji pokazywaną pod pojęciem (glosariusz),
+ * options.statusDirection – kierunek, w którym pokazywany jest status nauki.
  */
-export function termList(ctx, state, terms, { path = null } = {}) {
+export function termList(ctx, state, terms, { path = null, statusDirection = BOTH } = {}) {
   return h('ul', { class: `group__list terms${state.selecting ? ' terms--selecting' : ''}`, role: 'list' },
     terms.map((term) => {
       const detailsID = `term-details-${term.id}`;
@@ -125,7 +149,8 @@ export function termList(ctx, state, terms, { path = null } = {}) {
       const text = h('span', { class: 'term__text' },
         h('span', { class: 'term__pl', lang: 'pl' }, term.termPL),
         h('span', { class: 'term__en', lang: 'en' }, term.termEN),
-        pathText ? h('span', { class: 'term__path' }, pathText) : null
+        pathText ? h('span', { class: 'term__path' }, pathText) : null,
+        statusChips(ctx.library, term, statusDirection)
       );
 
       if (state.selecting) {
@@ -249,6 +274,8 @@ export class LessonScreen {
     const { ctx } = this;
     const all = ctx.library.listTerms(this.id);
     const visible = this.#visibleTerms();
+    // Status w kierunku ze Statystyk – tak samo jak na Starcie i w glosariuszu.
+    const direction = statsDirection(ctx.library.getSettings());
     if (visible.length === 0) {
       replaceChildren(this.results, h('p', { class: 'results__empty' }, 'Brak pojęć pasujących do wyszukiwania.'));
       return;
@@ -256,7 +283,8 @@ export class LessonScreen {
     replaceChildren(this.results,
       h('section', { class: 'group' },
         h('h2', { class: 'group__title' }, visible.length === all.length ? pluralTerms(all.length) : `${visible.length} z ${pluralTerms(all.length)}`),
-        termList(ctx, this.list, visible)
+        termList(ctx, this.list, visible, { statusDirection: direction }),
+        h('p', { class: 'group__footer' }, STATUS_NOTE[direction])
       )
     );
   }

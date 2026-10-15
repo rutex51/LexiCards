@@ -4,8 +4,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  BOTH, LEGACY_CARD_TIME, assessmentDurations, breakdown, breakdownLevels, dailySeries, dayRange, dueCount,
-  elementStats, formatStudyTime, overview, quizAccuracy, scopeTerms, statusCounts, studyTime, termStatus
+  BOTH, LEGACY_CARD_TIME, TERM_STATUS_FILTERS, assessmentDurations, breakdown, breakdownLevels, dailySeries, dayRange,
+  dueCount, elementStats, formatStudyTime, isTermDue, overview, quizAccuracy, scopeTerms, statusCounts, studyTime,
+  termStatus
 } from '../../js/core/stats.js';
 import { DECISIONS, MAX_CARD_TIME } from '../../js/core/study.js';
 import { addTerm, makeBranch, makeLibrary } from './helpers.js';
@@ -84,6 +85,38 @@ test('statusy w kierunku i w obu kierunkach (słabszy z dwóch), do powtórki, z
     description: { known: 1, total: 1 },
     example: { known: 0, total: 1 }
   });
+});
+
+test('glosariusz: filtr statusu w kierunku albo w obu; „Do powtórki” osobno od poziomu opanowania', async () => {
+  const { library, full, noExample, bare } = await setup();
+  const { KNOW, REPEAT } = DECISIONS;
+  await assess(library, full, PL_EN, KNOW, {}, at(0, 9));
+  await assess(library, noExample, PL_EN, REPEAT, { term: true, description: false }, at(0, 9));
+  await assess(library, bare, PL_EN, REPEAT, NONE, at(0, 9));
+  await assess(library, full, EN_PL, REPEAT, { term: true, description: true, example: false }, at(0, 9));
+  assert.deepEqual(TERM_STATUS_FILTERS.map((item) => item.label),
+    ['Nowe', 'Do nauki', 'W trakcie nauki', 'Częściowo opanowane', 'Opanowane', 'Do powtórki']);
+
+  const names = (status, statusDirection, now = at(0, 10)) => library.glossary({ status, statusDirection, now }).items.map((term) => term.termPL);
+  assert.deepEqual(names('mastered', PL_EN), ['bilans']);
+  assert.deepEqual(names('partiallyMastered', PL_EN), ['aktywa']);
+  assert.deepEqual(names('toLearn', PL_EN), ['pasywa']);
+  assert.deepEqual(names('new', PL_EN), ['umowa', 'wzorzec']);
+  assert.deepEqual(names('partiallyMastered', EN_PL), ['bilans']);
+  // Oba kierunki: słabszy status – „bilans” opanowany tylko w jednym kierunku nie jest opanowany.
+  assert.deepEqual(names('mastered', BOTH), []);
+  assert.deepEqual(names('partiallyMastered', BOTH), ['bilans']);
+  // Bez kierunku – oba; pusty status nie filtruje.
+  assert.deepEqual(library.glossary({ status: 'new', now: at(0, 10) }).total, 4);
+  assert.equal(library.glossary({ status: '' }).total, 5);
+  // Do powtórki: tuż po ocenie nic, dobę później – ocenione pojęcia, niezależnie od poziomu.
+  assert.deepEqual(names('due', PL_EN, at(0, 9)), []);
+  assert.deepEqual(names('due', PL_EN, at(-1, 12)), ['aktywa', 'bilans', 'pasywa']);
+  assert.deepEqual(names('due', EN_PL, at(-1, 12)), ['bilans']);
+  assert.equal(isTermDue(library, full.id, BOTH, at(-1, 12)), true);
+  assert.equal(isTermDue(library, full.id, BOTH, at(0, 9)), false);
+  // Status łączy się z pozostałymi filtrami.
+  assert.deepEqual(library.glossary({ status: 'new', statusDirection: PL_EN, searchText: 'umo' }).items.map((term) => term.termPL), ['umowa']);
 });
 
 test('postęp w czasie odtworzony z historii ocen zgadza się z bieżącym stanem; powtórki i quizy dziennie', async () => {

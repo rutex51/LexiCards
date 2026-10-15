@@ -15,6 +15,7 @@ import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.j
 import { emptyChanges } from './storage.js';
 import { createScheduler } from './fsrs.js';
 import { quizResult } from './quiz.js';
+import { BOTH, matchesTermStatus } from './stats.js';
 import {
   DECISIONS, MAX_CARD_TIME, REPEAT_KINDS, emptyTiles, fsrsRating, makeAssessment, makeSession, nextProgress, repeatQueue,
   reviewSchedule, summarizeSession
@@ -552,11 +553,18 @@ export class Library {
    * searchText, favoritesOnly, tag, sort: 'polish'|'english'|'newest'|'oldest' }.
    * Wyszukiwanie ignoruje wielkość liter i znaki diakrytyczne; tag musi pasować w całości.
    */
+  /**
+   * query: { scope, searchText, favoritesOnly, tag, sort, status, statusDirection } – status
+   * z TERM_STATUS_FILTERS (statystyki), sprawdzany w kierunku `statusDirection` (domyślnie oba).
+   */
   glossary(query = {}, offset = 0, limit = 100) {
     const scope = query.scope ?? { kind: 'all' };
     const text = normalizeKey(query.searchText ?? '');
     const tagKey = normalizeKey(query.tag ?? '');
     const favoritesOnly = Boolean(query.favoritesOnly);
+    const status = query.status || null;
+    const statusDirection = query.statusDirection ?? BOTH;
+    const now = query.now ?? Date.now();
     const scopeField = { domain: 'domainID', module: 'moduleID', lesson: 'lessonID' }[scope.kind] ?? null;
 
     const matches = this.#sortedTerms(query.sort ?? 'polish').filter((term) => {
@@ -564,6 +572,7 @@ export class Library {
       if (favoritesOnly && !term.isFavorite) return false;
       if (text !== '' && !term.keyPL.includes(text) && !term.keyEN.includes(text)) return false;
       if (tagKey !== '' && !(term.tagKeys ?? []).includes(tagKey)) return false;
+      if (status && !matchesTermStatus(this, term.id, status, statusDirection, now)) return false;
       return true;
     });
     const start = Math.max(0, offset);
