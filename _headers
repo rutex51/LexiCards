@@ -1,0 +1,4 @@
+# Nagłówki dla hostingu, który czyta plik _headers (np. Cloudflare Pages); GitHub Pages go pomija.
+# Prywatna aplikacja: wyszukiwarki nie indeksują żadnego pliku, także manifestu i ikon.
+/*
+  X-Robots-Tag: noindex, nofollow

@@ -58,3 +58,11 @@ test('adresy w aplikacji są względne (działa w podkatalogu GitHub Pages)', as
   const serviceWorker = await read('sw.js');
   assert.equal(/"\//.test(serviceWorker), false, 'lista offline zawiera adres bezwzględny');
 });
+
+test('wyszukiwarki nie indeksują aplikacji: znacznik robots i nagłówek dla hostingu z plikiem _headers', async () => {
+  const html = await read('index.html');
+  assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
+  const headers = await read('_headers');
+  assert.match(headers, /^\/\*\n {2}X-Robots-Tag: noindex, nofollow$/m);
+  assert.equal((await listAssets()).includes('_headers'), false, 'plik _headers nie trafia do pamięci offline');
+});

@@ -220,9 +220,22 @@ kolor ustawiony przed narysowaniem strony po ponownym otwarciu, powrót do niebi
 
 **Nie sprawdzono:** na prawdziwym iPhonie i komputerze z Windows.
 
+## Uzupełnienie w wersji 0.6.4: strona poza wyszukiwarkami
+
+- `index.html` ma znacznik `<meta name="robots" content="noindex, nofollow">` – Google i inne
+  wyszukiwarki nie pokazują strony w wynikach (strona już zaindeksowana znika przy kolejnej
+  wizycie robota).
+- Plik `_headers` dodaje nagłówek `X-Robots-Tag: noindex, nofollow` do wszystkich plików na
+  hostingu, który go czyta (Cloudflare Pages); GitHub Pages go pomija. Nie trafia do pamięci offline.
+- To nie jest ochrona dostępu: kto zna adres, nadal może otworzyć stronę. Dostęp tylko po
+  zalogowaniu wymaga przeniesienia strony na Cloudflare Pages z Cloudflare Access (plan darmowy).
+
+**Testy (15 października 2026):** 190 testów logiki (1 nowy: znacznik robots, nagłówek w `_headers`,
+`_headers` poza listą offline) i 68 testów w przeglądarce – zaliczone.
+
 ## Jak uruchomić
 
 - W przeglądarce: adres z pliku [README](../README.md); w Safari odśwież stronę dwa razy albo
-  użyj przycisku „Uruchom ją”. W Ustawieniach powinna być widoczna wersja 0.6.3.
+  użyj przycisku „Uruchom ją”. W Ustawieniach powinna być widoczna wersja 0.6.4.
 - Wypróbowanie: zakładka Statystyki; na Starcie grupa „Postępy”.
 - Testy: `npm test`, `npm run test:e2e` (wymaga Playwright z Chromium).
