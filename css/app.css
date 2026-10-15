@@ -27,9 +27,28 @@
   --pressed: rgba(118, 118, 128, 0.2);
   --hover: rgba(118, 118, 128, 0.08);
 
-  --accent: #0058be;
-  --accent-fill: #0058be;
-  --accent-soft: rgba(0, 88, 190, 0.11);
+  /* Kolory aplikacji (Ustawienia → Wygląd → Kolor). Każdy: tekst i zaznaczenia, wypełnienie
+     przycisków (biały tekst na nim) i tło delikatne; wszystkie z kontrastem co najmniej 4,5:1.
+     Wersje dla motywu ciemnego – niżej. Wybrany kolor ustawia atrybut data-accent. */
+  --tone-blue: #0058be;
+  --tone-blue-fill: #0058be;
+  --tone-blue-soft: rgba(0, 88, 190, 0.11);
+  --tone-graphite: #3a4049;
+  --tone-graphite-fill: #3a4049;
+  --tone-graphite-soft: rgba(58, 64, 73, 0.11);
+  --tone-orange: #a33e00;
+  --tone-orange-fill: #c2410c;
+  --tone-orange-soft: rgba(163, 62, 0, 0.11);
+  --tone-green: #0f7036;
+  --tone-green-fill: #167a3c;
+  --tone-green-soft: rgba(15, 112, 54, 0.11);
+  --tone-red: #c01a2a;
+  --tone-red-fill: #c01a2a;
+  --tone-red-soft: rgba(192, 26, 42, 0.11);
+
+  --accent: var(--tone-blue);
+  --accent-fill: var(--tone-blue-fill);
+  --accent-soft: var(--tone-blue-soft);
   --on-accent: #ffffff;
 
   --danger: #c9000f;
@@ -97,9 +116,21 @@
     --fill: rgba(118, 118, 128, 0.24);
     --pressed: rgba(118, 118, 128, 0.36);
     --hover: rgba(118, 118, 128, 0.16);
-    --accent: #78b7ff;
-    --accent-fill: #0a6fe0;
-    --accent-soft: rgba(120, 183, 255, 0.18);
+    --tone-blue: #78b7ff;
+    --tone-blue-fill: #0a6fe0;
+    --tone-blue-soft: rgba(120, 183, 255, 0.18);
+    --tone-graphite: #c9d0da;
+    --tone-graphite-fill: #59616d;
+    --tone-graphite-soft: rgba(201, 208, 218, 0.18);
+    --tone-orange: #ffa05c;
+    --tone-orange-fill: #b9450d;
+    --tone-orange-soft: rgba(255, 160, 92, 0.18);
+    --tone-green: #6bdb8a;
+    --tone-green-fill: #1a7d3c;
+    --tone-green-soft: rgba(107, 219, 138, 0.18);
+    --tone-red: #ff958e;
+    --tone-red-fill: #c41f30;
+    --tone-red-soft: rgba(255, 149, 142, 0.18);
     --danger: #ff6b62;
     --danger-fill: #d70015;
     --danger-soft: rgba(255, 69, 58, 0.2);
@@ -145,9 +176,21 @@
   --fill: rgba(118, 118, 128, 0.24);
   --pressed: rgba(118, 118, 128, 0.36);
   --hover: rgba(118, 118, 128, 0.16);
-  --accent: #78b7ff;
-  --accent-fill: #0a6fe0;
-  --accent-soft: rgba(120, 183, 255, 0.18);
+  --tone-blue: #78b7ff;
+  --tone-blue-fill: #0a6fe0;
+  --tone-blue-soft: rgba(120, 183, 255, 0.18);
+  --tone-graphite: #c9d0da;
+  --tone-graphite-fill: #59616d;
+  --tone-graphite-soft: rgba(201, 208, 218, 0.18);
+  --tone-orange: #ffa05c;
+  --tone-orange-fill: #b9450d;
+  --tone-orange-soft: rgba(255, 160, 92, 0.18);
+  --tone-green: #6bdb8a;
+  --tone-green-fill: #1a7d3c;
+  --tone-green-soft: rgba(107, 219, 138, 0.18);
+  --tone-red: #ff958e;
+  --tone-red-fill: #c41f30;
+  --tone-red-soft: rgba(255, 149, 142, 0.18);
   --danger: #ff6b62;
   --danger-fill: #d70015;
   --danger-soft: rgba(255, 69, 58, 0.2);
@@ -171,6 +214,12 @@
   --viz-grid: #2c2c2e;
   --viz-axis: #48484a;
 }
+
+/* Wybrany kolor aplikacji – wartości jasne albo ciemne biorą się z bloków wyżej. */
+:root[data-accent="graphite"] { --accent: var(--tone-graphite); --accent-fill: var(--tone-graphite-fill); --accent-soft: var(--tone-graphite-soft); }
+:root[data-accent="orange"] { --accent: var(--tone-orange); --accent-fill: var(--tone-orange-fill); --accent-soft: var(--tone-orange-soft); }
+:root[data-accent="green"] { --accent: var(--tone-green); --accent-fill: var(--tone-green-fill); --accent-soft: var(--tone-green-soft); }
+:root[data-accent="red"] { --accent: var(--tone-red); --accent-fill: var(--tone-red-fill); --accent-soft: var(--tone-red-soft); }
 
 /* Kolory dziedzin (plakietka i próbnik w formularzu). */
 .badge--blue { --badge: #0a7aff; }
@@ -1160,11 +1209,44 @@ a.row__main:active,
 
 .choice__check {
   opacity: 0;
+  pointer-events: none;
   filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.55));
 }
 
 .choice--color:has(input:checked) { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4.5px var(--badge); }
 .choice--color:has(input:checked) .choice__check { opacity: 1; }
+
+/* Kolor aplikacji (Ustawienia → Wygląd): wiersz z próbkami jak w ustawieniach systemu. */
+.accent-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-top: 12px;
+  padding: 6px 10px 6px 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.accent-picker__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.accent-picker__option {
+  width: 32px;
+  height: 32px;
+  margin: 6px;
+}
+
+/* Pole wyboru sięga poza kółko – cel dotyku 44 px. */
+.accent-picker__option input {
+  inset: -6px;
+  width: auto;
+  height: auto;
+}
 
 .segmented {
   display: flex;

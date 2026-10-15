@@ -72,6 +72,8 @@ async function expectText(locator, expected, message = '') {
 }
 
 const title = (page) => page.locator('.screen__title');
+/** Opis pod grupą „Kopia zapasowa” w ustawieniach. */
+const backupFooter = (page) => page.locator('.group__footer').filter({ hasText: 'Kopia to jeden plik' });
 const sheet = (page) => page.locator('dialog.sheet[open]').last();
 const termRows = (page) => page.locator('.terms > .term');
 
@@ -363,7 +365,7 @@ test('kopia zapasowa: zapis do pliku, usunięcie wszystkich danych, przywróceni
   const page = await open();
   await loadSamples(page);
   await page.goto(`${page.url().split('#')[0]}#/settings`);
-  await expectText(page.locator('.group__footer').first(), 'Nie zapisano jeszcze żadnej kopii.');
+  await expectText(backupFooter(page), 'Nie zapisano jeszcze żadnej kopii.');
 
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('[data-testid=backup-export]')]);
   assert.match(download.suggestedFilename(), /^LexiCards-kopia-\d{4}-\d{2}-\d{2}\.json$/);
@@ -373,7 +375,7 @@ test('kopia zapasowa: zapis do pliku, usunięcie wszystkich danych, przywróceni
   assert.equal(backup.format, 'lexicards-backup');
   assert.equal(backup.counts.terms, 40);
   assert.equal(backup.data.terms.length, 40);
-  await expectText(page.locator('.group__footer').first(), 'Ostatnia kopia:');
+  await expectText(backupFooter(page), 'Ostatnia kopia:');
 
   await page.click('[data-testid=delete-all]');
   await expectText(page.locator('.alert__message'), 'Usunięte zostaną: 2 dziedziny, 5 modułów, 13 lekcji i 40 pojęć');
@@ -433,7 +435,7 @@ test('telefon z arkuszem udostępniania: kopia trafia do „Zachowaj w Plikach�
   const shared = await waitUntil(() => page.evaluate(() => window.sharedFile), 'Plik powinien trafić do arkusza udostępniania');
   assert.match(shared.name, /^LexiCards-kopia-/);
   assert.equal(JSON.parse(shared.text).counts.terms, 40);
-  await expectText(page.locator('.group__footer').first(), 'Ostatnia kopia:');
+  await expectText(backupFooter(page), 'Ostatnia kopia:');
 });
 
 test('motyw ciemny jest zapamiętywany i ustawiany przed narysowaniem strony', async ({ open }) => {
@@ -451,6 +453,51 @@ test('motyw ciemny jest zapamiętywany i ustawiany przed narysowaniem strony', a
   await page.waitForSelector('#app[data-ready="true"]');
   assert.equal(await page.evaluate(() => window.themeAtParse), 'dark');
   assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().appearance), 'dark');
+});
+
+test('kolor aplikacji: wybór w ustawieniach, osobno od motywu, ustawiany przed narysowaniem strony', async ({ open }) => {
+  const page = await open('#/settings');
+  const tokens = () => page.evaluate(() => {
+    const style = getComputedStyle(document.documentElement);
+    return {
+      accent: document.documentElement.dataset.accent ?? null,
+      text: style.getPropertyValue('--accent').trim(),
+      fill: style.getPropertyValue('--accent-fill').trim(),
+      action: getComputedStyle(document.querySelector('[data-testid=backup-export]')).color
+    };
+  });
+  assert.equal(await page.locator('[data-testid=accent-blue]').isChecked(), true);
+  assert.deepEqual(await tokens(), { accent: null, text: '#0058be', fill: '#0058be', action: 'rgb(0, 88, 190)' });
+  assert.equal(await page.getByRole('radiogroup', { name: 'Kolor' }).getByRole('radio').count(), 5);
+
+  await page.getByRole('radio', { name: 'Pomarańczowy' }).check();
+  await waitUntil(async () => (await tokens()).accent === 'orange', 'Kolor powinien się zmienić');
+  assert.deepEqual(await tokens(), { accent: 'orange', text: '#a33e00', fill: '#c2410c', action: 'rgb(163, 62, 0)' });
+  await expectText(page.locator('[data-testid=accent-name]'), 'Pomarańczowy. Kolor przycisków, zaznaczeń i linków');
+  assert.equal(await page.locator('[data-testid=accent-orange]').isChecked(), true);
+
+  // Motyw ciemny nie zmienia wybranego koloru – tylko jego jaśniejszą wersję.
+  await page.getByRole('radio', { name: 'Ciemny' }).check();
+  await waitUntil(() => page.evaluate(() => document.documentElement.dataset.theme === 'dark'), 'Motyw powinien być ciemny');
+  assert.deepEqual(await tokens(), { ...(await tokens()), accent: 'orange', text: '#ffa05c', fill: '#b9450d' });
+
+  // Po ponownym otwarciu kolor jest ustawiony, zanim wystartuje reszta aplikacji.
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => { window.accentAtParse = document.documentElement.dataset.accent; });
+  });
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  assert.equal(await page.evaluate(() => window.accentAtParse), 'orange');
+  assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().accentColor), 'orange');
+
+  // Antracytowy i powrót do niebieskiego.
+  await page.getByRole('radio', { name: 'Antracytowy' }).check();
+  await waitUntil(async () => (await tokens()).accent === 'graphite', 'Kolor powinien być antracytowy');
+  assert.deepEqual(await tokens(), { ...(await tokens()), text: '#c9d0da', fill: '#59616d' });
+  await page.getByRole('radio', { name: 'Niebieski' }).check();
+  await waitUntil(async () => (await tokens()).accent === null, 'Kolor powinien wrócić do niebieskiego');
+  assert.deepEqual(await tokens(), { ...(await tokens()), text: '#78b7ff', fill: '#0a6fe0' });
+  assert.equal(await page.evaluate(() => localStorage.getItem('lexicards-accent')), 'blue');
 });
 
 test('szeroki ekran: panel boczny i tabela glosariusza; wąski: zakładki i lista', async ({ open }) => {

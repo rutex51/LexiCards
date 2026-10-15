@@ -1,6 +1,7 @@
 // Start aplikacji: baza danych, biblioteka, nawigacja i odświeżanie ekranów.
 
 import { Library } from './core/library.js';
+import { DEFAULT_ACCENT, accentColor } from './core/model.js';
 import { openDefaultAdapter } from './core/storage.js';
 import { toast } from './ui/dialogs.js';
 import { h, replaceChildren } from './ui/dom.js';
@@ -55,15 +56,24 @@ function preventInputZoom() {
 
 preventInputZoom();
 const APPEARANCE_KEY = 'lexicards-appearance';
+const ACCENT_KEY = 'lexicards-accent';
 const THEME_COLORS = { light: '#f2f2f7', dark: '#000000' };
 
-/** Ustawia motyw i zapamiętuje go, żeby kolejne uruchomienie nie mignęło innym. */
-function applyAppearance(appearance) {
+/**
+ * Ustawia motyw (jasny, ciemny, systemowy) i kolor aplikacji; zapamiętuje je, żeby kolejne
+ * uruchomienie nie mignęło innymi (js/theme-boot.js ustawia je przed narysowaniem strony).
+ */
+function applyAppearance(settings) {
   const root = document.documentElement;
+  const { appearance } = settings;
   if (appearance === 'light' || appearance === 'dark') root.dataset.theme = appearance;
   else delete root.dataset.theme;
+  const accent = accentColor(settings);
+  if (accent === DEFAULT_ACCENT) delete root.dataset.accent;
+  else root.dataset.accent = accent;
   try {
     localStorage.setItem(APPEARANCE_KEY, appearance);
+    localStorage.setItem(ACCENT_KEY, accent);
   } catch {
     // Pamięć lokalna bywa wyłączona; motyw i tak zostanie ustawiony po wczytaniu bazy.
   }
@@ -126,7 +136,7 @@ async function boot() {
   const adapter = await openDefaultAdapter();
   const library = new Library(adapter);
   await library.load();
-  applyAppearance(library.getSettings().appearance);
+  applyAppearance(library.getSettings());
 
   const wide = window.matchMedia(WIDE_QUERY);
   /** Bieżący ekran: { key, screen }. Obiekt ekranu żyje, dopóki adres się nie zmieni. */
@@ -152,7 +162,7 @@ async function boot() {
     },
     navigate: (hash, options) => router.navigate(hash, options),
     isWide: () => wide.matches,
-    applyAppearance: () => applyAppearance(library.getSettings().appearance)
+    applyAppearance: () => applyAppearance(library.getSettings())
   };
 
   function render({ keepScroll }) {

@@ -107,6 +107,14 @@ działa na adapterze pamięciowym i wyświetla ostrzeżenie, że dane znikną po
 - **Układ**: poniżej 900 px zakładki u dołu, powyżej panel boczny; glosariusz na szerokim
   ekranie jest tabelą. Rozmiar tekstu na iPhonie podąża za ustawieniem systemowym.
 - Stan jest zawsze nazwany tekstem lub ikoną, nie samym kolorem; brak treści to „Brak danych”.
+- **Motyw i kolor aplikacji** to dwa niezależne ustawienia (`appearance`, `accentColor`).
+  Motyw ustawia atrybut `data-theme` (brak – zgodnie z systemem), kolor – `data-accent`
+  (brak – niebieski). Każdy kolor (`--tone-<kolor>`, `-fill`, `-soft` w `css/app.css`) ma
+  wersję jasną i ciemną z kontrastem co najmniej 4,5:1 dla tekstu i przycisków, a reguła
+  `:root[data-accent=…]` tylko podstawia go pod `--accent`, `--accent-fill` i `--accent-soft`,
+  z których korzysta reszta stylów. `js/theme-boot.js` ustawia oba atrybuty z pamięci lokalnej,
+  zanim strona się narysuje. Kolory znaczące (zielone „Umiem”, czerwone usuwanie, statusy)
+  i wykresy nie zależą od wybranego koloru.
 
 ## Praca offline i aktualizacje
 

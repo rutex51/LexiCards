@@ -33,7 +33,8 @@ Adres: **https://rutex51.github.io/LexiCards/**
   opanowanie według dziedzin, modułów i lekcji z przejściem w głąb. Najważniejsze liczby także na Starcie.
 - Wymowa pojęć, definicji i przykładów głosem z urządzenia; historia ocen każdego pojęcia.
 - Kopia zapasowa do pliku i przywracanie z pliku (materiały, postępy, ustawienia).
-- Motyw jasny, ciemny albo zgodny z systemem; układ na telefon i na szeroki ekran.
+- Motyw jasny, ciemny albo zgodny z systemem i kolor aplikacji do wyboru (niebieski, antracytowy,
+  pomarańczowy, zielony, czerwony); układ na telefon i na szeroki ekran.
 - Praca bez internetu po pierwszym otwarciu.
 - 40 przykładowych pojęć (Business English, Metrology) do wczytania jednym przyciskiem.
 

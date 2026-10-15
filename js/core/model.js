@@ -33,6 +33,21 @@ export const DOMAIN_COLOR_NAMES = Object.freeze({
   cyan: 'Cyjan', brown: 'Brązowy', gray: 'Szary'
 });
 
+/** Kolory aplikacji (przyciski, zaznaczenia, linki) – osobno od motywu jasnego i ciemnego. */
+export const ACCENT_COLORS = Object.freeze([
+  { id: 'blue', label: 'Niebieski' },
+  { id: 'graphite', label: 'Antracytowy' },
+  { id: 'orange', label: 'Pomarańczowy' },
+  { id: 'green', label: 'Zielony' },
+  { id: 'red', label: 'Czerwony' }
+]);
+export const DEFAULT_ACCENT = 'blue';
+
+/** Kolor aplikacji z ustawień; nieznana wartość (np. z kopii z nowszej wersji) – domyślny. */
+export function accentColor(settings) {
+  return ACCENT_COLORS.some((item) => item.id === settings?.accentColor) ? settings.accentColor : DEFAULT_ACCENT;
+}
+
 export const DOMAIN_ICONS = Object.freeze([
   '📁', '💼', '🏛️', '💶', '📊', '📈', '👥', '💬', '🌍', '📚',
   '🎓', '📐', '⚙️', '🔧', '🔨', '💻', '⚡', '⚛️', '🧮', '⚖️',
@@ -57,6 +72,7 @@ export function defaultSettings() {
   return {
     id: SETTINGS_ID,
     appearance: 'system',          // system | light | dark
+    accentColor: 'blue',           // kolor aplikacji: blue | graphite | orange | green | red
     preferredDirection: 'pl_en',   // pl_en | en_pl | mixed
     preferredFlashcardFront: 'term',
     preferredQuizLength: 10,       // liczba pytań quizu (0 = wszystkie pojęcia materiału)

@@ -1,7 +1,7 @@
 // Ustawienia: wygląd, kopia zapasowa, przechowywanie danych, instalacja, dane przykładowe.
 
 import { backupFileName, createBackup, parseBackupText, validateBackup } from '../../core/backup.js';
-import { nowISO } from '../../core/model.js';
+import { ACCENT_COLORS, accentColor, nowISO } from '../../core/model.js';
 import { joinList, pluralDomains, pluralLessons, pluralModules, pluralTerms } from '../../core/text.js';
 import { loadSampleData, openExportSheet } from '../actions.js';
 import { actionRow, field, formGroup, group, segmented, selectInput, valueRow } from '../components.js';
@@ -75,6 +75,50 @@ export class SettingsScreen {
     this.disposed = true;
     this.stopWatchingVoices();
     this.#stopCheck();
+  }
+
+  /** Wygląd: motyw (automatyczny, jasny, ciemny) i kolor aplikacji – niezależnie od siebie. */
+  #appearanceGroup() {
+    const { ctx } = this;
+    const { library } = ctx;
+    const settings = library.getSettings();
+    const accent = accentColor(settings);
+    const save = async (patch) => {
+      try {
+        await library.updateSettings(patch);
+        ctx.applyAppearance();
+      } catch (error) {
+        await showError(error);
+      }
+    };
+    return h('section', { class: 'group settings-appearance' },
+      h('h2', { class: 'group__title' }, 'Wygląd'),
+      segmented({
+        name: 'appearance',
+        label: 'Wygląd',
+        value: settings.appearance,
+        options: APPEARANCE_OPTIONS,
+        onChange: (value) => save({ appearance: value })
+      }),
+      h('div', { class: 'accent-picker' },
+        h('span', { class: 'accent-picker__label', id: 'accent-label' }, 'Kolor'),
+        h('div', { class: 'accent-picker__options', role: 'radiogroup', 'aria-labelledby': 'accent-label' },
+          ACCENT_COLORS.map((item) => h('label', {
+            class: 'choice choice--color accent-picker__option',
+            style: { '--badge': `var(--tone-${item.id}-fill)` },
+            title: item.label
+          },
+          h('input', {
+            type: 'radio', name: 'accent-color', value: item.id, checked: item.id === accent,
+            dataset: { testid: `accent-${item.id}` },
+            onChange: () => save({ accentColor: item.id })
+          }),
+          h('span', { class: 'choice__check', 'aria-hidden': 'true' }, icon('check', { size: 18 })),
+          h('span', { class: 'visually-hidden' }, item.label))))),
+      h('p', { class: 'group__footer', dataset: { testid: 'accent-name' } },
+        `${ACCENT_COLORS.find((item) => item.id === accent).label}. Kolor przycisków, zaznaczeń i linków `
+        + 'w jasnym i ciemnym motywie; wykresy w Statystykach zostają w swoich kolorach.')
+    );
   }
 
   /** Powtórki FSRS: docelowa skuteczność, czyli jak często fiszki wracają. */
@@ -330,23 +374,7 @@ export class SettingsScreen {
       title: 'Ustawienia',
       back: { href: routes.start(), label: 'Start' },
       body: [
-        h('section', { class: 'group' },
-          h('h2', { class: 'group__title' }, 'Wygląd'),
-          segmented({
-            name: 'appearance',
-            label: 'Wygląd',
-            value: settings.appearance,
-            options: APPEARANCE_OPTIONS,
-            onChange: async (value) => {
-              try {
-                await library.updateSettings({ appearance: value });
-                ctx.applyAppearance();
-              } catch (error) {
-                await showError(error);
-              }
-            }
-          })
-        ),
+        this.#appearanceGroup(),
         group({ title: 'Kopia zapasowa', footer: backupFooter },
           actionRow({ label: 'Zapisz kopię do pliku', iconName: 'download', onClick: () => this.#exportBackup(), testID: 'backup-export' }),
           actionRow({ label: 'Przywróć z pliku', iconName: 'upload', onClick: () => this.#restoreBackup(), testID: 'backup-restore' })

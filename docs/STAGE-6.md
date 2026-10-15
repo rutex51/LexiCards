@@ -199,9 +199,30 @@ przechodzi. Wszystkie zaliczone w dwóch kolejnych przebiegach.
 **Nie sprawdzono:** na prawdziwym iPhonie. Nie wiem na pewno, który głos zawiesza się na Twoim
 telefonie – pokaże to „Sprawdź wymowę”.
 
+## Uzupełnienie w wersji 0.6.3: kolor aplikacji
+
+**Gdzie:** Ustawienia → Wygląd → Kolor. Do wyboru: niebieski (jak dotąd), antracytowy,
+pomarańczowy, zielony i czerwony. Kolor jest niezależny od motywu – działa w jasnym, ciemnym
+i automatycznym; zmienia się od razu i jest pamiętany (także w kopii zapasowej).
+
+- Kolor obejmuje przyciski, zaznaczenia, linki, aktywną zakładkę i pola wyboru.
+- Bez zmian zostają kolory, które coś znaczą: zielone „Umiem”, pomarańczowe „Powtórz”, czerwone
+  usuwanie, kolory statusów i wykresy w Statystykach – w każdym kolorze aplikacji znaczą to samo.
+- Każdy kolor ma wersję jasną i ciemną dobraną tak, żeby tekst i przyciski miały kontrast co
+  najmniej 4,5:1 (sprawdzone obliczeniowo dla tła strony, kart i arkuszy oraz na siedmiu ekranach
+  w przeglądarce testowej, w obu motywach).
+- Po ponownym otwarciu aplikacja ustawia kolor, zanim cokolwiek narysuje – bez mignięcia
+  niebieskim.
+
+**Testy (15 października 2026):** 189 testów logiki (2 nowe: domyślny i nieznany kolor, kolor
+w kopii zapasowej) i 68 testów w przeglądarce (1 nowy: wybór koloru, jasna i ciemna wersja,
+kolor ustawiony przed narysowaniem strony po ponownym otwarciu, powrót do niebieskiego).
+
+**Nie sprawdzono:** na prawdziwym iPhonie i komputerze z Windows.
+
 ## Jak uruchomić
 
 - W przeglądarce: adres z pliku [README](../README.md); w Safari odśwież stronę dwa razy albo
-  użyj przycisku „Uruchom ją”. W Ustawieniach powinna być widoczna wersja 0.6.2.
+  użyj przycisku „Uruchom ją”. W Ustawieniach powinna być widoczna wersja 0.6.3.
 - Wypróbowanie: zakładka Statystyki; na Starcie grupa „Postępy”.
 - Testy: `npm test`, `npm run test:e2e` (wymaga Playwright z Chromium).
