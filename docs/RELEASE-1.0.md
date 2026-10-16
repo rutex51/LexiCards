@@ -88,6 +88,10 @@ pobierając aktualizację.
 - **Ikony dziedzin:** 21 nowych (języki z flagami, ekonomia, zarządzanie, decyzje, zachowania,
   raportowanie, etyka) – razem 51. Flagi na Windows wyświetlają się jako litery.
 
+## Uzupełnienie w wersji 1.0.2
+
+- **Ikony dziedzin:** flaga Polski obok flag Wielkiej Brytanii, Hiszpanii i USA – razem 52 ikony.
+
 ## Znane ograniczenia
 
 - Dane są w przeglądarce na danym urządzeniu; aplikacja z ekranu początkowego iPhone'a i karta
