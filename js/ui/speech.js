@@ -41,6 +41,39 @@ export const SPEECH_RATES = Object.freeze([
   { value: 1.15, label: 'Szybko' }
 ]);
 
+// ---------------------------------------------------------------- dziennik
+
+/**
+ * Dziennik zdarzeń mowy (ostatnie wpisy, tylko w pamięci) – do diagnozy na urządzeniu:
+ * które wypowiedzi ruszyły, które się skończyły, kiedy zadziałał strażnik.
+ */
+const LOG_LIMIT = 150;
+const speechLog = [];
+
+const shortText = (text) => (text.length > 28 ? `${text.slice(0, 27)}…` : text);
+
+export function logSpeech(type, detail = '') {
+  speechLog.push({ at: Date.now(), type, detail });
+  if (speechLog.length > LOG_LIMIT) speechLog.splice(0, speechLog.length - LOG_LIMIT);
+}
+
+export function speechLogEntries() {
+  return speechLog.slice();
+}
+
+export function clearSpeechLog() {
+  speechLog.length = 0;
+}
+
+/** Dziennik jako tekst: „07:44:12.3  start  pl Zosia”. */
+export function speechLogText(entries = speechLog) {
+  return entries.map(({ at, type, detail }) => {
+    const time = new Date(at);
+    const clock = [time.getHours(), time.getMinutes(), time.getSeconds()].map((part) => String(part).padStart(2, '0')).join(':');
+    return `${clock}.${Math.floor(time.getMilliseconds() / 100)}  ${type}${detail ? `  ${detail}` : ''}`;
+  }).join('\n');
+}
+
 /** Bieżąca wypowiedź – odwołanie trzymane do końca czytania, bez niego przeglądarka może ją urwać. */
 let current = null;
 /** Bieżące zadanie mowy (jedno naraz). */
@@ -191,6 +224,7 @@ function startSpeech(text, language, settings, onDone, { strict = false } = {}) 
   const flush = () => {
     utterance = null;
     current = null;
+    logSpeech('czyszczenie kolejki');
     synthesis.cancel();
   };
 
@@ -207,14 +241,17 @@ function startSpeech(text, language, settings, onDone, { strict = false } = {}) 
       flush();
       // Zablokowany ekran albo inna aplikacja – to nie wina głosu: ta sama próba jeszcze raz.
       const hidden = lastHiddenAt >= since || (typeof document !== 'undefined' && document.visibilityState === 'hidden');
-      if (hidden) wait(AFTER_CANCEL, () => attempt(index));
-      else if (index + 1 < voices.length) {
+      if (hidden) {
+        logSpeech('strona w tle', 'ponowna próba');
+        wait(AFTER_CANCEL, () => attempt(index));
+      } else if (index + 1 < voices.length) {
         result.failed ??= voiceName(voice);
         wait(AFTER_CANCEL, () => attempt(index + 1));
       } else finish();
     };
     spoken.onstart = () => {
       if (!mine() || started) return;
+      logSpeech('start', index > 0 ? 'głos zastępczy' : '');
       started = true;
       result.started = true;
       result.voice = voiceName(voice);
@@ -227,24 +264,34 @@ function startSpeech(text, language, settings, onDone, { strict = false } = {}) 
         if (firstKey !== key) failures.set(firstKey, strict ? SILENT_AFTER : (failures.get(firstKey) ?? 0) + 1);
       }
       wait(END_MARGIN + (text.length * MS_PER_CHARACTER) / rate, () => {
+        logSpeech('brak końca', 'dalej');
         flush();
         finish();
       });
     };
     spoken.onend = () => {
       if (!mine()) return;
+      logSpeech(started ? 'koniec' : 'koniec bez startu');
       if (started) finish();
       else fail();
     };
     spoken.onerror = (event) => {
       if (!mine()) return;
+      logSpeech('błąd', event?.error ?? '');
       if (started || event?.error === 'interrupted' || event?.error === 'canceled') finish();
       else fail();
     };
     wait(START_TIMEOUT, () => {
-      if (mine() && !started) fail();
+      if (mine() && !started) {
+        logSpeech('brak startu', `${START_TIMEOUT / 1000} s`);
+        fail();
+      }
     });
-    if (synthesis.paused && typeof synthesis.resume === 'function') synthesis.resume();
+    if (synthesis.paused && typeof synthesis.resume === 'function') {
+      logSpeech('wznowienie syntezatora');
+      synthesis.resume();
+    }
+    logSpeech('mów', `${language} ${voiceName(voice)} „${shortText(text)}”`);
     synthesis.speak(spoken);
   };
 
@@ -257,6 +304,7 @@ function startSpeech(text, language, settings, onDone, { strict = false } = {}) 
   active = handle;
   if (synthesis.speaking || synthesis.pending) {
     // Pozostałość po poprzedniej (np. zawieszonej) wypowiedzi.
+    logSpeech('pozostałość w kolejce', 'czyszczenie');
     synthesis.cancel();
     current = null;
     wait(AFTER_CANCEL, () => attempt(0));

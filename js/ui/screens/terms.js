@@ -3,7 +3,7 @@
 import { normalizeKey, pluralTerms, formatTags } from '../../core/text.js';
 import { DIFFICULTY_MAX, DIRECTIONS } from '../../core/model.js';
 import { STATES } from '../../core/fsrs.js';
-import { BOTH, STATUS_LABELS, isTermDue, termStatus } from '../../core/stats.js';
+import { BOTH, STATUS_LABELS, termStatus } from '../../core/stats.js';
 import {
   DIRECTION_NAMES, MASTERY_NAMES, describeDue, describeProgress, dueTime, masteryLevel
 } from '../../core/study.js';
@@ -20,22 +20,21 @@ import { missingView } from './library.js';
 import { statsDirection } from './stats.js';
 
 /**
- * Status nauki pojęcia: poziom ostatniej oceny (kolor kropki i nazwa – nie sam kolor) oraz
- * osobno „Do powtórki”, gdy minął termin FSRS. Kierunek: PL → EN, EN → PL albo oba
- * (słabszy z dwóch, powtórka w którymkolwiek) – jak w Statystykach.
+ * Status nauki pojęcia – tylko wynik ostatniej oceny (kolor kropki i nazwa, nie sam kolor).
+ * Termin powtórki nie ma tu osobnego oznaczenia (Twoja decyzja z wersji 1.0.1): pokazują go
+ * filtr „Do powtórki”, liczba na Starcie i szczegóły pojęcia. Kierunek: PL → EN, EN → PL
+ * albo oba (słabszy z dwóch) – jak w Statystykach.
  */
 export function statusChips(library, term, direction = BOTH) {
   const status = termStatus(library, term.id, direction);
-  const due = isTermDue(library, term.id, direction);
-  return h('span', { class: 'term__status', dataset: { testid: 'term-status', status, due: String(due) } },
+  return h('span', { class: 'term__status', dataset: { testid: 'term-status', status } },
     h('span', { class: `status-chip status-chip--${status}` },
-      h('span', { class: 'status-chip__dot', 'aria-hidden': 'true' }), STATUS_LABELS[status]),
-    due ? h('span', { class: 'status-chip status-chip--due' }, icon('clock', { size: 13 }), 'Do powtórki') : null);
+      h('span', { class: 'status-chip__dot', 'aria-hidden': 'true' }), STATUS_LABELS[status]));
 }
 
 /** Objaśnienie statusu pod listą pojęć. */
 export const STATUS_NOTE = Object.freeze({
-  [BOTH]: 'Status z obu kierunków: słabszy z dwóch, a „Do powtórki”, gdy pojęcie czeka w którymkolwiek.',
+  [BOTH]: 'Status z obu kierunków: słabszy z dwóch.',
   [DIRECTIONS.PL_EN]: 'Status w kierunku PL\u00a0→\u00a0EN.',
   [DIRECTIONS.EN_PL]: 'Status w kierunku EN\u00a0→\u00a0PL.'
 });

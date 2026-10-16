@@ -18,8 +18,8 @@ Sprawdzenie całości i zgodność ze specyfikacją: [docs/RELEASE-1.0.md](docs/
   tagi, trudność, notatki i oznaczenie „ulubione”.
 - Glosariusz wszystkich pojęć: wyszukiwanie bez polskich znaków („plynnosc” znajduje
   „płynność”), filtry (dziedzina, moduł, lekcja, status nauki, ulubione, tag), sortowanie, zaznaczanie
-  wielu pojęć. Przy każdym pojęciu – także w lekcji – status nauki (Nowe, Do nauki, W trakcie nauki,
-  Częściowo opanowane, Opanowane) i osobno „Do powtórki”.
+  wielu pojęć. Przy każdym pojęciu – także w lekcji – status ostatniej oceny (Nowe, Do nauki,
+  W trakcie nauki, Częściowo opanowane, Opanowane); pojęcia do powtórki pokazuje filtr.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
 - Eksport do XLSX lub CSV: cała biblioteka, dziedzina, moduł, lekcja albo zaznaczone pojęcia.
@@ -83,10 +83,12 @@ Strona nie trafia do wyszukiwarek (znacznik `noindex`), a Twoje materiały nigdy
 
 ### Glosariusz i statusy
 
-Przy każdym pojęciu widać status nauki z ostatniej oceny: Nowe, Do nauki, W trakcie nauki, Częściowo
-opanowane albo Opanowane, a obok – osobno – „Do powtórki”, gdy minął termin powtórki. Status dotyczy
-kierunku wybranego w Statystykach (jak liczby na Starcie); w filtrach glosariusza możesz wybrać inny
-kierunek albo oba – wtedy liczy się słabszy z dwóch. Filtr „Status” pokazuje tylko pojęcia w danym stanie.
+Przy każdym pojęciu widać jeden status – wynik ostatniej oceny: Nowe, Do nauki, W trakcie nauki,
+Częściowo opanowane albo Opanowane. Status dotyczy kierunku wybranego w Statystykach (jak liczby
+na Starcie); w filtrach glosariusza możesz wybrać inny kierunek albo oba – wtedy liczy się słabszy
+z dwóch. Filtr „Status” pokazuje tylko pojęcia w danym stanie, a „Do powtórki” – pojęcia, których
+termin powtórki już minął (także opanowane: powtórka podtrzymuje pamięć). Termin każdego pojęcia
+jest w jego szczegółach.
 
 ### Import z arkusza
 
@@ -167,6 +169,12 @@ pojęcia. Słuchanie nie zmienia terminów powtórek.
 Na iPhonie strona mówi tylko wtedy, gdy jest na ekranie; aplikacja nie pozwala ekranowi zgasnąć. Czy
 czytanie trwa przy zablokowanym ekranie, aplikacja sprawdza sama: zablokuj telefon na około 30 sekund
 w trakcie słuchania, a po odblokowaniu zobaczysz wynik (zapamiętany w ustawieniach słuchania).
+
+**Podtrzymuj dźwięk (Bluetooth, CarPlay)** – domyślnie włączone. Przez całe słuchanie gra cichy dźwięk
+w tle, więc połączenie z samochodem albo słuchawkami nie usypia w przerwach i krótkie słowa nie są
+ucinane. Przyciski na kierownicy, w słuchawkach i na ekranie blokady zatrzymują, wznawiają i przełączają
+pojęcia, a wyświetlacz samochodu pokazuje bieżące pojęcie. Pod odtwarzaczem jest **Dziennik dźwięku**:
+gdy coś nie gra, skopiuj go i wklej w rozmowie – widać w nim, które wypowiedzi ruszyły i się skończyły.
 
 Głos i szybkość czytania ustawisz w **Ustawieniach → Wymowa**. Przycisk **Sprawdź wymowę** czyta zdanie
 po polsku, po angielsku i znowu po polsku i pokazuje, który głos działa. Gdy wybrany głos się nie

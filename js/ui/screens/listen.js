@@ -10,13 +10,14 @@ import { DIRECTIONS } from '../../core/model.js';
 import { MIXED, STUDY_DIRECTIONS, STUDY_SCOPES, buildQueue, scopeCounts } from '../../core/study.js';
 import { pluralTerms } from '../../core/text.js';
 import { checkRow, emptyState, field, formGroup, group, navButton, segmented, selectInput } from '../components.js';
+import { AudioKeepAlive } from '../audio-keepalive.js';
 import { toast } from '../dialogs.js';
 import { h, onTap } from '../dom.js';
 import { icon } from '../icons.js';
 import { ListenPlayer } from '../listen-player.js';
 import { initialSelection, lessonsGroup, materialGroup, sanitizeSelection, selectionConfig } from '../material.js';
 import { routes } from '../router.js';
-import { silentVoice, speechAvailable } from '../speech.js';
+import { clearSpeechLog, logSpeech, silentVoice, speechAvailable, speechLogEntries, speechLogText } from '../speech.js';
 
 const DIRECTION_SHORT = { [DIRECTIONS.PL_EN]: 'PL → EN', [DIRECTIONS.EN_PL]: 'EN → PL' };
 /** Najkrótsza nieobecność, po której wiadomo, czy czytanie trwało przy zablokowanym ekranie. */
@@ -44,6 +45,10 @@ export class ListenScreen {
     this.example = settings.listenExample !== false;
     this.repeatAnswer = Boolean(settings.listenRepeatAnswer);
     this.detailLanguage = known(LISTEN_DETAIL_LANGUAGES, settings.listenDetailLanguage, 'en');
+    this.keepAudio = settings.listenKeepAudio !== false;
+    this.keepAlive = null;
+    /** Czy dziennik dźwięku jest rozwinięty (widok przebudowuje się po każdym kroku). */
+    this.logOpen = false;
     this.player = null;
     this.wakeLock = null;
     this.wakeState = null;
@@ -58,7 +63,43 @@ export class ListenScreen {
     this.disposed = true;
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.player?.stop();
+    this.#stopAudio();
     this.#releaseScreen();
+  }
+
+  // ---------------------------------------------------------------- dźwięk w tle
+
+  /** Cichy dźwięk w pętli (Bluetooth, CarPlay) i przyciski systemu – start w obsłudze dotknięcia. */
+  #startAudio() {
+    this.#stopAudio();
+    if (!this.keepAudio || !AudioKeepAlive.available()) return;
+    this.keepAlive = new AudioKeepAlive({
+      onPlay: () => this.player?.resume(),
+      onPause: () => this.player?.pause(),
+      onNext: () => this.player?.next(),
+      onPrevious: () => this.player?.previous()
+    });
+    this.keepAlive.start();
+  }
+
+  #stopAudio() {
+    this.keepAlive?.stop();
+    this.keepAlive = null;
+  }
+
+  /** Dźwięk w tle idzie razem z odtwarzaczem; opis dla ekranu blokady i samochodu. */
+  #syncAudio() {
+    const player = this.player;
+    const audio = this.keepAlive;
+    if (!audio || !player) return;
+    if (player.phase === 'finished') {
+      this.#stopAudio();
+      return;
+    }
+    if (player.phase === 'paused' && audio.active) audio.pause();
+    else if (player.phase === 'playing' && !audio.active) audio.resume();
+    const card = player.currentCard();
+    audio.describe(card ? card.steps[0].text : 'LexiCards', card ? `Pojęcie ${player.cardIndex + 1} z ${player.total}` : 'Słuchanie');
   }
 
   // ---------------------------------------------------------------- ekran i tło
@@ -104,6 +145,7 @@ export class ListenScreen {
   #visibilityChanged() {
     const player = this.player;
     if (!player) return;
+    logSpeech('ekran', document.visibilityState === 'hidden' ? 'ukryty' : 'widoczny');
     if (document.visibilityState === 'hidden') {
       if (player.phase === 'playing') this.hidden = { at: Date.now(), steps: player.stepsDone };
       return;
@@ -161,15 +203,20 @@ export class ListenScreen {
     const list = cards ?? this.#cards();
     if (list.length === 0) return;
     this.player?.stop();
+    clearSpeechLog();
+    logSpeech('słuchanie', `${pluralTerms(list.length)}, dźwięk w tle: ${this.keepAudio ? 'tak' : 'nie'}`);
     this.player = new ListenPlayer({
       cards: list,
       options: this.#options(),
       settings: () => this.ctx.library.getSettings(),
       onChange: () => {
         if (this.player?.phase === 'finished') this.#releaseScreen();
+        this.#syncAudio();
         if (!this.disposed) this.ctx.refresh();
       }
     });
+    // Najpierw dźwięk w tle (budzi połączenie Bluetooth), potem pierwsza wypowiedź – oba w geście.
+    this.#startAudio();
     this.player.start();
     this.#keepScreenOn();
     this.ctx.library.updateSettings({
@@ -181,7 +228,8 @@ export class ListenScreen {
       listenDescription: this.description,
       listenExample: this.example,
       listenRepeatAnswer: this.repeatAnswer,
-      listenDetailLanguage: this.detailLanguage
+      listenDetailLanguage: this.detailLanguage,
+      listenKeepAudio: this.keepAudio
     }).catch((error) => console.error(error));
     window.scrollTo(0, 0);
   }
@@ -198,6 +246,7 @@ export class ListenScreen {
   #close() {
     this.player?.stop();
     this.player = null;
+    this.#stopAudio();
     this.#releaseScreen();
     this.wakeState = null;
     this.ctx.refresh();
@@ -230,6 +279,29 @@ export class ListenScreen {
         ? `Głosy ${names} nie odzywają się – czytają głosy zastępcze. Inne głosy wybierzesz w `
         : `Głos ${names} nie odzywa się – czyta głos zastępczy. Inny głos wybierzesz w `,
         h('a', { href: routes.settings() }, 'Ustawieniach'), '.'));
+  }
+
+  /** Dziennik zdarzeń mowy – do skopiowania, gdy na urządzeniu coś nie gra. */
+  #logView() {
+    const entries = speechLogEntries();
+    if (entries.length === 0) return null;
+    const text = speechLogText(entries);
+    const copy = async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast('Skopiowano dziennik dźwięku.');
+      } catch {
+        toast('Nie udało się skopiować – zaznacz tekst dziennika i skopiuj go ręcznie.');
+      }
+    };
+    return h('details', {
+      class: 'listen-log', open: this.logOpen, dataset: { testid: 'listen-log' },
+      onToggle: (event) => { this.logOpen = event.target.open; }
+    },
+    h('summary', null, 'Dziennik dźwięku'),
+    h('p', { class: 'listen-log__note' }, 'Gdy coś nie gra, skopiuj dziennik i wklej go w rozmowie: widać w nim, które wypowiedzi ruszyły i skończyły się.'),
+    h('pre', { class: 'listen-log__text', dataset: { testid: 'listen-log-text' } }, text),
+    onTap(h('button', { type: 'button', class: 'button button--secondary', dataset: { testid: 'listen-log-copy' } }, 'Kopiuj dziennik'), copy));
   }
 
   #setupView() {
@@ -317,6 +389,16 @@ export class ListenScreen {
           }),
           h('p', { class: 'group__footer' }, 'Gdy pojęcie nie ma definicji albo przykładu w tym języku, aplikacja przeczyta wersję w drugim języku.')
         ) : null,
+        group({ title: 'Dźwięk', className: 'group--compact' },
+          checkRow({
+            checked: this.keepAudio,
+            title: 'Podtrzymuj dźwięk (Bluetooth, CarPlay)',
+            subtitle: 'Cichy dźwięk w tle nie pozwala połączeniu usnąć w przerwach – bez niego krótkie słowa bywają ucinane. '
+              + 'Przyciski na kierownicy i w słuchawkach zatrzymują i przełączają pojęcia.',
+            testID: 'listen-keep-audio',
+            onChange: (value) => { this.keepAudio = value; ctx.refresh(); }
+          })
+        ),
         group({ title: 'Dobrze wiedzieć', footer: null },
           h('li', { class: 'row row--static' }, h('span', { class: 'row__main' }, h('span', { class: 'row__text' },
             h('span', { class: 'row__subtitle', dataset: { testid: 'listen-background-note' } }, this.#backgroundNote())))),
@@ -357,7 +439,8 @@ export class ListenScreen {
           h('div', { class: 'empty__actions' },
             onTap(h('button', { type: 'button', class: 'button button--primary', dataset: { testid: 'listen-again' } }, 'Jeszcze raz'), () => this.#again()),
             onTap(h('button', { type: 'button', class: 'button button--secondary', dataset: { testid: 'listen-settings' } }, 'Zmień ustawienia'), () => this.#close()),
-            h('a', { class: 'button button--secondary', href: routes.study() }, 'Zakończ'))
+            h('a', { class: 'button button--secondary', href: routes.study() }, 'Zakończ')),
+          this.#logView()
         )
       };
     }
@@ -414,7 +497,8 @@ export class ListenScreen {
         onTap(h('button', { type: 'button', class: 'button button--quick listen__repeat', dataset: { testid: 'listen-repeat' } },
           icon('undo', { size: 18 }), h('span', null, 'Powtórz to pojęcie')), () => player.repeat()),
         h('p', { class: 'listen__note', dataset: { testid: 'listen-wake' } }, wakeNote),
-        this.#voiceNote()
+        this.#voiceNote(),
+        this.#logView()
       )
     };
   }

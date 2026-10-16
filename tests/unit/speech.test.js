@@ -243,3 +243,34 @@ test('sprawdzenie wymowy: polski, angielski, polski – wynik każdego kroku', (
   // Głos, który w sprawdzeniu się nie odezwał, jest od razu pomijany.
   assert.equal(silentVoice('en', DANIEL), 'Daniel');
 });
+
+test('dziennik dźwięku: wypowiedzi, start, koniec i strażnik – z godziną; cisza w tle to poprawny plik WAV', async () => {
+  const { clearSpeechLog, speechLogEntries, speechLogText } = await import('../../js/ui/speech.js');
+  const { silentWav } = await import('../../js/ui/audio-keepalive.js');
+  installSynth({ behaviour: { 'en-daniel': 'hang' } });
+  clearSpeechLog();
+  say('assets', 'en', DANIEL);
+  advance(START_TIMEOUT + AFTER_CANCEL + START_DELAY + SPEAK_TIME);
+  assert.deepEqual(speechLogEntries().map(({ type, detail }) => `${type}${detail ? ` ${detail}` : ''}`), [
+    'mów en Daniel „assets”',
+    'brak startu 4 s',
+    'czyszczenie kolejki',
+    'mów en Samantha „assets”',
+    'start głos zastępczy',
+    'koniec'
+  ]);
+  const lines = speechLogText().split('\n');
+  assert.equal(lines.length, 6);
+  assert.match(lines[0], /^\d\d:\d\d:\d\d\.\d {2}mów {2}en Daniel „assets”$/);
+
+  // Cisza: nagłówek RIFF/WAVE, PCM mono 16 bit 8 kHz, same zera.
+  const wav = new DataView(silentWav(1, 8000));
+  const text = (offset) => String.fromCharCode(...[0, 1, 2, 3].map((index) => wav.getUint8(offset + index)));
+  assert.deepEqual([text(0), text(8), text(12), text(36)], ['RIFF', 'WAVE', 'fmt ', 'data']);
+  assert.deepEqual([wav.getUint16(20, true), wav.getUint16(22, true), wav.getUint32(24, true), wav.getUint16(34, true)], [1, 1, 8000, 16]);
+  assert.equal(wav.byteLength, 44 + 16000);
+  assert.equal(wav.getUint32(40, true), 16000);
+  let loud = 0;
+  for (let offset = 44; offset < wav.byteLength; offset += 2) if (wav.getInt16(offset, true) !== 0) loud += 1;
+  assert.equal(loud, 0);
+});

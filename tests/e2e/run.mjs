@@ -1896,7 +1896,7 @@ test('fiszki: „Umiem” zaznacza wszystko; „Powtórz” dzieli na częściow
   assert.ok(scopeOptions.includes('Częściowo zapamiętane (0)'), scopeOptions.join(', '));
 });
 
-test('status nauki: liczby na Starcie, oznaczenia w glosariuszu i lekcji, filtr statusu i kierunku', async ({ open, context }) => {
+test('status nauki: liczby na Starcie, jeden status przy pojęciu w glosariuszu i lekcji, filtr statusu i kierunku', async ({ open, context }) => {
   await context.clock.install({ time: new Date('2026-10-12T10:00:00') });
   const page = await open();
   const ids = await seedStudy(page);
@@ -1923,7 +1923,6 @@ test('status nauki: liczby na Starcie, oznaczenia w glosariuszu i lekcji, filtr 
   await expectText(statusOf('aktywa'), 'Opanowane');
   await expectText(statusOf('zysk'), 'Do nauki');
   await expectText(statusOf('umowa'), 'Nowe');
-  assert.equal(await statusOf('zysk').getAttribute('data-due'), 'false');
   await expectText(page.locator('[data-testid=glossary-status-note]'), 'Status w kierunku PL → EN.');
 
   // Filtr: „Do nauki” w PL → EN – tylko zysk.
@@ -1944,21 +1943,21 @@ test('status nauki: liczby na Starcie, oznaczenia w glosariuszu i lekcji, filtr 
   await expectText(page.locator('[data-testid=filter-summary]'), 'status w kierunku EN → PL');
   await expectText(page.locator('[data-testid=glossary-status-note]'), 'Status w kierunku EN → PL.');
 
-  // Po dwóch minutach „zysk” (Again – wraca po minucie) czeka na powtórkę: osobne oznaczenie i filtr.
+  // Po dwóch minutach „zysk” (Again – wraca po minucie) czeka na powtórkę: znajdzie go filtr,
+  // a przy pojęciu nadal widać tylko wynik ostatniej oceny.
   await page.clock.fastForward('02:00');
   await page.locator('[data-testid=filter-summary] button').click();
   await page.getByRole('button', { name: 'Filtry i sortowanie' }).click();
   await page.selectOption('[data-testid=filter-status]', 'due');
   await page.getByRole('button', { name: 'Zastosuj' }).click();
   await expectText(page.locator('[data-testid=glossary-count]'), '1 pojęcie');
-  await expectText(statusOf('zysk'), 'Do nauki');
-  await expectText(statusOf('zysk'), 'Do powtórki');
-  assert.equal(await statusOf('zysk').getAttribute('data-due'), 'true');
+  assert.equal((await statusOf('zysk').textContent()).trim(), 'Do nauki');
+  assert.equal(await statusOf('zysk').locator('.status-chip').count(), 1, 'jeden status przy pojęciu');
 
   // Lekcja: te same oznaczenia.
   await page.evaluate((id) => { location.hash = `#/library/lesson/${id}`; }, ids.basicsID);
   await expectText(statusOf('aktywa'), 'Opanowane');
-  await expectText(statusOf('zysk'), 'Do powtórki');
+  assert.equal((await statusOf('zysk').textContent()).trim(), 'Do nauki');
 }, { device: PHONE });
 
 test('fiszki: wejście z lekcji i z menu biblioteki ustawia materiał', async ({ open }) => {
@@ -3193,6 +3192,99 @@ test('słuchanie: wąski ekran 320 px – ustawienia i odtwarzacz mieszczą się
     assert.ok(box.height >= 44 && box.width >= 44, `${id} jest duży (${box.width}×${box.height})`);
   }
 }, { device: { ...PHONE, viewport: { width: 320, height: 568 } } });
+
+test('słuchanie: dźwięk w tle podtrzymuje połączenie, przyciski systemu sterują, dziennik dźwięku', async ({ open, context }) => {
+  await fakeSpeechForListening(context);
+  // Atrapy: Media Session (przyciski na kierownicy, ekran blokady) i odtwarzanie elementu audio.
+  await context.addInitScript(() => {
+    window.mediaHandlers = {};
+    window.audioEvents = [];
+    window.MediaMetadata = class { constructor(init) { Object.assign(this, init); } };
+    Object.defineProperty(navigator, 'mediaSession', {
+      configurable: true,
+      value: {
+        metadata: null,
+        playbackState: 'none',
+        setActionHandler(action, handler) {
+          if (handler) window.mediaHandlers[action] = handler;
+          else delete window.mediaHandlers[action];
+        }
+      }
+    });
+    window.HTMLMediaElement.prototype.play = function play() {
+      window.audioEvents.push(`play loop=${this.loop}`);
+      window.lastAudio = this;
+      return Promise.resolve();
+    };
+    window.HTMLMediaElement.prototype.pause = function pause() { window.audioEvents.push('pause'); };
+  });
+  await context.clock.install({ time: new Date('2026-10-16T07:30:00') });
+  const page = await open();
+  const ids = await seedStudy(page);
+  await page.evaluate(() => window.lexicards.library.updateSettings({ listenDirection: 'pl_en', listenCount: 0, listenPause: 8 }));
+  await openListening(page, ids);
+  assert.equal(await page.locator('[data-testid=listen-keep-audio]').isChecked(), true, 'domyślnie włączone');
+
+  await page.click('[data-testid=listen-start]');
+  const player = page.locator('[data-testid=listen-player]');
+  await player.waitFor();
+  // Cichy dźwięk w pętli rusza razem z czytaniem (w tym samym dotknięciu).
+  assert.equal(await page.evaluate(() => window.audioEvents[0]), 'play loop=true');
+  assert.match(await page.evaluate(() => window.lastAudio.src), /^blob:/);
+  const session = () => page.evaluate(() => ({
+    title: navigator.mediaSession.metadata?.title ?? null,
+    artist: navigator.mediaSession.metadata?.artist ?? null,
+    state: navigator.mediaSession.playbackState,
+    actions: Object.keys(window.mediaHandlers).sort()
+  }));
+  // Kolejność pojęć jest losowa – opis porównujemy z pojęciem na ekranie.
+  // Przyciski systemu: pauza, następne pojęcie, wznowienie (w trakcie zastanawiania się nad pierwszym).
+  await waitUntil(async () => {
+    await page.clock.runFor(100);
+    return (await player.getAttribute('data-step')) === 'think';
+  }, 'Po pojęciu – czas na zastanowienie');
+  const first = (await page.locator('[data-testid=listen-text]').textContent()).trim();
+  assert.deepEqual(await session(), { title: first, artist: 'Pojęcie 1 z 3', state: 'playing', actions: ['nexttrack', 'pause', 'play', 'previoustrack'] });
+  await page.evaluate(() => window.mediaHandlers.pause());
+  assert.equal(await player.getAttribute('data-phase'), 'paused');
+  assert.equal(await page.evaluate(() => window.audioEvents.at(-1)), 'pause');
+  assert.equal((await session()).state, 'paused');
+  await page.evaluate(() => window.mediaHandlers.nexttrack());
+  await expectText(page.locator('[data-testid=listen-player] .study__lesson'), 'Pojęcie 2 z 3');
+  const second = (await page.locator('[data-testid=listen-text]').textContent()).trim();
+  assert.notEqual(second, first);
+  assert.deepEqual([(await session()).title, (await session()).artist], [second, 'Pojęcie 2 z 3']);
+  await page.evaluate(() => window.mediaHandlers.play());
+  assert.equal(await player.getAttribute('data-phase'), 'playing');
+  assert.equal(await page.evaluate(() => window.audioEvents.at(-1)), 'play loop=true');
+  await page.clock.runFor(1000);
+
+  // Dziennik dźwięku: start słuchania, wypowiedzi z językiem i głosem, przyciski.
+  await page.locator('[data-testid=listen-log] summary').click();
+  const log = await page.locator('[data-testid=listen-log-text]').textContent();
+  assert.match(log, /słuchanie {2}3 pojęcia, dźwięk w tle: tak/);
+  assert.match(log, /mów {2}pl domyślny głos systemu „Zaczynamy\. 3 pojęcia\.”/);
+  assert.ok(log.includes(`mów  pl domyślny głos systemu „${first}”`), log);
+  assert.ok(log.includes(`mów  pl domyślny głos systemu „${second}”`), log);
+  assert.match(log, /start\n|start$/m);
+  assert.match(log, /przycisk {2}pause/);
+  assert.match(log, /przycisk {2}nexttrack/);
+  assert.equal(await page.locator('[data-testid=listen-log]').evaluate((element) => element.open), true, 'zostaje rozwinięty po kolejnym kroku');
+
+  // Zakończenie: dźwięk w tle i przyciski systemu wyłączone.
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await page.locator('[data-testid=listen-start]').waitFor();
+  assert.deepEqual((await session()).actions, []);
+  assert.equal(await page.evaluate(() => window.audioEvents.at(-1)), 'pause');
+
+  // Opcja wyłączona: bez dźwięku w tle.
+  const before = await page.evaluate(() => window.audioEvents.length);
+  await page.locator('[data-testid=listen-keep-audio]').uncheck();
+  await page.click('[data-testid=listen-start]');
+  await player.waitFor();
+  assert.equal(await page.evaluate(() => window.audioEvents.length), before);
+  assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().listenKeepAudio), false);
+});
 
 /**
  * Atrapa syntezatora z kolejką jak w Safari: wypowiedzi czekają jedna za drugą, a wypowiedź

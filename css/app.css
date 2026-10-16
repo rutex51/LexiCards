@@ -900,7 +900,7 @@ a.row__main:active,
   color: var(--text-2);
 }
 
-/* Status nauki: kropka w kolorze poziomu i nazwa (nie sam kolor); „Do powtórki” osobno. */
+/* Status nauki: kropka w kolorze poziomu i nazwa (nie sam kolor) – wynik ostatniej oceny. */
 .term__status {
   display: flex;
   flex-wrap: wrap;
@@ -935,12 +935,6 @@ a.row__main:active,
 .status-chip--inProgress { --status-dot: var(--status-progress); }
 .status-chip--toLearn { --status-dot: var(--status-learn); }
 .status-chip--new { --status-dot: var(--text-3); }
-
-.status-chip--due {
-  gap: 4px;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
 
 .table tbody th .term__status { margin-top: 6px; font-weight: 400; }
 
@@ -2645,6 +2639,38 @@ a.row__main:active,
 }
 
 .listen__voice { text-align: left; }
+
+/* Dziennik dźwięku: zwinięty na dole odtwarzacza, do skopiowania przy kłopotach. */
+.listen-log {
+  width: 100%;
+  font-size: var(--size-foot);
+  color: var(--text-2);
+}
+
+.listen-log summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.listen--done .listen-log { max-width: 420px; text-align: left; }
+.listen-log__note { margin: 0 0 8px; }
+
+.listen-log__text {
+  max-height: 14em;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .listen--done .listen__voice { max-width: 420px; }
 
 .listen--done {

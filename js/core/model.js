@@ -48,10 +48,20 @@ export function accentColor(settings) {
   return ACCENT_COLORS.some((item) => item.id === settings?.accentColor) ? settings.accentColor : DEFAULT_ACCENT;
 }
 
+/**
+ * Ikony dziedzin, z grubsza tematycznie: ogólne i biznes, zarządzanie, ekonomia i finanse,
+ * języki, decyzje, zachowania, raportowanie, etyka, nauki i technika, pozostałe.
+ * Flagi na Windows wyświetlają się jako litery (np. „ES”) – system nie ma ich obrazków.
+ */
 export const DOMAIN_ICONS = Object.freeze([
-  '📁', '💼', '🏛️', '💶', '📊', '📈', '👥', '💬', '🌍', '📚',
-  '🎓', '📐', '⚙️', '🔧', '🔨', '💻', '⚡', '⚛️', '🧮', '⚖️',
-  '🩺', '🧪', '🌿', '✈️', '🛒', '📄', '💡', '🎨', '🎵', '📷'
+  '📁', '💼', '👔', '🏢', '🧭', '🏛️', '👥',
+  '💶', '🏦', '💹', '📈', '📉', '🪙', '🧮',
+  '🇬🇧', '🇺🇸', '🇪🇸', '💃', '🗣️', '💬', '🌍', '📚', '🎓',
+  '🎯', '🚦', '🧠', '🎭', '🤝',
+  '📊', '📑', '📝', '📄',
+  '⚖️', '🛡️', '🕊️',
+  '📐', '⚙️', '🔧', '🔨', '💻', '⚡', '⚛️', '🩺', '🧪', '🌿',
+  '✈️', '🛒', '💡', '🎨', '🎵', '📷'
 ]);
 
 export const DEFAULT_DOMAIN_ICON = '📁';
@@ -96,6 +106,7 @@ export function defaultSettings() {
     listenRepeatAnswer: false,     // powtórzyć odpowiedź drugi raz
     listenDetailLanguage: 'en',    // język definicji i przykładu: en | pl
     listenBackground: null,        // wynik sprawdzenia czytania przy zablokowanym ekranie: { result, testedAt }
+    listenKeepAudio: true,         // cichy dźwięk w tle podczas słuchania (Bluetooth, CarPlay) i przyciski systemu
     dailyLearningGoal: 20,
     speechRate: 1,
     preferredVoicePL: null,

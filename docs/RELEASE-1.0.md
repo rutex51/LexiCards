@@ -49,7 +49,7 @@ Oznaczenia: **✓** – zrobione; **≈** – zrobione inaczej (powód obok); **
 | 7. Trzy kafelki oceny | ✓ Wygląd, przełączanie, „Brak danych”, wynik względem dostępnych elementów, gesty i przyciski, cofanie, statusy, „Umiem wszystko” / „Nie umiem niczego”. ≈ 7.4 zmienione Twoją decyzją w wersji 0.4.2: „Umiem” zalicza komplet. ≈ Brak wibracji na iPhonie – Safari nie udostępnia jej stronom |
 | 8. Powtórki FSRS | ✓ FSRS-6 (py-fsrs 6.3.2), uzasadnione mapowanie ocen, harmonogram osobny dla kierunków; 8.1 i 8.2 – od wersji 1.0 |
 | 9. Quizy | ✓ Wybór jednokrotny (do 4 odpowiedzi, błędne najpierw z tej samej dziedziny, bez odpowiedzi brzmiących jak pytanie), pary (telefon 5, szeroki ekran 8, liczniki, animacje, czas), test mieszany z regulowanymi proporcjami, konfiguracja z limitem czasu i progiem 80%, wyniki, historia, „Powtórz błędne odpowiedzi”; quizy nie zmieniają FSRS |
-| 10. Glosariusz | ✓ Tabela na szerokim ekranie, lista z rozwijanymi szczegółami na telefonie, wyszukiwanie, filtry (dziedzina, moduł, lekcja, status, tagi, ulubione), sortowanie, zaznaczanie wielu, edycja, usuwanie, statusy – od wersji 1.0 |
+| 10. Glosariusz | ✓ Tabela na szerokim ekranie, lista z rozwijanymi szczegółami na telefonie, wyszukiwanie, filtry (dziedzina, moduł, lekcja, status, tagi, ulubione), sortowanie, zaznaczanie wielu, edycja, usuwanie, statusy – od wersji 1.0; od 1.0.1 przy pojęciu tylko status ostatniej oceny, „Do powtórki” w filtrze (Twoja decyzja) |
 | 11. Wymowa | ✓ Polski i angielski, wybór głosu, szybkość, ponowne odtworzenie, bez zewnętrznych usług; głos zastępczy, gdy wybrany się nie odzywa |
 | 12. Dashboard i wykresy | ✓ Wskaźniki, znajomość pojęć, definicji i przykładów osobno dla kierunków, 7 wykresów, agregacja na poziomie lekcji, modułu i dziedziny |
 | 13. Interfejs | ✓ Pięć zakładek, ustawienia w górnym pasku, panel boczny na szerokim ekranie, jasny i ciemny motyw (oraz kolor aplikacji do wyboru), rozmiar tekstu z systemu, opisy dla czytnika ekranu, ograniczenie ruchu, kolory statusów zawsze z nazwą |
@@ -72,6 +72,21 @@ Oznaczenia: **✓** – zrobione; **≈** – zrobione inaczej (powód obok); **
 
 Nie sprawdzono na prawdziwym iPhonie ani komputerze z Windows w tej wersji – sprawdzisz to,
 pobierając aktualizację.
+
+## Uzupełnienie w wersji 1.0.1 (16 października 2026)
+
+- **Słuchanie w samochodzie:** po pierwszym pojęciu nie było słychać kolejnych. Kod mowy nie
+  zmienił się od wersji 0.6.2, w której to działało, więc przyczyną jest najpewniej połączenie
+  Bluetooth / CarPlay: usypia w przerwach (czas na zastanowienie) i budzi się z opóźnieniem,
+  a krótkie słowo mieści się w tym opóźnieniu w całości. Nowa opcja **Podtrzymuj dźwięk
+  (Bluetooth, CarPlay)**, domyślnie włączona: cichy dźwięk w tle przez całe słuchanie. Przy okazji
+  przyciski na kierownicy i w słuchawkach sterują odtwarzaczem (pauza, wznowienie, następne,
+  poprzednie pojęcie). **Dziennik dźwięku** pod odtwarzaczem pokazuje, które wypowiedzi ruszyły
+  i się skończyły – do skopiowania, gdyby kłopot wrócił. Nie sprawdzono na iPhonie ani w samochodzie.
+- **Glosariusz:** przy pojęciu tylko jeden status – wynik ostatniej oceny (Twoja decyzja).
+  „Do powtórki” zostaje w filtrze, na Starcie i w szczegółach pojęcia.
+- **Ikony dziedzin:** 21 nowych (języki z flagami, ekonomia, zarządzanie, decyzje, zachowania,
+  raportowanie, etyka) – razem 51. Flagi na Windows wyświetlają się jako litery.
 
 ## Znane ograniczenia
 

@@ -209,10 +209,11 @@ Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany 
   poniżej połowy; „Nie znam pojęcia / definicji / przykładu” – w ostatniej ocenie w kierunku
   fiszki dany kafelek był niezaznaczony (`knowsTerm`, `knowsDescription`, `knowsExample`
   równe `false`; `null` – element nie istnieje – nie jest brakiem wiedzy).
-- **Status w glosariuszu i lekcji** (`statusChips()` w `js/ui/screens/terms.js`): poziom
-  ostatniej oceny (`termStatus()`) i osobno „Do powtórki” (`isTermDue()`), w kierunku ze
-  Statystyk albo – dla obu – słabszy z dwóch. Filtr glosariusza (`status`, `statusDirection`
-  w `Library.glossary()`) używa tych samych reguł (`matchesTermStatus()`).
+- **Status w glosariuszu i lekcji** (`statusChips()` w `js/ui/screens/terms.js`): tylko poziom
+  ostatniej oceny (`termStatus()`), w kierunku ze Statystyk albo – dla obu – słabszy z dwóch.
+  „Do powtórki” (`isTermDue()`) nie ma oznaczenia przy pojęciu (decyzja z wersji 1.0.1) –
+  pokazują je filtr, liczba na Starcie i szczegóły pojęcia. Filtr glosariusza (`status`,
+  `statusDirection` w `Library.glossary()`) używa tych samych reguł (`matchesTermStatus()`).
 
 ## Powtórki (FSRS)
 
@@ -319,6 +320,15 @@ Reguły są w `js/core/quiz.js` (bez przeglądarki), zapis w `Library`, ekrany w
   8 s, po powrocie aplikacja porównuje liczbę ukończonych kroków i zapisuje w ustawieniach
   (`listenBackground`), czy czytanie trwało. Po powrocie bieżący krok jest czytany od nowa –
   system mógł przerwać wypowiedź bez zgłoszenia końca.
+- **Dźwięk w tle** (`js/ui/audio-keepalive.js`, opcja `listenKeepAudio`, domyślnie włączona):
+  element `<audio>` odtwarza w pętli ciszę (WAV generowany w pamięci) przez całe słuchanie.
+  Połączenie Bluetooth (samochód, CarPlay, słuchawki) nie usypia w przerwach, więc krótkie
+  słowa po chwili ciszy nie są ucinane. Start w tym samym dotknięciu co pierwsza wypowiedź.
+  Media Session: przyciski systemu (kierownica, słuchawki, ekran blokady) wywołują pauzę,
+  wznowienie, następne i poprzednie pojęcie; opis to bieżące pojęcie i „Pojęcie N z M”.
+- **Dziennik dźwięku** (`logSpeech()` w `js/ui/speech.js`): ostatnie zdarzenia mowy w pamięci –
+  wypowiedź z językiem i głosem, start, koniec, błąd, strażnik, czyszczenie kolejki, dźwięk
+  w tle, przyciski, ukrycie strony. Widoczny pod odtwarzaczem, do skopiowania.
 - Słuchanie nie zapisuje ocen ani powtórek.
 
 ## Statystyki
