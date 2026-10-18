@@ -164,6 +164,8 @@ class UnitOfWork {
     /** Dzienniki nauki nie są trzymane w pamięci – zbieramy tylko zapisy i usunięcia. */
     this.journalPuts = new Map();
     this.journalDeletes = new Map();
+    /** Komunikaty dla interfejsu po udanym zapisie, np. utrata statusu „utrwalona”. */
+    this.notices = [];
   }
 
   /** Dopisuje wpis do dziennika (magazynu spoza pamięci). */
@@ -232,6 +234,8 @@ class UnitOfWork {
 
 export class Library {
   #listeners = new Set();
+  /** Odbiorcy komunikatów o skutkach zmian (np. lekcja przestała być utrwalona). */
+  #noticeListeners = new Set();
   /** Kolejka operacji zapisu – każda zaczyna się po zakończeniu poprzedniej. */
   #queue = Promise.resolve();
   /** Liczniki i listy wyliczane z danych; unieważniane po każdej zmianie. */
@@ -260,9 +264,32 @@ export class Library {
       this.maps[name] = new Map((data[name] ?? []).map((record) => [record.id, record]));
     }
     await this.#migrateSchedules();
+    await this.#migrateDomainColors();
     await this.#loadQuizStats();
     this.journalRevision += 1;
     this.#changed();
+  }
+
+  /**
+   * Wersja 1.2: tło ikon dziedzin jest domyślnie szare. Istniejące dziedziny (zapisane, zanim
+   * ustawienia miały znacznik domainColorsGray – także gdy ustawień w ogóle nie zapisano)
+   * przestawiamy jeden raz; potem kolor wybrany w edycji dziedziny zostaje.
+   */
+  async #migrateDomainColors() {
+    const settings = this.maps.settings.get(SETTINGS_ID);
+    // Pusta aplikacja przy pierwszym otwarciu niczego nie zapisuje.
+    if (settings?.domainColorsGray || (!settings && this.maps.domains.size === 0)) return;
+    const unit = new UnitOfWork(this.maps);
+    for (const domain of [...this.maps.domains.values()]) {
+      if (domain.color !== 'gray') unit.put('domains', { ...domain, color: 'gray', updatedAt: nowISO() });
+    }
+    unit.put('settings', { ...(settings ?? defaultSettings()), id: SETTINGS_ID, domainColorsGray: true, updatedAt: nowISO() });
+    try {
+      await this.adapter.commit(unit.changes());
+    } catch (error) {
+      unit.rollback();
+      console.error(error);
+    }
   }
 
   /**
@@ -366,6 +393,15 @@ export class Library {
     return [...this.maps.progress.values()];
   }
 
+  /**
+   * Rejestruje odbiorcę komunikatów o skutkach zmian: listener([{ kind, level, id, name, reason }]).
+   * kind 'consolidationLost' – lekcja albo moduł przestały być utrwalone (reason: 'term' | 'lesson').
+   */
+  onNotice(listener) {
+    this.#noticeListeners.add(listener);
+    return () => this.#noticeListeners.delete(listener);
+  }
+
   /** Rejestruje funkcję wywoływaną po każdej zmianie danych. Zwraca funkcję wyrejestrowującą. */
   subscribe(listener) {
     this.#listeners.add(listener);
@@ -412,6 +448,15 @@ export class Library {
       }
       if (unit.touchesJournals()) this.journalRevision += 1;
       this.#changed();
+      if (unit.notices.length > 0) {
+        for (const listener of this.#noticeListeners) {
+          try {
+            listener(unit.notices);
+          } catch (error) {
+            console.error(error);
+          }
+        }
+      }
       return result;
     };
     const next = this.#queue.then(run, run);
@@ -642,13 +687,27 @@ export class Library {
   }
 
   createDomain(draft) {
-    return this.#mutate((unit) => this.#insertDomain(unit, draft));
+    return this.#mutate((unit) => {
+      this.#keepDomainColors(unit, draft);
+      return this.#insertDomain(unit, draft);
+    });
+  }
+
+  /**
+   * Kolor wybrany w formularzu dziedziny ma przetrwać jednorazowe przestawienie na szare tło
+   * (#migrateDomainColors), także gdy ustawień jeszcze nie zapisano.
+   */
+  #keepDomainColors(unit, draft) {
+    const settings = this.maps.settings.get(SETTINGS_ID);
+    if (settings?.domainColorsGray || !draft.color || draft.color === 'gray') return;
+    unit.put('settings', { ...(settings ?? defaultSettings()), id: SETTINGS_ID, domainColorsGray: true, updatedAt: nowISO() });
   }
 
   updateDomain(id, draft) {
     return this.#mutate((unit) => {
       const name = validatedName(draft.name, 'domain');
       const domain = this.#require('domain', id);
+      this.#keepDomainColors(unit, draft);
       const updated = {
         ...domain,
         name,
@@ -747,6 +806,10 @@ export class Library {
 
   #insertLesson(unit, draft, module) {
     const name = validatedName(draft.name, 'lesson');
+    // Nowa lekcja w module utrwalonym: moduł przestaje być utrwalony (nowa lekcja nie jest).
+    if (this.isModuleConsolidated(module.id)) {
+      unit.notices.push({ kind: 'consolidationLost', level: 'module', id: module.id, name: module.name, reason: 'lesson' });
+    }
     const lesson = makeLesson({
       moduleID: module.id,
       domainID: module.domainID,
@@ -784,6 +847,9 @@ export class Library {
       const lesson = this.#require('lesson', id);
       const target = this.#require('module', toModuleID);
       if (lesson.moduleID === target.id) return lesson;
+      if (!lesson.consolidatedAt && this.isModuleConsolidated(target.id)) {
+        unit.notices.push({ kind: 'consolidationLost', level: 'module', id: target.id, name: target.name, reason: 'lesson' });
+      }
 
       const updated = {
         ...lesson,
@@ -924,6 +990,53 @@ export class Library {
     unit.delete('notes', lessonID);
   }
 
+  // ---------------------------------------------------------------- utrwalenie (ręczne)
+
+  /** Czy lekcja jest oznaczona jako utrwalona. */
+  isLessonConsolidated(lessonID) {
+    return Boolean(this.maps.lessons.get(lessonID)?.consolidatedAt);
+  }
+
+  /** Moduł jest utrwalony, gdy ma lekcje i wszystkie są utrwalone. */
+  isModuleConsolidated(moduleID) {
+    const lessons = this.listLessons(moduleID);
+    return lessons.length > 0 && lessons.every((lesson) => lesson.consolidatedAt);
+  }
+
+  /** Oznacza lekcję jako utrwaloną (albo zdejmuje oznaczenie). Data pierwszego oznaczenia zostaje. */
+  setLessonConsolidated(lessonID, consolidated) {
+    return this.#mutate((unit) => {
+      const lesson = this.#require('lesson', lessonID);
+      const consolidatedAt = consolidated ? (lesson.consolidatedAt ?? nowISO()) : null;
+      if (consolidatedAt !== (lesson.consolidatedAt ?? null)) unit.put('lessons', { ...lesson, consolidatedAt, updatedAt: nowISO() });
+      return consolidatedAt;
+    });
+  }
+
+  /** Oznacza wszystkie lekcje modułu jako utrwalone (albo zdejmuje oznaczenie ze wszystkich). Zwraca liczbę lekcji. */
+  setModuleConsolidated(moduleID, consolidated) {
+    return this.#mutate((unit) => {
+      this.#require('module', moduleID);
+      const lessons = this.listLessons(moduleID);
+      if (consolidated && lessons.length === 0) throw new LibraryError('emptyModule', 'Moduł nie ma lekcji – nie ma czego utrwalić.');
+      const now = nowISO();
+      for (const lesson of lessons) {
+        const consolidatedAt = consolidated ? (lesson.consolidatedAt ?? now) : null;
+        if (consolidatedAt !== (lesson.consolidatedAt ?? null)) unit.put('lessons', { ...lesson, consolidatedAt, updatedAt: now });
+      }
+      return lessons.length;
+    });
+  }
+
+  /** Nowe pojęcie w lekcji utrwalonej: oznaczenie znika (pojęcie jest nowe, lekcja do powtórzenia). */
+  #unconsolidate(unit, lessonID, reason = 'term') {
+    const lesson = this.maps.lessons.get(lessonID);
+    if (!lesson?.consolidatedAt) return false;
+    unit.put('lessons', { ...lesson, consolidatedAt: null, updatedAt: nowISO() });
+    unit.notices.push({ kind: 'consolidationLost', level: 'lesson', id: lesson.id, name: lesson.name, reason });
+    return true;
+  }
+
   // ---------------------------------------------------------------- pojęcia
 
   createTerm(draft, lessonID) {
@@ -933,6 +1046,7 @@ export class Library {
       const lesson = this.#require('lesson', lessonID);
       const term = makeTerm({ lesson, draft, sortOrder: this.#nextOrder(this.listTerms(lesson.id)) });
       unit.put('terms', term);
+      this.#unconsolidate(unit, lesson.id);
       return term;
     });
   }
@@ -982,6 +1096,7 @@ export class Library {
           unit.put('progress', { ...record, lessonID: target.id, moduleID: target.moduleID, domainID: target.domainID });
         }
       }
+      if (moving.length > 0) this.#unconsolidate(unit, target.id);
     });
   }
 
@@ -998,6 +1113,7 @@ export class Library {
         copies.push(copy);
         order += 1;
       }
+      if (copies.length > 0) this.#unconsolidate(unit, target.id);
       return copies;
     });
   }
@@ -1145,12 +1261,15 @@ export class Library {
       created: { domains: [], modules: [], lessons: [] },
       statuses: new Array(rows.length),
       lessonIDs: [],
+      /** Lekcje i moduły, które przestaną być utrwalone (ścieżki) – nowe pojęcia albo nowe lekcje. */
+      unconsolidated: [],
       notes: {
         added: 0, replaced: 0, appended: 0, unchanged: 0, skipped: 0, failed: 0, existing: 0, images: 0,
         statuses: new Array(notes.length), lessons: new Array(notes.length)
       }
     };
     const touchedLessons = new Set();
+    const lostConsolidation = new Set();
     let placeholder = 0;
     const planned = (fields) => ({ id: `plan:${placeholder += 1}`, ...fields });
 
@@ -1212,6 +1331,10 @@ export class Library {
       const lessonKey = `${module.id}\n${normalizeKey(row.lesson)}`;
       let lesson = lessonByKey.get(lessonKey);
       if (!lesson) {
+        if (!lostConsolidation.has(module.id) && this.isModuleConsolidated(module.id)) {
+          lostConsolidation.add(module.id);
+          report.unconsolidated.push(`${domain.name} › ${module.name}`);
+        }
         lesson = unit
           ? this.#insertLesson(unit, { name: row.lesson }, module)
           : planned({ name: validatedName(row.lesson, 'lesson'), moduleID: module.id, domainID: domain.id });
@@ -1270,6 +1393,11 @@ export class Library {
         : planned({ lessonID: lesson.id, ...fields });
       if (unit) unit.put('terms', term);
       if (!match) termByKey.set(termKey, { term, fromFile: true });
+      if (lesson.consolidatedAt && !lostConsolidation.has(lesson.id)) {
+        lostConsolidation.add(lesson.id);
+        report.unconsolidated.push(this.lessonPath(lesson.id));
+        if (unit) this.#unconsolidate(unit, lesson.id);
+      }
       report.added += 1;
       report.statuses[index] = match ? 'addedDuplicate' : 'added';
     });

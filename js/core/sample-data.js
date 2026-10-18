@@ -7,7 +7,7 @@ export const SAMPLE_DOMAINS = [
     "name": "Business English",
     "details": "Słownictwo biznesowe: zarządzanie, finanse i negocjacje.",
     "icon": "💼",
-    "color": "blue",
+    "color": "gray",
     "modules": [
       {
         "name": "Management",
@@ -324,7 +324,7 @@ export const SAMPLE_DOMAINS = [
     "name": "Metrology",
     "details": "Metrologia wielkości geometrycznych: maszyny współrzędnościowe i tolerancje.",
     "icon": "📐",
-    "color": "orange",
+    "color": "gray",
     "modules": [
       {
         "name": "Coordinate Measuring Machines",

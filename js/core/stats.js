@@ -9,7 +9,7 @@
 //  - znajomość pojęć, definicji i przykładów jest zawsze podawana osobno dla każdego kierunku.
 
 import { ASSESSMENT_STATUS_NAMES, DIRECTIONS } from './model.js';
-import { MAX_CARD_TIME, dueTime, selectTerms } from './study.js';
+import { MAX_CARD_TIME, isCardDue, selectTerms } from './study.js';
 
 export const BOTH = 'both';
 
@@ -18,6 +18,13 @@ export const STATS_DIRECTIONS = Object.freeze([
   { id: DIRECTIONS.EN_PL, label: 'EN → PL' },
   { id: BOTH, label: 'Oba kierunki' }
 ]);
+
+/** Kierunek statystyk: zapamiętany albo taki jak w nauce (tryb mieszany – oba kierunki). */
+export function statsDirection(settings) {
+  if (STATS_DIRECTIONS.some((item) => item.id === settings.statsDirection)) return settings.statsDirection;
+  return settings.preferredDirection === DIRECTIONS.EN_PL ? DIRECTIONS.EN_PL
+    : settings.preferredDirection === DIRECTIONS.PL_EN ? DIRECTIONS.PL_EN : BOTH;
+}
 
 /** Statusy od najlepszego; „new” – pojęcie jeszcze nie oceniane w danym kierunku. */
 export const STATUS_ORDER = Object.freeze(['mastered', 'partiallyMastered', 'inProgress', 'toLearn', 'new']);
@@ -72,12 +79,14 @@ export function termStatus(library, termID, direction) {
     .reduce(weakerStatus);
 }
 
-/** Czy pojęcie czeka na powtórkę (termin FSRS minął) w kierunku albo – dla obu – w którymkolwiek. */
+/**
+ * Czy pojęcie czeka na powtórkę w kierunku albo – dla obu – w którymkolwiek. Termin FSRS,
+ * a w lekcji utrwalonej – termin rzadkiej powtórki (study.cardDueTime).
+ */
 export function isTermDue(library, termID, direction, now = Date.now()) {
-  return directionsOf(direction).some((way) => {
-    const time = dueTime(library.getProgress(termID, way));
-    return time !== null && time <= now;
-  });
+  const term = library.getTerm(termID);
+  if (!term) return false;
+  return directionsOf(direction).some((way) => isCardDue(library, term, way, now));
 }
 
 /**
@@ -100,6 +109,38 @@ export function statusCounts(library, terms, direction) {
   const counts = { mastered: 0, partiallyMastered: 0, inProgress: 0, toLearn: 0, new: 0, total: terms.length };
   for (const term of terms) counts[termStatus(library, term.id, direction)] += 1;
   return counts;
+}
+
+/** Procent (zaokrąglony) albo null, gdy nie ma czego liczyć. */
+function share(part, whole) {
+  return whole > 0 ? Math.round((part / whole) * 100) : null;
+}
+
+/**
+ * Postęp lekcji na liście: { total, mastered, percent, consolidated } – `mastered` to pojęcia
+ * ze statusem „Opanowane” z fiszek (w kierunku jak w Statystykach), `consolidated` – ręczne
+ * oznaczenie „utrwalona”. Pusta lekcja ma percent null.
+ */
+export function lessonMastery(library, lessonID, direction) {
+  const terms = library.listTerms(lessonID);
+  let mastered = 0;
+  for (const term of terms) if (termStatus(library, term.id, direction) === 'mastered') mastered += 1;
+  return { total: terms.length, mastered, percent: share(mastered, terms.length), consolidated: library.isLessonConsolidated(lessonID) };
+}
+
+/**
+ * Postęp modułu: jak lekcji, ze wszystkich pojęć modułu; pojęcia lekcji utrwalonych liczą się
+ * jako opanowane. Moduł jest utrwalony, gdy wszystkie jego lekcje są utrwalone.
+ */
+export function moduleMastery(library, moduleID, direction) {
+  let total = 0;
+  let mastered = 0;
+  for (const lesson of library.listLessons(moduleID)) {
+    const progress = lessonMastery(library, lesson.id, direction);
+    total += progress.total;
+    mastered += progress.consolidated ? progress.total : progress.mastered;
+  }
+  return { total, mastered, percent: share(mastered, total), consolidated: library.isModuleConsolidated(moduleID) };
 }
 
 /** Pojęcia do powtórki (termin FSRS minął): w wybranym kierunku albo w którymkolwiek. */

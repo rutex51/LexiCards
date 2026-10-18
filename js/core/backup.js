@@ -105,7 +105,11 @@ export function validateBackup(raw) {
   data.lessons = requireRecords(source, 'lessons').map((record) => {
     const module = modulesByID.get(record.moduleID);
     if (!module) throw invalid(`Lekcja „${record.name ?? ''}” wskazuje na nieistniejący moduł.`);
-    return { ...namedRecord(record, 'lessons'), domainID: module.domainID };
+    // Data utrwalenia (od 1.2): tylko poprawna data, inaczej lekcja jest nieoznaczona.
+    const consolidatedAt = typeof record.consolidatedAt === 'string' && Number.isFinite(Date.parse(record.consolidatedAt))
+      ? record.consolidatedAt
+      : null;
+    return { ...namedRecord(record, 'lessons'), domainID: module.domainID, consolidatedAt };
   });
   const lessonsByID = new Map(data.lessons.map((record) => [record.id, record]));
 
@@ -190,7 +194,9 @@ export function validateBackup(raw) {
   dropped += images.size - data.noteImages.length;
 
   const settings = requireRecords(source, 'settings').find((record) => record.id === SETTINGS_ID);
-  data.settings = settings ? [{ ...defaultSettings(), ...settings, id: SETTINGS_ID }] : [];
+  // Kopia sprzed wersji 1.2 nie ma znacznika szarych ikon: po przywróceniu jej dziedziny też
+  // przechodzą na szare tło (raz, tak jak przy aktualizacji).
+  data.settings = settings ? [{ ...defaultSettings(), domainColorsGray: false, ...settings, id: SETTINGS_ID }] : [];
 
   const counts = Object.fromEntries(ALL_STORES.map((name) => [name, data[name].length]));
   return { data, counts, dropped, exportedAt: raw.exportedAt ?? null };

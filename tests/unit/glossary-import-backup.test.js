@@ -124,7 +124,7 @@ test('przykłady zawierają pojęcia bez opisu i bez przykładu', async () => {
   assert.ok(terms.some((term) => availableElementCount(term) === 3));
   const domain = library.findDomain('Metrology');
   assert.equal(domain.icon, '📐');
-  assert.equal(domain.color, 'orange');
+  assert.equal(domain.color, 'gray', 'od 1.2 tło ikon dziedzin jest szare');
 });
 
 test('import do wskazanej lekcji zachowuje kolejność wierszy', async () => {

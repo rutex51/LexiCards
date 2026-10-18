@@ -4,6 +4,7 @@ import { Library } from './core/library.js';
 import { DEFAULT_ACCENT, accentColor } from './core/model.js';
 import { openDefaultAdapter } from './core/storage.js';
 import { toast } from './ui/dialogs.js';
+import { consolidationMessages } from './ui/mastery.js';
 import { h, replaceChildren } from './ui/dom.js';
 import { Router, routeKey } from './ui/router.js';
 import { GlossaryScreen } from './ui/screens/glossary.js';
@@ -206,6 +207,11 @@ async function boot() {
   const channel = adapter.kind === 'indexeddb' && 'BroadcastChannel' in window ? new BroadcastChannel('lexicards') : null;
   let applyingRemote = false;
   let persistenceRequested = false;
+
+  // Skutki zmian, o których trzeba powiedzieć (np. lekcja przestała być utrwalona).
+  library.onNotice((notices) => {
+    for (const text of consolidationMessages(notices)) toast(text, { duration: 6000 });
+  });
 
   library.subscribe(() => {
     if (!applyingRemote) channel?.postMessage('changed');

@@ -59,7 +59,7 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | --- | --- | --- |
 | `domains` | dziedziny: nazwa, opis, ikona, kolor, kolejność | – |
 | `modules` | moduły | `domainID` |
-| `lessons` | lekcje | `moduleID`, `domainID` |
+| `lessons` | lekcje; od 1.2 data ręcznego oznaczenia „utrwalona” (`consolidatedAt`, puste – nieoznaczona) | `moduleID`, `domainID` |
 | `terms` | pojęcia: 6 pól treści, tagi, trudność, notatki, ulubione | `lessonID`, `moduleID`, `domainID` |
 | `progress` | ostatnia ocena pojęcia w danym kierunku i jego harmonogram FSRS (`schedule`) | `termID` + klucze zakresu |
 | `assessments` | historia ocen fiszek – jeden wpis na zatwierdzoną fiszkę, od wersji 0.6.0 z czasem nad fiszką (`duration`, ms, najwyżej 3 min) | indeks `termID` |
@@ -67,7 +67,7 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | `quizAnswers` | odpowiedzi w quizach – jedna na pytanie wyboru albo parę: odpowiedź wybrana i poprawna, wynik, podpowiedź, czas | indeks `termID`, `sessionID` |
 | `studySessions` | dziennik zakończonych sesji nauki | – |
 | `quizSessions` | historia wyników quizów: rodzaj, kierunek, liczby odpowiedzi, procent, próg, zaliczenie, czas, limit, błędne pojęcia | – |
-| `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki i quizu, trwająca sesja nauki i trwający quiz | – |
+| `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki i quizu (od 1.2 okres powtórek lekcji utrwalonych `consolidatedReviewDays` i znacznik `domainColorsGray`), trwająca sesja nauki i trwający quiz | – |
 | `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML i opis obrazów (typ, wymiary, rozmiar, CRC-32) – w pamięci | identyfikator = `lessonID` |
 | `noteImages` | bajty obrazów notatek (`ArrayBuffer`) – czytane z bazy dopiero przy otwarciu notatki | `lessonID` |
 
@@ -89,6 +89,15 @@ Decyzje:
   magazynie, czytane przy otwarciu notatki. Obrazy są zapisane jako `ArrayBuffer`, nie `Blob`
   (Safari miewał kłopoty z `Blob` w IndexedDB). Notatka znika razem z lekcją, modułem
   i dziedziną; kopia lekcji ma kopię notatki z własnymi obrazami.
+- **Utrwalenie tylko w lekcji** (od 1.2). Moduł nie ma własnego pola: jest utrwalony, gdy ma
+  lekcje i wszystkie są utrwalone (`isModuleConsolidated()`), a „Oznacz jako utrwalony” oznacza
+  wszystkie jego lekcje. Dzięki temu nie ma dwóch źródeł prawdy: nowa lekcja (nieoznaczona)
+  sama sprawia, że moduł przestaje być utrwalony.
+- **Szare ikony dziedzin** (od 1.2): domyślny kolor to `gray`. Przy wczytaniu bazy bez znacznika
+  `domainColorsGray` w ustawieniach (dane sprzed 1.2, także przywrócona kopia z 1.1) wszystkie
+  dziedziny dostają szare tło jeden raz, a znacznik zostaje zapisany. Pusta aplikacja przy
+  pierwszym otwarciu niczego nie zapisuje; znacznik powstaje przy pierwszym wyborze koloru
+  dziedziny innego niż szary, żeby ten wybór przetrwał ponowne otwarcie.
 
 ## Zapis zmian
 
@@ -101,6 +110,9 @@ Biblioteka trzyma materiały w pamięci (mapy), a każdą zmianę wykonuje przez
 
 Operacje są kolejkowane, więc dwie zmiany nigdy się nie przeplatają. Po udanej zmianie
 biblioteka zwiększa numer rewizji, unieważnia wyliczone liczniki i powiadamia ekrany.
+Operacja może też zostawić w `unit.notices` komunikat dla interfejsu (od 1.2: utrata statusu
+„utrwalona”); słuchacze `onNotice()` dostają go dopiero po udanym zapisie, więc zmiana
+wycofana po błędzie nie pokazuje komunikatu.
 
 Dzienniki nauki nie są trzymane w pamięci – mogą urosnąć do dziesiątek tysięcy wpisów.
 Czyta je tylko kopia zapasowa, a usunięcie pojęcia czyści je po indeksie `termID`.
@@ -289,6 +301,20 @@ Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany 
 - **Dane sprzed FSRS:** przy wczytaniu biblioteka szuka postępów bez harmonogramu i odtwarza
   go z historii ocen (te same chwile, bez rozmycia), dopisując wpisy `reviews` z `migrated: true`.
   Dotyczy to też przywrócenia starszej kopii zapasowej.
+- **Lekcje utrwalone** (od 1.2, `cardDueTime()` w `js/core/study.js`): termin fiszki z lekcji
+  oznaczonej jako utrwalona to późniejszy z dwóch – terminu FSRS i okresu z Ustawień
+  (`consolidatedReviewDays`, domyślnie 30 dni) liczonego od oznaczenia albo od ostatniej powtórki,
+  jeśli była później. Wyjątek: fiszka oceniona po oznaczeniu na mniej niż „Opanowane” wraca według
+  zwykłego FSRS, dopóki znów nie zostanie opanowana. Harmonogram FSRS w `progress.schedule` się
+  nie zmienia – utrwalenie tylko odsuwa termin, więc cofnięcie oznaczenia przywraca zwykłe
+  powtórki. Zakres „Nowe” pomija pojęcia lekcji utrwalonych. `cardDueTime()` jest używane wszędzie,
+  gdzie liczy się zaległość: zakres „Do powtórki”, kolejka i prognoza na Starcie, statystyki,
+  szczegóły pojęcia.
+- **Zdejmowanie utrwalenia:** `createTerm`, `moveTerms` (do innej lekcji), `copyTerms` i import
+  (nowe pojęcia, nie aktualizacje) czyszczą `consolidatedAt` lekcji docelowej w tej samej
+  transakcji. Nowa lekcja w module utrwalonym (utworzona, przeniesiona albo z importu) zgłasza
+  komunikat o module. `planImport()` zwraca listę `unconsolidated`, którą kreator pokazuje
+  przed importem. Edycja, usunięcie pojęcia i zmiany notatki statusu nie zmieniają.
 - **Powtórka na dziś** (`reviewConfig()`): zaległe fiszki z całej biblioteki, w trybie
   mieszanym jedno pojęcie raz – w kierunku, który czeka dłużej. `reviewForecast()` liczy
   zaległe, dzisiejsze i jutrzejsze według czasu urządzenia.
@@ -408,6 +434,10 @@ wykresy w `js/ui/charts.js`.
 - **Dzienniki** czyta `Library.journals()`. Wynik jest zapamiętany do następnej zmiany dzienników:
   `journalRevision` rośnie tylko wtedy, gdy operacja dopisuje lub usuwa wpisy dziennika
   (zmiana ustawień, np. kierunku w statystykach, nie wymusza ponownego odczytu).
+- **Postęp na listach** (od 1.2, `lessonMastery()` i `moduleMastery()`): procent pojęć ze statusem
+  „Opanowane” w kierunku wybranym w Statystykach (dla „oba kierunki” – słabszy z dwóch). Lekcja
+  utrwalona ma pełny pasek i opis „utrwalona”, a w module jej pojęcia liczą się jako opanowane.
+  Pasek, opis i pozycje menu rysuje `js/ui/mastery.js`.
 - **Wykresy** są rysowane w SVG w rzeczywistej szerokości kontenera (ResizeObserver), bez
   bibliotek. Kolory to zmienne `--viz-*`, osobne dla jasnego i ciemnego motywu, sprawdzone
   walidatorem palet (kontrast z tłem, rozróżnialność przy protanopii i deuteranopii): statusy
@@ -427,6 +457,10 @@ nieistniejące pojęcia są pomijane.
 Od wersji 1.1 (format kopii 2) kopia zawiera notatki i obrazy (bajty w Base64). Przy
 przywracaniu treść notatek przechodzi przez filtr HTML, a notatki bez lekcji i obrazy bez
 notatki są pomijane. Kopie w formacie 1 (bez notatek) nadal można przywrócić.
+
+Wersja 1.2 nie zmienia formatu kopii: data utrwalenia jest polem lekcji, okres powtórek – polem
+ustawień. Kopia sprzed 1.2 nie ma znacznika szarych ikon, więc po jej przywróceniu dziedziny
+dostają szare tło tak samo jak przy aktualizacji.
 
 ## Testy
 

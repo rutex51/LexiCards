@@ -1,4 +1,4 @@
-# LexiCards 1.1
+# LexiCards 1.2
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -10,11 +10,18 @@ prywatne, więc strona jest publikowana tylko na czas instalacji albo aktualizac
 
 Sprawdzenie całości i zgodność ze specyfikacją: [docs/RELEASE-1.0.md](docs/RELEASE-1.0.md).
 Notatki do lekcji (wersja 1.1): [docs/RELEASE-1.1.md](docs/RELEASE-1.1.md).
+Postęp na listach i lekcje utrwalone (wersja 1.2): [docs/RELEASE-1.2.md](docs/RELEASE-1.2.md).
 
-## Co potrafi wersja 1.1
+## Co potrafi wersja 1.2
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
+  Na listach modułów i lekcji pionowy pasek po lewej i opis „opanowane N%” pokazują, jaka część
+  pojęć ma status „Opanowane”.
+- Lekcje i moduły „utrwalone”: ręczne oznaczenie w menu „…” (moduł – razem ze wszystkimi lekcjami;
+  moduł jest utrwalony, gdy wszystkie jego lekcje są). Wiersz ma zieloną poświatę, a fiszki wracają
+  rzadko – najwcześniej po okresie z Ustawień (domyślnie miesiąc). Nowe pojęcie w lekcji albo nowa
+  lekcja w module zdejmuje oznaczenie samo; dodane pojęcie zaczyna jako nowe.
 - Pojęcie ma nazwę po polsku i po angielsku oraz opcjonalnie opis i przykład w obu językach,
   tagi, trudność, notatki i oznaczenie „ulubione”.
 - Glosariusz wszystkich pojęć: wyszukiwanie bez polskich znaków („plynnosc” znajduje
@@ -38,7 +45,8 @@ Notatki do lekcji (wersja 1.1): [docs/RELEASE-1.1.md](docs/RELEASE-1.1.md).
   z konkretnym brakiem z ostatniej oceny.
 - Powtórki w odstępach według algorytmu FSRS-6, osobno dla PL → EN i EN → PL: „Powtórka na dziś”
   na Starcie, zakres „Do powtórki” z fiszkami po terminie, podpowiedź przy przyciskach, za ile fiszka
-  wróci, termin i poziom utrwalenia w szczegółach pojęcia, docelowa skuteczność w Ustawieniach.
+  wróci, termin i poziom utrwalenia w szczegółach pojęcia, docelowa skuteczność i okres powtórek
+  lekcji utrwalonych w Ustawieniach.
 - Quizy: jednokrotny wybór (do czterech odpowiedzi), łączenie par i test mieszany; wybór materiału,
   kierunku, liczby pytań, limitu czasu i progu zaliczenia. Wynik z listą błędów, „Powtórz błędne
   odpowiedzi”, historia wyników. Quizy nie zmieniają terminów powtórek fiszek.
@@ -52,13 +60,15 @@ Notatki do lekcji (wersja 1.1): [docs/RELEASE-1.1.md](docs/RELEASE-1.1.md).
   nie odzywa, i sprawdzeniem wymowy w Ustawieniach; historia ocen każdego pojęcia.
 - Kopia zapasowa do pliku i przywracanie z pliku (materiały, notatki z obrazami, postępy, ustawienia).
 - Motyw jasny, ciemny albo zgodny z systemem i kolor aplikacji do wyboru (niebieski, antracytowy,
-  pomarańczowy, zielony, czerwony); układ na telefon i na szeroki ekran.
+  pomarańczowy, zielony, czerwony); układ na telefon i na szeroki ekran. Ikony dziedzin mają
+  szare tło, a inny kolor można wybrać w edycji dziedziny.
 - Praca bez internetu po pierwszym otwarciu.
 - 40 przykładowych pojęć (Business English, Metrology) do wczytania jednym przyciskiem.
 
 Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2](docs/STAGE-2.md),
 [etap 3](docs/STAGE-3.md), [etap 4](docs/STAGE-4.md), [etap 5](docs/STAGE-5.md), [etap 6](docs/STAGE-6.md),
-[wersja 1.0](docs/RELEASE-1.0.md), [wersja 1.1 – notatki](docs/RELEASE-1.1.md).
+[wersja 1.0](docs/RELEASE-1.0.md), [wersja 1.1 – notatki](docs/RELEASE-1.1.md),
+[wersja 1.2 – postęp i utrwalenie](docs/RELEASE-1.2.md).
 
 ## Jak korzystać
 
@@ -139,6 +149,22 @@ fiszek (ikona u góry). Okno pokazuje tekst i obrazy; dotknięcie obrazu powięk
 dwukrotne dotknięcie). **Edytuj** włącza pasek formatowania i sekcję obrazów: **Dodaj obraz** (zdjęcie,
 plik, aparat), dotknięcie obrazu – powiększ, przesuń, usuń. Duże zdjęcia są zmniejszane do 2048 px
 dłuższego boku. Wklejony tekst zachowuje formatowanie (bez skryptów, stylów i obrazów z sieci).
+
+### Postęp i lekcje utrwalone
+
+Pasek po lewej stronie wiersza lekcji i modułu wypełnia się w miarę, jak pojęcia dostają status
+„Opanowane” z fiszek (w kierunku wybranym w Statystykach); obok nazwy jest „opanowane N%”. Status
+„Opanowane” działa jak dotąd – fiszki wracają według FSRS.
+
+Gdy uznasz, że lekcję masz w głowie na dłużej, wybierz w jej menu „…” **Oznacz jako utrwaloną**
+(w module: **Oznacz jako utrwalony** – oznacza wszystkie jego lekcje). Lekcja dostaje pełny pasek,
+opis „utrwalona” i zieloną poświatę, a jej fiszki wracają najwcześniej po okresie z **Ustawienia →
+Powtórki → Lekcje utrwalone** (co miesiąc, co 2 lub 3 miesiące, co pół roku, raz w roku), liczonym
+od ostatniej powtórki albo od oznaczenia. Fiszka, której przy takiej powtórce nie pamiętasz, wraca
+według zwykłego FSRS. Nowe pojęcie w lekcji (dodane, przeniesione, skopiowane albo z importu)
+zdejmuje oznaczenie lekcji, a nowa lekcja – oznaczenie modułu; aplikacja mówi o tym komunikatem,
+a kreator importu uprzedza przed importem. Oznaczenie cofniesz w menu „…” albo przyciskiem
+**Cofnij** na ekranie lekcji.
 
 ### Nauka z fiszkami
 

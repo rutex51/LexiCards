@@ -5,7 +5,7 @@
 import { DIRECTIONS } from '../../core/model.js';
 import {
   BOTH, STATS_DIRECTIONS, STATS_RANGES, STATUS_LABELS, STATUS_ORDER, breakdown, breakdownLevels, dailySeries,
-  formatStudyTime, overview, percent, scopeTerms
+  formatStudyTime, overview, percent, scopeTerms, statsDirection
 } from '../../core/stats.js';
 import { pluralTerms } from '../../core/text.js';
 import { legend, meter, shareBar, timeChart } from '../charts.js';
@@ -29,12 +29,8 @@ const STATUS_TONE = { mastered: 'mastered', partiallyMastered: 'partial', inProg
 const BOTH_NOTE = 'Oba kierunki: pojęcie jest opanowane, gdy jest opanowane w obu kierunkach (liczy się słabszy wynik), '
   + 'i jest do powtórki, gdy czeka w którymkolwiek. Powtórki, quizy i czas obejmują oba kierunki razem.';
 
-/** Kierunek statystyk: zapamiętany albo taki jak w nauce (tryb mieszany – oba kierunki). */
-export function statsDirection(settings) {
-  if (STATS_DIRECTIONS.some((item) => item.id === settings.statsDirection)) return settings.statsDirection;
-  return settings.preferredDirection === DIRECTIONS.EN_PL ? DIRECTIONS.EN_PL
-    : settings.preferredDirection === DIRECTIONS.PL_EN ? DIRECTIONS.PL_EN : BOTH;
-}
+/** Kierunek statystyk – zob. core/stats.js (tu dla ekranów, które importują go z tego modułu). */
+export { statsDirection };
 
 const directionLabel = (direction) => STATS_DIRECTIONS.find((item) => item.id === direction)?.label ?? '';
 

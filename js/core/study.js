@@ -11,10 +11,14 @@
 //  - fiszka jest „opanowana” tylko przy komplecie zaliczonych elementów i decyzji „Umiem”,
 //  - każda zatwierdzona ocena trafia do historii; wcześniejszych wpisów nic nie nadpisuje,
 //  - termin następnej powtórki wyznacza FSRS (js/core/fsrs.js), osobno dla każdego kierunku;
-//    status ostatniej oceny i długoterminowy poziom z FSRS to dwie różne informacje.
+//    status ostatniej oceny i długoterminowy poziom z FSRS to dwie różne informacje,
+//  - lekcja oznaczona ręcznie jako „utrwalona” ma rzadkie powtórki: fiszka wraca najwcześniej
+//    po okresie z Ustawień od ostatniej powtórki albo od oznaczenia (późniejszy termin FSRS
+//    zostaje); fiszka niezapamiętana po oznaczeniu wraca jak zwykle, aż znów będzie opanowana.
 
 import {
-  ASSESSMENT_STATUS_NAMES, DIFFICULTY_MAX, DIRECTIONS, assessmentStatus, hasDescription, hasExample, newID, nowISO
+  ASSESSMENT_STATUS_NAMES, DIFFICULTY_MAX, DIRECTIONS, assessmentStatus, consolidatedReviewDays, hasDescription, hasExample,
+  newID, nowISO
 } from './model.js';
 import { RATINGS, STATES, newCard } from './fsrs.js';
 
@@ -119,10 +123,46 @@ export function isDue(progress, now = Date.now()) {
   return due !== null && due <= now;
 }
 
-function matchesScope(scope, term, progress, now) {
+const DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Utrwalenie lekcji pojęcia: { since, interval } (ms) albo null, gdy lekcja nie jest utrwalona.
+ */
+export function consolidationOf(library, term) {
+  const lesson = library.getLesson(term.lessonID);
+  if (!lesson?.consolidatedAt) return null;
+  const since = Date.parse(lesson.consolidatedAt);
+  if (!Number.isFinite(since)) return null;
+  return { since, interval: consolidatedReviewDays(library.getSettings()) * DAY };
+}
+
+/**
+ * Termin powtórki fiszki (pojęcie + kierunek) z uwzględnieniem utrwalenia lekcji, w ms albo null.
+ * Lekcja utrwalona: najwcześniej okres z Ustawień po ostatniej powtórce lub po oznaczeniu,
+ * a późniejszy termin FSRS zostaje. Wyjątek: ocena po oznaczeniu bez kompletu („Powtórz”,
+ * częściowo) – wtedy obowiązuje zwykły termin FSRS, aż fiszka znów będzie opanowana.
+ */
+export function cardDueTime(library, term, direction) {
+  const progress = library.getProgress(term.id, direction);
+  const due = dueTime(progress);
+  const fixed = consolidationOf(library, term);
+  if (!fixed) return due;
+  const last = progress?.lastReviewedAt ? Date.parse(progress.lastReviewedAt) : null;
+  if (last !== null && last >= fixed.since && progress.lastStatus !== 'mastered') return due;
+  return Math.max(due ?? 0, Math.max(fixed.since, last ?? 0) + fixed.interval);
+}
+
+/** Czy fiszka czeka na powtórkę (termin minął) – z uwzględnieniem utrwalenia lekcji. */
+export function isCardDue(library, term, direction, now = Date.now()) {
+  const due = cardDueTime(library, term, direction);
+  return due !== null && due <= now;
+}
+
+function matchesScope(scope, term, progress, now, library, direction) {
   switch (scope) {
-    case 'new': return learningGroup(progress) === 'new';
-    case 'repeat': return isDue(progress, now);
+    // Nowe pojęcia lekcji utrwalonej nie są nowe – wrócą w rzadkiej powtórce.
+    case 'new': return learningGroup(progress) === 'new' && !consolidationOf(library, term);
+    case 'repeat': return isCardDue(library, term, direction, now);
     // Ostatnio zatwierdzone jako „Umiem”, ale bez kompletu kafelków.
     case 'partial': return REPEAT_KINDS.partial(progress);
     case 'hard': return isHard(term, progress);
@@ -177,14 +217,14 @@ function matchingCards(library, config, random, now) {
     // Błędy z quizów: ostatnia odpowiedź w quizie była błędna (wyniki quizów są wspólne dla kierunków).
     if (config.scope === 'quizErrors' && library.getQuizStats?.(term.id)?.lastCorrect !== false) continue;
     const fitting = directionsFor(config.direction)
-      .filter((direction) => matchesScope(config.scope, term, library.getProgress(term.id, direction), now));
+      .filter((direction) => matchesScope(config.scope, term, library.getProgress(term.id, direction), now, library, direction));
     if (fitting.length === 0) continue;
     let direction;
     if (fitting.length === 1) direction = fitting[0];
     else if (config.scope === 'repeat') {
       // Powtórka: z dwóch zaległych kierunków najpierw ten, który czeka dłużej.
       direction = fitting.reduce((best, item) => (
-        dueTime(library.getProgress(term.id, item)) < dueTime(library.getProgress(term.id, best)) ? item : best));
+        cardDueTime(library, term, item) < cardDueTime(library, term, best) ? item : best));
     } else {
       // Tryb mieszany: każde pojęcie raz, w jednym z pasujących kierunków.
       direction = fitting[Math.floor(random() * fitting.length)];
@@ -212,7 +252,7 @@ export function scopeCounts(library, config, now = Date.now()) {
 export function buildQueue(library, config, random = Math.random, now = Date.now()) {
   let cards = matchingCards(library, config, random, now);
   if (config.scope === 'repeat') {
-    const due = (card) => dueTime(library.getProgress(card.termID, card.direction));
+    const due = (card) => cardDueTime(library, library.getTerm(card.termID), card.direction);
     cards = cards.slice().sort((a, b) => due(a) - due(b));
     if (config.count > 0) cards = cards.slice(0, config.count);
     return config.shuffle ? shuffled(cards, random) : cards;
@@ -247,8 +287,9 @@ export function reviewForecast(library, now = Date.now()) {
   endOfTomorrow.setDate(endOfTomorrow.getDate() + 1);
   const result = { dueNow: 0, laterToday: 0, tomorrow: 0, next: null };
   for (const progress of library.listProgress()) {
-    if (!library.getTerm(progress.termID)) continue;
-    const due = dueTime(progress);
+    const term = library.getTerm(progress.termID);
+    if (!term) continue;
+    const due = cardDueTime(library, term, progress.direction);
     if (due === null) continue;
     if (due <= now) result.dueNow += 1;
     else {
@@ -451,11 +492,11 @@ export function formatInterval(milliseconds) {
   return `${years} ${last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14) ? 'lata' : 'lat'}`;
 }
 
-/** Termin powtórki względem teraz: „teraz”, „za 10 min”, „za 3 dni”. */
-export function describeDue(progress, now = Date.now()) {
-  const due = dueTime(progress);
-  if (due === null) return null;
-  return due <= now ? 'teraz' : `za ${formatInterval(due - now)}`;
+/** Termin powtórki względem teraz: „teraz”, „za 10 min”, „za 3 dni”. `due` – czas w ms albo postęp. */
+export function describeDue(due, now = Date.now()) {
+  const time = typeof due === 'number' || due === null ? due : dueTime(due);
+  if (time === null || time === undefined) return null;
+  return time <= now ? 'teraz' : `za ${formatInterval(time - now)}`;
 }
 
 /** Postęp pojęcia w kierunku po uwzględnieniu nowej oceny. `previous` może być null. */

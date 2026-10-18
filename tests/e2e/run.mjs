@@ -3474,6 +3474,263 @@ test('statystyki: wąski ekran 320 px, ciemny motyw i pusta biblioteka', async (
   assert.ok((await overflowX(page)) <= 0, `lekcja: treść wystaje o ${await overflowX(page)} px`);
 }, { device: { ...PHONE, viewport: { width: 320, height: 568 } } });
 
+// ---------------------------------------------------------------- postęp i utrwalenie (1.2)
+
+/** Wiersz listy lekcji albo modułów o podanej nazwie. */
+const listRow = (page, name) => page.locator('.group .row').filter({ has: page.locator('.row__title', { hasText: new RegExp(`^${name}$`) }) });
+
+/** Status „Opanowane” dla pierwszych `count` pojęć lekcji (kierunek PL → EN), zapisany jak po fiszkach. */
+function masterTerms(page, lessonName, count) {
+  return page.evaluate(async ([name, limit]) => {
+    const { library } = window.lexicards;
+    const lesson = [...library.maps.lessons.values()].find((item) => item.name === name);
+    const now = Date.now();
+    const records = library.listTerms(lesson.id).slice(0, limit).map((term) => ({
+      id: crypto.randomUUID(), termID: term.id, lessonID: term.lessonID, moduleID: term.moduleID, domainID: term.domainID,
+      direction: 'pl_en', reviewCount: 1, lastStatus: 'mastered', lastReviewedAt: new Date(now).toISOString(),
+      schedule: { state: 'review', step: null, stability: 3, difficulty: 5, due: new Date(now + 2 * 864e5).toISOString(), lastReview: new Date(now).toISOString(), reps: 1, lapses: 0 }
+    }));
+    await library.adapter.commit({ puts: { progress: records }, deletes: {}, purgeTermIDs: [], clear: [] });
+    await library.load();
+  }, [lessonName, count]);
+}
+
+test('postęp na listach: pasek i „opanowane N%”, oznaczenie lekcji i modułu jako utrwalonych, poświata, moduł z lekcji', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await masterTerms(page, 'Financial Statements', 3);
+  await page.goto(`${page.url().split('#')[0]}#/library/module/${ids.module}`);
+  await expectText(title(page), 'Finance');
+
+  const statements = listRow(page, 'Financial Statements');
+  await expectText(statements.locator('.row__subtitle'), '4 pojęcia, opanowane 75%');
+  assert.equal(await statements.locator('[data-testid=mastery]').getAttribute('data-percent'), '75');
+  assert.equal(await statements.locator('[data-testid=mastery]').getAttribute('aria-label'), 'opanowane 75%');
+  const fillHeight = await statements.locator('.mastery-bar__fill').evaluate((fill) => fill.getBoundingClientRect().height / fill.parentElement.getBoundingClientRect().height);
+  assert.ok(Math.abs(fillHeight - 0.75) < 0.05, `pasek wypełniony w 75% (jest ${fillHeight})`);
+  await expectText(listRow(page, 'Investments').locator('.row__subtitle'), '2 pojęcia, opanowane 0%');
+
+  // Lekcja oznaczona ręcznie: pełny pasek, „utrwalona”, zielona poświata.
+  const investments = listRow(page, 'Investments');
+  await page.getByRole('button', { name: 'Więcej poleceń: Investments' }).click();
+  await menuItem(page, 'Oznacz jako utrwaloną');
+  await expectText(page.locator('.toast').last(), 'Lekcja „Investments” jest utrwalona. Fiszki wrócą najwcześniej po miesiącu.');
+  await expectText(investments.locator('.row__subtitle'), '2 pojęcia, utrwalona');
+  assert.equal(await investments.locator('[data-testid=mastery]').getAttribute('data-consolidated'), 'true');
+  assert.match(await investments.evaluate((row) => getComputedStyle(row).backgroundImage), /gradient/);
+  assert.equal(await investments.evaluate((row) => row.classList.contains('row--consolidated')), true);
+  assert.equal(await statements.evaluate((row) => row.classList.contains('row--consolidated')), false);
+
+  // Moduł: utrwalony dopiero, gdy wszystkie lekcje są utrwalone.
+  await page.goto(`${page.url().split('#')[0]}#/library/domain/${await page.evaluate((id) => window.lexicards.library.getModule(id).domainID, ids.module)}`);
+  const finance = listRow(page, 'Finance');
+  await expectText(finance.locator('.row__subtitle'), '3 lekcje, 8 pojęć, opanowane 63%');
+  await page.getByRole('button', { name: 'Więcej poleceń: Finance' }).click();
+  await menuItem(page, 'Oznacz jako utrwalony');
+  await expectText(page.locator('.toast').last(), 'Moduł „Finance” jest utrwalony.');
+  await expectText(finance.locator('.row__subtitle'), '3 lekcje, 8 pojęć, utrwalony');
+  assert.equal(await finance.evaluate((row) => row.classList.contains('row--consolidated')), true);
+  assert.equal(await page.evaluate((id) => window.lexicards.library.listLessons(id).every((lesson) => lesson.consolidatedAt), ids.module), true);
+
+  // Cofnięcie jednej lekcji: moduł przestaje być utrwalony, lekcje utrwalone liczą się jako opanowane.
+  await page.goto(`${page.url().split('#')[0]}#/library/module/${ids.module}`);
+  await page.getByRole('button', { name: 'Więcej poleceń: Financial Ratios' }).click();
+  await menuItem(page, 'Cofnij utrwalenie');
+  await expectText(page.locator('.toast').last(), 'Cofnięto utrwalenie: Financial Ratios.');
+  await expectText(listRow(page, 'Financial Ratios').locator('.row__subtitle'), '2 pojęcia, opanowane 0%');
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  assert.equal(await page.locator('dialog.menu[open]').getByRole('menuitem', { name: 'Oznacz jako utrwalony', exact: true }).count(), 1);
+  await page.keyboard.press('Escape');
+  await page.goBack();
+  await expectText(listRow(page, 'Finance').locator('.row__subtitle'), '3 lekcje, 8 pojęć, opanowane 75%');
+
+  // Lekcja bez pojęć: nie ma czego utrwalić.
+  await page.evaluate((id) => window.lexicards.library.createLesson({ name: 'Pusta' }, { existing: id }), ids.module);
+  await page.goForward();
+  await expectText(listRow(page, 'Pusta').locator('.row__subtitle'), '0 pojęć');
+  await page.getByRole('button', { name: 'Więcej poleceń: Pusta' }).click();
+  assert.equal(await page.locator('dialog.menu[open]').getByRole('menuitem', { name: 'Oznacz jako utrwaloną', exact: true }).isDisabled(), true);
+  await page.keyboard.press('Escape');
+  assert.ok((await overflowX(page)) <= 0);
+});
+
+test('utrwalenie znika samo: nowe pojęcie w lekcji i nowa lekcja w module; ekran lekcji – wiersz „Lekcja utrwalona” i „Cofnij”', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const base = page.url().split('#')[0];
+  await page.goto(`${base}#/library/lesson/${ids.investments}`);
+  await expectText(title(page), 'Investments');
+  assert.equal(await page.locator('[data-testid=lesson-consolidated]').count(), 0);
+
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  await menuItem(page, 'Oznacz jako utrwaloną');
+  const consolidatedRow = page.locator('[data-testid=lesson-consolidated]');
+  await expectText(consolidatedRow, 'Lekcja utrwalona');
+  await expectText(consolidatedRow, 'Fiszki wracają najwcześniej po miesiącu od ostatniej powtórki.');
+  await page.click('[data-testid=lesson-unconsolidate]');
+  await consolidatedRow.waitFor({ state: 'detached' });
+  await expectText(page.locator('.toast').last(), 'Cofnięto utrwalenie: Investments.');
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  await menuItem(page, 'Oznacz jako utrwaloną');
+  await consolidatedRow.waitFor();
+
+  // Nowe pojęcie: status znika z komunikatem, pojęcie jest nowe (bez postępów).
+  await page.getByRole('button', { name: 'Dodaj pojęcie', exact: true }).click();
+  await page.fill('[data-testid=term-pl]', 'obligacja');
+  await page.fill('[data-testid=term-en]', 'bond');
+  await saveSheet(page);
+  await expectText(page.locator('.toast').filter({ hasText: 'nie jest' }), 'Lekcja „Investments” nie jest już utrwalona – doszło nowe pojęcie.');
+  await consolidatedRow.waitFor({ state: 'detached' });
+  const state = await page.evaluate((id) => {
+    const { library } = window.lexicards;
+    const term = library.listTerms(id).find((item) => item.termPL === 'obligacja');
+    return { consolidated: library.isLessonConsolidated(id), progress: library.getProgress(term.id, 'pl_en') };
+  }, ids.investments);
+  assert.deepEqual(state, { consolidated: false, progress: null });
+
+  // Edycja pojęcia nie zdejmuje statusu.
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  await menuItem(page, 'Oznacz jako utrwaloną');
+  await consolidatedRow.waitFor();
+  await page.getByRole('button', { name: 'Więcej poleceń: obligacja' }).click();
+  await menuItem(page, 'Edytuj');
+  await page.fill('[data-testid=term-en]', 'bond (debt security)');
+  await saveSheet(page);
+  await expectText(termRows(page).filter({ hasText: 'obligacja' }), 'bond (debt security)');
+  assert.equal(await consolidatedRow.count(), 1);
+
+  // Nowa lekcja w module utrwalonym: moduł traci status, lekcje zostają utrwalone.
+  await page.goto(`${base}#/library/module/${ids.module}`);
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  await menuItem(page, 'Oznacz jako utrwalony');
+  await expectText(page.locator('.toast').last(), 'Moduł „Finance” jest utrwalony.');
+  await page.getByRole('button', { name: 'Dodaj lekcję', exact: true }).click();
+  await sheet(page).locator('[data-testid=lesson-name]').fill('Bonds');
+  await saveSheet(page);
+  await expectText(page.locator('.toast').filter({ hasText: 'nie jest' }), 'Moduł „Finance” nie jest już utrwalony – doszła nowa lekcja.');
+  await expectText(listRow(page, 'Bonds').locator('.row__subtitle'), '0 pojęć');
+  await expectText(listRow(page, 'Investments').locator('.row__subtitle'), 'utrwalona');
+  assert.equal(await page.evaluate((id) => window.lexicards.library.isModuleConsolidated(id), ids.module), false);
+
+  // Po ponownym otwarciu strony stan jest ten sam (IndexedDB).
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await expectText(listRow(page, 'Investments').locator('.row__subtitle'), '3 pojęcia, utrwalona');
+});
+
+test('lekcja utrwalona w nauce: fiszki wracają najwcześniej po okresie z Ustawień, nie są „Nowe”, termin w szczegółach', async ({ open, context }) => {
+  await context.clock.install({ time: new Date('2026-10-12T10:00:00') });
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page, `#/study/lesson/${ids.basicsID}`);
+  await startStudy(page);
+  for (let index = 0; index < 3; index += 1) await assess(page, 'all', 'know');
+  await page.click('[data-testid=summary-done]');
+  await page.waitForFunction(() => location.hash === '#/start');
+
+  await page.evaluate((id) => { location.hash = `#/library/lesson/${id}`; }, ids.basicsID);
+  await expectText(title(page), 'Podstawy');
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  await menuItem(page, 'Oznacz jako utrwaloną');
+  await expectText(page.locator('[data-testid=lesson-consolidated]'), 'Od 12 paź 2026');
+
+  // Po 11 minutach zwykły FSRS dawałby powtórkę; lekcja utrwalona czeka miesiąc.
+  await page.clock.fastForward('11:00');
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  const row = termRows(page).filter({ hasText: 'aktywa' });
+  await row.locator('.term__toggle').click();
+  await expectText(row.locator('.term__details'), '11 lis 2026 (za 30 dni) – lekcja utrwalona');
+  await tab(page, 'Start');
+  assert.equal(await page.locator('[data-testid=start-review]').count(), 0);
+
+  // Zakresy nauki w module: pojęcia lekcji utrwalonej nie są „Nowe”, druga lekcja bez zmian.
+  await openStudySetup(page, `#/study/module/${ids.financeID}`);
+  const scopes = async () => (await page.locator('[data-testid=study-scope] option').allTextContents()).map((text) => text.trim());
+  await waitUntil(async () => (await scopes()).includes('Wszystkie (5)'), 'Materiał: moduł Finanse');
+  assert.ok((await scopes()).includes('Nowe (2)'), `zakresy: ${await scopes()}`);
+  assert.ok((await scopes()).includes('Do powtórki (0)'));
+
+  // Ustawienie okresu: „co 2 miesiące” – po 31 dniach jeszcze nic, po zmianie na miesiąc – powtórka.
+  await page.evaluate(() => { location.hash = '#/settings'; });
+  const select = page.locator('[data-testid=consolidated-review]');
+  assert.equal(await select.inputValue(), '30');
+  assert.deepEqual((await select.locator('option').allTextContents()).map((text) => text.trim()),
+    ['co miesiąc', 'co 2 miesiące', 'co 3 miesiące', 'co pół roku', 'raz w roku']);
+  await page.selectOption('[data-testid=consolidated-review]', '60');
+  await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().consolidatedReviewDays === 60), 'Okres powinien się zapisać');
+  await page.clock.setSystemTime(new Date('2026-11-13T10:00:00'));
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  assert.equal(await page.locator('[data-testid=consolidated-review]').inputValue(), '60');
+  await tab(page, 'Start');
+  assert.equal(await page.locator('[data-testid=start-review]').count(), 0);
+  await page.evaluate(() => window.lexicards.library.updateSettings({ consolidatedReviewDays: 30 }));
+  await expectText(page.locator('[data-testid=start-review]'), 'Powtórka na dziś (3 fiszki)');
+  await page.click('[data-testid=start-review]');
+  await expectText(counter(page), '1 z 3');
+});
+
+test('wersja 1.2: dziedziny sprzed aktualizacji dostają szare tło ikon jeden raz, wybrany potem kolor zostaje', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  // Stan jak po wersji 1.1: kolorowe dziedziny, ustawienia bez znacznika.
+  await page.evaluate(async () => {
+    const { library } = window.lexicards;
+    const colors = ['blue', 'green'];
+    const domains = library.listDomains().map((domain, index) => ({ ...domain, color: colors[index] }));
+    const settings = { ...library.getSettings(), id: 'app' };
+    delete settings.domainColorsGray;
+    await library.adapter.commit({ puts: { domains, settings: [settings] }, deletes: {}, purgeTermIDs: [], clear: [] });
+  });
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await tab(page, 'Biblioteka');
+  const badges = () => page.locator('.badge').evaluateAll((items) => items.map((item) => [...item.classList].find((name) => name.startsWith('badge--') && name !== 'badge--large')));
+  await waitUntil(async () => (await badges()).length > 0 && (await badges()).every((name) => name === 'badge--gray'), 'Ikony dziedzin powinny mieć szare tło');
+
+  // Kolor wybrany w edycji dziedziny zostaje po ponownym otwarciu.
+  await page.getByRole('button', { name: 'Więcej poleceń: Metrology' }).click();
+  await menuItem(page, 'Edytuj');
+  await sheet(page).locator('label.choice--color.badge--orange').click();
+  await saveSheet(page);
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  const colors = await page.evaluate(() => Object.fromEntries(window.lexicards.library.listDomains().map((domain) => [domain.name, domain.color])));
+  assert.deepEqual(colors, { 'Business English': 'gray', Metrology: 'orange' });
+  await page.locator('.badge--orange').first().waitFor();
+});
+
+test('import: krok „Zatwierdź import” uprzedza o lekcjach, które przestaną być utrwalone; wynik o tym mówi', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate((id) => window.lexicards.library.setLessonConsolidated(id, true), ids.investments);
+  const original = await readFile(path.join(ROOT, 'docs/samples/lexicards_sample.csv'), 'utf8');
+  const file = path.join(OUTPUT, 'utrwalona.csv');
+  await writeFile(file, `${original}Business English;Finance;Investments;obligacja;bond;;;;;\r\n`);
+
+  await tab(page, 'Biblioteka');
+  await page.getByRole('button', { name: 'Dodaj', exact: true }).click();
+  await menuItem(page, 'Import z pliku');
+  await chooseImportFile(page, file);
+  await expectText(stepTitle(page), 'Sprawdź odczyt pliku');
+  await nextStep(page, 'Przypisz kolumny');
+  await nextStep(page, 'Wybierz miejsce');
+  await nextStep(page, 'Sprawdź dane');
+  await nextStep(page, 'Przejrzyj pojęcia');
+  await nextStep(page, 'Zatwierdź import');
+  const warning = page.locator('[data-testid=import-unconsolidated]');
+  await expectText(warning, 'Przestaną być utrwalone');
+  await expectText(warning, 'Business English › Finance › Investments');
+  assert.equal(await page.evaluate((id) => window.lexicards.library.isLessonConsolidated(id), ids.investments), true, 'przed importem bez zmian');
+  await finishImport(page, 'Importuj 1 pojęcie');
+  await expectText(page.locator('[data-testid=import-done]'), 'Zdjęto utrwalenie z 1 lekcji.');
+  assert.equal(await page.evaluate((id) => window.lexicards.library.isLessonConsolidated(id), ids.investments), false);
+});
+
 // ---------------------------------------------------------------- słuchanie
 
 /** Atrapa syntezatora: zapisuje wypowiedzi (tekst, język, chwila) i kończy każdą po 200 ms. */

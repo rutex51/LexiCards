@@ -19,7 +19,7 @@ def T(pl, en, dpl=None, den=None, epl=None, een=None, tags=()):
     return dict(pl=pl, en=en, dpl=dpl, den=den, epl=epl, een=een, tags=list(tags))
 
 DATA = [
- dict(name="Business English", details="Słownictwo biznesowe: zarządzanie, finanse i negocjacje.", icon="💼", color="blue", modules=[
+ dict(name="Business English", details="Słownictwo biznesowe: zarządzanie, finanse i negocjacje.", icon="💼", color="gray", modules=[
   dict(name="Management", lessons=[
    dict(name="Leadership", terms=[
     T("przywództwo","leadership",
@@ -152,7 +152,7 @@ DATA = [
    ]),
   ]),
  ]),
- dict(name="Metrology", details="Metrologia wielkości geometrycznych: maszyny współrzędnościowe i tolerancje.", icon="📐", color="orange", modules=[
+ dict(name="Metrology", details="Metrologia wielkości geometrycznych: maszyny współrzędnościowe i tolerancje.", icon="📐", color="gray", modules=[
   dict(name="Coordinate Measuring Machines", lessons=[
    dict(name="CMM Components", terms=[
     T("współrzędnościowa maszyna pomiarowa","coordinate measuring machine",

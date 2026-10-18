@@ -11,6 +11,7 @@ import {
 import { openMenu } from '../dialogs.js';
 import { h } from '../dom.js';
 import { icon } from '../icons.js';
+import { consolidationMenuItem, markConsolidated, masteryBar, masteryOf, masterySubtitle } from '../mastery.js';
 import { noteButton, noteMenuItem } from '../notes.js';
 import { routes } from '../router.js';
 
@@ -203,15 +204,18 @@ export class DomainScreen {
         ? reorderRows(ctx, 'module', modules)
         : modules.map((module) => {
             const counts = library.counts('module', module.id);
-            return linkRow({
+            const progress = masteryOf(ctx, 'module', module.id);
+            return markConsolidated(linkRow({
               href: routes.module(module.id),
+              leading: masteryBar(progress, 'module'),
               title: module.name,
-              subtitle: `${pluralLessons(counts.lessons)}, ${pluralTerms(counts.terms)}`,
+              subtitle: masterySubtitle(`${pluralLessons(counts.lessons)}, ${pluralTerms(counts.terms)}`, progress, 'module'),
               onMenu: () => openMenu({
                 title: module.name,
                 items: [
                   { label: 'Ucz się', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'module', id: module.id })) },
                   { label: 'Quiz', icon: 'quiz', onSelect: () => ctx.navigate(routes.quiz({ level: 'module', id: module.id })) },
+                  consolidationMenuItem(ctx, 'module', module.id),
                   { label: 'Statystyki', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'module', id: module.id })) },
                   { label: 'Edytuj', icon: 'edit', onSelect: () => openModuleForm(ctx, { moduleID: module.id }) },
                   { label: 'Przenieś do innej dziedziny', icon: 'move', onSelect: () => moveModule(ctx, module.id) },
@@ -221,7 +225,7 @@ export class DomainScreen {
                   { label: 'Usuń', icon: 'trash', destructive: true, onSelect: () => requestDeletion(ctx, { kind: 'module', id: module.id }) }
                 ]
               })
-            });
+            }), progress);
           });
       body = group({ title: 'Moduły' }, rows);
     }
@@ -262,6 +266,7 @@ export class ModuleScreen {
         { label: 'Ucz się tego modułu', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'module', id: module.id })) },
         { label: 'Quiz z tego modułu', icon: 'quiz', onSelect: () => ctx.navigate(routes.quiz({ level: 'module', id: module.id })) },
         { label: 'Statystyki modułu', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'module', id: module.id })) },
+        consolidationMenuItem(ctx, 'module', module.id),
         { label: 'Edytuj moduł', icon: 'edit', onSelect: () => openModuleForm(ctx, { moduleID: module.id }) },
         { label: 'Przenieś do innej dziedziny', icon: 'move', onSelect: () => moveModule(ctx, module.id) },
         lessons.length > 1 ? { label: 'Zmień kolejność lekcji', icon: 'reorder', onSelect: () => { this.reordering = true; ctx.refresh(); } } : null,
@@ -294,29 +299,34 @@ export class ModuleScreen {
     } else {
       const rows = this.reordering
         ? reorderRows(ctx, 'lesson', lessons)
-        : lessons.map((lesson) => linkRow({
-            href: routes.lesson(lesson.id),
-            title: lesson.name,
-            subtitle: pluralTerms(library.counts('lesson', lesson.id).terms),
-            extra: noteButton(ctx, lesson),
-            onMenu: () => openMenu({
+        : lessons.map((lesson) => {
+            const progress = masteryOf(ctx, 'lesson', lesson.id);
+            return markConsolidated(linkRow({
+              href: routes.lesson(lesson.id),
+              leading: masteryBar(progress, 'lesson'),
               title: lesson.name,
-              items: [
-                { label: 'Ucz się', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'lesson', id: lesson.id })) },
-                { label: 'Quiz', icon: 'quiz', onSelect: () => ctx.navigate(routes.quiz({ level: 'lesson', id: lesson.id })) },
-                noteMenuItem(ctx, lesson),
-                { label: 'Statystyki', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'lesson', id: lesson.id })) },
-                { label: 'Edytuj', icon: 'edit', onSelect: () => openLessonForm(ctx, { lessonID: lesson.id }) },
-                { label: 'Przenieś do innego modułu', icon: 'move', onSelect: () => moveLesson(ctx, lesson.id) },
-                { label: 'Kopiuj do…', icon: 'copy', onSelect: () => copyLesson(ctx, lesson.id) },
-                { label: 'Dodaj pojęcie', icon: 'plus', onSelect: () => openTermForm(ctx, { lessonID: lesson.id }) },
-                { label: 'Importuj z pliku…', icon: 'upload', onSelect: () => ctx.navigate(routes.importFile(lesson.id)) },
-                { label: 'Eksportuj…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'lesson', id: lesson.id }) },
-                'separator',
-                { label: 'Usuń', icon: 'trash', destructive: true, onSelect: () => requestDeletion(ctx, { kind: 'lesson', id: lesson.id }) }
-              ]
-            })
-          }));
+              subtitle: masterySubtitle(pluralTerms(library.counts('lesson', lesson.id).terms), progress, 'lesson'),
+              extra: noteButton(ctx, lesson),
+              onMenu: () => openMenu({
+                title: lesson.name,
+                items: [
+                  { label: 'Ucz się', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'lesson', id: lesson.id })) },
+                  { label: 'Quiz', icon: 'quiz', onSelect: () => ctx.navigate(routes.quiz({ level: 'lesson', id: lesson.id })) },
+                  consolidationMenuItem(ctx, 'lesson', lesson.id),
+                  noteMenuItem(ctx, lesson),
+                  { label: 'Statystyki', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'lesson', id: lesson.id })) },
+                  { label: 'Edytuj', icon: 'edit', onSelect: () => openLessonForm(ctx, { lessonID: lesson.id }) },
+                  { label: 'Przenieś do innego modułu', icon: 'move', onSelect: () => moveLesson(ctx, lesson.id) },
+                  { label: 'Kopiuj do…', icon: 'copy', onSelect: () => copyLesson(ctx, lesson.id) },
+                  { label: 'Dodaj pojęcie', icon: 'plus', onSelect: () => openTermForm(ctx, { lessonID: lesson.id }) },
+                  { label: 'Importuj z pliku…', icon: 'upload', onSelect: () => ctx.navigate(routes.importFile(lesson.id)) },
+                  { label: 'Eksportuj…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'lesson', id: lesson.id }) },
+                  'separator',
+                  { label: 'Usuń', icon: 'trash', destructive: true, onSelect: () => requestDeletion(ctx, { kind: 'lesson', id: lesson.id }) }
+                ]
+              })
+            }), progress);
+          });
       body = group({ title: 'Lekcje' }, rows);
     }
 

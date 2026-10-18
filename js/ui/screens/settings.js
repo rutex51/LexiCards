@@ -1,7 +1,7 @@
 // Ustawienia: wygląd, kopia zapasowa, przechowywanie danych, instalacja, dane przykładowe.
 
 import { backupFileName, createBackup, parseBackupText, validateBackup } from '../../core/backup.js';
-import { ACCENT_COLORS, accentColor, nowISO } from '../../core/model.js';
+import { ACCENT_COLORS, CONSOLIDATED_REVIEW_OPTIONS, accentColor, consolidatedReviewDays, nowISO } from '../../core/model.js';
 import { joinList, pluralDomains, pluralLessons, pluralModules, pluralNotes, pluralTerms } from '../../core/text.js';
 import { loadSampleData, openExportSheet } from '../actions.js';
 import { actionRow, field, formGroup, group, segmented, selectInput, valueRow } from '../components.js';
@@ -134,6 +134,18 @@ export class SettingsScreen {
     ];
     return h('div', { class: 'settings-review' },
       formGroup('Powtórki',
+        field('Lekcje utrwalone', selectInput({
+          value: String(consolidatedReviewDays(library.getSettings())),
+          testID: 'consolidated-review',
+          options: CONSOLIDATED_REVIEW_OPTIONS.map((option) => ({ value: String(option.days), label: option.label })),
+          onChange: async (value) => {
+            try {
+              await library.updateSettings({ consolidatedReviewDays: Number(value) });
+            } catch (error) {
+              await showError(error);
+            }
+          }
+        })),
         field('Docelowa skuteczność', selectInput({
           value: options.some((option) => Number(option.value) === current) ? String(current) : '0.9',
           testID: 'desired-retention',
@@ -148,8 +160,11 @@ export class SettingsScreen {
         }))
       ),
       h('p', { class: 'form-note' },
-        'Szansa, że w dniu powtórki będziesz pamiętać fiszkę. Wyższa wartość oznacza częstsze powtórki. '
-        + 'Zmiana dotyczy kolejnych ocen. Terminy wyznacza algorytm FSRS-6, osobno dla PL → EN i EN → PL.')
+        'Lekcje utrwalone to te, które oznaczysz ręcznie (menu „…” lekcji albo modułu): ich fiszki wracają najwcześniej '
+        + 'po tym czasie od ostatniej powtórki albo od oznaczenia. Fiszka, której nie pamiętasz, wraca jak zwykle, '
+        + 'a nowe pojęcie w lekcji zdejmuje oznaczenie. '
+        + 'Docelowa skuteczność to szansa, że w dniu powtórki będziesz pamiętać fiszkę – wyższa oznacza częstsze powtórki. '
+        + 'Terminy wyznacza algorytm FSRS-6, osobno dla PL → EN i EN → PL.')
     );
   }
 

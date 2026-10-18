@@ -2,7 +2,7 @@
    Układ wzorowany na aplikacjach systemowych iOS: zgrupowane listy, duży tytuł ekranu,
    pasek zakładek u dołu (telefon) albo panel boczny (szeroki ekran).
    Spis: 1. zmienne  2. podstawy  3. powłoka  4. przyciski  5. listy  6. pojęcia
-         7. formularze  8. okna  9. pozostałe  10. szeroki ekran  12. notatki  11. ruch */
+         7. formularze  8. okna  9. pozostałe  10. szeroki ekran  12. notatki  13. postęp i utrwalenie  11. ruch */
 
 /* ------------------------------------------------------------------ 1. zmienne */
 
@@ -4192,6 +4192,49 @@ a.row__main:active,
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ------------------------------------------------------------------ 13. postęp i utrwalenie */
+
+/* Pionowy pasek po lewej w wierszu lekcji i modułu: część pojęć „Opanowane” z fiszek. */
+.mastery-bar {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  width: 6px;
+  height: 36px;
+  border-radius: 3px;
+  background: var(--fill);
+  overflow: hidden;
+}
+
+.mastery-bar__fill {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  border-radius: 3px;
+  background: var(--status-mastered);
+}
+
+.row__leading:has(> .mastery-bar) { margin-right: -2px; }
+
+/* Lekcja albo moduł utrwalone ręcznie: delikatna zielona poświata. */
+.row--consolidated {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--status-mastered) 10%, var(--surface)),
+    color-mix(in srgb, var(--status-mastered) 3%, var(--surface)) 70%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--status-mastered) 20%, transparent),
+    inset 0 0 20px color-mix(in srgb, var(--status-mastered) 8%, transparent);
+}
+
+.group__list > li.row--consolidated + li::before,
+.group__list > li + li.row--consolidated::before { opacity: 0.5; }
+
+.mastery-done { font-weight: 600; color: var(--success); }
+
+.mastery-icon { background: var(--success-soft); color: var(--success); }
+
+.mastery-undo { align-self: center; margin-right: 6px; }
 
 /* ------------------------------------------------------------------ 11. ruch */
 

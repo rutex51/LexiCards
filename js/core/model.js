@@ -72,7 +72,8 @@ export const DOMAIN_ICONS = Object.freeze([
 ]);
 
 export const DEFAULT_DOMAIN_ICON = '📁';
-export const DEFAULT_DOMAIN_COLOR = 'blue';
+/** Od wersji 1.2 tło ikony nowej dziedziny jest szare (kolor można zmienić w edycji dziedziny). */
+export const DEFAULT_DOMAIN_COLOR = 'gray';
 export const DIFFICULTY_MIN = 1;
 export const DIFFICULTY_MAX = 5;
 
@@ -125,6 +126,8 @@ export function defaultSettings() {
     activeStudySession: null,      // trwająca sesja nauki – do wznowienia po ponownym otwarciu
     lastStudySession: null,        // ostatnia zakończona sesja: { config, queue, finishedAt } – do powtórzenia
     desiredRetention: 0.9,         // FSRS: docelowa szansa przypomnienia w dniu powtórki
+    consolidatedReviewDays: 30,    // lekcje oznaczone jako utrwalone: fiszki wracają najwcześniej po tylu dniach
+    domainColorsGray: true,        // wersja 1.2: tło ikon istniejących dziedzin zmienione jednorazowo na szare
     studySelection: null,          // ostatnio wybrany materiał: { domainID, moduleID, lessonIDs }
     lastBackupAt: null,
     createdAt: now,
@@ -170,10 +173,28 @@ export function makeLesson({ moduleID, domainID, name, details = null, sortOrder
     name,
     nameKey: normalizeKey(name),
     details,
+    // Ręczne „utrwalona” (data oznaczenia) – znika, gdy do lekcji dojdzie nowe pojęcie.
+    consolidatedAt: null,
     sortOrder,
     createdAt: now,
     updatedAt: now
   };
+}
+
+/** Jak często wracają fiszki z lekcji utrwalonych (dni) – do wyboru w Ustawieniach. */
+export const CONSOLIDATED_REVIEW_OPTIONS = Object.freeze([
+  { days: 30, label: 'co miesiąc', after: 'po miesiącu' },
+  { days: 60, label: 'co 2 miesiące', after: 'po 2 miesiącach' },
+  { days: 90, label: 'co 3 miesiące', after: 'po 3 miesiącach' },
+  { days: 180, label: 'co pół roku', after: 'po pół roku' },
+  { days: 365, label: 'raz w roku', after: 'po roku' }
+]);
+export const DEFAULT_CONSOLIDATED_REVIEW_DAYS = 30;
+
+/** Okres powtórek lekcji utrwalonych z ustawień (dni); nieznana wartość – domyślna. */
+export function consolidatedReviewDays(settings) {
+  const days = Number(settings?.consolidatedReviewDays);
+  return Number.isFinite(days) && days >= 7 && days <= 3650 ? days : DEFAULT_CONSOLIDATED_REVIEW_DAYS;
 }
 
 /** Pola pojęcia wynikające ze szkicu formularza (puste teksty → null). */

@@ -5,7 +5,7 @@ import { DIFFICULTY_MAX, DIRECTIONS } from '../../core/model.js';
 import { STATES } from '../../core/fsrs.js';
 import { BOTH, STATUS_LABELS, termStatus } from '../../core/stats.js';
 import {
-  DIRECTION_NAMES, MASTERY_NAMES, describeDue, describeProgress, dueTime, masteryLevel
+  DIRECTION_NAMES, MASTERY_NAMES, cardDueTime, describeDue, describeProgress, dueTime, masteryLevel
 } from '../../core/study.js';
 import {
   copyLesson, copyTerms, moveLesson, moveTerms, openAssessmentHistory, openExportSheet, openLessonForm, openTermForm,
@@ -15,6 +15,7 @@ import { emptyState, group, iconButton, navButton, primaryButton } from '../comp
 import { openMenu } from '../dialogs.js';
 import { h, replaceChildren } from '../dom.js';
 import { icon } from '../icons.js';
+import { consolidationMenuItem, consolidationRow } from '../mastery.js';
 import { lessonNoteRow, noteMenuItem, openLessonNote } from '../notes.js';
 import { routes } from '../router.js';
 import { missingView } from './library.js';
@@ -62,16 +63,23 @@ const shortDate = (time) => new Date(time).toLocaleDateString('pl-PL', { day: 'n
  * Stan nauki w kierunku: ostatnia ocena („2/3 – Częściowo opanowane, 12 paź 2026”),
  * a pod nią – osobno – harmonogram FSRS: termin powtórki i poziom długoterminowy.
  */
-function learningState(ctx, progress) {
+function learningState(ctx, term, direction) {
+  const progress = ctx.library.getProgress(term.id, direction);
   const state = describeProgress(progress);
-  if (!progress?.lastReviewedAt) return state;
+  // Lekcja utrwalona: termin rzadkiej powtórki (także dla fiszki jeszcze nieocenianej).
+  const consolidated = ctx.library.isLessonConsolidated(term.lessonID);
+  const due = cardDueTime(ctx.library, term, direction);
+  const dueLine = () => {
+    const when = describeDue(due);
+    const suffix = consolidated && due !== dueTime(progress) ? ' – lekcja utrwalona' : '';
+    return h('span', { class: 'term__schedule' },
+      when === 'teraz' ? `Powtórka: teraz${suffix}` : `Powtórka: ${shortDate(due)} (${when})${suffix}`);
+  };
+  if (!progress?.lastReviewedAt) return consolidated && due !== null ? h('span', { class: 'term__learning' }, state, dueLine()) : state;
   const lines = [h('span', { class: 'term__state' }, `${state}, ${shortDate(progress.lastReviewedAt)}`)];
   const schedule = progress.schedule;
+  if (schedule || (consolidated && due !== null)) lines.push(dueLine());
   if (schedule) {
-    const due = dueTime(progress);
-    const when = describeDue(progress);
-    lines.push(h('span', { class: 'term__schedule' },
-      when === 'teraz' ? 'Powtórka: teraz' : `Powtórka: ${shortDate(due)} (${when})`));
     const level = MASTERY_NAMES[masteryLevel(progress)];
     const recall = schedule.state === STATES.REVIEW
       ? Math.round(ctx.library.scheduler().retrievability({ ...schedule, lastReview: Date.parse(schedule.lastReview) }, Date.now()) * 100)
@@ -102,8 +110,8 @@ function termDetails(ctx, term) {
       detailItem('Tagi', formatTags(term.tags)),
       detailItem('Trudność', term.difficulty ? `${term.difficulty} z ${DIFFICULTY_MAX}` : null),
       detailItem('Notatki', term.notes),
-      detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.PL_EN]}`, learningState(ctx, forward)),
-      detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.EN_PL]}`, learningState(ctx, backward)),
+      detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.PL_EN]}`, learningState(ctx, term, DIRECTIONS.PL_EN)),
+      detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.EN_PL]}`, learningState(ctx, term, DIRECTIONS.EN_PL)),
       detailItem('Quizy', quizState(ctx, term))
     ),
     h('div', { class: 'term__links' },
@@ -316,6 +324,7 @@ export class LessonScreen {
       title: lesson.name,
       items: [
         noteMenuItem(ctx, lesson),
+        consolidationMenuItem(ctx, 'lesson', lesson.id),
         { label: 'Edytuj lekcję', icon: 'edit', onSelect: () => openLessonForm(ctx, { lessonID: lesson.id }) },
         { label: 'Przenieś do innego modułu', icon: 'move', onSelect: () => moveLesson(ctx, lesson.id) },
         { label: 'Kopiuj do…', icon: 'copy', onSelect: () => copyLesson(ctx, lesson.id) },
@@ -340,7 +349,7 @@ export class LessonScreen {
           iconButton('more', 'Więcej poleceń', moreMenu)
         ];
 
-    const noteGroup = group({ className: 'lesson-note' }, lessonNoteRow(ctx, lesson));
+    const noteGroup = group({ className: 'lesson-note' }, consolidationRow(ctx, lesson), lessonNoteRow(ctx, lesson));
     let body;
     if (terms.length === 0) {
       body = [

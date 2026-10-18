@@ -1106,6 +1106,13 @@ export class ImportScreen {
         ? 'Pojęcia trafią do istniejących lekcji – nie powstanie żadna nowa dziedzina, moduł ani lekcja.'
         : 'Notatki trafią do istniejących lekcji – nie powstanie żadna nowa dziedzina, moduł ani lekcja.', 'info'));
     }
+    if (this.contents.terms && plan.unconsolidated.length > 0) {
+      parts.push(h('section', { class: 'group', dataset: { testid: 'import-unconsolidated' } },
+        h('h3', { class: 'group__title' }, 'Przestaną być utrwalone'),
+        h('div', { class: 'wizard__created' }, limitedList(plan.unconsolidated)),
+        h('p', { class: 'group__footer' }, 'Dochodzą tu nowe pojęcia albo lekcje, więc ich fiszki wrócą do zwykłych powtórek. Status możesz potem nadać ponownie.')
+      ));
+    }
     parts.push(h('p', { class: 'note' }, icon('info', { size: 18 }),
       h('span', null, 'Import wykonuje się w całości albo wcale. Jeśli coś pójdzie nie tak, biblioteka zostanie bez zmian.')));
     return parts;
@@ -1128,6 +1135,16 @@ export class ImportScreen {
     if (result.modules > 0) created.push(plural(result.modules, 'moduł', 'moduły', 'modułów'));
     if (result.lessons > 0) created.push(plural(result.lessons, 'lekcję', 'lekcje', 'lekcji'));
     if (created.length > 0) lines.push(`Utworzono: ${joinList(created)}.`);
+    if (result.unconsolidated?.length > 0) {
+      // Ścieżka lekcji ma trzy części (dziedzina › moduł › lekcja), modułu – dwie.
+      const lessons = result.unconsolidated.filter((path) => path.split(' › ').length > 2).length;
+      const modules = result.unconsolidated.length - lessons;
+      const from = [
+        lessons > 0 ? `${lessons} lekcji` : null,
+        modules > 0 ? `${modules} ${pluralForm(modules, 'modułu', 'modułów', 'modułów')}` : null
+      ].filter(Boolean);
+      lines.push(`Zdjęto utrwalenie z ${joinList(from)}.`);
+    }
 
     const onlyLesson = result.lessonIDs.length === 1 ? library.getLesson(result.lessonIDs[0]) : null;
     return {
