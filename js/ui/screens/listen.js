@@ -319,13 +319,15 @@ export class ListenScreen {
       ? (estimateListening(sample, this.#options(), Number(library.getSettings().speechRate) || 1) / sample.length) * planned
       : 0;
 
-    const startButton = h('button', {
+    // Telefon: „Rozpocznij” to środkowy przycisk paska zakładek; szeroki ekran: przycisk na pasku poleceń.
+    const wide = ctx.isWide();
+    const startButton = wide ? h('button', {
       type: 'button',
       class: 'button button--primary',
       disabled: planned === 0 || !available,
       dataset: { testid: 'listen-start' },
       onClick: () => this.#start()
-    }, icon('play', { size: 18 }), h('span', null, 'Rozpocznij słuchanie'));
+    }, icon('play', { size: 18 }), h('span', null, 'Rozpocznij słuchanie')) : null;
 
     return {
       title: 'Słuchanie',
@@ -408,11 +410,16 @@ export class ListenScreen {
               h('a', { href: routes.settings() }, 'Ustawieniach'), '.'))))
         )
       ],
-      bottomBar: h('div', { class: 'bottombar__inner' },
+      bottomBar: h('div', { class: `bottombar__inner${startButton ? '' : ' bottombar__inner--note'}` },
         h('span', { class: 'bottombar__note', role: 'status', dataset: { testid: 'listen-planned' } },
           planned === 0 ? 'Brak pojęć dla tych ustawień' : `${pluralTerms(planned)}, ${formatMinutes(estimate)}`),
         startButton
-      )
+      ),
+      // Start w obsłudze dotknięcia – pierwsza wypowiedź musi paść bezpośrednio po geście (Safari).
+      primaryAction: wide ? null : {
+        label: 'Rozpocznij słuchanie', short: 'Rozpocznij', disabled: planned === 0 || !available, testID: 'listen-start',
+        onAction: () => this.#start()
+      }
     };
   }
 

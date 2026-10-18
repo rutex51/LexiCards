@@ -32,8 +32,18 @@ export class Shell {
       h('div', { class: 'sidebar__footer' }, this.#settingsLink('sidebar__link'))
     );
 
+    // Na ekranach przygotowania nauki i słuchania środkowy przycisk zamienia się w „Rozpocznij”
+    // (większe kółko z symbolem odtwarzania) – zamiast przycisku na pasku poleceń.
+    this.primaryAction = null;
+    this.primaryButton = h('button', {
+      type: 'button', class: 'tabbar__link tabbar__link--primary tabbar__link--action', hidden: true,
+      onClick: () => { if (this.primaryAction && !this.primaryAction.disabled) this.primaryAction.onAction(); }
+    });
     const tabbar = h('nav', { class: 'tabbar', 'aria-label': 'Główne sekcje' },
-      TABS.map((tab) => this.#navLink(tab, this.tabLinks, 'tabbar__link'))
+      TABS.map((tab) => [
+        this.#navLink(tab, this.tabLinks, 'tabbar__link'),
+        tab.id === PRIMARY_TAB ? this.primaryButton : null
+      ])
     );
 
     this.navbar = h('header', { class: 'navbar' }, this.backSlot, this.inlineTitle, this.actionSlot);
@@ -95,6 +105,30 @@ export class Shell {
     else this.settingsLink.removeAttribute('aria-current');
   }
 
+  /**
+   * Środkowy przycisk jako działanie ekranu: { label, short, disabled, testID, onAction } albo null
+   * (zwykła zakładka „Nauka”). `onAction` wywołuje się w obsłudze dotknięcia – słuchanie tego wymaga.
+   */
+  #setPrimaryAction(action) {
+    this.primaryAction = action ?? null;
+    const link = this.tabLinks.get(PRIMARY_TAB);
+    const button = this.primaryButton;
+    link.hidden = Boolean(action);
+    button.hidden = !action;
+    if (!action) {
+      button.replaceChildren();
+      delete button.dataset.testid;
+      return;
+    }
+    button.disabled = Boolean(action.disabled);
+    button.setAttribute('aria-label', action.label);
+    button.title = action.label;
+    if (action.testID) button.dataset.testid = action.testID;
+    replaceChildren(button,
+      h('span', { class: 'tabbar__bubble', 'aria-hidden': 'true' }, icon('play', { size: 30 })),
+      h('span', { 'aria-hidden': 'true' }, action.short ?? action.label));
+  }
+
   showBanner(message) {
     this.banner.hidden = !message;
     this.banner.textContent = message ?? '';
@@ -102,7 +136,7 @@ export class Shell {
 
   /**
    * Wyświetla ekran. view: { title, subtitle, back: { href, label }, actions: [Node],
-   * body: Node, bottomBar: Node|null, wide: bool }.
+   * body: Node, bottomBar: Node|null, wide: bool, primaryAction: { label, short, disabled, testID, onAction } }.
    * `keepScroll` zachowuje pozycję przewijania i fokus (odświeżenie tego samego ekranu).
    */
   render(view, { keepScroll = false } = {}) {
@@ -128,6 +162,7 @@ export class Shell {
     this.bottomBar.hidden = !view.bottomBar;
     replaceChildren(this.bottomBar, view.bottomBar ?? null);
     this.root.classList.toggle('app--bottombar', Boolean(view.bottomBar));
+    this.#setPrimaryAction(view.primaryAction);
 
     if (keepScroll) {
       window.scrollTo(0, scrollY);

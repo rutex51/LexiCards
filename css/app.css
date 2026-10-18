@@ -519,6 +519,47 @@ button:disabled { cursor: default; }
 .tabbar__link--primary:focus-visible { outline: none; }
 .tabbar__link--primary:focus-visible .tabbar__bubble { outline: 2px solid var(--accent); outline-offset: 6px; }
 
+/* Na ekranach przygotowania nauki i słuchania środkowy przycisk to „Rozpocznij”: większe kółko
+   z symbolem odtwarzania. Przy pustym zakresie – szare i nieaktywne. */
+.tabbar__link--action {
+  padding: 0 0 4px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.tabbar__link--action .tabbar__bubble {
+  top: -31px;
+  width: 62px;
+  height: 62px;
+  margin-left: -31px;
+  animation: bubble-in 0.22s ease-out;
+}
+
+/* Trójkąt odtwarzania optycznie na środku koła. */
+.tabbar__link--action .tabbar__bubble svg { margin-left: 4px; }
+
+.tabbar__link--action:disabled { color: var(--text-3); cursor: default; }
+
+.tabbar__link--action:disabled .tabbar__bubble {
+  background: var(--fill);
+  color: var(--text-3);
+  box-shadow: 0 0 0 4px var(--bar-solid);
+}
+
+@keyframes bubble-in {
+  from { transform: scale(0.84); }
+  to { transform: scale(1); }
+}
+
+/* Pasek poleceń bez przycisku (telefon): opis po lewej, obok wystającego „Rozpocznij”. */
+.bottombar__inner--note { justify-content: flex-start; }
+.bottombar__inner--note .bottombar__note { max-width: calc(50% - 46px); }
+
 /* Pasek poleceń nad zakładkami: dół zostaje wolny pod wystającym przyciskiem. */
 @media (max-width: 899px) {
   .app:not(.app--focus) .bottombar__inner { padding-bottom: 24px; }

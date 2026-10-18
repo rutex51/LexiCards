@@ -500,6 +500,65 @@ test('kolor aplikacji: wybór w ustawieniach, osobno od motywu, ustawiany przed 
   assert.equal(await page.evaluate(() => localStorage.getItem('lexicards-accent')), 'blue');
 });
 
+test('telefon: środkowy przycisk „Nauka” – na ekranach przygotowania nauki i słuchania to „Rozpocznij”', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const tabbar = page.locator('.tabbar');
+  const studyLink = tabbar.locator('a.tabbar__link--primary');
+  const action = tabbar.locator('button.tabbar__link--action');
+  // Start: zwykła zakładka w kółku.
+  assert.equal(await studyLink.isVisible(), true);
+  assert.equal(await action.isVisible(), false);
+  await expectText(studyLink, 'Nauka');
+
+  // Nauka: kółko z symbolem odtwarzania zamiast przycisku na pasku poleceń.
+  await studyLink.click();
+  await page.locator('[data-testid=study-planned]').waitFor();
+  assert.equal(await studyLink.isVisible(), false);
+  assert.equal(await action.isVisible(), true);
+  assert.equal(await action.getAttribute('aria-label'), 'Rozpocznij naukę');
+  await expectText(action, 'Rozpocznij');
+  assert.equal(await page.locator('.bottombar button').count(), 0, 'pasek poleceń bez przycisku');
+  const bubble = await action.locator('.tabbar__bubble').boundingBox();
+  await page.evaluate(() => { location.hash = '#/start'; });
+  const normal = await studyLink.locator('.tabbar__bubble').boundingBox();
+  assert.ok(bubble.width > normal.width, `większe kółko: ${bubble.width} px zamiast ${normal.width} px`);
+  await studyLink.click();
+  await page.locator('[data-testid=study-planned]').waitFor();
+  // Pusty zakres – przycisk nieaktywny.
+  await page.selectOption('[data-testid=study-scope]', 'repeat');
+  assert.equal(await action.isDisabled(), true);
+  await page.selectOption('[data-testid=study-scope]', 'all');
+  assert.equal(await action.isDisabled(), false);
+  await action.click();
+  await page.locator('[data-testid=study-session]').waitFor();
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).click();
+  await page.locator('[data-testid=study-planned]').waitFor();
+
+  // Słuchanie: to samo, z własną nazwą.
+  await page.click('[data-testid=study-listen]');
+  await page.locator('[data-testid=listen-planned]').waitFor();
+  assert.equal(await action.getAttribute('aria-label'), 'Rozpocznij słuchanie');
+  assert.equal(await action.getAttribute('data-testid'), 'listen-start');
+
+  // Inna zakładka – znowu zwykła „Nauka”.
+  await tabbar.getByRole('link', { name: 'Quiz' }).click();
+  await page.locator('[data-testid=quiz-start]').waitFor();
+  assert.equal(await studyLink.isVisible(), true);
+  assert.equal(await action.isVisible(), false);
+  assert.equal(await action.getAttribute('data-testid'), null);
+});
+
+test('szeroki ekran: „Rozpocznij naukę” zostaje na pasku poleceń (bez paska zakładek)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  await page.evaluate(() => { location.hash = '#/study'; });
+  await page.locator('[data-testid=study-planned]').waitFor();
+  assert.equal(await page.locator('.tabbar').isVisible(), false);
+  await expectText(page.locator('.bottombar [data-testid=study-start]'), 'Rozpocznij naukę');
+  assert.equal(await page.locator('[data-testid=study-start]').count(), 1);
+}, { device: DESKTOP });
+
 test('szeroki ekran: panel boczny i tabela glosariusza; wąski: zakładki i lista', async ({ open }) => {
   const page = await open();
   await loadSamples(page);

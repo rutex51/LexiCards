@@ -98,6 +98,14 @@ pobierając aktualizację.
   od pozostałych i wystający nad pasek; nazwa zostaje pod nim. Pasek poleceń nad zakładkami
   i komunikaty mają u dołu miejsce na wystający przycisk. Na szerokim ekranie (panel boczny) bez zmian.
 
+## Uzupełnienie w wersji 1.0.4
+
+- **„Rozpocznij” w środkowym przycisku (telefon):** na ekranach przygotowania nauki i słuchania
+  środkowe kółko zamienia się w większy przycisk z symbolem odtwarzania i napisem „Rozpocznij” –
+  zamiast przycisku „Rozpocznij naukę” / „Rozpocznij słuchanie” na pasku poleceń, gdzie zostaje
+  tylko liczba fiszek (pojęć). Przy pustym zakresie przycisk jest szary i nieaktywny. Na innych
+  ekranach to zwykła zakładka „Nauka”. Na szerokim ekranie przycisk zostaje na pasku poleceń.
+
 ## Znane ograniczenia
 
 - Dane są w przeglądarce na danym urządzeniu; aplikacja z ekranu początkowego iPhone'a i karta

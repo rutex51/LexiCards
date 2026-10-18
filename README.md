@@ -110,8 +110,9 @@ trzeba najpierw zapisać w Excelu jako `.xlsx`.
 
 ### Nauka z fiszkami
 
-1. W zakładce **Nauka** wybierz materiał i dotknij **Rozpocznij naukę** (albo „Ucz się tej lekcji”
-   na ekranie lekcji).
+1. W zakładce **Nauka** wybierz materiał i dotknij **Rozpocznij** – na telefonie to duży okrągły przycisk
+   z symbolem odtwarzania w środku paska zakładek, na komputerze „Rozpocznij naukę” na dole ekranu
+   (albo „Ucz się tej lekcji” na ekranie lekcji).
 2. Przypomnij sobie odpowiedź i dotknij fiszki, żeby ją odwrócić.
 3. Zaznacz kafelki tego, co umiesz: pojęcie, definicję, przykład.
 4. Przesuń fiszkę **w lewo – Umiem** albo **w prawo – Powtórz** (są też przyciski).

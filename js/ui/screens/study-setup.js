@@ -176,13 +176,15 @@ export class StudySetupScreen {
     const repeatable = active ? null : library.getRepeatableStudy();
     const reviewCount = active ? 0 : todaysReviewQueue(library).length;
 
-    const startButton = h('button', {
+    // Telefon: „Rozpocznij” to środkowy przycisk paska zakładek; szeroki ekran: przycisk na pasku poleceń.
+    const wide = ctx.isWide();
+    const startButton = wide ? h('button', {
       type: 'button',
       class: 'button button--primary',
       disabled: planned === 0,
       dataset: { testid: 'study-start' },
       onClick: () => this.#start()
-    }, 'Rozpocznij naukę');
+    }, 'Rozpocznij naukę') : null;
 
     return {
       title: 'Nauka',
@@ -272,13 +274,16 @@ export class StudySetupScreen {
             'Gdy pojęcie nie ma takiej treści w języku pytania, na pierwszej stronie zobaczysz samo pojęcie.')
         )
       ],
-      bottomBar: h('div', { class: 'bottombar__inner' },
+      bottomBar: h('div', { class: `bottombar__inner${startButton ? '' : ' bottombar__inner--note'}` },
         h('span', { class: 'bottombar__note', role: 'status', dataset: { testid: 'study-planned' } },
           planned === 0
             ? 'Brak fiszek dla tych ustawień'
             : (planned < matching ? `${pluralCards(planned)} z ${matching} pasujących` : pluralCards(planned))),
         startButton
-      )
+      ),
+      primaryAction: wide ? null : {
+        label: 'Rozpocznij naukę', short: 'Rozpocznij', disabled: planned === 0, testID: 'study-start', onAction: () => this.#start()
+      }
     };
   }
 }
