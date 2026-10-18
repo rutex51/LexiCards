@@ -519,10 +519,12 @@ test('telefon: środkowy przycisk „Nauka” – na ekranach przygotowania nauk
   assert.equal(await action.getAttribute('aria-label'), 'Rozpocznij naukę');
   await expectText(action, 'Rozpocznij');
   assert.equal(await page.locator('.bottombar button').count(), 0, 'pasek poleceń bez przycisku');
+  // Rozmiar po krótkiej animacji pojawienia się.
+  await action.locator('.tabbar__bubble').evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
   const bubble = await action.locator('.tabbar__bubble').boundingBox();
   await page.evaluate(() => { location.hash = '#/start'; });
   const normal = await studyLink.locator('.tabbar__bubble').boundingBox();
-  assert.ok(bubble.width > normal.width, `większe kółko: ${bubble.width} px zamiast ${normal.width} px`);
+  assert.deepEqual([bubble.width, bubble.height, bubble.y], [normal.width, normal.height, normal.y], 'to samo kółko co „Nauka”');
   await studyLink.click();
   await page.locator('[data-testid=study-planned]').waitFor();
   // Pusty zakres – przycisk nieaktywny.

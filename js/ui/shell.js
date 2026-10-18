@@ -33,7 +33,7 @@ export class Shell {
     );
 
     // Na ekranach przygotowania nauki i słuchania środkowy przycisk zamienia się w „Rozpocznij”
-    // (większe kółko z symbolem odtwarzania) – zamiast przycisku na pasku poleceń.
+    // (to samo kółko z symbolem odtwarzania) – zamiast przycisku na pasku poleceń.
     this.primaryAction = null;
     this.primaryButton = h('button', {
       type: 'button', class: 'tabbar__link tabbar__link--primary tabbar__link--action', hidden: true,
@@ -125,7 +125,7 @@ export class Shell {
     button.title = action.label;
     if (action.testID) button.dataset.testid = action.testID;
     replaceChildren(button,
-      h('span', { class: 'tabbar__bubble', 'aria-hidden': 'true' }, icon('play', { size: 30 })),
+      h('span', { class: 'tabbar__bubble', 'aria-hidden': 'true' }, icon('play', { size: 28 })),
       h('span', { 'aria-hidden': 'true' }, action.short ?? action.label));
   }
 

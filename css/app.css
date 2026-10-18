@@ -519,7 +519,7 @@ button:disabled { cursor: default; }
 .tabbar__link--primary:focus-visible { outline: none; }
 .tabbar__link--primary:focus-visible .tabbar__bubble { outline: 2px solid var(--accent); outline-offset: 6px; }
 
-/* Na ekranach przygotowania nauki i słuchania środkowy przycisk to „Rozpocznij”: większe kółko
+/* Na ekranach przygotowania nauki i słuchania środkowy przycisk to „Rozpocznij”: kółko
    z symbolem odtwarzania. Przy pustym zakresie – szare i nieaktywne. */
 .tabbar__link--action {
   padding: 0 0 4px;
@@ -532,16 +532,12 @@ button:disabled { cursor: default; }
   cursor: pointer;
 }
 
-.tabbar__link--action .tabbar__bubble {
-  top: -31px;
-  width: 62px;
-  height: 62px;
-  margin-left: -31px;
-  animation: bubble-in 0.22s ease-out;
-}
+/* Ten sam rozmiar kółka co zakładka „Nauka” – zmienia się tylko symbol. */
+.tabbar__link--action .tabbar__bubble { animation: bubble-in 0.22s ease-out; }
 
-/* Trójkąt odtwarzania optycznie na środku koła. */
-.tabbar__link--action .tabbar__bubble svg { margin-left: 4px; }
+/* Trójkąt odtwarzania na środku koła: sam rysunek ikony ma środek ciężkości w środku pola
+   (wierzchołek po prawej), więc lekkie przesunięcie w lewo wyrównuje go także na oko. */
+.tabbar__link--action .tabbar__bubble svg { margin-left: -1px; }
 
 .tabbar__link--action:disabled { color: var(--text-3); cursor: default; }
 

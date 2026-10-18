@@ -106,6 +106,11 @@ pobierając aktualizację.
   tylko liczba fiszek (pojęć). Przy pustym zakresie przycisk jest szary i nieaktywny. Na innych
   ekranach to zwykła zakładka „Nauka”. Na szerokim ekranie przycisk zostaje na pasku poleceń.
 
+## Poprawka w wersji 1.0.5
+
+- Przycisk „Rozpocznij” ma to samo kółko co zakładka „Nauka” (zmienia się tylko symbol), a symbol
+  odtwarzania jest wyśrodkowany w kole (wcześniej był przesunięty w prawo).
+
 ## Znane ograniczenia
 
 - Dane są w przeglądarce na danym urządzeniu; aplikacja z ekranu początkowego iPhone'a i karta
