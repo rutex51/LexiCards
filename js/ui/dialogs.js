@@ -7,7 +7,11 @@ import { icon } from './icons.js';
 
 let dialogCounter = 0;
 
-function mountDialog(className, content, { onClose } = {}) {
+/**
+ * Pokazuje okno modalne. onDismiss (opcjonalnie) przejmuje zamknięcie przez Esc i dotknięcie
+ * tła – np. żeby zapytać o niezapisane zmiany; bez niego okno po prostu się zamyka.
+ */
+export function mountDialog(className, content, { onClose, onDismiss } = {}) {
   const dialog = h('dialog', { class: `dialog ${className}` }, content);
   document.body.appendChild(dialog);
   dialog.addEventListener('close', () => {
@@ -16,8 +20,16 @@ function mountDialog(className, content, { onClose } = {}) {
   });
   // Dotknięcie tła (poza panelem) zamyka okno.
   dialog.addEventListener('click', (event) => {
-    if (event.target === dialog) dialog.close('dismiss');
+    if (event.target !== dialog) return;
+    if (onDismiss) onDismiss();
+    else dialog.close('dismiss');
   });
+  if (onDismiss) {
+    dialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      onDismiss();
+    });
+  }
   dialog.showModal();
   return dialog;
 }

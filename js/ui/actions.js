@@ -6,14 +6,14 @@ import {
   DEFAULT_DOMAIN_COLOR, DEFAULT_DOMAIN_ICON, DIFFICULTY_MAX, DIFFICULTY_MIN, DOMAIN_COLORS,
   DOMAIN_COLOR_NAMES, DOMAIN_ICONS, emptyTermDraft, termToDraft
 } from '../core/model.js';
-import { EXPORT_FORMATS, buildExportFile, collectExportRows } from '../core/exporter.js';
+import { EXPORT_FORMATS, buildExportFile, collectExportNotes, collectExportRows } from '../core/exporter.js';
 import { ASSESSMENT_STATUS_NAMES } from '../core/model.js';
 import { RATING_NAMES } from '../core/fsrs.js';
 import {
   DECISION_NAMES, DIRECTION_NAMES, RATING_LABELS, buildQueue, formatInterval, reviewConfig
 } from '../core/study.js';
 import { installSampleData } from '../core/samples.js';
-import { formatTags, isBlank, parseTags, pluralTerms } from '../core/text.js';
+import { formatTags, isBlank, parseTags, pluralNotes, pluralTerms } from '../core/text.js';
 import { field, formGroup, message, segmented, selectInput, textArea, textInput, toggle } from './components.js';
 import { confirmDialog, openFormSheet, showError, toast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
@@ -661,18 +661,31 @@ export function openExportSheet(ctx, scope) {
   const { library } = ctx;
   const { name, rows } = collectExportRows(library, scope);
   const count = rows.length;
-  const state = { format: 'xlsx' };
+  const notes = collectExportNotes(library, scope);
+  const state = { format: 'xlsx', notes: true };
 
   return openFormSheet({
     title: 'Eksport do pliku',
     submitLabel: 'Eksportuj',
     build(api) {
-      api.setCanSubmit(count > 0);
-      return [
+      const withNotes = () => state.format === 'xlsx' && state.notes && notes.length > 0;
+      const empty = message(notes.length > 0 ? 'W tym zakresie nie ma pojęć – plik CSV byłby pusty. Wybierz Excel, żeby wyeksportować notatki.' : 'W tym zakresie nie ma pojęć do eksportu.', 'warning');
+      const notesOptions = notes.length > 0
+        ? h('div', { class: 'form-stack', dataset: { testid: 'export-notes' } },
+            formGroup(null, toggle({ checked: state.notes, label: `Dołącz notatki do lekcji (${notes.length})`, onChange: (value) => { state.notes = value; sync(); } })),
+            h('p', { class: 'form-note' }, 'Arkusz „Notatki” z tekstem z formatowaniem i obrazami – w tym samym układzie, który przyjmuje import.'))
+        : null;
+      const sync = () => {
+        api.setCanSubmit(count > 0 || withNotes());
+        empty.hidden = count > 0 || withNotes();
+        if (notesOptions) notesOptions.hidden = state.format !== 'xlsx';
+      };
+      const view = [
         formGroup('Zakres',
           h('div', { class: 'field', dataset: { testid: 'export-scope' } },
             h('span', { class: 'field__label' }, EXPORT_SCOPE_LABELS[scope.kind](name)),
-            h('span', null, pluralTerms(count))
+            h('span', null, pluralTerms(count)),
+            notes.length > 0 ? h('span', { class: 'field__hint' }, `Notatki do lekcji: ${notes.length}`) : null
           )
         ),
         h('section', { class: 'group' },
@@ -682,24 +695,27 @@ export function openExportSheet(ctx, scope) {
             label: 'Format pliku',
             value: state.format,
             options: EXPORT_FORMATS.map((format) => ({ value: format.id, label: format.label })),
-            onChange: (value) => { state.format = value; }
+            onChange: (value) => { state.format = value; sync(); }
           })
         ),
-        count === 0
-          ? message('W tym zakresie nie ma pojęć do eksportu.', 'warning')
-          : h('p', { class: 'form-note' },
-              'Plik ma te same kolumny, których oczekuje import, więc możesz go poprawić w arkuszu i wczytać z powrotem. Postępy nauki zapisuje kopia zapasowa w Ustawieniach, nie eksport.')
+        notesOptions,
+        empty,
+        h('p', { class: 'form-note' },
+          'Plik ma te same kolumny, których oczekuje import, więc możesz go poprawić w arkuszu i wczytać z powrotem. Postępy nauki zapisuje kopia zapasowa w Ustawieniach, nie eksport.')
       ];
+      sync();
+      return view;
     },
     async onSubmit() {
-      const exported = await buildExportFile(library, scope, state.format);
+      const exported = await buildExportFile(library, scope, state.format, new Date(), { notes: state.notes });
       const file = new File([exported.bytes], exported.name, { type: exported.type });
+      const contents = exported.notes > 0 ? `${pluralTerms(exported.count)} i ${pluralNotes(exported.notes)}` : pluralTerms(exported.count);
       const outcome = await deliverFile(file, {
         title: 'Plik jest gotowy',
-        message: `Zawiera: ${pluralTerms(exported.count)}. W następnym kroku wybierz „Zachowaj w Plikach”.`
+        message: `Zawiera: ${contents}. W następnym kroku wybierz „Zachowaj w Plikach”.`
       });
       if (outcome === 'cancelled') return false;
-      toast(outcome === 'downloaded' ? `Zapisano plik ${file.name}.` : `Wyeksportowano: ${pluralTerms(exported.count)}.`);
+      toast(outcome === 'downloaded' ? `Zapisano plik ${file.name}.` : `Wyeksportowano: ${contents}.`);
       return true;
     }
   });

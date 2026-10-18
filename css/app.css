@@ -2,7 +2,7 @@
    Układ wzorowany na aplikacjach systemowych iOS: zgrupowane listy, duży tytuł ekranu,
    pasek zakładek u dołu (telefon) albo panel boczny (szeroki ekran).
    Spis: 1. zmienne  2. podstawy  3. powłoka  4. przyciski  5. listy  6. pojęcia
-         7. formularze  8. okna  9. pozostałe  10. szeroki ekran  11. ruch */
+         7. formularze  8. okna  9. pozostałe  10. szeroki ekran  12. notatki  11. ruch */
 
 /* ------------------------------------------------------------------ 1. zmienne */
 
@@ -57,6 +57,12 @@
   --danger-soft: rgba(215, 0, 21, 0.1);
   --warning: #7d4200;
   --warning-soft: rgba(255, 149, 0, 0.18);
+  /* Kolory tekstu w notatkach – zapisane jako nazwy, więc w ciemnym motywie są jaśniejsze. */
+  --note-red: #d70015;
+  --note-orange: #c45500;
+  --note-green: #248a3d;
+  --note-blue: #0040dd;
+  --note-purple: #8944ab;
   --star: #e09b00;
   --switch-on: #2fa84f;
   --success: #166c2e;
@@ -138,6 +144,11 @@
     --danger-soft: rgba(255, 69, 58, 0.2);
     --warning: #ffb650;
     --warning-soft: rgba(255, 159, 10, 0.2);
+    --note-red: #ff6961;
+    --note-orange: #ffb340;
+    --note-green: #30d158;
+    --note-blue: #409cff;
+    --note-purple: #da8fff;
     --star: #ffcc33;
     --success: #5fd880;
     --success-soft: rgba(48, 209, 88, 0.2);
@@ -199,6 +210,11 @@
   --danger-soft: rgba(255, 69, 58, 0.2);
   --warning: #ffb650;
   --warning-soft: rgba(255, 159, 10, 0.2);
+  --note-red: #ff6961;
+  --note-orange: #ffb340;
+  --note-green: #30d158;
+  --note-blue: #409cff;
+  --note-purple: #da8fff;
   --star: #ffcc33;
   --success: #5fd880;
   --success-soft: rgba(48, 209, 88, 0.2);
@@ -2071,8 +2087,17 @@ a.row__main:active,
   border-radius: 50%;
 }
 
-.term__history {
+.term__links {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 8px;
   margin: 6px 0 -6px -10px;
+}
+
+.term__links:empty { display: none; }
+
+.term__history {
+  gap: 6px;
   min-height: 40px;
 }
 
@@ -3673,6 +3698,499 @@ a.row__main:active,
     color: var(--text-2);
     text-align: center;
   }
+}
+
+/* ------------------------------------------------------------------ 12. notatki */
+
+/* Treść notatki – ta sama w podglądzie i w edytorze. */
+.note-text {
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.note-text ul,
+.note-text ol { margin: 0; padding-left: 1.45em; }
+.note-text > * + *,
+.note-text > * + ul,
+.note-text > * + ol { margin-top: 0.7em; }
+.note-text h3 { font-size: 1.15rem; font-weight: 700; line-height: 1.3; }
+.note-text > * + h3 { margin-top: 1.1em; }
+.note-text ul { list-style: disc; }
+.note-text ul ul { list-style: circle; }
+.note-text ul ul ul { list-style: square; }
+.note-text ol { list-style: decimal; }
+.note-text li + li,
+.note-text li > ul,
+.note-text li > ol { margin-top: 0.25em; }
+.note-text li::marker { color: var(--text-2); }
+.note-text strong, .note-text b { font-weight: 700; }
+.note-text a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.note-text sup, .note-text sub { line-height: 0; }
+
+.note-text [data-color="red"] { color: var(--note-red); }
+.note-text [data-color="orange"] { color: var(--note-orange); }
+.note-text [data-color="green"] { color: var(--note-green); }
+.note-text [data-color="blue"] { color: var(--note-blue); }
+.note-text [data-color="purple"] { color: var(--note-purple); }
+/* Kolor nadany w edytorze (znacznik <font>): z palety – w odcieniu motywu, inny – zwykły tekst. */
+.note-text font[color] { color: inherit; }
+.note-text font[color="#d70015" i] { color: var(--note-red); }
+.note-text font[color="#c45500" i] { color: var(--note-orange); }
+.note-text font[color="#248a3d" i] { color: var(--note-green); }
+.note-text font[color="#0040dd" i] { color: var(--note-blue); }
+.note-text font[color="#8944ab" i] { color: var(--note-purple); }
+
+/* Okno notatki. */
+@media (min-width: 700px) {
+  .dialog.sheet.note-dialog { width: min(720px, calc(100vw - 48px)); }
+  .note-dialog .sheet__panel { max-height: min(900px, calc(var(--vv-height, 100dvh) - 48px)); }
+}
+
+.note-sheet__body { gap: 18px; }
+
+.note-sheet__heading {
+  display: grid;
+  gap: 3px;
+  padding: 0 4px;
+}
+
+.note-sheet__path {
+  font-size: var(--size-foot);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.note-sheet__lesson {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.note-sheet__text {
+  padding: 16px var(--gutter) 18px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.note-sheet__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.note-sheet__actions:empty { display: none; }
+
+.button--danger-plain { background: var(--danger-soft); color: var(--danger); }
+
+/* Obrazy w podglądzie: pełna szerokość, dotknięcie powiększa. Białe tło – schematy z
+   przezroczystym tłem są czytelne także w ciemnym motywie. */
+.note-gallery {
+  display: grid;
+  gap: 12px;
+}
+
+.note-gallery__item {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #ffffff;
+  cursor: zoom-in;
+}
+
+.note-gallery__item img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 72vh;
+  object-fit: contain;
+}
+
+.note-gallery__item:focus-visible { outline-offset: 3px; }
+
+/* Edytor. */
+.note-editor {
+  display: grid;
+  gap: 22px;
+}
+
+.note-editor__text,
+.note-editor__images { min-width: 0; }
+
+.note-editor__toolbar {
+  position: sticky;
+  top: -18px;
+  z-index: 2;
+  margin: 0 -2px;
+  padding: 6px 2px 8px;
+  background: var(--sheet-bg);
+}
+
+.note-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.note-toolbar::-webkit-scrollbar { display: none; }
+
+.note-toolbar__button {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 40px;
+  border-radius: 9px;
+  color: var(--text);
+}
+
+.note-toolbar__button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.note-toolbar__button:active { background: var(--pressed); }
+.note-toolbar__button:focus-visible { outline-offset: -2px; }
+
+/* Kolor tekstu: pasek z kolorami palety pod literą. */
+.note-toolbar__button--color::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 7px;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--note-red), var(--note-orange), var(--note-green), var(--note-blue), var(--note-purple));
+}
+
+.note-toolbar__button--color svg { margin-top: -4px; }
+
+@media (hover: hover) {
+  .note-toolbar__button:hover { background: var(--hover); }
+  .note-toolbar__button[aria-pressed="true"]:hover { background: var(--accent-soft); }
+}
+
+.note-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 8px 2px;
+}
+
+.note-colors__swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+.note-colors__swatch[data-color="red"] { --swatch: var(--note-red); }
+.note-colors__swatch[data-color="orange"] { --swatch: var(--note-orange); }
+.note-colors__swatch[data-color="green"] { --swatch: var(--note-green); }
+.note-colors__swatch[data-color="blue"] { --swatch: var(--note-blue); }
+.note-colors__swatch[data-color="purple"] { --swatch: var(--note-purple); }
+
+.note-colors__swatch--none {
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 1.5px var(--separator);
+}
+
+.note-editor__area {
+  position: relative;
+  min-height: 220px;
+  padding: 14px var(--gutter) 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.note-editor__area:focus { box-shadow: inset 0 0 0 2px var(--accent); }
+
+.note-editor__area--empty::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  top: 14px;
+  left: var(--gutter);
+  right: var(--gutter);
+  color: var(--placeholder);
+  pointer-events: none;
+}
+
+.note-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 10px;
+}
+
+.note-images__item,
+.note-images__add {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.note-images__item { background: #ffffff; box-shadow: inset 0 0 0 1px var(--separator); }
+
+.note-images__open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+}
+
+.note-images__open img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.note-images__remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.62);
+  color: #ffffff;
+}
+
+/* Większe pole dotyku niż sam krążek. */
+.note-images__remove::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+.note-images__add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent);
+  font-size: var(--size-foot);
+  font-weight: 600;
+}
+
+.note-images__add:disabled { opacity: 0.4; }
+.note-editor--drop .note-images__add { background: var(--accent-soft); border-style: solid; }
+
+.note-images__item--pending {
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+}
+
+.note-images__spinner {
+  width: 24px;
+  height: 24px;
+  border: 2.5px solid var(--fill);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.note-images__status {
+  margin-top: 6px;
+  font-size: var(--size-foot);
+  color: var(--text-2);
+}
+
+.note-images__status:empty { display: none; }
+
+.note-clipboard {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 600px;
+  opacity: 0;
+}
+
+/* Wiersz notatki na ekranie lekcji i przycisk notatki na liście lekcji. */
+.row__button.note-row { color: var(--text); }
+
+.note-row__preview {
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.note-row__thumb {
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px var(--separator);
+}
+
+.note-row__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.note-row__count {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.66);
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.row__note {
+  align-self: center;
+  color: var(--accent);
+}
+
+.row:has(> .row__note) .row__main { padding-right: 0; }
+
+/* Notatki w kreatorze importu. */
+.note-preview__text {
+  font-size: var(--size-sub);
+  overflow-wrap: anywhere;
+}
+
+.note-preview__images {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.note-preview__thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px var(--separator);
+}
+
+.note-preview__more {
+  font-size: var(--size-foot);
+  color: var(--text-2);
+}
+
+.status--error { color: var(--danger); }
+
+/* Powiększony obraz na cały ekran. */
+.dialog.lightbox {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.dialog.lightbox::backdrop { background: rgba(0, 0, 0, 0.96); }
+
+.lightbox__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  color: #ffffff;
+}
+
+.lightbox__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top) + 8px) calc(env(safe-area-inset-right) + 12px) 8px calc(env(safe-area-inset-left) + 12px);
+}
+
+.lightbox__counter {
+  padding-left: 6px;
+  font-size: var(--size-sub);
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.lightbox__spacer { flex: 1; }
+
+.lightbox__button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.lightbox__button:active { background: rgba(255, 255, 255, 0.3); }
+
+.lightbox__stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+  padding-bottom: env(safe-area-inset-bottom);
+  -webkit-overflow-scrolling: touch;
+}
+
+/* margin: auto środkuje mały obraz, a duży (powiększony) przewija się od krawędzi. */
+.lightbox__image {
+  flex: none;
+  display: block;
+  margin: auto;
+  max-width: none;
+  height: auto;
+  background: #ffffff;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+}
+
+.lightbox__stage--zoomed { cursor: grab; }
+
+.lightbox__previous,
+.lightbox__next {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.lightbox__previous { left: calc(env(safe-area-inset-left) + 10px); }
+.lightbox__next { right: calc(env(safe-area-inset-right) + 10px); }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ------------------------------------------------------------------ 11. ruch */

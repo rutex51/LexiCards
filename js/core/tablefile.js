@@ -48,7 +48,7 @@ function looksBinary(bytes) {
 
 /**
  * Otwiera plik z tabelą. Zwraca jeden z opisów:
- *   { kind: 'xlsx', sheets: [{ name, hidden }], readSheet(index) → tabela }
+ *   { kind: 'xlsx', sheets: [{ name, hidden }], readSheet(index, { rich }) → tabela }
  *   { kind: 'csv', encoding, delimiter, read({ encoding, delimiter }) → tabela }
  * Tabela: { rows: [{ number, cells }], columnCount }.
  * Zgłasza SpreadsheetError z komunikatem dla użytkownika, gdy pliku nie da się odczytać.
@@ -78,7 +78,7 @@ export async function openTableFile(bytes) {
       }
       throw hasWorkbook ? error : new SpreadsheetError(describeForeignArchive(bytes));
     }
-    return { kind: 'xlsx', sheets: workbook.sheets, readSheet: (index) => workbook.readSheet(index) };
+    return { kind: 'xlsx', sheets: workbook.sheets, readSheet: (index, options) => workbook.readSheet(index, options) };
   }
 
   const encoding = detectEncoding(bytes);

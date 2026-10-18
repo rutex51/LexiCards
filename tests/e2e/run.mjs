@@ -1089,6 +1089,413 @@ test('wyeksportowany plik wczytany do pustej aplikacji odtwarza bibliotekę', as
   }
 });
 
+// ---------------------------------------------------------------- notatki lekcji
+
+const IMAGE_FILE = path.join(ROOT, 'icons/icon-192.png');
+const noteDialog = (page) => page.locator('dialog.note-dialog[open]');
+
+/** Identyfikatory lekcji z danych przykładowych. */
+function sampleLessons(page) {
+  return page.evaluate(() => {
+    const lessons = [...window.lexicards.library.maps.lessons.values()];
+    const statements = lessons.find((lesson) => lesson.name === 'Financial Statements');
+    const investments = lessons.find((lesson) => lesson.name === 'Investments');
+    return { statements: statements.id, investments: investments.id, module: statements.moduleID };
+  });
+}
+
+/** Notatka z biblioteki (tekst i opis obrazów). */
+const storedNote = (page, lessonID) => page.evaluate((id) => window.lexicards.library.getNote(id), lessonID);
+
+/** Czy wszystkie obrazy w elemencie są wczytane (mają wymiary). */
+function imagesLoaded(locator) {
+  return locator.evaluate((element) => [...element.querySelectorAll('img')].every((image) => image.complete && image.naturalWidth > 0));
+}
+
+test('notatka lekcji: dodanie z listy lekcji, formatowanie, obraz, podgląd, powiększenie, usunięcie', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.goto(`${page.url().split('#')[0]}#/library/module/${ids.module}`);
+  await expectText(title(page), 'Finance');
+  assert.equal(await page.getByRole('button', { name: 'Notatka: Financial Statements' }).count(), 0, 'bez notatki nie ma ikony');
+
+  await page.getByRole('button', { name: 'Więcej poleceń: Financial Statements' }).click();
+  await menuItem(page, 'Dodaj notatkę');
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-editor]').waitFor();
+  await expectText(dialog.locator('.note-sheet__lesson'), 'Financial Statements');
+  await expectText(dialog.locator('.note-sheet__path'), 'Business English › Finance');
+  await expectText(dialog.locator('[data-testid=note-right]'), 'Zapisz');
+
+  const editor = dialog.locator('[data-testid=note-editor]');
+  await editor.click();
+  await page.keyboard.type('Bilans');
+  await dialog.locator('[data-testid=note-format-heading]').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Pokazuje ');
+  await dialog.locator('[data-testid=note-format-bold]').click();
+  assert.equal(await dialog.locator('[data-testid=note-format-bold]').getAttribute('aria-pressed'), 'true');
+  await page.keyboard.type('majątek');
+  await dialog.locator('[data-testid=note-format-bold]').click();
+  await page.keyboard.type(' firmy.');
+  await page.keyboard.press('Enter');
+  await dialog.locator('[data-testid=note-format-insertUnorderedList]').click();
+  await page.keyboard.type('Aktywa = Pasywa');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Kapitał ');
+  await dialog.locator('[data-testid=note-format-color]').click();
+  await dialog.locator('.note-colors__swatch[data-color=green]').click();
+  await page.keyboard.type('własny');
+
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), dialog.locator('[data-testid=note-image-add]').click()]);
+  await chooser.setFiles(IMAGE_FILE);
+  await dialog.locator('.note-images__item img').waitFor();
+
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const html = await dialog.locator('[data-testid=note-text]').innerHTML();
+  assert.equal(html, '<h3>Bilans</h3><p>Pokazuje <strong>majątek</strong> firmy.</p><ul><li>Aktywa = Pasywa</li><li>Kapitał <span data-color="green">własny</span></li></ul>');
+  await expectText(dialog.locator('[data-testid=note-right]'), 'Edytuj');
+  await dialog.locator('.note-gallery__item img').waitFor();
+  await waitUntil(() => imagesLoaded(dialog.locator('[data-testid=note-gallery]')), 'Obraz notatki powinien się wyświetlić');
+  const note = await storedNote(page, ids.statements);
+  assert.equal(note.images.length, 1);
+  assert.deepEqual([note.images[0].type, note.images[0].width, note.images[0].height], ['image/png', 192, 192]);
+
+  // Powiększenie: dwukrotne kliknięcie i klawisze; Esc zamyka tylko podgląd obrazu.
+  await dialog.locator('.note-gallery__item').click();
+  const lightbox = page.locator('dialog.lightbox[open]');
+  await lightbox.waitFor();
+  const width = () => lightbox.locator('.lightbox__image').evaluate((image) => image.getBoundingClientRect().width);
+  await waitUntil(async () => (await width()) > 100, 'Obraz powinien wypełnić ekran');
+  const fit = await width();
+  await lightbox.locator('[data-testid=lightbox-stage]').dblclick();
+  await waitUntil(async () => (await width()) > fit * 2, 'Dwukrotne kliknięcie powiększa obraz');
+  await page.keyboard.press('-');
+  await page.keyboard.press('-');
+  await page.keyboard.press('-');
+  await waitUntil(async () => Math.abs((await width()) - fit) < 2, 'Pomniejszenie wraca do rozmiaru ekranu');
+  await page.keyboard.press('Escape');
+  await lightbox.waitFor({ state: 'detached' });
+  assert.equal(await noteDialog(page).count(), 1, 'okno notatki zostaje otwarte');
+
+  await dialog.locator('[data-testid=note-left]').click();
+  await noteDialog(page).waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Notatka: Financial Statements' }).waitFor();
+
+  // Po ponownym otwarciu strony notatka jest na miejscu (IndexedDB), a ekran lekcji ją pokazuje.
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await expectText(page.locator('[data-testid=lesson-note]'), 'Bilans');
+  await expectText(page.locator('[data-testid=lesson-note]'), 'Pokazuje majątek firmy.');
+  await waitUntil(() => imagesLoaded(page.locator('[data-testid=lesson-note]')), 'Miniatura obrazu na ekranie lekcji');
+  await page.click('[data-testid=lesson-note]');
+  await noteDialog(page).locator('[data-testid=note-text]').waitFor();
+
+  // Zmiany porzucone po pytaniu: notatka bez zmian.
+  await noteDialog(page).locator('[data-testid=note-right]').click();
+  await noteDialog(page).locator('[data-testid=note-image-remove]').click();
+  await noteDialog(page).locator('[data-testid=note-left]').click();
+  await expectText(page.locator('dialog.alert[open] .alert__title'), 'Odrzucić zmiany?');
+  await confirm(page);
+  await noteDialog(page).locator('[data-testid=note-text]').waitFor();
+  assert.equal((await storedNote(page, ids.statements)).images.length, 1);
+
+  // Usunięcie notatki.
+  await noteDialog(page).locator('[data-testid=note-right]').click();
+  await noteDialog(page).locator('[data-testid=note-delete]').click();
+  await expectText(page.locator('dialog.alert[open] .alert__title'), 'Usunąć notatkę?');
+  await confirm(page);
+  await noteDialog(page).waitFor({ state: 'detached' });
+  assert.equal(await storedNote(page, ids.statements), null);
+  assert.equal(await page.evaluate(async () => (await window.lexicards.library.adapter.readStore('noteImages')).length), 0);
+  await page.locator('[data-testid=lesson-note-add]').waitFor();
+});
+
+test('notatka: wklejony tekst z Worda i strony zachowuje formatowanie, wklejony obraz trafia do obrazów, kopiowanie', async ({ open, context }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin });
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await page.click('[data-testid=lesson-note-add]');
+  const dialog = noteDialog(page);
+  const editor = dialog.locator('[data-testid=note-editor]');
+  await editor.click();
+
+  const paste = (data) => editor.evaluate(async (element, { html, text, image }) => {
+    const transfer = new window.DataTransfer();
+    if (html) transfer.setData('text/html', html);
+    if (text) transfer.setData('text/plain', text);
+    if (image) {
+      const bytes = await (await fetch(image)).arrayBuffer();
+      transfer.items.add(new File([bytes], 'zrzut.png', { type: 'image/png' }));
+    }
+    element.dispatchEvent(new window.ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }));
+  }, data);
+
+  await paste({
+    html: "<html><head><style>p{mso-style:x}</style></head><body><p class=MsoNormal><b>Ważne:</b> <i>kursywa</i> i <span style='color:#2F5496'>kolor Worda</span><o:p></o:p></p>"
+      + "<p class=MsoListParagraph style='mso-list:l0 level1 lfo1'><![if !supportLists]>·&nbsp;&nbsp;<![endif]>punkt z Worda</p><script>window.zle = 1</script></body></html>",
+    text: 'Ważne: kursywa i kolor Worda\npunkt z Worda'
+  });
+  await waitUntil(async () => (await editor.innerHTML()).includes('punkt z Worda'), 'Wklejony tekst powinien być w edytorze');
+  assert.equal(await page.evaluate(() => window.zle), undefined, 'skrypt z wklejonego HTML się nie wykonał');
+  await paste({ image: './icons/icon-192.png' });
+  await dialog.locator('.note-images__item img').waitFor();
+
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const note = await storedNote(page, ids.statements);
+  assert.equal(note.html, '<p><strong>Ważne:</strong> <em>kursywa</em> i kolor Worda</p><ul><li>punkt z Worda</li></ul>');
+  assert.equal(note.images.length, 1);
+
+  await dialog.locator('[data-testid=note-copy]').click();
+  await expectText(page.locator('.toast'), 'Skopiowano notatkę');
+  const copied = await page.evaluate(async () => {
+    const [item] = await navigator.clipboard.read();
+    return { types: item.types, html: await (await item.getType('text/html')).text(), text: await (await item.getType('text/plain')).text() };
+  });
+  assert.ok(copied.types.includes('text/html'));
+  assert.match(copied.html, /<strong>Ważne:<\/strong>/);
+  assert.match(copied.html, /<img src="data:image\/png;base64,/);
+  assert.equal(copied.text, 'Ważne: kursywa i kolor Worda\n\n• punkt z Worda');
+});
+
+test('import notatek z arkusza: wybór zawartości, sprawdzenie notatek z obrazami, import razem z pojęciami', async ({ open }) => {
+  const page = await open();
+  await page.click('[data-testid=start-import]');
+  await chooseImportFile(page, path.join(FIXTURES, 'openpyxl-notes.xlsx'));
+  await expectText(stepTitle(page), 'Wybierz zawartość');
+  await expectText(page.locator('.screen__subtitle'), 'Krok 2 z 9');
+  assert.equal(await page.isChecked('[data-testid=import-content-terms]'), true);
+  assert.equal(await page.isChecked('[data-testid=import-content-notes]'), true);
+  await expectText(page.locator('.row', { has: page.locator('[data-testid=import-content-terms]') }), 'Arkusz „Pojęcia”: 2 wiersze');
+  await expectText(page.locator('.row', { has: page.locator('[data-testid=import-content-notes]') }), 'Arkusz „Notatki”: 2 wiersze, 2 obrazy');
+
+  await nextStep(page, 'Wybierz arkusz');
+  assert.deepEqual(await page.locator('input[name=import-sheet]').evaluateAll((inputs) => inputs.map((input) => input.closest('label').textContent.trim())), ['Pojęcia']);
+  await nextStep(page, 'Przypisz kolumny');
+  await nextStep(page, 'Wybierz miejsce');
+  await nextStep(page, 'Sprawdź dane');
+  await nextStep(page, 'Przejrzyj pojęcia');
+  await nextStep(page, 'Sprawdź notatki');
+  assert.equal(await rowValue(page, 'Notatki'), '2');
+  assert.equal(await rowValue(page, 'Obrazy'), '2');
+  const list = page.locator('[data-testid=import-notes-list]');
+  await expectText(list, 'Wiersze 2–3 → Business English › Finance › Financial Statements');
+  await expectText(list, 'Wiersz 4 → Business English › Finance › Investments');
+  await expectText(list.locator('.status').first(), 'Nowa notatka');
+  await waitUntil(async () => (await list.locator('img').count()) === 2 && imagesLoaded(list), 'Miniatury obrazów w podglądzie');
+
+  await nextStep(page, 'Zatwierdź import');
+  await expectText(page.locator('[data-testid=import-confirm-notes]'), 'Zostaną dodane2');
+  await expectText(page.locator('[data-testid=import-created]'), 'Business English › Finance › Investments');
+  assert.equal((await summary(page)).terms, 0, 'do ostatniego kroku nic nie jest zapisane');
+  await finishImport(page, 'Importuj 2 pojęcia i 2 notatki');
+  await expectText(page.locator('[data-testid=import-done]'), 'Dodano: 2 pojęcia. Dodano 2 notatki (2 obrazy).');
+
+  const lessons = await page.evaluate(() => {
+    const { library } = window.lexicards;
+    return [...library.maps.lessons.values()].map((lesson) => ({ id: lesson.id, name: lesson.name, note: library.getNote(lesson.id) }));
+  });
+  const statements = lessons.find((lesson) => lesson.name === 'Financial Statements');
+  assert.equal(statements.note.images.length, 2);
+  assert.match(statements.note.html, /^<h3>Bilans<\/h3>/);
+  assert.equal(lessons.find((lesson) => lesson.name === 'Investments').note.images.length, 0);
+
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${statements.id}`);
+  await page.click('[data-testid=lesson-note]');
+  const text = noteDialog(page).locator('[data-testid=note-text]');
+  await expectText(text.locator('h3'), 'Bilans');
+  await expectText(text.locator('[data-color=red]'), 'zobowiązania');
+  await expectText(text.locator('u'), 'pasywów');
+  await waitUntil(async () => (await noteDialog(page).locator('.note-gallery__item img').count()) === 2 && imagesLoaded(noteDialog(page)), 'Dwa obrazy w notatce');
+});
+
+test('import samych notatek do istniejących lekcji: zastąp albo zostaw istniejące', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate((id) => window.lexicards.library.saveNote(id, { html: '<p>Moja notatka</p>', images: [] }), ids.statements);
+  await page.goto(`${page.url().split('#')[0]}#/library/import`);
+  await chooseImportFile(page, path.join(FIXTURES, 'libreoffice-notes.xlsx'));
+  await expectText(stepTitle(page), 'Wybierz zawartość');
+  await page.click('[data-testid=import-content-terms]');
+  await expectText(page.locator('.screen__subtitle'), 'Krok 2 z 4');
+  await nextStep(page, 'Sprawdź notatki');
+  await expectText(page.locator('.group__title', { hasText: 'już notatkę' }), '1 lekcja ma już notatkę');
+  assert.equal(await page.isChecked('[data-testid=import-note-mode-replace]'), true);
+  const statuses = () => page.locator('[data-testid=import-notes-list] .status').allTextContents();
+  assert.deepEqual(await statuses(), ['Zastąpi istniejącą notatkę', 'Nowa notatka']);
+  await page.click('[data-testid=import-note-mode-skip]');
+  await waitUntil(async () => (await statuses())[0] === 'Pominięta – lekcja ma już notatkę', 'Status po wyborze „Zostaw istniejące”');
+
+  await nextStep(page, 'Zatwierdź import');
+  await expectText(page.locator('[data-testid=import-confirm-notes]'), 'Zostaną pominięte1');
+  await expectText(page.locator('.form-message--info'), 'Notatki trafią do istniejących lekcji');
+  await finishImport(page, 'Importuj 1 notatkę');
+  await expectText(page.locator('[data-testid=import-done]'), 'Dodano 1 notatkę. Pominięto 1 notatkę.');
+  assert.equal((await storedNote(page, ids.statements)).html, '<p>Moja notatka</p>');
+  assert.match((await storedNote(page, ids.investments)).html, /obligacje/);
+  assert.equal((await summary(page)).lessons, 13, 'żadna nowa lekcja');
+});
+
+test('eksport lekcji z notatką do XLSX i import do pustej aplikacji odtwarza notatkę z obrazami', async ({ open, browser, track }) => {
+  const source = await open();
+  await loadSamples(source);
+  const ids = await sampleLessons(source);
+  await source.evaluate(async (id) => {
+    const bytes = await (await fetch('./icons/icon-192.png')).arrayBuffer();
+    await window.lexicards.library.saveNote(id, {
+      html: '<h3>Bilans</h3><p><strong>Aktywa</strong> = <em>pasywa</em></p><ul><li><span data-color="blue">niebieski</span></li></ul>',
+      images: [{ bytes, type: 'image/png', width: 192, height: 192, name: 'ikona.png' }]
+    });
+  }, ids.statements);
+  await source.goto(`${source.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await source.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  await menuItem(source, 'Eksportuj lekcję…');
+  await expectText(sheet(source).locator('[data-testid=export-scope]'), 'Notatki do lekcji: 1');
+  await sheet(source).locator('[data-testid=export-notes]').waitFor();
+  const exported = await download(source, () => sheet(source).locator('.sheet__submit').click());
+  const book = await openWorkbook(exported.bytes);
+  assert.deepEqual(book.sheets.map((item) => item.name), ['Pojęcia', 'Notatki']);
+  const notes = await book.readSheet(1, { rich: true });
+  assert.deepEqual(notes.rows[0].cells, ['Domain', 'Module', 'Lesson', 'Note', 'Image']);
+  assert.ok(notes.rows[1].rich[3].some((run) => run.text === 'Aktywa' && run.b));
+  assert.deepEqual(notes.images.map((item) => [item.row, item.column, item.type]), [[2, 4, 'image/png']]);
+
+  const other = await browser.newContext({ ...PHONE, locale: 'pl-PL' });
+  try {
+    const page = await other.newPage();
+    track(page);
+    await page.goto(`${source.url().split('#')[0]}#/library/import`);
+    await page.waitForSelector('#app[data-ready="true"]');
+    await chooseImportFile(page, path.join(OUTPUT, exported.name));
+    await expectText(stepTitle(page), 'Wybierz zawartość');
+    await nextStep(page, 'Wybierz arkusz');
+    await nextStep(page, 'Przypisz kolumny');
+    await nextStep(page, 'Wybierz miejsce');
+    await nextStep(page, 'Sprawdź dane');
+    await nextStep(page, 'Przejrzyj pojęcia');
+    await nextStep(page, 'Sprawdź notatki');
+    await nextStep(page, 'Zatwierdź import');
+    await finishImport(page, 'Importuj 4 pojęcia i 1 notatkę');
+    const restored = await page.evaluate(async () => {
+      const { library } = window.lexicards;
+      const lesson = [...library.maps.lessons.values()][0];
+      const images = await library.noteImages(lesson.id);
+      return { html: library.getNote(lesson.id).html, sizes: images.map((image) => image.bytes.byteLength) };
+    });
+    const original = await source.evaluate(async (id) => ({
+      html: window.lexicards.library.getNote(id).html,
+      sizes: (await window.lexicards.library.noteImages(id)).map((image) => image.bytes.byteLength)
+    }), ids.statements);
+    assert.deepEqual(restored, original);
+  } finally {
+    await other.close();
+  }
+});
+
+test('kopia zapasowa z notatkami: obrazy wracają po usunięciu wszystkich danych i przywróceniu', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate(async (id) => {
+    const bytes = await (await fetch('./icons/icon-192.png')).arrayBuffer();
+    await window.lexicards.library.saveNote(id, { html: '<p>Notatka w kopii</p>', images: [{ bytes, type: 'image/png', width: 192, height: 192 }] });
+  }, ids.statements);
+  await page.goto(`${page.url().split('#')[0]}#/settings`);
+  const [file] = await Promise.all([page.waitForEvent('download'), page.click('[data-testid=backup-export]')]);
+  const target = path.join(OUTPUT, 'kopia-z-notatkami.json');
+  await file.saveAs(target);
+  const backup = JSON.parse(await readFile(target, 'utf8'));
+  assert.equal(backup.formatVersion, 2);
+  assert.equal(backup.counts.notes, 1);
+  assert.equal(backup.counts.noteImages, 1);
+
+  await page.click('[data-testid=delete-all]');
+  await expectText(page.locator('.alert__message'), '40 pojęć i 1 notatka do lekcji');
+  await confirm(page);
+  await waitUntil(async () => (await page.evaluate(() => window.lexicards.library.noteCount())) === 0, 'Notatki powinny zniknąć');
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('[data-testid=backup-restore]')]);
+  await chooser.setFiles(target);
+  await confirm(page);
+  await waitUntil(async () => (await summary(page)).terms === 40, 'Po przywróceniu powinno być 40 pojęć');
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await page.click('[data-testid=lesson-note]');
+  await expectText(noteDialog(page).locator('[data-testid=note-text]'), 'Notatka w kopii');
+  await waitUntil(async () => (await noteDialog(page).locator('.note-gallery__item img').count()) === 1 && imagesLoaded(noteDialog(page)), 'Obraz z kopii się wyświetla');
+});
+
+test('notatka w trakcie nauki i w szczegółach pojęcia; klawisze fiszek nie działają pod oknem notatki', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate((id) => window.lexicards.library.saveNote(id, { html: '<p>Ściąga do lekcji</p>', images: [] }), ids.statements);
+
+  // Szczegóły pojęcia w glosariuszu.
+  await page.goto(`${page.url().split('#')[0]}#/library/glossary`);
+  await page.fill('[data-testid=search]', 'bilans');
+  await page.locator('.term__toggle').first().click();
+  await page.click('[data-testid=term-lesson-note]');
+  await expectText(noteDialog(page).locator('[data-testid=note-text]'), 'Ściąga do lekcji');
+  await noteDialog(page).locator('[data-testid=note-left]').click();
+  await noteDialog(page).waitFor({ state: 'detached' });
+
+  // Sesja nauki tej lekcji: przycisk notatki przy fiszce.
+  await page.goto(`${page.url().split('#')[0]}#/study/lesson/${ids.statements}`);
+  await page.waitForSelector('[data-testid=study-planned]');
+  await page.click('[data-testid=study-start]');
+  await page.waitForSelector('[data-testid=flashcard]');
+  await page.getByRole('button', { name: 'Notatka lekcji' }).click();
+  await expectText(noteDialog(page).locator('[data-testid=note-text]'), 'Ściąga do lekcji');
+  await page.keyboard.press('Space');
+  assert.equal(await page.locator('[data-testid=flashcard]').getAttribute('data-side'), 'front', 'spacja pod oknem nie odwraca fiszki');
+  await page.keyboard.press('Escape');
+  await noteDialog(page).waitFor({ state: 'detached' });
+  // Fokus nie zostaje na przycisku notatki (inaczej spacja otworzyłaby ją ponownie).
+  await waitUntil(() => page.evaluate(() => document.activeElement === document.body), 'Fokus powinien wrócić do strony');
+  await page.keyboard.press('Space');
+  await waitUntil(async () => (await page.locator('[data-testid=flashcard]').getAttribute('data-side')) === 'back', 'Po zamknięciu notatki spacja odwraca fiszkę');
+});
+
+test('okno notatki na wąskim ekranie 320 px i w ciemnym motywie: nic nie wystaje, pasek formatowania przewija się', async ({ open }) => {
+  const page = await open();
+  await page.setViewportSize({ width: 320, height: 640 });
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate(async (id) => {
+    const bytes = await (await fetch('./icons/icon-512.png')).arrayBuffer();
+    await window.lexicards.library.saveNote(id, {
+      html: '<h3>Bardzodługiesłowobezspacjiktóremusisięzawinąćwoknienotatki</h3><p>https://example.com/bardzo/dlugi/adres/bez/spacji/ktory/nie/moze/wyjsc/poza/ekran</p>',
+      images: [{ bytes, type: 'image/png', width: 512, height: 512 }]
+    });
+  }, ids.statements);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  assert.ok((await overflowX(page)) <= 0, 'ekran lekcji z notatką mieści się w 320 px');
+  await page.click('[data-testid=lesson-note]');
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const fits = () => dialog.evaluate((element) => {
+    const panel = element.querySelector('.sheet__panel').getBoundingClientRect();
+    return [...element.querySelectorAll('.note-text, .note-gallery img, .note-toolbar, .note-images, .button')]
+      .every((child) => { const box = child.getBoundingClientRect(); return box.left >= panel.left - 0.5 && box.right <= panel.right + 0.5; });
+  });
+  assert.equal(await fits(), true, 'podgląd mieści się w oknie');
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-editor]').waitFor();
+  assert.equal(await fits(), true, 'edytor mieści się w oknie');
+  const toolbar = await dialog.locator('.note-toolbar').evaluate((element) => ({ scroll: element.scrollWidth, client: element.clientWidth }));
+  assert.ok(toolbar.scroll >= toolbar.client, 'pasek formatowania może się przewijać');
+  const color = await dialog.locator('.note-editor__area').evaluate((element) => getComputedStyle(element).color);
+  assert.equal(color, 'rgb(255, 255, 255)', 'w ciemnym motywie tekst jest jasny');
+});
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

@@ -1,6 +1,6 @@
 // Teksty wyliczane z danych (bez zależności od przeglądarki).
 
-import { joinList, pluralDomains, pluralLessons, pluralModules, pluralTerms } from './text.js';
+import { joinList, pluralDomains, pluralLessons, pluralModules, pluralNotes, pluralTerms } from './text.js';
 
 function question(prefix, name) {
   return name ? `${prefix} „${name}”?` : `${prefix}?`;
@@ -23,6 +23,7 @@ export function deletionMessage(target, impact) {
   if (target.kind === 'domain' && impact.modules > 0) parts.push(pluralModules(impact.modules));
   if ((target.kind === 'domain' || target.kind === 'module') && impact.lessons > 0) parts.push(pluralLessons(impact.lessons));
   if (target.kind !== 'terms' && impact.terms > 0) parts.push(pluralTerms(impact.terms));
+  if (impact.notes > 0) parts.push(target.kind === 'lesson' ? 'notatka lekcji' : `${pluralNotes(impact.notes)} do lekcji`);
 
   const sentences = [];
   if (parts.length > 0) sentences.push(`Usunięte zostaną również: ${joinList(parts)}.`);

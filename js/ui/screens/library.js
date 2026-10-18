@@ -11,6 +11,7 @@ import {
 import { openMenu } from '../dialogs.js';
 import { h } from '../dom.js';
 import { icon } from '../icons.js';
+import { noteButton, noteMenuItem } from '../notes.js';
 import { routes } from '../router.js';
 
 /** Wiersze w trybie zmiany kolejności; każda zmiana jest od razu zapisywana. */
@@ -297,11 +298,13 @@ export class ModuleScreen {
             href: routes.lesson(lesson.id),
             title: lesson.name,
             subtitle: pluralTerms(library.counts('lesson', lesson.id).terms),
+            extra: noteButton(ctx, lesson),
             onMenu: () => openMenu({
               title: lesson.name,
               items: [
                 { label: 'Ucz się', icon: 'cards', onSelect: () => ctx.navigate(routes.study({ level: 'lesson', id: lesson.id })) },
                 { label: 'Quiz', icon: 'quiz', onSelect: () => ctx.navigate(routes.quiz({ level: 'lesson', id: lesson.id })) },
+                noteMenuItem(ctx, lesson),
                 { label: 'Statystyki', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'lesson', id: lesson.id })) },
                 { label: 'Edytuj', icon: 'edit', onSelect: () => openLessonForm(ctx, { lessonID: lesson.id }) },
                 { label: 'Przenieś do innego modułu', icon: 'move', onSelect: () => moveLesson(ctx, lesson.id) },

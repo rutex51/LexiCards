@@ -1,7 +1,7 @@
 # Architektura LexiCards
 
-Dokument opisuje stan wersji 1.0. Zgodność ze specyfikacją i wyniki sprawdzenia całości:
-[RELEASE-1.0.md](RELEASE-1.0.md).
+Dokument opisuje stan wersji 1.1. Zgodność ze specyfikacją i wyniki sprawdzenia całości:
+[RELEASE-1.0.md](RELEASE-1.0.md); notatki do lekcji (1.1): [RELEASE-1.1.md](RELEASE-1.1.md).
 
 ## Założenia
 
@@ -26,6 +26,8 @@ js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
 js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspólny dla nauki i quizu
 js/ui/charts.js            wykresy SVG (w czasie, pasek udziałów, miernik) z podpowiedzią i tabelą danych
 js/ui/listen-player.js     odtwarzacz słuchania: kolejne kroki czytane syntezatorem mowy, pauza, dalej, powtórz
+js/ui/notes.js             okno notatki lekcji: podgląd, edytor z paskiem formatowania, obrazy, powiększanie
+js/ui/images.js            obrazy w przeglądarce: odczyt, zmniejszanie dużych zdjęć, adresy do wyświetlenia
 js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
 js/core/model.js           kształt rekordów, wartości domyślne, stałe
@@ -35,7 +37,10 @@ js/core/xlsx.js            odczyt i zapis skoroszytów XLSX
 js/core/csv.js             kodowanie, separator, odczyt i zapis CSV
 js/core/tablefile.js       rozpoznanie formatu pliku, wspólna postać tabeli
 js/core/importer.js        nagłówki → pola, wiersze pliku → wiersze importu, walidacja
-js/core/exporter.js        zakres eksportu → plik XLSX lub CSV
+js/core/exporter.js        zakres eksportu → plik XLSX (z arkuszem notatek) lub CSV; wzór importu
+js/core/note-format.js     treść notatki: bezpieczny HTML ↔ dokument ↔ tekst sformatowany komórki arkusza
+js/core/note-import.js     arkusz notatek: rozpoznanie, wiersze → notatki lekcji z obrazami
+js/core/images.js          format i wymiary obrazu z nagłówka pliku
 js/core/study.js           fiszki: dobór do sesji, treść stron, ocena, postęp, podsumowanie
 js/core/fsrs.js            algorytm powtórek FSRS-6 (przeniesiony z py-fsrs 6.3.2)
 js/core/quiz.js            quizy: pytania wyboru, rundy par, test mieszany, odpowiedzi, wynik
@@ -63,6 +68,8 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | `studySessions` | dziennik zakończonych sesji nauki | – |
 | `quizSessions` | historia wyników quizów: rodzaj, kierunek, liczby odpowiedzi, procent, próg, zaliczenie, czas, limit, błędne pojęcia | – |
 | `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki i quizu, trwająca sesja nauki i trwający quiz | – |
+| `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML i opis obrazów (typ, wymiary, rozmiar, CRC-32) – w pamięci | identyfikator = `lessonID` |
+| `noteImages` | bajty obrazów notatek (`ArrayBuffer`) – czytane z bazy dopiero przy otwarciu notatki | `lessonID` |
 
 Decyzje:
 
@@ -75,7 +82,13 @@ Decyzje:
 - **Postęp osobno dla kierunku.** Rekord `progress` dotyczy pary pojęcie + kierunek
   (PL→EN albo EN→PL), więc powtórki obu kierunków będą niezależne.
 - **Schemat ma numer wersji** (`SCHEMA_VERSION`, `DB_VERSION`), a kopia zapasowa własny
-  numer formatu – zmiany w kolejnych etapach będą migracjami, nie przebudową.
+  numer formatu – zmiany w kolejnych etapach będą migracjami, nie przebudową. Wersja 1.1
+  podniosła `DB_VERSION` do 2: przy otwarciu powstają magazyny `notes` i `noteImages`,
+  istniejące dane zostają bez zmian.
+- **Obrazy poza pamięcią.** Notatka w pamięci ma tylko tekst i opis obrazów; bajty są w osobnym
+  magazynie, czytane przy otwarciu notatki. Obrazy są zapisane jako `ArrayBuffer`, nie `Blob`
+  (Safari miewał kłopoty z `Blob` w IndexedDB). Notatka znika razem z lekcją, modułem
+  i dziedziną; kopia lekcji ma kopię notatki z własnymi obrazami.
 
 ## Zapis zmian
 
@@ -141,7 +154,8 @@ Aplikacja nie ma zależności, więc pliki czyta i zapisuje własnym kodem:
 - **XLSX** (`xlsx.js`): z dokumentów XML skoroszytu czytane są lista arkuszy, wspólna tablica
   tekstów i komórki. Obsłużone są teksty wpisane wprost w komórce, teksty z formatowaniem
   części znaków, zapamiętane wyniki formuł i komórki bez adresu. Formatowanie liczb i dat
-  jest pomijane. Zapis tworzy jeden arkusz z pogrubionym, zamrożonym nagłówkiem.
+  jest pomijane. Zapis tworzy arkusze z pogrubionym, zamrożonym nagłówkiem; od wersji 1.1
+  także tekst sformatowany w komórce i obrazy zakotwiczone przy komórce (arkusz notatek).
 - **CSV** (`csv.js`): kodowanie jest rozpoznawane po znaczniku BOM, poprawności UTF-8,
   a na końcu po bajtach polskich liter (Windows-1250 albo ISO-8859-2); separator – po tym,
   przy którym początkowe rekordy mają najrówniejszą liczbę pól. Oba ustawienia użytkownik
@@ -170,6 +184,43 @@ i historia nauki zostają. Powtórzenia w samym pliku są pomijane.
 
 Eksport zapisuje te same kolumny, które rozpoznaje import, dzięki czemu plik można poprawić
 w arkuszu i wczytać z powrotem.
+
+### Notatki w arkuszu (od 1.1)
+
+- **Rozpoznanie arkusza** (`classifyTable`): arkusz notatek ma kolumnę treści (`Note`, „Notatka”,
+  „Treść”…) albo obrazów (`Image`, „Obraz”…), nie ma kolumn pojęć i albo nazywa się
+  „Notatki”/„Notes”, albo ma kolumnę lekcji. Każdy inny arkusz z danymi to arkusz pojęć –
+  pliki bez notatek przechodzą przez kreator dokładnie tak jak wcześniej.
+- **Odczyt z formatowaniem** (`readSheet(i, { rich: true })`): fragmenty tekstu komórki
+  z właściwościami czcionki (`<rPr>`; brak właściwości – czcionka komórki ze `styles.xml`),
+  kolory RGB, motywu (`theme1.xml`) i indeksowane. Obrazy: rysunki zakotwiczone przy komórce
+  (`drawing*.xml`, lewy górny róg kotwicy) oraz obrazy „w komórce” Excela 365 (atrybut `vm`
+  komórki → `metadata.xml` → `richData/rdrichvalue.xml` → struktura `_localImage` →
+  `richValueRel.xml` → plik w `xl/media`).
+- **Treść** (`docFromRichText`): wiersze komórki stają się akapitami (pusty wiersz) albo
+  złamaniami; „•”, „-”, „1.” to listy, wcięcie to poziom, „#” albo większy pogrubiony wiersz
+  to nagłówek; kolory są przybliżane do pięciu kolorów notatek; `**…**` i `*…*` działają
+  także w CSV. Eksport (`richTextFromDoc`) zapisuje notatkę tak, żeby import odtworzył ją
+  bez zmian – sprawdza to test.
+- **Wiersze → notatki** (`buildNoteRows`): wiersze tej samej lekcji (z przejmowaniem nazw
+  z wiersza powyżej) składają się na jedną notatkę; obraz należy do ostatniego wiersza z danymi
+  nie niżej niż obraz. Formaty, których przeglądarka nie pokaże (EMF, WMF), są pomijane
+  z ostrzeżeniem; duże zdjęcia kreator zmniejsza (`prepareImage`, dłuższy bok 2048 px).
+- **Import** idzie razem z pojęciami w `#runImport`: najpierw pojęcia, potem notatki, z tymi
+  samymi mapami nazw – notatka trafia też do lekcji, którą tworzą pojęcia z tego samego pliku.
+  Sama nazwa lekcji (bez dziedziny i modułu) musi wskazywać dokładnie jedną lekcję. Lekcja z
+  notatką: zastąp (domyślnie), dopisz albo pomiń; ta sama treść i te same obrazy (CRC-32) – „bez zmian”.
+
+### Treść notatki
+
+Notatka jest zapisana jako HTML z wąskiego zestawu znaczników (`<p>`, `<h3>`, listy, `<strong>`,
+`<em>`, `<u>`, `<s>`, `<sup>`, `<sub>`, `<span data-color>`, `<a href>` http/https/mailto, `<br>`).
+`normalizeNoteHtml()` przepuszcza przez ten filtr wszystko: wklejony HTML (Word, strony, Google
+Docs, Notatki, tabele z Excela), zawartość edytora przy zapisie, kopię zapasową i podgląd. Własny
+parser HTML w `js/core` pozwala testować to w Node.js; w przeglądarce wklejony HTML najpierw
+porządkuje `DOMParser`. Edytor to `contenteditable` z `document.execCommand` (cofanie Ctrl+Z
+działa), kolory zapisane są nazwą, więc w ciemnym motywie są jaśniejsze. „Kopiuj notatkę”
+kładzie do schowka HTML z kolorami w stylu i obrazami jako `data:` oraz zwykły tekst.
 
 ## Nauka z fiszkami
 
@@ -373,6 +424,10 @@ powiązania hierarchii), przelicza klucze wyszukiwania i dopiero wtedy zastępuj
 jedną transakcją. Uszkodzony plik niczego nie zmienia. Dane nauki wskazujące na
 nieistniejące pojęcia są pomijane.
 
+Od wersji 1.1 (format kopii 2) kopia zawiera notatki i obrazy (bajty w Base64). Przy
+przywracaniu treść notatek przechodzi przez filtr HTML, a notatki bez lekcji i obrazy bez
+notatki są pomijane. Kopie w formacie 1 (bez notatek) nadal można przywrócić.
+
 ## Testy
 
 - `tests/unit/` – Node.js (`node --test`), bez przeglądarki: reguły biblioteki, wycofywanie
@@ -380,6 +435,9 @@ nieistniejące pojęcia są pomijane.
   FSRS (zgodność z py-fsrs i zapis powtórek), quizy, statystyki, kopia zapasowa, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.
+  Notatki: skoroszyt z openpyxl (fragmenty z formatowaniem, obrazy przy komórkach), ten sam
+  przepisany przez LibreOffice i skoroszyt z obrazami „w komórce” złożony według budowy plików
+  Excela 365 (z celowo przestawioną kolejnością wpisów pośrednich).
 - `tests/e2e/` – Chromium przez Playwright: pełne przepływy na ekranie telefonu i komputera,
   trwałość po przeładowaniu, praca offline, aktualizacja wydania, klawiatura. Gesty na fiszce
   są wykonywane zdarzeniami dotyku przeglądarki, a syntezator mowy zastępuje atrapa.

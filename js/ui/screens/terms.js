@@ -11,10 +11,11 @@ import {
   copyLesson, copyTerms, moveLesson, moveTerms, openAssessmentHistory, openExportSheet, openLessonForm, openTermForm,
   requestDeletion, setFavorite
 } from '../actions.js';
-import { emptyState, iconButton, navButton, primaryButton } from '../components.js';
+import { emptyState, group, iconButton, navButton, primaryButton } from '../components.js';
 import { openMenu } from '../dialogs.js';
 import { h, replaceChildren } from '../dom.js';
 import { icon } from '../icons.js';
+import { lessonNoteRow, noteMenuItem, openLessonNote } from '../notes.js';
 import { routes } from '../router.js';
 import { missingView } from './library.js';
 import { statsDirection } from './stats.js';
@@ -105,12 +106,20 @@ function termDetails(ctx, term) {
       detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.EN_PL]}`, learningState(ctx, backward)),
       detailItem('Quizy', quizState(ctx, term))
     ),
-    forward || backward
-      ? h('button', {
-          type: 'button', class: 'button button--plain term__history', dataset: { testid: 'term-history' },
-          onClick: () => openAssessmentHistory(ctx, term)
-        }, 'Historia ocen')
-      : null
+    h('div', { class: 'term__links' },
+      forward || backward
+        ? h('button', {
+            type: 'button', class: 'button button--plain term__history', dataset: { testid: 'term-history' },
+            onClick: () => openAssessmentHistory(ctx, term)
+          }, 'Historia ocen')
+        : null,
+      ctx.library.getNote(term.lessonID)
+        ? h('button', {
+            type: 'button', class: 'button button--plain term__history', dataset: { testid: 'term-lesson-note' },
+            onClick: () => openLessonNote(ctx, term.lessonID)
+          }, icon('note', { size: 18 }), h('span', null, 'Notatka lekcji'))
+        : null
+    )
   );
 }
 
@@ -306,6 +315,7 @@ export class LessonScreen {
     const moreMenu = () => openMenu({
       title: lesson.name,
       items: [
+        noteMenuItem(ctx, lesson),
         { label: 'Edytuj lekcję', icon: 'edit', onSelect: () => openLessonForm(ctx, { lessonID: lesson.id }) },
         { label: 'Przenieś do innego modułu', icon: 'move', onSelect: () => moveLesson(ctx, lesson.id) },
         { label: 'Kopiuj do…', icon: 'copy', onSelect: () => copyLesson(ctx, lesson.id) },
@@ -330,17 +340,21 @@ export class LessonScreen {
           iconButton('more', 'Więcej poleceń', moreMenu)
         ];
 
+    const noteGroup = group({ className: 'lesson-note' }, lessonNoteRow(ctx, lesson));
     let body;
     if (terms.length === 0) {
-      body = emptyState({
-        iconName: 'cards',
-        title: 'Brak pojęć',
-        text: 'Dodaj pierwsze pojęcie: nazwę po polsku i po angielsku, a jeśli chcesz, także opis i przykład użycia.',
-        actions: [
-          primaryButton('Dodaj pojęcie', () => openTermForm(ctx, { lessonID: lesson.id }), { testID: 'lesson-add-term' }),
-          primaryButton('Importuj z pliku XLSX lub CSV', () => ctx.navigate(routes.importFile(lesson.id)), { testID: 'lesson-import', kind: 'secondary' })
-        ]
-      });
+      body = [
+        noteGroup,
+        emptyState({
+          iconName: 'cards',
+          title: 'Brak pojęć',
+          text: 'Dodaj pierwsze pojęcie: nazwę po polsku i po angielsku, a jeśli chcesz, także opis i przykład użycia.',
+          actions: [
+            primaryButton('Dodaj pojęcie', () => openTermForm(ctx, { lessonID: lesson.id }), { testID: 'lesson-add-term' }),
+            primaryButton('Importuj z pliku XLSX lub CSV', () => ctx.navigate(routes.importFile(lesson.id)), { testID: 'lesson-import', kind: 'secondary' })
+          ]
+        })
+      ];
     } else {
       this.#renderResults();
       body = [
@@ -356,6 +370,7 @@ export class LessonScreen {
             dataset: { testid: 'lesson-quiz' }
           }, 'Quiz z tej lekcji')
         ),
+        noteGroup,
         searchField({
           value: this.search,
           placeholder: 'Szukaj po polsku lub angielsku',

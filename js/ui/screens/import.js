@@ -1,5 +1,7 @@
-// Kreator importu z pliku XLSX lub CSV w siedmiu krokach:
+// Kreator importu z pliku XLSX lub CSV. Pojęcia przechodzą przez siedem kroków:
 // plik → arkusz (albo sposób odczytu CSV) → kolumny → miejsce → sprawdzenie → podgląd → zatwierdzenie.
+// Skoroszyt z arkuszem notatek („Notatki”: Domain, Module, Lesson, Note, Image) ma dodatkowo
+// krok wyboru zawartości (pojęcia, notatki albo jedno i drugie) i krok sprawdzenia notatek.
 // Do ostatniego kroku nic nie jest zapisywane; import to jedna niepodzielna operacja.
 
 import { DELIMITERS, ENCODINGS } from '../../core/csv.js';
@@ -7,15 +9,18 @@ import { buildTemplateFile } from '../../core/exporter.js';
 import {
   IMPORT_FIELDS, STRUCTURE_LEVELS, analyzeHeader, buildImportRows, describeColumns, missingForImport
 } from '../../core/importer.js';
+import { noteText } from '../../core/note-format.js';
+import { analyzeNotesHeader, buildNoteRows, classifyTable } from '../../core/note-import.js';
 import { openTableFile } from '../../core/tablefile.js';
-import { joinList, plural, pluralTerms } from '../../core/text.js';
+import { joinList, plural, pluralForm, pluralImages, pluralNotes, pluralTerms } from '../../core/text.js';
 import {
-  actionRow, field, formGroup, group, message, primaryButton, radioRow, selectInput, textInput, toggle, valueRow
+  actionRow, checkRow, field, formGroup, group, message, primaryButton, radioRow, selectInput, textInput, toggle, valueRow
 } from '../components.js';
 import { showError, toast } from '../dialogs.js';
 import { h } from '../dom.js';
 import { deliverFile, pickFile } from '../files.js';
 import { icon } from '../icons.js';
+import { prepareImage, urlPool } from '../images.js';
 import { routes } from '../router.js';
 
 const NEW = '__new__';
@@ -25,9 +30,19 @@ const ISSUE_LIMIT = 100;
 const NAME_LIMIT = 8;
 const FILE_TYPES = '.xlsx,.csv,.tsv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-const STEP_TITLES = ['Wybierz plik', 'Wybierz arkusz', 'Przypisz kolumny', 'Wybierz miejsce', 'Sprawdź dane', 'Przejrzyj pojęcia', 'Zatwierdź import'];
-const LAST_STEP = STEP_TITLES.length - 1;
-const DONE = STEP_TITLES.length;
+const STEP_TITLES = {
+  file: 'Wybierz plik',
+  contents: 'Wybierz zawartość',
+  sheet: 'Wybierz arkusz',
+  columns: 'Przypisz kolumny',
+  place: 'Wybierz miejsce',
+  check: 'Sprawdź dane',
+  preview: 'Przejrzyj pojęcia',
+  notes: 'Sprawdź notatki',
+  confirm: 'Zatwierdź import'
+};
+/** Kroki importu samych pojęć – pokazywane, zanim plik zostanie wybrany. */
+const TERM_STEPS = ['file', 'sheet', 'columns', 'place', 'check', 'preview', 'confirm'];
 
 const LEVEL_LABELS = { domain: 'Dziedzina', module: 'Moduł', lesson: 'Lekcja' };
 const NEW_LABELS = { domain: 'Nowa dziedzina…', module: 'Nowy moduł…', lesson: 'Nowa lekcja…' };
@@ -49,8 +64,31 @@ const STATUS_LABELS = {
   skippedInFile: 'Powtórzenie w pliku – zostanie pominięte'
 };
 
+const NOTE_MODES = [
+  { id: 'replace', title: 'Zastąp notatką z pliku', subtitle: 'Dotychczasowa treść i obrazy tych lekcji zostaną usunięte.' },
+  { id: 'append', title: 'Dopisz na końcu', subtitle: 'Treść i obrazy z pliku zostaną dodane po istniejących.' },
+  { id: 'skip', title: 'Zostaw istniejące', subtitle: 'Lekcje, które mają notatkę, zostaną pominięte.' }
+];
+
+const NOTE_STATUS_LABELS = {
+  added: 'Nowa notatka',
+  replaced: 'Zastąpi istniejącą notatkę',
+  appended: 'Zostanie dopisana do istniejącej',
+  unchanged: 'Bez zmian – taka sama jak w lekcji',
+  skipped: 'Pominięta – lekcja ma już notatkę',
+  missingLesson: 'Nie ma takiej lekcji – dodaj kolumny Domain i Module, żeby ją utworzyć',
+  ambiguousLesson: 'Kilka lekcji ma tę nazwę – dodaj kolumny Domain i Module',
+  tooManyImages: 'Za dużo obrazów – notatka może mieć najwyżej 30',
+  tooLong: 'Za długa treść notatki'
+};
+const NOTE_STATUS_CLASS = {
+  added: 'added', replaced: 'updated', appended: 'updated', unchanged: 'unchanged', skipped: 'skipped'
+};
+
 const pluralRows = (count) => plural(count, 'wiersz', 'wiersze', 'wierszy');
 const pluralColumns = (count) => plural(count, 'kolumna', 'kolumny', 'kolumn');
+/** Biernik: „Dodano 1 notatkę”. */
+const notesAccusative = (count) => plural(count, 'notatkę', 'notatki', 'notatek');
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -75,7 +113,7 @@ export class ImportScreen {
     const preset = route.id ? ctx.library.getLesson(route.id) : null;
     this.presetLessonID = preset?.id ?? null;
 
-    this.step = 0;
+    this.stepIndex = 0;
     this.busy = null;
     this.error = null;
     this.token = 0;
@@ -85,6 +123,12 @@ export class ImportScreen {
     this.csv = { encoding: null, delimiter: null };
     this.table = null;
     this.analyzedTable = null; // tabela, dla której wyliczono przypisanie kolumn
+
+    /** Rodzaje arkuszy: [{ index, name, hidden, kind: 'terms' | 'notes' | 'empty', rows }]. */
+    this.sheetInfo = [];
+    this.notesSheetIndex = null;
+    this.notesTable = null;
+    this.contents = { terms: true, notes: false };
 
     this.hasHeader = true;
     this.mapping = {};
@@ -101,6 +145,11 @@ export class ImportScreen {
     this.duplicates = 'skip';
     this.built = null;
     this.rows = null;
+    this.notesBuilt = null;    // { notes, issues, counts, target }
+    this.noteRows = null;
+    this.noteMode = 'replace';
+    this.preparedImages = new WeakMap();
+    this.thumbnails = urlPool();
     this.plan = null;
     this.previewLimit = PREVIEW_PAGE;
     this.result = null;
@@ -113,10 +162,34 @@ export class ImportScreen {
   dispose() {
     this.disposed = true;
     this.token += 1;
+    this.thumbnails.release();
   }
 
   #refresh() {
     if (!this.disposed) this.ctx.refresh();
+  }
+
+  // ---------------------------------------------------------------- kroki
+
+  /** Kroki kreatora dla wybranego pliku i zawartości. */
+  #steps() {
+    if (!this.file) return TERM_STEPS;
+    const steps = ['file'];
+    if (this.#hasChoice()) steps.push('contents');
+    if (this.contents.terms) steps.push('sheet', 'columns', 'place', 'check', 'preview');
+    else if (this.file.source.kind === 'csv') steps.push('sheet');
+    if (this.contents.notes) steps.push('notes');
+    steps.push('confirm');
+    return steps;
+  }
+
+  #stepID() {
+    return this.#steps()[this.stepIndex] ?? 'file';
+  }
+
+  /** Plik ma i pojęcia, i notatki – użytkownik wybiera, co zaimportować. */
+  #hasChoice() {
+    return this.notesSheetIndex !== null && this.sheetInfo.some((sheet) => sheet.kind === 'terms');
   }
 
   // ---------------------------------------------------------------- plik i tabela
@@ -137,26 +210,40 @@ export class ImportScreen {
       this.table = null;
       this.analyzedTable = null;
       this.built = null;
+      this.rows = null;
       this.plan = null;
+      this.notesBuilt = null;
+      this.noteRows = null;
+      this.notesTable = null;
+      this.notesSheetIndex = null;
+      this.sheetInfo = [];
       if (source.kind === 'csv') {
         this.csv = { encoding: source.encoding, delimiter: source.delimiter };
         this.table = source.read(this.csv);
+        this.#classifyCsv();
       } else {
-        // Zaczynamy od pierwszego widocznego arkusza, w którym są dane.
-        const order = source.sheets.map((sheet, index) => index).sort((a, b) => Number(source.sheets[a].hidden) - Number(source.sheets[b].hidden));
-        this.sheetIndex = order[0] ?? 0;
-        for (const index of order) {
+        for (const [index, sheet] of source.sheets.entries()) {
           const table = await source.readSheet(index);
           if (token !== this.token) return;
-          if (table.rows.length > 0) {
-            this.sheetIndex = index;
-            this.table = table;
-            break;
-          }
+          this.sheetInfo.push({
+            index, name: sheet.name, hidden: sheet.hidden, kind: classifyTable(table, sheet.name), rows: table.rows.length,
+            // Wiersze z danymi (bez nagłówka) – do opisu zawartości pliku.
+            dataRows: Math.max(0, table.rows.length - (analyzeHeader(table).hasHeader ? 1 : 0))
+          });
         }
-        this.table ??= await source.readSheet(this.sheetIndex);
+        // Arkusz notatek: pierwszy widoczny (albo ukryty, gdy widocznego nie ma).
+        const notes = this.sheetInfo.filter((sheet) => sheet.kind === 'notes').sort((a, b) => Number(a.hidden) - Number(b.hidden));
+        this.notesSheetIndex = notes[0]?.index ?? null;
+        if (this.notesSheetIndex !== null) this.notesTable = await source.readSheet(this.notesSheetIndex, { rich: true });
+        // Pojęcia: pierwszy widoczny arkusz z danymi, który nie jest arkuszem notatek.
+        const order = this.sheetInfo.filter((sheet) => sheet.index !== this.notesSheetIndex)
+          .sort((a, b) => Number(a.hidden) - Number(b.hidden) || Number(b.kind === 'terms') - Number(a.kind === 'terms'));
+        this.sheetIndex = order.find((sheet) => sheet.kind === 'terms' && sheet.rows > 0)?.index ?? order[0]?.index ?? 0;
+        this.table = await source.readSheet(this.sheetIndex);
+        this.contents = { terms: this.notesSheetIndex === null || this.sheetInfo.some((sheet) => sheet.kind === 'terms'), notes: this.notesSheetIndex !== null };
       }
-      this.step = 1;
+      if (token !== this.token) return;
+      this.stepIndex = 1;
     } catch (error) {
       if (token !== this.token) return;
       this.file = null;
@@ -168,6 +255,15 @@ export class ImportScreen {
         this.#refresh();
       }
     }
+  }
+
+  /** Plik CSV to jedna tabela: albo pojęcia, albo notatki (bez obrazów). */
+  #classifyCsv() {
+    const notes = this.table && classifyTable(this.table, this.file.name.replace(/\.[^.]+$/, '')) === 'notes';
+    this.sheetInfo = [{ index: 0, name: this.file.name, hidden: false, kind: notes ? 'notes' : 'terms', rows: this.table?.rows.length ?? 0 }];
+    this.notesSheetIndex = notes ? 0 : null;
+    this.notesTable = notes ? this.table : null;
+    this.contents = { terms: !notes, notes };
   }
 
   async #selectSheet(index) {
@@ -196,6 +292,7 @@ export class ImportScreen {
     try {
       this.error = null;
       this.table = this.file.source.read(this.csv);
+      this.#classifyCsv();
     } catch (error) {
       this.table = null;
       this.error = `Nie udało się odczytać pliku w tym kodowaniu. ${error?.message ?? ''}`.trim();
@@ -209,7 +306,7 @@ export class ImportScreen {
       const file = new File([template.bytes], template.name, { type: template.type });
       const outcome = await deliverFile(file, {
         title: 'Wzór pliku jest gotowy',
-        message: 'Zawiera nagłówki kolumn i dwa przykładowe pojęcia. W następnym kroku wybierz „Zachowaj w Plikach”.'
+        message: 'Arkusz „Pojęcia” ma nagłówki kolumn i dwa przykładowe pojęcia, a arkusz „Notatki” – przykładową notatkę z formatowaniem i obrazem. W następnym kroku wybierz „Zachowaj w Plikach”.'
       });
       if (outcome === 'downloaded') toast(`Zapisano plik ${file.name}.`);
     } catch (error) {
@@ -279,7 +376,11 @@ export class ImportScreen {
   // ---------------------------------------------------------------- sprawdzenie i plan
 
   #computePlan() {
-    this.plan = this.ctx.library.planImport(this.rows, { duplicates: this.duplicates });
+    this.plan = this.ctx.library.planImport(this.contents.terms ? (this.rows ?? []) : [], {
+      duplicates: this.duplicates,
+      notes: this.contents.notes ? (this.noteRows ?? []) : [],
+      noteMode: this.noteMode
+    });
   }
 
   async #validate() {
@@ -320,6 +421,90 @@ export class ImportScreen {
     }
   }
 
+  /**
+   * Lekcja dla wszystkich notatek albo null (wtedy wskazują ją kolumny arkusza notatek):
+   * gdy wszystkie pojęcia trafiają do jednej lekcji, notatki też; gdy arkusz notatek nie ma
+   * kolumny lekcji, a import zaczął się w lekcji – do niej.
+   */
+  #noteTarget(mapping) {
+    if (this.contents.terms && STRUCTURE_LEVELS.every((level) => !this.#fromFile(level))) {
+      const lesson = this.#chosen('lesson');
+      if (lesson) return { lessonID: lesson.id, reason: 'terms' };
+      const destination = this.#destination();
+      const module = this.#chosen('module');
+      const domain = this.#chosen('domain');
+      return {
+        domain: destination.domain, module: destination.module, lesson: destination.lesson,
+        ...(module ? { moduleID: module.id } : domain ? { domainID: domain.id } : {}),
+        reason: 'terms'
+      };
+    }
+    if (mapping.lesson === undefined && this.presetLessonID && this.ctx.library.getLesson(this.presetLessonID)) {
+      return { lessonID: this.presetLessonID, reason: 'preset' };
+    }
+    return null;
+  }
+
+  /** Obraz z arkusza gotowy do zapisu (zmniejszony, w formacie dla przeglądarek); pamiętany. */
+  #preparedImage(image) {
+    if (!this.preparedImages.has(image.bytes)) {
+      this.preparedImages.set(image.bytes, prepareImage(image.bytes, { type: image.type, name: image.name }));
+    }
+    return this.preparedImages.get(image.bytes);
+  }
+
+  async #prepareNotes() {
+    const token = (this.token += 1);
+    this.error = null;
+    this.busy = 'Sprawdzanie notatek…';
+    this.#refresh();
+    await nextFrame();
+    if (token !== this.token) return false;
+    try {
+      const table = this.file.source.kind === 'csv' ? this.table : this.notesTable;
+      const { mapping } = analyzeNotesHeader(table);
+      const target = this.#noteTarget(mapping);
+      const { reason, ...placement } = target ?? {};
+      const built = buildNoteRows({ table, mapping, target: target ? placement : null });
+      const issues = [...built.issues];
+      for (const note of built.notes) {
+        const images = [];
+        for (const image of note.images) {
+          try {
+            images.push(await this.#preparedImage(image));
+          } catch {
+            built.counts.skippedImages += 1;
+            built.counts.warnings += 1;
+            issues.push({ number: image.row, severity: 'warning', message: 'obrazu nie da się odczytać w tej przeglądarce – zapisz go jako PNG albo JPEG; pominięto go' });
+          }
+          if (token !== this.token) return false;
+        }
+        note.images = images;
+      }
+      built.counts.images = built.notes.reduce((sum, note) => sum + note.images.length, 0);
+      issues.sort((a, b) => a.number - b.number);
+      this.notesBuilt = { ...built, issues, reason: reason ?? null };
+      this.noteRows = built.notes.map((note) => ({
+        lessonID: note.lessonID, domainID: note.domainID, moduleID: note.moduleID,
+        domain: note.domain ?? '', module: note.module ?? '', lesson: note.lesson ?? '',
+        html: note.html, images: note.images
+      }));
+      this.#computePlan();
+      return true;
+    } catch (error) {
+      this.notesBuilt = null;
+      this.noteRows = null;
+      this.error = error?.message ?? String(error);
+      console.error(error);
+      return false;
+    } finally {
+      if (token === this.token) {
+        this.busy = null;
+        this.#refresh();
+      }
+    }
+  }
+
   async #import() {
     const token = (this.token += 1);
     this.error = null;
@@ -327,9 +512,13 @@ export class ImportScreen {
     this.#refresh();
     await nextFrame();
     try {
-      const report = await this.ctx.library.importRows(this.rows, { duplicates: this.duplicates });
+      const report = await this.ctx.library.importRows(this.contents.terms ? this.rows ?? [] : [], {
+        duplicates: this.duplicates,
+        notes: this.contents.notes ? this.noteRows ?? [] : [],
+        noteMode: this.noteMode
+      });
       this.result = report;
-      this.step = DONE;
+      this.stepIndex = this.#steps().length;
     } catch (error) {
       this.error = `Import się nie powiódł i niczego nie zmienił. ${error?.message ?? ''}`.trim();
     } finally {
@@ -342,21 +531,40 @@ export class ImportScreen {
 
   // ---------------------------------------------------------------- nawigacja kreatora
 
+  /** Liczba zmian, które wniesie import (pojęcia i notatki). */
+  #changes() {
+    if (!this.plan) return { terms: 0, notes: 0 };
+    return {
+      terms: this.contents.terms ? this.plan.added + this.plan.updated : 0,
+      notes: this.contents.notes ? this.plan.notes.added + this.plan.notes.replaced + this.plan.notes.appended : 0
+    };
+  }
+
   /** Powód, dla którego nie można przejść dalej, albo null. */
   #blocker() {
-    switch (this.step) {
-      case 0: return this.file ? null : 'Wybierz plik, żeby przejść dalej.';
-      case 1:
+    switch (this.#stepID()) {
+      case 'file': return this.file ? null : 'Wybierz plik, żeby przejść dalej.';
+      case 'contents': return this.contents.terms || this.contents.notes ? null : 'Zaznacz, co chcesz zaimportować.';
+      case 'sheet':
         if (!this.table) return 'Nie udało się odczytać danych.';
         return this.table.rows.length === 0 ? 'Tu nie ma żadnych danych.' : null;
-      case 2: return missingForImport(this.mapping, null)[0] ?? null;
-      case 3: {
+      case 'columns': return missingForImport(this.mapping, null)[0] ?? null;
+      case 'place': {
         const unchosen = STRUCTURE_LEVELS.find((level) => !this.#fromFile(level) && this.place[level].choice === NONE);
         return unchosen ? CHOOSE_PROMPTS[unchosen] : (missingForImport(this.mapping, this.#destination())[0] ?? null);
       }
-      case 4: return this.built && this.built.rows.length > 0 ? null : 'Żaden wiersz nie nadaje się do importu.';
-      case LAST_STEP:
-        return this.plan && this.plan.added + this.plan.updated > 0 ? null : 'Plik nie wnosi nic nowego – nie ma czego importować.';
+      case 'check': return this.built && this.built.rows.length > 0 ? null : 'Żaden wiersz nie nadaje się do importu.';
+      case 'notes': {
+        const usable = this.noteRows && this.plan ? this.noteRows.length - this.plan.notes.failed : 0;
+        if (usable > 0) return null;
+        return this.contents.terms
+          ? 'Żadna notatka nie nadaje się do importu. Wróć i odznacz notatki, żeby zaimportować same pojęcia.'
+          : 'Żadna notatka nie nadaje się do importu.';
+      }
+      case 'confirm': {
+        const changes = this.#changes();
+        return changes.terms + changes.notes > 0 ? null : 'Plik nie wnosi nic nowego – nie ma czego importować.';
+      }
       default: return null;
     }
   }
@@ -373,22 +581,34 @@ export class ImportScreen {
 
   async #next() {
     if (this.busy || this.#blocker()) return;
-    if (this.step === 1) this.#analyze();
-    if (this.step === 2) this.#normalizePlace();
-    if (this.step === 3 && !(await this.#validate())) return;
-    if (this.step === LAST_STEP) {
+    const id = this.#stepID();
+    if (id === 'sheet' && this.contents.terms) this.#analyze();
+    if (id === 'columns') this.#normalizePlace();
+    if (id === 'place' && !(await this.#validate())) return;
+    if (id === 'confirm') {
       await this.#import();
       return;
     }
-    this.step += 1;
+    const nextID = this.#steps()[this.stepIndex + 1];
+    if (nextID === 'notes' && !(await this.#prepareNotes())) return;
+    if (nextID === 'confirm') {
+      try {
+        this.#computePlan();
+      } catch (error) {
+        this.error = error?.message ?? String(error);
+        this.#refresh();
+        return;
+      }
+    }
+    this.stepIndex += 1;
     this.error = null;
     window.scrollTo(0, 0);
     this.#refresh();
   }
 
   #back() {
-    if (this.busy || this.step === 0) return;
-    this.step -= 1;
+    if (this.busy || this.stepIndex === 0) return;
+    this.stepIndex -= 1;
     this.error = null;
     window.scrollTo(0, 0);
     this.#refresh();
@@ -434,13 +654,42 @@ export class ImportScreen {
       ),
       group({
         title: 'Jak przygotować plik',
-        footer: 'Nagłówki mogą być po polsku albo po angielsku, w dowolnej kolejności. Jeśli aplikacja ich nie rozpozna, przypiszesz kolumny ręcznie.'
+        footer: 'Nagłówki mogą być po polsku albo po angielsku, w dowolnej kolejności. Jeśli aplikacja ich nie rozpozna, przypiszesz kolumny ręcznie. Notatki z arkusza przenoszą formatowanie tekstu i obrazy wklejone do komórek – zobacz arkusz „Notatki” we wzorze.'
       },
         valueRow('Wymagane kolumny', 'Term PL, Term EN'),
         valueRow('Treść', 'Description PL/EN, Example PL/EN'),
         valueRow('Podział na lekcje', 'Domain, Module, Lesson'),
         valueRow('Dodatkowe', 'Tags, Difficulty, Notes'),
+        valueRow('Notatki do lekcji', 'osobny arkusz: Domain, Module, Lesson, Note, Image'),
         actionRow({ label: 'Pobierz wzór pliku', iconName: 'download', onClick: () => this.#downloadTemplate(), testID: 'import-template' })
+      )
+    ];
+  }
+
+  #contentsStep() {
+    const terms = this.sheetInfo.filter((sheet) => sheet.kind === 'terms');
+    const notes = this.sheetInfo.find((sheet) => sheet.index === this.notesSheetIndex);
+    const notesRows = Math.max(0, (this.notesTable?.rows.length ?? 1) - 1);
+    const notesImages = this.notesTable?.images?.length ?? 0;
+    const termsSubtitle = terms.length === 1
+      ? `Arkusz „${terms[0].name}”: ${pluralRows(terms[0].dataRows ?? terms[0].rows)}`
+      : `${plural(terms.length, 'arkusz', 'arkusze', 'arkuszy')} z pojęciami – wybierzesz jeden w następnym kroku`;
+    const set = (key) => (checked) => {
+      this.contents[key] = checked;
+      this.#refresh();
+    };
+    return [
+      h('p', { class: 'wizard__lead' },
+        'W pliku są pojęcia i notatki do lekcji. Zaznacz, co zaimportować – możesz też wybrać tylko jedno z nich.'),
+      group({ title: 'Zawartość pliku' },
+        checkRow({ checked: this.contents.terms, title: 'Pojęcia (fiszki)', subtitle: termsSubtitle, testID: 'import-content-terms', onChange: set('terms') }),
+        checkRow({
+          checked: this.contents.notes,
+          title: 'Notatki do lekcji',
+          subtitle: `Arkusz „${notes?.name ?? ''}”: ${pluralRows(notesRows)}${notesImages > 0 ? `, ${pluralImages(notesImages)}` : ''}`,
+          testID: 'import-content-notes',
+          onChange: set('notes')
+        })
       )
     ];
   }
@@ -449,8 +698,11 @@ export class ImportScreen {
     const { source } = this.file;
     const parts = [];
     if (source.kind === 'xlsx') {
-      parts.push(group({ title: source.sheets.length === 1 ? 'Arkusz' : 'Arkusze w pliku' },
-        source.sheets.map((sheet, index) => radioRow({
+      // Arkusz notatek ma osobny krok – na liście arkuszy z pojęciami go nie ma.
+      const listed = source.sheets.map((sheet, index) => ({ sheet, index }))
+        .filter(({ index }) => !(this.contents.notes && index === this.notesSheetIndex));
+      parts.push(group({ title: listed.length === 1 ? 'Arkusz' : 'Arkusze w pliku' },
+        listed.map(({ sheet, index }) => radioRow({
           name: 'import-sheet',
           value: String(index),
           checked: index === this.sheetIndex,
@@ -609,6 +861,25 @@ export class ImportScreen {
     return parts;
   }
 
+  /** Lista uwag do wierszy (błędy i ostrzeżenia). */
+  #issuesList(issues, testID) {
+    const shown = issues.slice(0, ISSUE_LIMIT);
+    return h('section', { class: 'group' },
+      h('h3', { class: 'group__title' }, 'Uwagi do wierszy'),
+      h('ul', { class: 'group__list issues', role: 'list', dataset: { testid: testID } },
+        shown.map((issue) => h('li', { class: `issue issue--${issue.severity}` },
+          icon(issue.severity === 'error' ? 'close' : 'warning', { size: 18 }),
+          h('span', null,
+            h('strong', null, `Wiersz ${issue.number}`),
+            ` – ${issue.severity === 'error' ? 'błąd' : 'ostrzeżenie'}: ${issue.message}`)
+        ))
+      ),
+      issues.length > ISSUE_LIMIT
+        ? h('p', { class: 'group__footer' }, `Pokazano pierwsze ${ISSUE_LIMIT} z ${issues.length} uwag.`)
+        : null
+    );
+  }
+
   #checkStep() {
     const { built, plan } = this;
     if (!built || !plan) return [];
@@ -659,21 +930,7 @@ export class ImportScreen {
     }
 
     if (built.issues.length > 0) {
-      const shown = built.issues.slice(0, ISSUE_LIMIT);
-      parts.push(h('section', { class: 'group' },
-        h('h3', { class: 'group__title' }, 'Uwagi do wierszy'),
-        h('ul', { class: 'group__list issues', role: 'list', dataset: { testid: 'import-issues' } },
-          shown.map((issue) => h('li', { class: `issue issue--${issue.severity}` },
-            icon(issue.severity === 'error' ? 'close' : 'warning', { size: 18 }),
-            h('span', null,
-              h('strong', null, `Wiersz ${issue.number}`),
-              ` – ${issue.severity === 'error' ? 'błąd' : 'ostrzeżenie'}: ${issue.message}`)
-          ))
-        ),
-        built.issues.length > ISSUE_LIMIT
-          ? h('p', { class: 'group__footer' }, `Pokazano pierwsze ${ISSUE_LIMIT} z ${built.issues.length} uwag.`)
-          : null
-      ));
+      parts.push(this.#issuesList(built.issues, 'import-issues'));
     } else {
       parts.push(message('Wszystkie wiersze są poprawne.', 'info'));
     }
@@ -721,17 +978,112 @@ export class ImportScreen {
     ];
   }
 
+  /** Ścieżka lekcji notatki: z biblioteki (gdy lekcja istnieje) albo z nazw w pliku. */
+  #notePath(row, index) {
+    const { library } = this.ctx;
+    const lessonID = this.plan?.notes.lessons[index] ?? row.lessonID;
+    if (lessonID && library.getLesson(lessonID)) return library.lessonPath(lessonID);
+    return [row.domain, row.module, row.lesson].filter(Boolean).join(' › ') || '—';
+  }
+
+  #notesStep() {
+    const { notesBuilt: built, plan, noteRows } = this;
+    if (!built || !plan || !noteRows) return [];
+    const report = plan.notes;
+    const parts = [];
+    this.thumbnails.release();
+
+    parts.push(group({ title: 'Wynik sprawdzenia' },
+      valueRow('Notatki', String(built.counts.notes)),
+      valueRow('Obrazy', String(built.counts.images)),
+      built.counts.rejected > 0 ? valueRow('Wiersze odrzucone z powodu błędów', String(built.counts.rejected)) : null,
+      built.counts.skippedImages > 0 ? valueRow('Pominięte obrazy', String(built.counts.skippedImages)) : null,
+      report.failed > 0 ? valueRow('Notatki, których nie da się zaimportować', String(report.failed)) : null
+    ));
+
+    if (built.reason === 'terms') {
+      parts.push(message('Wszystkie pojęcia trafiają do jednej lekcji, więc notatki z pliku też trafią do niej.', 'info'));
+    } else if (built.reason === 'preset') {
+      parts.push(message('Arkusz notatek nie ma kolumny z lekcją – notatka trafi do lekcji, z której zaczął się import.', 'info'));
+    }
+
+    if (report.existing > 0) {
+      const lessons = `${report.existing} ${pluralForm(report.existing, 'lekcja ma', 'lekcje mają', 'lekcji ma')}`;
+      parts.push(group({ title: `${lessons} już notatkę`, footer: 'Dotyczy tylko lekcji, które mają notatkę. Pozostałe notatki zostaną dodane.' },
+        NOTE_MODES.map((mode) => radioRow({
+          name: 'import-note-mode',
+          value: mode.id,
+          checked: this.noteMode === mode.id,
+          title: mode.title,
+          subtitle: mode.subtitle,
+          testID: `import-note-mode-${mode.id}`,
+          onChange: (value) => {
+            this.noteMode = value;
+            try {
+              this.#computePlan();
+            } catch (error) {
+              this.error = error?.message ?? String(error);
+            }
+            this.#refresh();
+          }
+        }))
+      ));
+    }
+
+    parts.push(h('section', { class: 'group' },
+      h('h3', { class: 'group__title group__title--small' }, pluralNotes(noteRows.length)),
+      h('ul', { class: 'group__list terms', role: 'list', dataset: { testid: 'import-notes-list' } },
+        noteRows.map((row, index) => {
+          const status = report.statuses[index];
+          const text = noteText(row.html).replace(/\s+/g, ' ').trim();
+          const numbers = built.notes[index]?.numbers ?? [];
+          const rowsLabel = numbers.length > 1 ? `Wiersze ${numbers[0]}–${numbers[numbers.length - 1]}` : `Wiersz ${numbers[0] ?? '?'}`;
+          return h('li', { class: 'term term--preview note-preview' },
+            h('div', { class: 'term__text' },
+              h('span', { class: 'term__path' }, `${rowsLabel} → ${this.#notePath(row, index)}`),
+              h('span', { class: 'note-preview__text' }, text ? (text.length > 160 ? `${text.slice(0, 160)}…` : text) : 'Bez tekstu – same obrazy'),
+              row.images.length > 0
+                ? h('span', { class: 'note-preview__images' },
+                    row.images.slice(0, 4).map((image) => h('img', { class: 'note-preview__thumb', src: this.thumbnails.add(image), alt: '' })),
+                    row.images.length > 4 ? h('span', { class: 'note-preview__more' }, `+${row.images.length - 4}`) : null,
+                    h('span', { class: 'visually-hidden' }, pluralImages(row.images.length)))
+                : null,
+              h('span', { class: `status status--${NOTE_STATUS_CLASS[status] ?? 'error'}` }, NOTE_STATUS_LABELS[status] ?? '')
+            )
+          );
+        })
+      )
+    ));
+
+    if (built.issues.length > 0) parts.push(this.#issuesList(built.issues, 'import-notes-issues'));
+    return parts;
+  }
+
   #confirmStep() {
     const { plan } = this;
     if (!plan) return [];
     const parts = [];
-    parts.push(group({ title: 'Pojęcia' },
-      valueRow('Zostaną dodane', String(plan.added)),
-      plan.updated > 0 ? valueRow('Zostaną zaktualizowane', String(plan.updated)) : null,
-      plan.unchanged > 0 ? valueRow('Bez zmian (takie same jak w bibliotece)', String(plan.unchanged)) : null,
-      plan.skipped > 0 ? valueRow('Zostaną pominięte', String(plan.skipped)) : null,
-      this.built.counts.rejected > 0 ? valueRow('Odrzucone z powodu błędów', String(this.built.counts.rejected)) : null
-    ));
+    if (this.contents.terms) {
+      parts.push(group({ title: 'Pojęcia' },
+        valueRow('Zostaną dodane', String(plan.added)),
+        plan.updated > 0 ? valueRow('Zostaną zaktualizowane', String(plan.updated)) : null,
+        plan.unchanged > 0 ? valueRow('Bez zmian (takie same jak w bibliotece)', String(plan.unchanged)) : null,
+        plan.skipped > 0 ? valueRow('Zostaną pominięte', String(plan.skipped)) : null,
+        this.built?.counts.rejected > 0 ? valueRow('Odrzucone z powodu błędów', String(this.built.counts.rejected)) : null
+      ));
+    }
+    if (this.contents.notes) {
+      const notes = plan.notes;
+      parts.push(h('div', { dataset: { testid: 'import-confirm-notes' } }, group({ title: 'Notatki do lekcji' },
+        valueRow('Zostaną dodane', String(notes.added)),
+        notes.replaced > 0 ? valueRow('Zastąpią istniejące', String(notes.replaced)) : null,
+        notes.appended > 0 ? valueRow('Zostaną dopisane', String(notes.appended)) : null,
+        notes.unchanged > 0 ? valueRow('Bez zmian', String(notes.unchanged)) : null,
+        notes.skipped > 0 ? valueRow('Zostaną pominięte', String(notes.skipped)) : null,
+        notes.failed > 0 ? valueRow('Nie da się zaimportować', String(notes.failed)) : null,
+        notes.images > 0 ? valueRow('Obrazy w notatkach', String(notes.images)) : null
+      )));
+    }
 
     const created = [
       ['Nowe dziedziny', plan.created.domains],
@@ -750,7 +1102,9 @@ export class ImportScreen {
         )
       ));
     } else {
-      parts.push(message('Pojęcia trafią do istniejących lekcji – nie powstanie żadna nowa dziedzina, moduł ani lekcja.', 'info'));
+      parts.push(message(this.contents.terms
+        ? 'Pojęcia trafią do istniejących lekcji – nie powstanie żadna nowa dziedzina, moduł ani lekcja.'
+        : 'Notatki trafią do istniejących lekcji – nie powstanie żadna nowa dziedzina, moduł ani lekcja.', 'info'));
     }
     parts.push(h('p', { class: 'note' }, icon('info', { size: 18 }),
       h('span', null, 'Import wykonuje się w całości albo wcale. Jeśli coś pójdzie nie tak, biblioteka zostanie bez zmian.')));
@@ -764,6 +1118,11 @@ export class ImportScreen {
     if (result.added > 0) lines.push(`Dodano: ${pluralTerms(result.added)}.`);
     if (result.updated > 0) lines.push(`Zaktualizowano: ${pluralTerms(result.updated)}.`);
     if (result.skipped + result.unchanged > 0) lines.push(`Pominięto: ${pluralTerms(result.skipped + result.unchanged)}.`);
+    const notes = result.notes;
+    if (notes.added > 0) lines.push(`Dodano ${notesAccusative(notes.added)}${notes.images > 0 && notes.replaced + notes.appended === 0 ? ` (${pluralImages(notes.images)})` : ''}.`);
+    if (notes.replaced > 0) lines.push(`Zastąpiono ${notesAccusative(notes.replaced)}.`);
+    if (notes.appended > 0) lines.push(`Uzupełniono ${notesAccusative(notes.appended)}.`);
+    if (notes.skipped + notes.unchanged > 0) lines.push(`Pominięto ${notesAccusative(notes.skipped + notes.unchanged)}.`);
     const created = [];
     if (result.domains > 0) created.push(plural(result.domains, 'dziedzinę', 'dziedziny', 'dziedzin'));
     if (result.modules > 0) created.push(plural(result.modules, 'moduł', 'moduły', 'modułów'));
@@ -795,23 +1154,35 @@ export class ImportScreen {
       : { href: routes.domains(), label: 'Biblioteka' };
   }
 
+  /** Napis na przycisku importu: „Importuj 40 pojęć i 2 notatki”. */
+  #importLabel() {
+    const changes = this.#changes();
+    const parts = [];
+    if (changes.terms > 0) parts.push(pluralTerms(changes.terms));
+    if (changes.notes > 0) parts.push(notesAccusative(changes.notes));
+    return parts.length > 0 ? `Importuj ${parts.join(' i ')}` : 'Importuj';
+  }
+
   view() {
-    if (this.step === DONE && this.result) return this.#resultView();
+    const steps = this.#steps();
+    if (this.result && this.stepIndex >= steps.length) return this.#resultView();
 
-    const stepBody = [
-      () => this.#fileStep(),
-      () => this.#sheetStep(),
-      () => this.#columnsStep(),
-      () => this.#placeStep(),
-      () => this.#checkStep(),
-      () => this.#previewStep(),
-      () => this.#confirmStep()
-    ][this.step]();
+    const id = this.#stepID();
+    const stepBody = {
+      file: () => this.#fileStep(),
+      contents: () => this.#contentsStep(),
+      sheet: () => this.#sheetStep(),
+      columns: () => this.#columnsStep(),
+      place: () => this.#placeStep(),
+      check: () => this.#checkStep(),
+      preview: () => this.#previewStep(),
+      notes: () => this.#notesStep(),
+      confirm: () => this.#confirmStep()
+    }[id]();
 
-    const csvSheetTitle = this.step === 1 && this.file?.source.kind === 'csv' ? 'Sprawdź odczyt pliku' : STEP_TITLES[this.step];
+    const stepTitle = id === 'sheet' && this.file?.source.kind === 'csv' ? 'Sprawdź odczyt pliku' : STEP_TITLES[id];
     const blocker = this.#blocker();
-    const importing = this.step === LAST_STEP;
-    const total = this.plan ? this.plan.added + this.plan.updated : 0;
+    const importing = id === 'confirm';
 
     this.nextButton = h('button', {
       type: 'button',
@@ -819,30 +1190,30 @@ export class ImportScreen {
       disabled: Boolean(blocker) || Boolean(this.busy),
       dataset: { testid: 'import-next' },
       onClick: () => this.#next()
-    }, importing ? (total > 0 ? `Importuj ${pluralTerms(total)}` : 'Importuj') : 'Dalej');
+    }, importing ? this.#importLabel() : 'Dalej');
 
     this.hintElement = h('p', {
-      class: 'wizard__hint', role: 'status', hidden: !blocker || this.step === 0, dataset: { testid: 'import-hint' }
+      class: 'wizard__hint', role: 'status', hidden: !blocker || id === 'file', dataset: { testid: 'import-hint' }
     }, blocker ?? '');
 
     return {
       title: 'Import z pliku',
-      subtitle: `Krok ${this.step + 1} z ${STEP_TITLES.length}`,
+      subtitle: `Krok ${this.stepIndex + 1} z ${steps.length}`,
       back: this.#backLink(),
       body: [
         h('ol', { class: 'steps', 'aria-hidden': 'true' },
-          STEP_TITLES.map((title, index) => h('li', {
-            class: `steps__item${index < this.step ? ' steps__item--done' : ''}${index === this.step ? ' steps__item--current' : ''}`
+          steps.map((step, index) => h('li', {
+            class: `steps__item${index < this.stepIndex ? ' steps__item--done' : ''}${index === this.stepIndex ? ' steps__item--current' : ''}`
           }))
         ),
-        h('h2', { class: 'wizard__title', dataset: { testid: 'import-step-title' } }, csvSheetTitle),
+        h('h2', { class: 'wizard__title', dataset: { testid: 'import-step-title' } }, stepTitle),
         this.busy ? h('p', { class: 'form-message form-message--info', role: 'status', dataset: { testid: 'import-busy' } }, this.busy) : null,
         this.error ? message(this.error, 'error') : null,
         ...stepBody,
         this.hintElement
       ],
       bottomBar: h('div', { class: 'bottombar__inner' },
-        this.step > 0
+        this.stepIndex > 0
           ? h('button', { type: 'button', class: 'button button--plain', disabled: Boolean(this.busy), dataset: { testid: 'import-back' }, onClick: () => this.#back() }, 'Wstecz')
           : h('span'),
         this.nextButton

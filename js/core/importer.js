@@ -62,6 +62,11 @@ function matchPrefixes(words, table) {
   return null;
 }
 
+/** Czy nagłówek wskazuje treść pojęcia (pojęcie, opis, przykład) – w dowolnym języku. */
+export function looksLikeTermHeader(header) {
+  return matchPrefixes(tokens(header), KIND_PREFIXES) !== null;
+}
+
 /**
  * Rozpoznaje pole po nagłówku kolumny, np. „Term PL”, „Pojęcie po polsku”, „Opis EN”,
  * „Definicja (angielski)”, „Lekcja”. Zwraca identyfikator pola albo null.

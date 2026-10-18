@@ -12,7 +12,8 @@
 import { ALL_STORES, MEMORY_STORES, TERM_HISTORY_STORES } from './model.js';
 
 export const DB_NAME = 'lexicards';
-export const DB_VERSION = 1;
+/** 2 – notatki lekcji i ich obrazy (wersja 1.1). Brakujące magazyny powstają przy otwarciu. */
+export const DB_VERSION = 2;
 
 export function emptyChanges() {
   return { puts: {}, deletes: {}, purgeTermIDs: [], clear: [] };
@@ -74,6 +75,12 @@ export class MemoryAdapter {
     return [...this.stores.get(name).values()].map(clone);
   }
 
+  /** Rekordy o podanych identyfikatorach (brakujące jako null), w kolejności identyfikatorów. */
+  async getMany(name, ids) {
+    const store = this.stores.get(name);
+    return ids.map((id) => (store.has(id) ? clone(store.get(id)) : null));
+  }
+
   /** Wpisy dziennika dotyczące jednego pojęcia. */
   async readByTerm(name, termID) {
     return [...this.stores.get(name).values()].filter((record) => record.termID === termID).map(clone);
@@ -118,6 +125,9 @@ export class IdbAdapter {
 
   async open() {
     const request = indexedDB.open(this.name, DB_VERSION);
+    // Starsza wersja aplikacji otwarta w innej karcie zamyka połączenie (onversionchange);
+    // gdyby tego nie zrobiła, otwarcie czeka – wtedy podpowiadamy, co zrobić.
+    request.onblocked = () => console.warn('Baza danych czeka na zamknięcie starszej wersji aplikacji w innej karcie.');
     request.onupgradeneeded = () => {
       const db = request.result;
       for (const name of ALL_STORES) {
@@ -190,6 +200,15 @@ export class IdbAdapter {
   async readStore(name) {
     const transaction = this.db.transaction([name], 'readonly');
     return requestToPromise(transaction.objectStore(name).getAll());
+  }
+
+  /** Rekordy o podanych identyfikatorach (brakujące jako null), w kolejności identyfikatorów. */
+  async getMany(name, ids) {
+    if (ids.length === 0) return [];
+    const transaction = this.db.transaction([name], 'readonly');
+    const store = transaction.objectStore(name);
+    const records = await Promise.all(ids.map((id) => requestToPromise(store.get(id))));
+    return records.map((record) => record ?? null);
   }
 
   /** Wpisy dziennika dotyczące jednego pojęcia (przez indeks, bez czytania całego magazynu). */

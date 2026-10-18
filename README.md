@@ -1,4 +1,4 @@
-# LexiCards 1.0
+# LexiCards 1.1
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -9,8 +9,9 @@ prywatne, więc strona jest publikowana tylko na czas instalacji albo aktualizac
 [Aktualizacje](#aktualizacje). Zainstalowana aplikacja działa bez niej.
 
 Sprawdzenie całości i zgodność ze specyfikacją: [docs/RELEASE-1.0.md](docs/RELEASE-1.0.md).
+Notatki do lekcji (wersja 1.1): [docs/RELEASE-1.1.md](docs/RELEASE-1.1.md).
 
-## Co potrafi wersja 1.0
+## Co potrafi wersja 1.1
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -20,9 +21,16 @@ Sprawdzenie całości i zgodność ze specyfikacją: [docs/RELEASE-1.0.md](docs/
   „płynność”), filtry (dziedzina, moduł, lekcja, status nauki, ulubione, tag), sortowanie, zaznaczanie
   wielu pojęć. Przy każdym pojęciu – także w lekcji – status ostatniej oceny (Nowe, Do nauki,
   W trakcie nauki, Częściowo opanowane, Opanowane); pojęcia do powtórki pokazuje filtr.
+- Notatka do każdej lekcji: tekst z formatowaniem (pogrubienie, kursywa, podkreślenie, nagłówki,
+  listy, pięć kolorów) i obrazy, w osobnym oknie z podglądem i edycją. Otwierasz ją z listy lekcji
+  w module, z ekranu lekcji, ze szczegółów pojęcia i w trakcie nauki fiszek. Wklejony tekst z Worda,
+  stron WWW czy Notatek zachowuje formatowanie, wklejony obraz trafia do obrazów notatki, a
+  „Kopiuj notatkę” przenosi ją z formatowaniem i obrazami do innej aplikacji.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
-- Eksport do XLSX lub CSV: cała biblioteka, dziedzina, moduł, lekcja albo zaznaczone pojęcia.
+  Notatki do lekcji przychodzą z osobnego arkusza tego samego pliku – razem z pojęciami albo osobno.
+- Eksport do XLSX lub CSV: cała biblioteka, dziedzina, moduł, lekcja albo zaznaczone pojęcia;
+  XLSX ma też arkusz z notatkami (formatowanie i obrazy).
 - Nauka z fiszkami: wybór materiału, kierunku (PL → EN, EN → PL, mieszany), zakresu i liczby fiszek;
   obracana fiszka, trzy kafelki oceny (pojęcie, definicja, przykład), zatwierdzanie gestem albo
   przyciskiem, cofanie, podsumowanie i runda powtórkowa. Postępy są osobne dla każdego kierunku.
@@ -42,7 +50,7 @@ Sprawdzenie całości i zgodność ze specyfikacją: [docs/RELEASE-1.0.md](docs/
   w trakcie nauki, do powtórki i opanowane, skuteczność quizów i czas nauki.
 - Wymowa pojęć, definicji i przykładów głosem z urządzenia, z głosem zastępczym, gdy wybrany się
   nie odzywa, i sprawdzeniem wymowy w Ustawieniach; historia ocen każdego pojęcia.
-- Kopia zapasowa do pliku i przywracanie z pliku (materiały, postępy, ustawienia).
+- Kopia zapasowa do pliku i przywracanie z pliku (materiały, notatki z obrazami, postępy, ustawienia).
 - Motyw jasny, ciemny albo zgodny z systemem i kolor aplikacji do wyboru (niebieski, antracytowy,
   pomarańczowy, zielony, czerwony); układ na telefon i na szeroki ekran.
 - Praca bez internetu po pierwszym otwarciu.
@@ -50,7 +58,7 @@ Sprawdzenie całości i zgodność ze specyfikacją: [docs/RELEASE-1.0.md](docs/
 
 Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2](docs/STAGE-2.md),
 [etap 3](docs/STAGE-3.md), [etap 4](docs/STAGE-4.md), [etap 5](docs/STAGE-5.md), [etap 6](docs/STAGE-6.md),
-[wersja 1.0](docs/RELEASE-1.0.md).
+[wersja 1.0](docs/RELEASE-1.0.md), [wersja 1.1 – notatki](docs/RELEASE-1.1.md).
 
 ## Jak korzystać
 
@@ -107,6 +115,30 @@ Rozpoznawane są też nagłówki takie jak „Polski”, „Angielski”, „Opi
 Wzór pliku można pobrać w pierwszym kroku kreatora; przykłady są w katalogu [docs/samples](docs/samples).
 Pliki CSV z polskiego Excela (Windows-1250, średniki) są odczytywane poprawnie. Stary format `.xls`
 trzeba najpierw zapisać w Excelu jako `.xlsx`.
+
+**Notatki do lekcji** są w osobnym arkuszu tego samego skoroszytu (we wzorze: „Notatki”):
+
+| Kolumna | Znaczenie |
+| --- | --- |
+| `Domain`, `Module`, `Lesson` | lekcja notatki; brakujące elementy zostaną utworzone |
+| `Note` | treść – formatowanie z Excela (pogrubienie, kursywa, podkreślenie, przekreślenie, kolor) zostaje |
+| `Image` | obrazy wklejone do komórki („Umieść w komórce”) albo na arkusz przy tej komórce |
+
+W treści: wiersz zaczynający się od „• ” albo „- ” to punkt listy, od „1. ” – lista numerowana, od „# ” –
+nagłówek, a pusty wiersz rozdziela akapity (nowy wiersz w komórce: Alt+Enter). Kilka wierszy z tą
+samą lekcją składa się na jedną notatkę – np. jeden obraz w wierszu. Gdy plik ma i pojęcia, i notatki,
+kreator pyta, co zaimportować; w kroku „Sprawdź notatki” widać podgląd każdej notatki z obrazami
+i można zdecydować, co zrobić z lekcjami, które mają już notatkę (zastąpić, dopisać, zostawić).
+Obrazy w formatach EMF i WMF (Windows) są pomijane z ostrzeżeniem – zapisz je jako PNG albo JPEG.
+
+### Notatki do lekcji
+
+Notatkę otworzysz w module (ikona notatki przy lekcji albo „Dodaj notatkę” w menu „…”), na ekranie
+lekcji (wiersz „Notatka” nad listą pojęć), w szczegółach pojęcia („Notatka lekcji”) i w trakcie nauki
+fiszek (ikona u góry). Okno pokazuje tekst i obrazy; dotknięcie obrazu powiększa go (dwa palce albo
+dwukrotne dotknięcie). **Edytuj** włącza pasek formatowania i sekcję obrazów: **Dodaj obraz** (zdjęcie,
+plik, aparat), dotknięcie obrazu – powiększ, przesuń, usuń. Duże zdjęcia są zmniejszane do 2048 px
+dłuższego boku. Wklejony tekst zachowuje formatowanie (bez skryptów, stylów i obrazów z sieci).
 
 ### Nauka z fiszkami
 
@@ -248,6 +280,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 5. **Quizy: jednokrotny wybór, dopasowywanie, mieszany** – gotowe.
 6. **Statystyki: wskaźniki, wykresy, zestawienia według dziedzin, modułów i lekcji** – gotowe.
 7. **Wersja 1.0: sprawdzenie całości ze specyfikacją, uzupełnienia, przegląd ekranów** – gotowe.
+8. **Wersja 1.1: notatki do lekcji – tekst z formatowaniem i obrazy, import, eksport, kopia** – gotowe.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

@@ -8,11 +8,14 @@
 // kaskadowe: dziedzina → moduły → lekcje → pojęcia → dane nauki pojęć.
 
 import {
-  ALL_STORES, DIFFICULTY_MAX, DIFFICULTY_MIN, HISTORY_STORES, MEMORY_STORES, SETTINGS_ID,
-  defaultSettings, makeDomain, makeLesson, makeModule, makeTerm, newID, nowISO, termFieldsFromDraft, termToDraft
+  ALL_STORES, DIFFICULTY_MAX, DIFFICULTY_MIN, HISTORY_STORES, MEMORY_STORES, NOTE_IMAGE_LIMIT, NOTE_IMAGE_MAX_BYTES,
+  SETTINGS_ID, defaultSettings, makeDomain, makeLesson, makeModule, makeNoteImage, makeTerm, newID, noteImageMeta, nowISO,
+  termFieldsFromDraft, termToDraft
 } from './model.js';
+import { NOTE_HTML_LIMIT, normalizeNoteHtml } from './note-format.js';
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
 import { emptyChanges } from './storage.js';
+import { crc32 } from './zip.js';
 import { createScheduler } from './fsrs.js';
 import { quizResult } from './quiz.js';
 import { BOTH, matchesTermStatus } from './stats.js';
@@ -69,8 +72,38 @@ const errors = {
   emptyQuiz: () => new LibraryError('emptyQuiz', 'Z tego materiału nie da się ułożyć quizu – potrzebne są co najmniej dwa pojęcia o różnym brzmieniu.'),
   noQuiz: () => new LibraryError('noQuiz', 'Nie ma trwającego quizu.'),
   nothingToUndo: () => new LibraryError('nothingToUndo', 'Nie ma decyzji do cofnięcia.'),
-  invalidDecision: () => new LibraryError('invalidDecision', 'Nieznana decyzja – oczekiwano „Umiem” albo „Powtórz”.')
+  invalidDecision: () => new LibraryError('invalidDecision', 'Nieznana decyzja – oczekiwano „Umiem” albo „Powtórz”.'),
+  noteTooLong: () => new LibraryError('noteTooLong', 'Notatka jest za długa. Podziel ją albo skróć.'),
+  tooManyImages: () => new LibraryError('tooManyImages', `Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów.`),
+  imageTooLarge: () => new LibraryError('imageTooLarge', 'Obraz jest za duży (limit to 20 MB).'),
+  invalidImage: () => new LibraryError('invalidImage', 'Nie udało się zapisać obrazu – plik jest pusty albo uszkodzony.')
 };
+
+/** Bajty obrazu jako Uint8Array (z ArrayBuffer albo widoku). */
+function imageBytes(image) {
+  const bytes = image?.bytes;
+  if (bytes instanceof ArrayBuffer) return new Uint8Array(bytes);
+  if (ArrayBuffer.isView(bytes)) return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return null;
+}
+
+/** Nowy obraz notatki gotowy do zapisu (sprawdzony). */
+function newNoteImage(lessonID, image) {
+  const bytes = imageBytes(image);
+  if (!bytes || bytes.byteLength === 0 || !image.type) throw errors.invalidImage();
+  if (bytes.byteLength > NOTE_IMAGE_MAX_BYTES) throw errors.imageTooLarge();
+  return makeNoteImage(lessonID, { ...image, bytes }, image.crc ?? crc32(bytes));
+}
+
+/** Te same obrazy w tej samej kolejności (po sumie kontrolnej i rozmiarze). */
+function sameImages(metas, images) {
+  if (metas.length !== images.length) return false;
+  return metas.every((meta, index) => {
+    const bytes = imageBytes(images[index]);
+    const crc = images[index].crc ?? (bytes ? crc32(bytes) : null);
+    return meta.crc === crc && meta.size === (bytes?.byteLength ?? images[index].size);
+  });
+}
 
 function bySortOrder(a, b) {
   if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
@@ -166,9 +199,10 @@ class UnitOfWork {
     this.purgeTermIDs.push(...ids);
   }
 
-  /** Czy operacja zmienia dzienniki nauki (zapis, usunięcie, usunięcie pojęć). */
+  /** Czy operacja zmienia dzienniki nauki (zapis, usunięcie, usunięcie pojęć). Obrazy notatek się nie liczą. */
   touchesJournals() {
-    return this.journalPuts.size > 0 || this.journalDeletes.size > 0 || this.purgeTermIDs.length > 0;
+    const journal = (store) => HISTORY_STORES.includes(store);
+    return [...this.journalPuts.keys()].some(journal) || [...this.journalDeletes.keys()].some(journal) || this.purgeTermIDs.length > 0;
   }
 
   /** Zmiany względem stanu sprzed operacji (każdy rekord najwyżej raz). */
@@ -354,14 +388,17 @@ export class Library {
   /**
    * Wykonuje zmianę niepodzielnie. `work` jest synchroniczne: sprawdza dane i modyfikuje
    * pamięć przez UnitOfWork. Operacje są kolejkowane, więc nigdy się nie przeplatają.
+   * `prepare` (opcjonalne, asynchroniczne) czyta potrzebne dane z bazy już w kolejce –
+   * jego wynik dostaje `work` jako drugi argument.
    */
-  #mutate(work) {
+  #mutate(work, prepare = null) {
     const run = async () => {
+      const prepared = prepare ? await prepare() : undefined;
       const unit = new UnitOfWork(this.maps);
       let result;
       let committing = false;
       try {
-        result = work(unit);
+        result = work(unit, prepared);
         committing = true;
         await this.adapter.commit(unit.changes());
       } catch (error) {
@@ -791,9 +828,9 @@ export class Library {
     };
   }
 
-  /** Kopiuje lekcję z pojęciami. Kopie nie dziedziczą postępów nauki. */
+  /** Kopiuje lekcję z pojęciami i notatką. Kopie nie dziedziczą postępów nauki. */
   copyLesson(id, toModuleID) {
-    return this.#mutate((unit) => {
+    return this.#mutate((unit, images) => {
       const source = this.#require('lesson', id);
       const target = this.#require('module', toModuleID);
       const terms = this.listTerms(source.id);
@@ -803,8 +840,88 @@ export class Library {
         target
       );
       terms.forEach((term, index) => unit.put('terms', this.#copyOfTerm(term, copy, index)));
+      const note = this.getNote(source.id);
+      if (note) this.#writeNote(unit, copy.id, { html: note.html, images }, null);
       return copy;
+    }, () => this.noteImages(id));
+  }
+
+  // ---------------------------------------------------------------- notatki lekcji
+
+  /** Notatka lekcji (tekst i opis obrazów, bez bajtów) albo null. */
+  getNote(lessonID) {
+    return this.maps.notes.get(lessonID) ?? null;
+  }
+
+  /** Liczba lekcji z notatką. */
+  noteCount() {
+    return this.maps.notes.size;
+  }
+
+  /** Obrazy notatki z bajtami ({ ...opis, bytes: ArrayBuffer }) w kolejności z notatki. */
+  async noteImages(lessonID) {
+    const note = this.getNote(lessonID);
+    if (!note || note.images.length === 0) return [];
+    const records = await this.adapter.getMany('noteImages', note.images.map((meta) => meta.id));
+    return note.images
+      .map((meta, index) => (records[index] ? { ...meta, bytes: records[index].bytes } : null))
+      .filter(Boolean);
+  }
+
+  /**
+   * Zapisuje notatkę lekcji. draft: { html, images } – images w kolejności wyświetlania:
+   * { id } zostawia istniejący obraz, { bytes, type, width, height, name } dodaje nowy,
+   * pominięte istniejące obrazy są usuwane. Notatka bez tekstu i obrazów jest usuwana.
+   * Zwraca zapisaną notatkę albo null.
+   */
+  saveNote(lessonID, draft) {
+    return this.#mutate((unit) => {
+      this.#require('lesson', lessonID);
+      return this.#writeNote(unit, lessonID, draft, this.getNote(lessonID));
     });
+  }
+
+  deleteNote(lessonID) {
+    return this.#mutate((unit) => this.#removeNote(unit, lessonID));
+  }
+
+  #writeNote(unit, lessonID, { html, images = [] }, existing) {
+    const clean = normalizeNoteHtml(html ?? '');
+    if (clean.length > NOTE_HTML_LIMIT) throw errors.noteTooLong();
+    if (images.length > NOTE_IMAGE_LIMIT) throw errors.tooManyImages();
+    const metas = [];
+    const kept = new Set();
+    for (const image of images) {
+      if (imageBytes(image)) {
+        const record = newNoteImage(lessonID, image);
+        unit.append('noteImages', record);
+        metas.push(noteImageMeta(record));
+      } else {
+        const meta = existing?.images.find((item) => item.id === image.id);
+        if (meta && !kept.has(meta.id)) {
+          kept.add(meta.id);
+          metas.push(meta);
+        }
+      }
+    }
+    for (const meta of existing?.images ?? []) {
+      if (!kept.has(meta.id)) unit.erase('noteImages', meta.id);
+    }
+    if (clean === '' && metas.length === 0) {
+      if (existing) unit.delete('notes', lessonID);
+      return null;
+    }
+    const now = nowISO();
+    const note = { id: lessonID, lessonID, html: clean, images: metas, createdAt: existing?.createdAt ?? now, updatedAt: now };
+    unit.put('notes', note);
+    return note;
+  }
+
+  #removeNote(unit, lessonID) {
+    const note = this.maps.notes.get(lessonID);
+    if (!note) return;
+    for (const meta of note.images) unit.erase('noteImages', meta.id);
+    unit.delete('notes', lessonID);
   }
 
   // ---------------------------------------------------------------- pojęcia
@@ -916,7 +1033,7 @@ export class Library {
    * target: { kind: 'domain'|'module'|'lesson', id } albo { kind: 'terms', ids }.
    */
   deletionImpact(target) {
-    const impact = { name: null, modules: 0, lessons: 0, terms: 0, progressRecords: 0 };
+    const impact = { name: null, modules: 0, lessons: 0, terms: 0, progressRecords: 0, notes: 0 };
     const terms = this.#termsOf(target);
     if (target.kind === 'terms') {
       impact.terms = terms.length;
@@ -933,7 +1050,19 @@ export class Library {
     for (const record of this.maps.progress.values()) {
       if (ids.has(record.termID)) impact.progressRecords += 1;
     }
+    if (target.kind !== 'terms') impact.notes = this.#lessonsOf(target).filter((lesson) => this.maps.notes.has(lesson.id)).length;
     return impact;
+  }
+
+  /** Lekcje usuwane razem z dziedziną, modułem albo lekcją. */
+  #lessonsOf(target) {
+    const all = [...this.maps.lessons.values()];
+    switch (target.kind) {
+      case 'domain': return all.filter((lesson) => lesson.domainID === target.id);
+      case 'module': return all.filter((lesson) => lesson.moduleID === target.id);
+      case 'lesson': return all.filter((lesson) => lesson.id === target.id);
+      default: return [];
+    }
   }
 
   /** Usuwa cel wraz z elementami podrzędnymi i danymi nauki usuwanych pojęć. */
@@ -949,6 +1078,7 @@ export class Library {
         if (termIDs.has(record.termID)) unit.delete('progress', record.id);
       }
       unit.purgeTerms([...termIDs]);
+      for (const lesson of this.#lessonsOf(target)) this.#removeNote(unit, lesson.id);
 
       if (target.kind === 'domain') {
         for (const lesson of [...this.maps.lessons.values()]) {
@@ -971,7 +1101,7 @@ export class Library {
 
   /** Usuwa wszystkie materiały, postępy i historię nauki. Ustawienia zostają. */
   async deleteAllContent() {
-    const stores = ['domains', 'modules', 'lessons', 'terms', 'progress'];
+    const stores = ['domains', 'modules', 'lessons', 'terms', 'progress', 'notes'];
     const run = async () => {
       // Sesje i wybór materiału wskazują na usuwane elementy, więc znikają razem z nimi.
       const settings = {
@@ -987,7 +1117,7 @@ export class Library {
       await this.adapter.commit({
         ...emptyChanges(),
         puts: { settings: [settings] },
-        clear: [...stores, 'assessments', 'reviews', 'quizAnswers', 'studySessions', 'quizSessions']
+        clear: [...stores, 'assessments', 'reviews', 'quizAnswers', 'studySessions', 'quizSessions', 'noteImages']
       });
       for (const name of stores) this.maps[name] = new Map();
       this.maps.settings.set(SETTINGS_ID, settings);
@@ -1007,24 +1137,31 @@ export class Library {
    * biblioteki; gdy jest `null`, powstaje sam raport – co zostałoby utworzone i zmienione.
    * Jeden kod dla obu trybów gwarantuje, że podgląd w kreatorze zgadza się z wynikiem.
    */
-  #runImport(rows, duplicates, unit) {
+  #runImport(rows, duplicates, unit, notes = [], noteMode = 'replace') {
     const report = {
       domains: 0, modules: 0, lessons: 0,
       added: 0, updated: 0, unchanged: 0, skipped: 0,
       duplicatesInLibrary: 0, duplicatesInFile: 0,
       created: { domains: [], modules: [], lessons: [] },
       statuses: new Array(rows.length),
-      lessonIDs: []
+      lessonIDs: [],
+      notes: {
+        added: 0, replaced: 0, appended: 0, unchanged: 0, skipped: 0, failed: 0, existing: 0, images: 0,
+        statuses: new Array(notes.length), lessons: new Array(notes.length)
+      }
     };
     const touchedLessons = new Set();
     let placeholder = 0;
     const planned = (fields) => ({ id: `plan:${placeholder += 1}`, ...fields });
 
     const domainByKey = new Map(this.listDomains().map((domain) => [domain.nameKey, domain]));
+    const domainByID = new Map(this.listDomains().map((domain) => [domain.id, domain]));
     const moduleByKey = new Map();
+    const moduleByID = new Map();
     for (const module of [...this.maps.modules.values()].sort(bySortOrder)) {
       const key = `${module.domainID}\n${module.nameKey}`;
       if (!moduleByKey.has(key)) moduleByKey.set(key, module);
+      moduleByID.set(module.id, module);
     }
     const lessonByKey = new Map();
     for (const lesson of [...this.maps.lessons.values()].sort(bySortOrder)) {
@@ -1040,6 +1177,51 @@ export class Library {
       nextTermOrder.set(term.lessonID, Math.max(nextTermOrder.get(term.lessonID) ?? 0, term.sortOrder + 1));
     }
 
+    /** Lekcja wiersza: wskazana identyfikatorem albo nazwami (brakujące poziomy powstają). */
+    const placeLesson = (row) => {
+      if (row.lessonID) return this.#require('lesson', row.lessonID);
+      // Wskazany istniejący moduł lub dziedzina (po identyfikatorze) mają pierwszeństwo przed nazwą.
+      let module = row.moduleID ? this.#require('module', row.moduleID) : null;
+      let domain = module ? this.#require('domain', module.domainID) : null;
+      if (!domain && row.domainID) domain = this.#require('domain', row.domainID);
+      if (!domain) {
+        const domainDraft = typeof row.domain === 'string' ? { name: row.domain } : (row.domain ?? {});
+        const domainKey = normalizeKey(domainDraft.name);
+        domain = domainByKey.get(domainKey);
+        if (!domain) {
+          domain = unit
+            ? this.#insertDomain(unit, domainDraft)
+            : planned({ name: validatedName(domainDraft.name, 'domain') });
+          domainByKey.set(domainKey, domain);
+          domainByID.set(domain.id, domain);
+          report.domains += 1;
+          report.created.domains.push(domain.name);
+        }
+      }
+      const moduleKey = `${domain.id}\n${normalizeKey(row.module)}`;
+      if (!module) module = moduleByKey.get(moduleKey);
+      if (!module) {
+        module = unit
+          ? this.#insertModule(unit, { name: row.module }, domain.id)
+          : planned({ name: validatedName(row.module, 'module'), domainID: domain.id });
+        moduleByKey.set(moduleKey, module);
+        moduleByID.set(module.id, module);
+        report.modules += 1;
+        report.created.modules.push(`${domain.name} › ${module.name}`);
+      }
+      const lessonKey = `${module.id}\n${normalizeKey(row.lesson)}`;
+      let lesson = lessonByKey.get(lessonKey);
+      if (!lesson) {
+        lesson = unit
+          ? this.#insertLesson(unit, { name: row.lesson }, module)
+          : planned({ name: validatedName(row.lesson, 'lesson'), moduleID: module.id, domainID: domain.id });
+        lessonByKey.set(lessonKey, lesson);
+        report.lessons += 1;
+        report.created.lessons.push(`${domain.name} › ${module.name} › ${lesson.name}`);
+      }
+      return lesson;
+    };
+
     rows.forEach((row, index) => {
       try {
         validateTermDraft(row.term);
@@ -1047,48 +1229,7 @@ export class Library {
         throw new LibraryError(error.code, `Wiersz ${row.number ?? index + 1}: ${error.message}`);
       }
 
-      let lesson;
-      if (row.lessonID) {
-        lesson = this.#require('lesson', row.lessonID);
-      } else {
-        // Wskazany istniejący moduł lub dziedzina (po identyfikatorze) mają pierwszeństwo przed nazwą.
-        let module = row.moduleID ? this.#require('module', row.moduleID) : null;
-        let domain = module ? this.#require('domain', module.domainID) : null;
-        if (!domain && row.domainID) domain = this.#require('domain', row.domainID);
-        if (!domain) {
-          const domainDraft = typeof row.domain === 'string' ? { name: row.domain } : (row.domain ?? {});
-          const domainKey = normalizeKey(domainDraft.name);
-          domain = domainByKey.get(domainKey);
-          if (!domain) {
-            domain = unit
-              ? this.#insertDomain(unit, domainDraft)
-              : planned({ name: validatedName(domainDraft.name, 'domain') });
-            domainByKey.set(domainKey, domain);
-            report.domains += 1;
-            report.created.domains.push(domain.name);
-          }
-        }
-        const moduleKey = `${domain.id}\n${normalizeKey(row.module)}`;
-        if (!module) module = moduleByKey.get(moduleKey);
-        if (!module) {
-          module = unit
-            ? this.#insertModule(unit, { name: row.module }, domain.id)
-            : planned({ name: validatedName(row.module, 'module'), domainID: domain.id });
-          moduleByKey.set(moduleKey, module);
-          report.modules += 1;
-          report.created.modules.push(`${domain.name} › ${module.name}`);
-        }
-        const lessonKey = `${module.id}\n${normalizeKey(row.lesson)}`;
-        lesson = lessonByKey.get(lessonKey);
-        if (!lesson) {
-          lesson = unit
-            ? this.#insertLesson(unit, { name: row.lesson }, module)
-            : planned({ name: validatedName(row.lesson, 'lesson'), moduleID: module.id, domainID: domain.id });
-          lessonByKey.set(lessonKey, lesson);
-          report.lessons += 1;
-          report.created.lessons.push(`${domain.name} › ${module.name} › ${lesson.name}`);
-        }
-      }
+      const lesson = placeLesson(row);
       touchedLessons.add(lesson.id);
 
       const fields = termFieldsFromDraft(row.term);
@@ -1133,6 +1274,99 @@ export class Library {
       report.statuses[index] = match ? 'addedDuplicate' : 'added';
     });
 
+    // ------------------------------------------------ notatki lekcji
+
+    /** Lekcja wskazana samą nazwą (bez pełnej ścieżki): jedna pasująca – istniejąca albo z tego importu. */
+    const findLesson = (row) => {
+      const key = normalizeKey(row.lesson);
+      const moduleKey = isBlank(row.module) ? null : normalizeKey(row.module);
+      const domainKey = isBlank(row.domain) ? null : normalizeKey(row.domain);
+      const matches = [...lessonByKey.values()].filter((lesson) => {
+        if (normalizeKey(lesson.name) !== key) return false;
+        const module = moduleByID.get(lesson.moduleID);
+        if (moduleKey !== null && normalizeKey(module?.name) !== moduleKey) return false;
+        const domain = domainByID.get(module?.domainID ?? lesson.domainID);
+        return domainKey === null || normalizeKey(domain?.name) === domainKey;
+      });
+      if (matches.length === 1) return { lesson: matches[0] };
+      return { error: matches.length === 0 ? 'missingLesson' : 'ambiguousLesson' };
+    };
+
+    const notesDone = new Set();
+    notes.forEach((row, index) => {
+      const fail = (status) => {
+        report.notes.failed += 1;
+        report.notes.statuses[index] = status;
+      };
+      let lesson;
+      if (row.lessonID) {
+        lesson = this.#require('lesson', row.lessonID);
+      } else if (!isBlank(row.domain) && !isBlank(row.module) && !isBlank(row.lesson)) {
+        lesson = placeLesson(row);
+      } else if (!isBlank(row.lesson)) {
+        const found = findLesson(row);
+        if (found.error) {
+          fail(found.error);
+          return;
+        }
+        lesson = found.lesson;
+      } else {
+        fail('missingLesson');
+        return;
+      }
+      report.notes.lessons[index] = lesson.id;
+
+      const newImages = row.images ?? [];
+      const html = normalizeNoteHtml(row.html ?? '');
+      // Druga grupa wierszy dla tej samej lekcji w pliku jest dopisywana do pierwszej.
+      const repeated = notesDone.has(lesson.id);
+      const current = this.getNote(lesson.id);
+      let status = 'added';
+      let merge = false;
+      if (repeated) {
+        status = 'appended';
+        merge = true;
+      } else if (current) {
+        report.notes.existing += 1;
+        if (noteMode === 'skip') {
+          report.notes.skipped += 1;
+          report.notes.statuses[index] = 'skipped';
+          return;
+        }
+        if (noteMode === 'append') {
+          status = 'appended';
+          merge = true;
+        } else if (html === current.html && sameImages(current.images, newImages)) {
+          report.notes.unchanged += 1;
+          report.notes.statuses[index] = 'unchanged';
+          notesDone.add(lesson.id);
+          return;
+        } else {
+          status = 'replaced';
+        }
+      }
+      const base = merge && current ? current : null;
+      const imageCount = (base?.images.length ?? 0) + newImages.length;
+      const fullHtml = base ? `${base.html}${html}` : html;
+      if (imageCount > NOTE_IMAGE_LIMIT) {
+        fail('tooManyImages');
+        return;
+      }
+      if (fullHtml.length > NOTE_HTML_LIMIT) {
+        fail('tooLong');
+        return;
+      }
+      if (unit) {
+        const images = [...(base?.images ?? []).map((meta) => ({ id: meta.id })), ...newImages];
+        this.#writeNote(unit, lesson.id, { html: fullHtml, images }, current);
+      }
+      notesDone.add(lesson.id);
+      touchedLessons.add(lesson.id);
+      report.notes[status] += 1;
+      report.notes.images += newImages.length;
+      report.notes.statuses[index] = status;
+    });
+
     if (unit) report.lessonIDs = [...touchedLessons];
     return report;
   }
@@ -1156,14 +1390,24 @@ export class Library {
    * Raport: liczby utworzonych elementów (domains, modules, lessons) i ich nazwy (created),
    * liczby pojęć (added, updated, unchanged, skipped), liczby duplikatów oraz status
    * każdego wiersza (statuses).
+   *
+   * notes – notatki lekcji importowane w tej samej operacji (po pojęciach, więc trafiają też
+   * do lekcji tworzonych przez pojęcia): [{ domain, module, lesson | lessonID, html, images }],
+   * images: [{ bytes, type, width, height, name }]. Pełna ścieżka tworzy brakujące poziomy;
+   * sama nazwa lekcji musi wskazywać dokładnie jedną lekcję (istniejącą albo z tego importu).
+   * noteMode – gdy lekcja ma już notatkę: 'replace' (domyślnie), 'append' albo 'skip'.
+   * Raport notatek (report.notes): liczby added, replaced, appended, unchanged, skipped,
+   * failed, existing (ile lekcji miało już notatkę), images oraz status każdej notatki:
+   * added | replaced | appended | unchanged | skipped | missingLesson | ambiguousLesson |
+   * tooManyImages | tooLong.
    */
-  importRows(rows, { duplicates = 'skip' } = {}) {
-    return this.#mutate((unit) => this.#runImport(rows, duplicates, unit));
+  importRows(rows, { duplicates = 'skip', notes = [], noteMode = 'replace' } = {}) {
+    return this.#mutate((unit) => this.#runImport(rows, duplicates, unit, notes, noteMode));
   }
 
   /** Plan importu: ten sam raport co importRows(), bez żadnej zmiany w bibliotece. */
-  planImport(rows, { duplicates = 'skip' } = {}) {
-    return this.#runImport(rows, duplicates, null);
+  planImport(rows, { duplicates = 'skip', notes = [], noteMode = 'replace' } = {}) {
+    return this.#runImport(rows, duplicates, null, notes, noteMode);
   }
 
   // ---------------------------------------------------------------- kopia zapasowa

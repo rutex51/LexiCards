@@ -5,19 +5,24 @@
 import {
   ALL_STORES, SCHEMA_VERSION, SETTINGS_ID, TERM_HISTORY_STORES, defaultSettings, nowISO, termFieldsFromDraft
 } from './model.js';
+import { base64ToBytes, bytesToBase64 } from './base64.js';
 import { LibraryError } from './library.js';
+import { imageInfo } from './images.js';
+import { normalizeNoteHtml } from './note-format.js';
 import { blankToNull, collapseWhitespace, normalizeKey } from './text.js';
 
 export const BACKUP_FORMAT = 'lexicards-backup';
-export const BACKUP_FORMAT_VERSION = 1;
+/** 2 – notatki lekcji z obrazami (wersja 1.1). Kopie w wersji 1 nadal można przywrócić. */
+export const BACKUP_FORMAT_VERSION = 2;
 
 function invalid(message) {
   return new LibraryError('invalidBackup', message);
 }
 
-/** Tworzy obiekt kopii zapasowej ze wszystkich magazynów. */
+/** Tworzy obiekt kopii zapasowej ze wszystkich magazynów. Obrazy notatek są zapisane w Base64. */
 export async function createBackup(library, appVersion = '') {
   const data = await library.exportAll();
+  data.noteImages = data.noteImages.map(({ bytes, ...record }) => ({ ...record, data: bytesToBase64(bytes) }));
   const counts = Object.fromEntries(ALL_STORES.map((name) => [name, data[name].length]));
   return {
     format: BACKUP_FORMAT,
@@ -140,6 +145,49 @@ export function validateBackup(raw) {
       data[name] = records;
     }
   }
+
+  // Notatki: tylko do istniejących lekcji, z obrazami, które są w kopii.
+  const images = new Map();
+  for (const record of requireRecords(source, 'noteImages')) {
+    const bytes = base64ToBytes(record.data);
+    if (!bytes || bytes.byteLength === 0) {
+      dropped += 1;
+      continue;
+    }
+    const rest = { ...record };
+    delete rest.data;
+    images.set(record.id, { ...rest, type: record.type || imageInfo(bytes).type, size: bytes.byteLength, bytes });
+  }
+  data.notes = [];
+  const usedImages = new Set();
+  for (const record of requireRecords(source, 'notes')) {
+    const lessonID = record.lessonID ?? record.id;
+    if (!lessonsByID.has(lessonID) || data.notes.some((note) => note.id === lessonID)) {
+      dropped += 1;
+      continue;
+    }
+    const metas = (Array.isArray(record.images) ? record.images : []).filter((meta) => meta && images.has(meta.id) && !usedImages.has(meta.id));
+    for (const meta of metas) usedImages.add(meta.id);
+    const html = normalizeNoteHtml(typeof record.html === 'string' ? record.html : '');
+    if (html === '' && metas.length === 0) continue;
+    data.notes.push({
+      ...record,
+      id: lessonID,
+      lessonID,
+      html,
+      images: metas.map((meta) => {
+        const image = images.get(meta.id);
+        return { id: meta.id, type: image.type, width: image.width ?? null, height: image.height ?? null, size: image.size, crc: image.crc ?? null, name: image.name ?? null };
+      }),
+      createdAt: record.createdAt ?? nowISO(),
+      updatedAt: record.updatedAt ?? record.createdAt ?? nowISO()
+    });
+  }
+  data.noteImages = [...images.values()].filter((image) => usedImages.has(image.id)).map((image) => {
+    const note = data.notes.find((item) => item.images.some((meta) => meta.id === image.id));
+    return { ...image, lessonID: note.lessonID };
+  });
+  dropped += images.size - data.noteImages.length;
 
   const settings = requireRecords(source, 'settings').find((record) => record.id === SETTINGS_ID);
   data.settings = settings ? [{ ...defaultSettings(), ...settings, id: SETTINGS_ID }] : [];

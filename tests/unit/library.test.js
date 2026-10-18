@@ -381,7 +381,7 @@ test('skutki usunięcia dziedziny podają liczbę modułów, lekcji, pojęć i p
   const { library, adapter } = await makeLibrary();
   const data = await populate(library, adapter);
   const impact = library.deletionImpact({ kind: 'domain', id: data.first.domain.id });
-  assert.deepEqual(impact, { name: 'Business English', modules: 2, lessons: 3, terms: 4, progressRecords: 4 });
+  assert.deepEqual(impact, { name: 'Business English', modules: 2, lessons: 3, terms: 4, progressRecords: 4, notes: 0 });
 });
 
 test('usunięcie dziedziny usuwa elementy podrzędne i ich dane nauki', async () => {
@@ -404,7 +404,7 @@ test('usunięcie modułu nie narusza pozostałych modułów dziedziny', async ()
   const data = await populate(library, adapter);
 
   const impact = library.deletionImpact({ kind: 'module', id: data.first.module.id });
-  assert.deepEqual(impact, { name: 'Finance', modules: 0, lessons: 2, terms: 3, progressRecords: 3 });
+  assert.deepEqual(impact, { name: 'Finance', modules: 0, lessons: 2, terms: 3, progressRecords: 3, notes: 0 });
 
   await library.delete({ kind: 'module', id: data.first.module.id });
 
@@ -418,7 +418,7 @@ test('usunięcie lekcji usuwa tylko jej pojęcia', async () => {
   const data = await populate(library, adapter);
 
   const impact = library.deletionImpact({ kind: 'lesson', id: data.first.lesson.id });
-  assert.deepEqual(impact, { name: 'Ratios', modules: 0, lessons: 0, terms: 2, progressRecords: 2 });
+  assert.deepEqual(impact, { name: 'Ratios', modules: 0, lessons: 0, terms: 2, progressRecords: 2, notes: 0 });
 
   await library.delete({ kind: 'lesson', id: data.first.lesson.id });
 
@@ -434,7 +434,7 @@ test('usunięcie pojęć usuwa dane nauki wyłącznie tych pojęć', async () =>
   const removed = [data.firstTerms[0].id, data.firstTerms[2].id];
 
   const impact = library.deletionImpact({ kind: 'terms', ids: removed });
-  assert.deepEqual(impact, { name: null, modules: 0, lessons: 0, terms: 2, progressRecords: 2 });
+  assert.deepEqual(impact, { name: null, modules: 0, lessons: 0, terms: 2, progressRecords: 2, notes: 0 });
   assert.equal(library.deletionImpact({ kind: 'terms', ids: [data.secondTerm.id] }).name, 'sonda');
 
   await library.delete({ kind: 'terms', ids: removed });

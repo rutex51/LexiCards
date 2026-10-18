@@ -36,8 +36,11 @@ export function group({ title = null, footer = null, className = '' }, ...rows) 
   );
 }
 
-/** Wiersz prowadzący do innego ekranu, z opcjonalnym przyciskiem menu. */
-export function linkRow({ href, leading = null, title, subtitle = null, onMenu = null, menuLabel = 'Więcej poleceń', testID = null }) {
+/**
+ * Wiersz prowadzący do innego ekranu, z opcjonalnym przyciskiem menu.
+ * `extra` – dodatkowy przycisk przed menu (np. notatka lekcji).
+ */
+export function linkRow({ href, leading = null, title, subtitle = null, onMenu = null, menuLabel = 'Więcej poleceń', testID = null, extra = null }) {
   return h('li', { class: 'row', dataset: { testid: testID } },
     h('a', { class: 'row__main', href },
       leading ? h('span', { class: 'row__leading' }, leading) : null,
@@ -47,6 +50,7 @@ export function linkRow({ href, leading = null, title, subtitle = null, onMenu =
       ),
       h('span', { class: 'row__chevron' }, icon('chevronRight', { size: 18 }))
     ),
+    extra,
     onMenu ? iconButton('more', `${menuLabel}: ${title}`, onMenu, { className: 'row__more' }) : null
   );
 }

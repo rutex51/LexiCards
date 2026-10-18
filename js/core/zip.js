@@ -154,8 +154,9 @@ function dosDateTime(date) {
 }
 
 /**
- * Tworzy archiwum ZIP. files: [{ name, data: Uint8Array }].
+ * Tworzy archiwum ZIP. files: [{ name, data: Uint8Array, stored }].
  * Dane są kompresowane, gdy środowisko to umożliwia; w przeciwnym razie zapisywane wprost.
+ * `stored: true` – bez kompresji (obrazy PNG i JPEG są już skompresowane).
  */
 export async function createZip(files, { date = new Date() } = {}) {
   const encoder = new TextEncoder();
@@ -169,7 +170,7 @@ export async function createZip(files, { date = new Date() } = {}) {
     const name = encoder.encode(file.name);
     let method = METHOD_STORED;
     let body = file.data;
-    if (canDeflate && file.data.byteLength > 64) {
+    if (canDeflate && !file.stored && file.data.byteLength > 64) {
       const deflated = await deflateRaw(file.data);
       if (deflated.byteLength < file.data.byteLength) {
         method = METHOD_DEFLATE;

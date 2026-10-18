@@ -6,10 +6,14 @@
 
 import { blankToNull, collapseWhitespace, normalizeKey, uniqueTags } from './text.js';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
-/** Magazyny trzymane w pamięci przez cały czas działania aplikacji. */
-export const MEMORY_STORES = ['domains', 'modules', 'lessons', 'terms', 'progress', 'settings'];
+/**
+ * Magazyny trzymane w pamięci przez cały czas działania aplikacji. Notatka lekcji (`notes`,
+ * identyfikator = identyfikator lekcji) ma tu tekst i opis obrazów; same obrazy są w osobnym
+ * magazynie i są czytane dopiero przy otwarciu notatki.
+ */
+export const MEMORY_STORES = ['domains', 'modules', 'lessons', 'terms', 'progress', 'settings', 'notes'];
 
 /** Dzienniki nauki – tylko dopisywane, czytane z bazy na żądanie (od etapu 3). */
 export const HISTORY_STORES = ['assessments', 'reviews', 'quizAnswers', 'studySessions', 'quizSessions'];
@@ -17,7 +21,10 @@ export const HISTORY_STORES = ['assessments', 'reviews', 'quizAnswers', 'studySe
 /** Dzienniki powiązane z pojęciem kluczem termID – usuwane razem z pojęciem. */
 export const TERM_HISTORY_STORES = ['assessments', 'reviews', 'quizAnswers'];
 
-export const ALL_STORES = [...MEMORY_STORES, ...HISTORY_STORES];
+/** Obrazy notatek (bajty pliku) – czytane z bazy na żądanie. */
+export const IMAGE_STORES = ['noteImages'];
+
+export const ALL_STORES = [...MEMORY_STORES, ...HISTORY_STORES, ...IMAGE_STORES];
 
 export const SETTINGS_ID = 'app';
 
@@ -202,6 +209,46 @@ export function makeTerm({ lesson, draft, sortOrder = 0 }) {
     sortOrder,
     createdAt: now,
     updatedAt: now
+  };
+}
+
+/** Najwięcej obrazów w jednej notatce i największy pojedynczy obraz. */
+export const NOTE_IMAGE_LIMIT = 30;
+export const NOTE_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Obraz notatki do zapisania w bazie: { id, lessonID, type, width, height, size, crc, name, bytes }.
+ * `bytes` to ArrayBuffer (bezpieczniejszy w IndexedDB Safari niż Blob). `crc` pozwala rozpoznać,
+ * że import przynosi ten sam obraz.
+ */
+export function makeNoteImage(lessonID, image, crc) {
+  const bytes = image.bytes instanceof ArrayBuffer
+    ? image.bytes
+    : image.bytes.buffer.slice(image.bytes.byteOffset, image.bytes.byteOffset + image.bytes.byteLength);
+  return {
+    id: newID(),
+    lessonID,
+    type: image.type,
+    width: Number.isFinite(image.width) ? image.width : null,
+    height: Number.isFinite(image.height) ? image.height : null,
+    size: bytes.byteLength,
+    crc,
+    name: image.name ?? null,
+    bytes,
+    createdAt: nowISO()
+  };
+}
+
+/** Opis obrazu przechowywany w notatce (bez bajtów). */
+export function noteImageMeta(record) {
+  return {
+    id: record.id,
+    type: record.type,
+    width: record.width ?? null,
+    height: record.height ?? null,
+    size: record.size ?? 0,
+    crc: record.crc ?? null,
+    name: record.name ?? null
   };
 }
 

@@ -2,7 +2,7 @@
 
 import { backupFileName, createBackup, parseBackupText, validateBackup } from '../../core/backup.js';
 import { ACCENT_COLORS, accentColor, nowISO } from '../../core/model.js';
-import { joinList, pluralDomains, pluralLessons, pluralModules, pluralTerms } from '../../core/text.js';
+import { joinList, pluralDomains, pluralLessons, pluralModules, pluralNotes, pluralTerms } from '../../core/text.js';
 import { loadSampleData, openExportSheet } from '../actions.js';
 import { actionRow, field, formGroup, group, segmented, selectInput, valueRow } from '../components.js';
 import { confirmDialog, showError, toast } from '../dialogs.js';
@@ -31,8 +31,9 @@ function contentList(counts) {
     pluralDomains(counts.domains),
     pluralModules(counts.modules),
     pluralLessons(counts.lessons),
-    pluralTerms(counts.terms)
-  ]);
+    pluralTerms(counts.terms),
+    counts.notes > 0 ? `${pluralNotes(counts.notes)} do lekcji` : null
+  ].filter(Boolean));
 }
 
 /** Podsumowanie sprawdzenia wymowy: co zrobić dalej. */
@@ -293,7 +294,7 @@ export class SettingsScreen {
     if (!file) return;
     try {
       const result = validateBackup(parseBackupText(await file.text()));
-      const current = ctx.library.summary();
+      const current = { ...ctx.library.summary(), notes: ctx.library.noteCount() };
       const exported = result.exportedAt ? formatDate(result.exportedAt) : null;
       const parts = [`${exported ? `Kopia z dnia ${exported}. ` : ''}Zawartość: ${contentList(result.counts)}.`];
       parts.push(ctx.library.isEmpty()
@@ -316,7 +317,7 @@ export class SettingsScreen {
 
   async #deleteEverything() {
     const { ctx } = this;
-    const summary = ctx.library.summary();
+    const summary = { ...ctx.library.summary(), notes: ctx.library.noteCount() };
     const confirmed = await confirmDialog({
       title: 'Usunąć wszystkie dane?',
       message: `Usunięte zostaną: ${contentList(summary)}, a także postępy i historia nauki. Tej operacji nie można cofnąć. Jeśli chcesz zachować dane, najpierw zapisz kopię zapasową.`,
@@ -367,7 +368,7 @@ export class SettingsScreen {
 
     const backupFooter = [
       lastBackup ? `Ostatnia kopia: ${lastBackup}.` : 'Nie zapisano jeszcze żadnej kopii.',
-      'Kopia to jeden plik ze wszystkimi materiałami i postępami. Przywrócenie zastępuje obecne dane.'
+      'Kopia to jeden plik ze wszystkimi materiałami, notatkami z obrazami i postępami. Przywrócenie zastępuje obecne dane.'
     ].join(' ');
 
     return {

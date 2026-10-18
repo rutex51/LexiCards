@@ -10,6 +10,7 @@ import {
   DECISIONS, TILES, cardContent, emptyTiles, formatInterval, isSessionFinished, scoreTiles, setAllTiles, summarizeSession
 } from '../../core/study.js';
 import { emptyState, iconButton, navButton } from '../components.js';
+import { openLessonNote } from '../notes.js';
 import { showError, toast } from '../dialogs.js';
 import { h, onTap, replaceChildren } from '../dom.js';
 import { icon } from '../icons.js';
@@ -629,7 +630,19 @@ export class StudySessionScreen {
       compact: true,
       focus: true,
       back: { href: routes.study(), label: 'Nauka' },
-      actions: [undoButton, navButton('Zakończ', () => this.#endEarly())],
+      actions: [
+        // Notatka lekcji bieżącej fiszki – np. schemat do zajrzenia w trakcie nauki.
+        library.getNote(term.lessonID)
+          ? iconButton('note', 'Notatka lekcji', async (event) => {
+              const button = event.currentTarget;
+              await openLessonNote(this.ctx, term.lessonID);
+              // Fokus nie wraca na przycisk – spacja i strzałki od razu znów sterują fiszką.
+              if (document.activeElement === button) button.blur();
+            }, { className: 'study__note' })
+          : null,
+        undoButton,
+        navButton('Zakończ', () => this.#endEarly())
+      ],
       body
     };
   }
