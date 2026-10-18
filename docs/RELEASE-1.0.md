@@ -92,6 +92,12 @@ pobierając aktualizację.
 
 - **Ikony dziedzin:** flaga Polski obok flag Wielkiej Brytanii, Hiszpanii i USA – razem 52 ikony.
 
+## Uzupełnienie w wersji 1.0.3
+
+- **Pasek zakładek (telefon):** „Nauka” w środku to okrągły przycisk w kolorze aplikacji, większy
+  od pozostałych i wystający nad pasek; nazwa zostaje pod nim. Pasek poleceń nad zakładkami
+  i komunikaty mają u dołu miejsce na wystający przycisk. Na szerokim ekranie (panel boczny) bez zmian.
+
 ## Znane ograniczenia
 
 - Dane są w przeglądarce na danym urządzeniu; aplikacja z ekranu początkowego iPhone'a i karta

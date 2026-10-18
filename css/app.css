@@ -17,6 +17,7 @@
   --elevated: #ffffff;
   --sidebar-bg: #e9e9ef;
   --bar-bg: rgba(249, 249, 251, 0.92);
+  --bar-solid: #f9f9fb;
 
   --text: #000000;
   --text-2: #5f5f64;
@@ -108,6 +109,7 @@
     --elevated: #2c2c2e;
     --sidebar-bg: #121214;
     --bar-bg: rgba(22, 22, 24, 0.9);
+    --bar-solid: #161618;
     --text: #ffffff;
     --text-2: #aeaeb2;
     --text-3: #7c7c80;
@@ -168,6 +170,7 @@
   --elevated: #2c2c2e;
   --sidebar-bg: #121214;
   --bar-bg: rgba(22, 22, 24, 0.9);
+  --bar-solid: #161618;
   --text: #ffffff;
   --text-2: #aeaeb2;
   --text-3: #7c7c80;
@@ -485,6 +488,41 @@ button:disabled { cursor: default; }
 
 .tabbar__link[aria-current="page"] { color: var(--accent); }
 .tabbar__link:focus-visible { outline-offset: -3px; border-radius: 10px; }
+
+/* „Nauka” – główne działanie: okrągły przycisk w kolorze aplikacji, wystający nad pasek.
+   Obwódka w kolorze paska oddziela go od treści pod spodem. */
+.tabbar__link--primary {
+  position: relative;
+  justify-content: flex-end;
+  padding-bottom: 4px;
+}
+
+.tabbar__bubble {
+  position: absolute;
+  top: -21px;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-left: -26px;
+  border-radius: 50%;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  box-shadow:
+    0 0 0 4px var(--bar-solid),
+    0 8px 18px -6px color-mix(in srgb, var(--accent-fill) 70%, transparent);
+  transition: transform 0.15s ease;
+}
+
+.tabbar__link--primary:active .tabbar__bubble { transform: scale(0.92); }
+.tabbar__link--primary:focus-visible { outline: none; }
+.tabbar__link--primary:focus-visible .tabbar__bubble { outline: 2px solid var(--accent); outline-offset: 6px; }
+
+/* Pasek poleceń nad zakładkami: dół zostaje wolny pod wystającym przyciskiem. */
+@media (max-width: 899px) {
+  .app:not(.app--focus) .bottombar__inner { padding-bottom: 24px; }
+}
 
 .bottombar {
   position: fixed;
@@ -3403,7 +3441,7 @@ a.row__main:active,
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom) + 14px);
+  bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom) + 28px);
   z-index: 60;
   display: flex;
   flex-direction: column;

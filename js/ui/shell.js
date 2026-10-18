@@ -5,6 +5,9 @@ import { captureFocus, h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
 import { TABS, routes } from './router.js';
 
+/** Zakładka wyróżniona na pasku u dołu ekranu (telefon). */
+const PRIMARY_TAB = 'study';
+
 export class Shell {
   constructor(root, router) {
     this.router = router;
@@ -62,7 +65,11 @@ export class Shell {
   }
 
   #navLink(tab, registry, className) {
-    const link = h('a', { class: className, href: tab.root }, icon(tab.icon), h('span', null, tab.title));
+    // Na pasku zakładek „Nauka” – główne działanie aplikacji – to okrągły przycisk w kolorze aplikacji.
+    const primary = className === 'tabbar__link' && tab.id === PRIMARY_TAB;
+    const link = h('a', { class: primary ? `${className} ${className}--primary` : className, href: tab.root },
+      primary ? h('span', { class: 'tabbar__bubble' }, icon(tab.icon, { size: 26 })) : icon(tab.icon),
+      h('span', null, tab.title));
     link.addEventListener('click', (event) => {
       // Zakładka pamięta ostatnie miejsce; ponowny wybór aktywnej wraca na jej początek.
       event.preventDefault();
