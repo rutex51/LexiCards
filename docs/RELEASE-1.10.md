@@ -95,6 +95,27 @@ Testy wersji 1.10.3:
 - **Lint: bez błędów.**
 - Zrzuty (Chromium, ekran telefonu): utrwalona lekcja z notatką w jasnym i ciemnym motywie.
 
+## Uzupełnienie w wersji 1.10.4
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Na listach modułów i lekcji – pełne zielone linie poziome oddzielające utrwalone, bez linii bocznych (wybrane z makiet) | Utrwalony wiersz nie ma już obwódki dookoła: zostaje zielone tło z poświatą, a od sąsiednich wierszy oddzielają go pełne zielone linie – od krawędzi do krawędzi karty, w miejscu zwykłych szarych linii. Przy krawędzi karty linii nie ma (jak przy zwykłych wierszach), więc utrwalony na końcu listy ma tylko linię nad sobą. Dwa utrwalone obok siebie dzielą jedną linię |
+| Piktogramy na ekranie lekcji bez tła, w kolorach intensywnych, ale czytelnych (wybrane z makiet) | Ikony **Lekcja utrwalona** (zielona) i **Notatka** (żółta, w odcieniu ochry) nie mają już kwadratu pod spodem i są nieco większe (22 zamiast 19 px). Kolory dobrane tak, żeby ikona miała kontrast co najmniej 3:1 do tła wiersza: w jasnym motywie ok. 3,3:1 (zielona) i 3,2:1 (żółta), w ciemnym – jasnozielona i jasnożółta |
+
+Testy wersji 1.10.4:
+
+- **Testy logiki: 259 – wszystkie zaliczone** (bez zmian w logice).
+- **Testy w przeglądarce: 110 – wszystkie zaliczone w dwóch przebiegach** (test wiersza notatki
+  rozszerzony na listy), w jasnym i ciemnym motywie:
+  - ekran lekcji: piktogramy bez tła, 22 px, żółty i zielony, kontrast do tła wiersza co najmniej
+    3:1 (liczony w teście z kolorów na ekranie); żółty wiersz notatki, utrwalenie bez obwódki i bez
+    linii między wierszami;
+  - lista lekcji z utrwaloną w środku: bez obwódki z boków, zielona linia nad i pod nią od krawędzi
+    karty; utrwalona na końcu listy: zielona linia tylko nad nią.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium, ekran telefonu): ekran lekcji i lista lekcji z utrwaloną w środku, jasny
+  i ciemny motyw.
+
 ## Czego nie sprawdzono
 
 - **Na iPhonie** – testy działają w Chromium z udawanym mikrofonem, nie w Safari na iOS. Do

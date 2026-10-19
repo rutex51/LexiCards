@@ -1873,17 +1873,28 @@ test('notatka głosowa: nagrywanie w trakcie pisania, pauza, zakończenie i zapi
   await expectText(page.locator('[data-testid=backup-media-export]'), '2 załączniki');
 });
 
-test('ekran lekcji: wiersz notatki bardzo delikatnie żółty z żółtym piktogramem, utrwalenie nad nim bez obwódki (jasny i ciemny motyw)', async ({ open }) => {
+/** Kontrast WCAG dwóch kolorów { r, g, b }. */
+function contrast(first, second) {
+  const channel = (value) => {
+    const c = value / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = ({ r, g, b }) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+  const [light, dark] = [luminance(first), luminance(second)].sort((a, b) => b - a);
+  return (light + 0.05) / (dark + 0.05);
+}
+
+test('ekran lekcji i listy: żółty wiersz notatki, piktogramy bez tła, utrwalone z pełnymi zielonymi liniami poziomymi (jasny i ciemny motyw)', async ({ open }) => {
   const page = await open();
   const ids = await seedNoteWithFiles(page);
   await page.evaluate((id) => window.lexicards.library.setLessonConsolidated(id, true), ids.statements);
-  const color = (locator, property = 'backgroundColor') => locator.evaluate((element, name) => {
+  const color = (locator, property = 'backgroundColor', pseudo = null) => locator.evaluate((element, [name, part]) => {
     // color-mix() daje „color(srgb 1 0.98 0.91)” (0–1), zwykły kolor – „rgb(255, 255, 255)” albo „rgba(…, 0.3)”.
-    const value = getComputedStyle(element)[name];
+    const value = getComputedStyle(element, part)[name];
     const scale = value.startsWith('color(') ? 255 : 1;
     const [r, g, b, a = 1] = value.match(/[\d.]+/g).map(Number);
     return { r: Math.round(r * scale), g: Math.round(g * scale), b: Math.round(b * scale), a };
-  }, property);
+  }, [property, pseudo]);
   const check = async (theme) => {
     await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
     const noteRow = page.locator('li.row--note', { has: page.locator('[data-testid=lesson-note]') });
@@ -1896,28 +1907,90 @@ test('ekran lekcji: wiersz notatki bardzo delikatnie żółty z żółtym piktog
     assert.ok(tint >= 12 && tint <= 40, `${theme}: odcień delikatny (różnica ${tint})`);
     assert.deepEqual(surface, term, `${theme}: tło grupy jak tło listy pojęć`);
     assert.notDeepEqual(note, surface, `${theme}: wiersz notatki różni się od tła`);
-    // Kwadrat z ikoną – żółty (jak zielony przy utrwaleniu), ikona ciemnożółta (w ciemnym motywie jasnożółta).
-    const iconBox = page.locator('[data-testid=lesson-note] .row__leading--icon');
-    const box = await color(iconBox);
-    assert.ok(box.r >= box.g && box.g > box.b + 120 && box.a > 0.1 && box.a < 0.5, `${theme}: tło ikony żółte (${JSON.stringify(box)})`);
-    const glyph = await color(iconBox, 'color');
-    assert.ok(glyph.r > glyph.g && glyph.g > glyph.b, `${theme}: ikona żółta (${JSON.stringify(glyph)})`);
-    assert.ok(theme === 'jasny' ? glyph.r < 160 : glyph.r > 220 && glyph.g > 180, `${theme}: ikona ${theme === 'jasny' ? 'ciemno' : 'jasno'}żółta`);
-    // Utrwalenie nad notatką: bez obwódki (sama poświata), bez linii między wierszami.
+
+    // Piktogramy bez tła: żółta ikona notatki, zielona ikona utrwalenia, obie czytelne (kontrast ≥ 3:1).
     const consolidated = page.locator('[data-testid=lesson-consolidated]');
+    const noteIcon = noteRow.locator('.row__leading--icon');
+    const checkIcon = consolidated.locator('.row__leading--icon');
+    for (const [label, iconBox, row] of [['notatki', noteIcon, noteRow], ['utrwalenia', checkIcon, consolidated]]) {
+      assert.equal((await color(iconBox)).a, 0, `${theme}: piktogram ${label} bez tła`);
+      assert.equal(await iconBox.locator('svg').evaluate((svg) => svg.getBoundingClientRect().width), 22, `${theme}: piktogram ${label} 22 px`);
+      const glyph = await color(iconBox, 'color');
+      // Tło wiersza pod ikoną: notatka – jednolite, utrwalenie – gradient (lewy brzeg, najmocniejszy).
+      const under = label === 'notatki' ? note : await row.evaluate((element) => {
+        const [r, g, b] = getComputedStyle(element).backgroundImage.match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)\)/).slice(1).map((part) => Math.round(Number(part) * 255));
+        return { r, g, b };
+      });
+      const ratio = contrast(glyph, under);
+      assert.ok(ratio >= 3, `${theme}: piktogram ${label} – kontrast ${ratio.toFixed(2)}:1`);
+    }
+    const yellow = await color(noteIcon, 'color');
+    assert.ok(yellow.r > yellow.g && yellow.g > yellow.b + 100, `${theme}: ikona notatki żółta (${JSON.stringify(yellow)})`);
+    const green = await color(checkIcon, 'color');
+    assert.ok(green.g > green.r && green.g > green.b, `${theme}: ikona utrwalenia zielona (${JSON.stringify(green)})`);
+
+    // Utrwalenie nad notatką: bez obwódki (sama poświata), bez linii między wierszami.
     const shadow = await consolidated.evaluate((element) => getComputedStyle(element).boxShadow);
     assert.ok(!/0px 0px 0px 1px/.test(shadow) && /20px/.test(shadow), `${theme}: utrwalenie bez obwódki (${shadow})`);
     assert.equal(await noteRow.evaluate((element) => getComputedStyle(element, '::before').display), 'none', `${theme}: bez linii między wierszami`);
     await page.screenshot({ path: path.join(OUTPUT, `notatka-wiersz-zolty-${theme}.png`) });
-    // Na liście lekcji w module utrwalona lekcja zachowuje obwódkę.
+
+    // Lista lekcji w module (kolejność własna – utrwalona między zwykłymi): bez obwódki z boków,
+    // pełne zielone linie nad i pod nią, zwykłe wiersze – szara linia od odstępu.
+    await page.evaluate(() => window.lexicards.library.updateSettings({ consolidatedLast: false }));
+    // Utrwalona lekcja na drugim miejscu – między zwykłymi.
+    await page.evaluate(([id, moduleID]) => {
+      const { library } = window.lexicards;
+      const others = [...library.maps.lessons.values()].filter((lesson) => lesson.moduleID === moduleID && lesson.id !== id)
+        .sort((a, b) => a.sortOrder - b.sortOrder).map((lesson) => lesson.id);
+      return library.reorder('lesson', [others[0], id, ...others.slice(1)]);
+    }, [ids.statements, ids.module]);
     await page.goto(`${page.url().split('#')[0]}#/library/module/${ids.module}`);
-    const listShadow = await page.locator('li.row--consolidated').first().evaluate((element) => getComputedStyle(element).boxShadow);
-    assert.match(listShadow, /0px 0px 0px 1px/, `${theme}: obwódka na liście lekcji`);
-    // Lekcja bez notatki: „Dodaj notatkę do lekcji” też na żółtym, z żółtym piktogramem.
+    const rows = page.locator('section.group:has(li.row--consolidated) .group__list > li');
+    const flags = await rows.evaluateAll((items) => items.map((item) => item.classList.contains('row--consolidated')));
+    const index = flags.indexOf(true);
+    assert.ok(flags.length >= 3, 'lista ma co najmniej 3 lekcje');
+    assert.equal(index, 1, 'utrwalona na drugim miejscu');
+    const listRow = rows.nth(index);
+    const listShadow = await listRow.evaluate((element) => getComputedStyle(element).boxShadow);
+    assert.ok(!/0px 0px 0px 1px/.test(listShadow), `${theme}: na liście bez obwódki z boków (${listShadow})`);
+    const line = (item) => item.evaluate((element) => {
+      const style = getComputedStyle(element, '::before');
+      return { left: style.left, width: style.borderTopWidth, display: style.display, content: style.content };
+    });
+    // Linie przy utrwalonej: nad nią (jeśli nie jest pierwsza) i pod nią (górna linia następnego wiersza).
+    const lines = [];
+    if (index > 0) lines.push(listRow);
+    if (index < flags.length - 1) lines.push(rows.nth(index + 1));
+    assert.ok(lines.length > 0);
+    for (const item of lines) {
+      const style = await line(item);
+      assert.deepEqual([style.left, style.width], ['0px', '1px'], `${theme}: zielona linia od krawędzi (${JSON.stringify(style)})`);
+      const stroke = await color(item, 'borderTopColor', '::before');
+      assert.ok(stroke.g > stroke.r && stroke.g > stroke.b, `${theme}: linia zielona (${JSON.stringify(stroke)})`);
+    }
+    // Zwykła linia między dwoma nieutrwalonymi – szara, od odstępu (jak dotąd).
+    const plain = flags.findIndex((flag, position) => position > 0 && !flag && !flags[position - 1]);
+    if (plain > 0) {
+      const style = await line(rows.nth(plain));
+      assert.notEqual(style.left, '0px', `${theme}: zwykła linia od odstępu`);
+      const stroke = await color(rows.nth(plain), 'borderTopColor', '::before');
+      assert.ok(Math.abs(stroke.g - stroke.r) <= 12, `${theme}: zwykła linia szara`);
+    }
+    await page.screenshot({ path: path.join(OUTPUT, `lista-lekcji-utrwalona-${theme}.png`) });
+    // Utrwalone na końcu (domyślnie): zielona linia tylko nad ostatnim wierszem, przy krawędzi karty – nic.
+    await page.evaluate(() => window.lexicards.library.updateSettings({ consolidatedLast: true }));
+    await page.reload();
+    const lastFlags = await rows.evaluateAll((items) => items.map((item) => item.classList.contains('row--consolidated')));
+    assert.equal(lastFlags.at(-1), true, 'utrwalona na końcu listy');
+    assert.deepEqual(await line(rows.last()).then((style) => [style.left, style.width]), ['0px', '1px'], `${theme}: linia nad ostatnim`);
+    assert.ok(!/0px 0px 0px 1px/.test(await rows.last().evaluate((element) => getComputedStyle(element).boxShadow)), `${theme}: bez obwódki przy krawędzi karty`);
+
+    // Lekcja bez notatki: „Dodaj notatkę do lekcji” też na żółtym, z tym samym piktogramem.
     await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.investments}`);
     const addRow = page.locator('li.row--note', { has: page.locator('[data-testid=lesson-note-add]') });
     assert.deepEqual(await color(addRow), note, `${theme}: pusty wiersz notatki w tym samym kolorze`);
-    assert.deepEqual(await color(addRow.locator('.row__leading--icon')), box, `${theme}: ten sam piktogram`);
+    assert.deepEqual(await color(addRow.locator('.row__leading--icon'), 'color'), yellow, `${theme}: ten sam piktogram`);
   };
   await check('jasny');
   await page.emulateMedia({ colorScheme: 'dark' });

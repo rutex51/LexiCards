@@ -73,10 +73,11 @@
   --note-blue: #0040dd;
   --note-purple: #8944ab;
   --star: #e09b00;
-  /* Odcień kartki notatki (tło wiersza notatki – domieszka do tła wiersza) i jej piktogram. */
+  /* Odcień kartki notatki (tło wiersza notatki – domieszka do tła wiersza). Piktogramy notatki
+     i utrwalenia na ekranie lekcji – bez tła, z kontrastem co najmniej 3:1 do tła wiersza. */
   --note-paper: #ffcc00;
-  --note-icon: #7f5a00;
-  --note-icon-soft: rgba(255, 204, 0, 0.3);
+  --note-icon: #b98200;
+  --consolidated-icon: #1f9a45;
   --switch-on: #2fa84f;
   --success: #166c2e;
   --success-fill: #1b7f38;
@@ -171,7 +172,7 @@
     --note-purple: #da8fff;
     --star: #ffcc33;
     --note-icon: #ffd426;
-    --note-icon-soft: rgba(255, 214, 10, 0.2);
+    --consolidated-icon: #5fd880;
     --success: #5fd880;
     --success-soft: rgba(48, 209, 88, 0.2);
     --success-border: rgba(48, 209, 88, 0.6);
@@ -246,7 +247,7 @@
   --note-purple: #da8fff;
   --star: #ffcc33;
   --note-icon: #ffd426;
-  --note-icon-soft: rgba(255, 214, 10, 0.2);
+  --consolidated-icon: #5fd880;
   --success: #5fd880;
   --success-soft: rgba(48, 209, 88, 0.2);
   --success-border: rgba(48, 209, 88, 0.6);
@@ -4907,8 +4908,9 @@ a.row__main:active,
 
 /* Wiersz notatki na ekranie lekcji (od 1.10.1): bardzo delikatnie żółty, jak kartka notesu. */
 .row--note { background: color-mix(in srgb, var(--note-paper) 9%, var(--surface)); }
-/* Kwadrat z ikoną (od 1.10.3) – żółty z ciemnożółtą ikoną, jak zielony przy utrwaleniu. */
-.row--note .row__leading--icon { background: var(--note-icon-soft); color: var(--note-icon); }
+/* Piktogram notatki (od 1.10.4): bez tła, sama ikona w intensywnym żółtym. */
+.row--note .row__leading--icon { background: none; color: var(--note-icon); }
+.row--note .row__leading--icon svg { width: 22px; height: 22px; }
 
 .note-row__preview {
   white-space: pre-line;
@@ -5101,27 +5103,31 @@ a.row__main:active,
 
 .row__leading:has(> .mastery-bar) { margin-right: -2px; }
 
-/* Lekcja albo moduł utrwalone ręcznie: delikatna zielona poświata. */
+/* Lekcja albo moduł utrwalone ręcznie: delikatna zielona poświata, bez obwódki z boków (od 1.10.4). */
 .row--consolidated {
   background: linear-gradient(90deg,
     color-mix(in srgb, var(--status-mastered) 10%, var(--surface)),
     color-mix(in srgb, var(--status-mastered) 3%, var(--surface)) 70%);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--status-mastered) 20%, transparent),
-    inset 0 0 20px color-mix(in srgb, var(--status-mastered) 8%, transparent);
+  box-shadow: inset 0 0 20px color-mix(in srgb, var(--status-mastered) 8%, transparent);
 }
 
+/* Od sąsiednich wierszy utrwalony oddzielają pełne zielone linie poziome (od krawędzi do krawędzi,
+   zamiast szarych); przy krawędzi karty linii nie ma – jak przy zwykłych wierszach. */
 .group__list > li.row--consolidated + li::before,
-.group__list > li + li.row--consolidated::before { opacity: 0.5; }
+.group__list > li + li.row--consolidated::before {
+  left: 0;
+  border-top-color: color-mix(in srgb, var(--status-mastered) 20%, transparent);
+}
 
-/* Ekran lekcji (od 1.10.3): utrwalenie nad żółtym wierszem notatki – bez obwódki i linii
-   między wierszami, rozdzielają je same kolory tła. Na listach modułów i lekcji obwódka zostaje. */
-.lesson-note .row--consolidated { box-shadow: inset 0 0 20px color-mix(in srgb, var(--status-mastered) 8%, transparent); }
+/* Ekran lekcji (od 1.10.3): utrwalenie nad żółtym wierszem notatki – bez linii między wierszami,
+   rozdzielają je same kolory tła. */
 .lesson-note .group__list > li + li::before { display: none; }
 
 .mastery-done { font-weight: 600; color: var(--success); }
 
-.mastery-icon { background: var(--success-soft); color: var(--success); }
+/* Piktogram utrwalenia na ekranie lekcji (od 1.10.4): bez tła, jak piktogram notatki. */
+.row__leading--icon.mastery-icon { background: none; color: var(--consolidated-icon); }
+.row__leading--icon.mastery-icon svg { width: 22px; height: 22px; }
 
 .mastery-undo { align-self: center; margin-right: 6px; }
 
