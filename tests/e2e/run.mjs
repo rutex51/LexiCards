@@ -2873,6 +2873,336 @@ test('równania: długi akapit ze wzorami dzieli się na strony między wyrazami
   assert.ok(sources.every((source) => source === formula), 'wzory całe');
 });
 
+// ---------------------------------------------------------------- rysunki (1.12)
+
+const IPAD = { viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true };
+const drawingDialog = (page) => page.locator('dialog[data-testid=drawing-dialog]');
+
+/**
+ * Kreska syntetycznymi zdarzeniami wskaźnika (rysik z naciskiem albo palec): punkty
+ * [x, y, nacisk], x i y – ułamki płótna edytora.
+ */
+async function drawStroke(page, points, { type = 'pen', id = 11 } = {}) {
+  await page.locator('[data-testid=drawing-canvas]').evaluate((canvas, [list, pointerType, pointerId]) => {
+    const box = canvas.getBoundingClientRect();
+    const fire = (kind, [x, y, pressure]) => canvas.dispatchEvent(new window.PointerEvent(kind, {
+      bubbles: true, cancelable: true, pointerId, pointerType, isPrimary: true,
+      clientX: box.left + box.width * x, clientY: box.top + box.height * y,
+      pressure: kind === 'pointerup' ? 0 : pressure, buttons: kind === 'pointerup' ? 0 : 1, button: kind === 'pointermove' ? -1 : 0
+    }));
+    fire('pointerdown', list[0]);
+    for (const point of list.slice(1)) fire('pointermove', point);
+    fire('pointerup', list.at(-1));
+  }, [points, type, id]);
+}
+
+/** Punkty odcinka z naciskiem zależnym od położenia (0…1). */
+const segment = (from, to, steps = 16, pressure = () => 0.5) => Array.from({ length: steps + 1 }, (_, index) => {
+  const t = index / steps;
+  return [from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t, pressure(t)];
+});
+
+/** Kolor [r, g, b] warstwy zapisanych kresek w punkcie płótna (ułamki) – najciemniejszy z okolicy 5 × 5 px. */
+const pixelAt = (page, x, y) => page.locator('.drawing__canvas:not(.drawing__canvas--live)').evaluate((canvas, [fx, fy]) => {
+  const ctx = canvas.getContext('2d');
+  const data = ctx.getImageData(Math.round(canvas.width * fx) - 2, Math.round(canvas.height * fy) - 2, 5, 5).data;
+  let best = [255, 255, 255];
+  for (let index = 0; index < data.length; index += 4) {
+    const rgb = [data[index], data[index + 1], data[index + 2]];
+    if (rgb[0] + rgb[1] + rgb[2] < best[0] + best[1] + best[2]) best = rgb;
+  }
+  return best;
+}, [x, y]);
+const darkAt = async (page, x, y) => Math.max(...await pixelAt(page, x, y)) < 110;
+const redAt = async (page, x, y) => { const [r, g] = await pixelAt(page, x, y); return r > 150 && g < 90; };
+const nextFrames = (page) => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+
+/** Obrazy notatki z biblioteki z opisem kresek rysunku (grubości punktów) i zdjęcia (liczba bajtów). */
+const storedDrawings = (page, lessonID) => page.evaluate(async (id) => {
+  const images = await window.lexicards.library.noteImages(id);
+  return images.map((image) => ({
+    id: image.id, label: image.label, type: image.type, width: image.width, height: image.height,
+    drawing: image.drawing ? {
+      paper: image.drawing.paper, width: image.drawing.width, height: image.drawing.height,
+      strokes: image.drawing.strokes.map((stroke) => ({
+        tool: stroke.tool, color: stroke.color, widths: stroke.points.filter((_, index) => index % 3 === 2)
+      })),
+      photo: image.drawing.photo ? { type: image.drawing.photo.type, size: image.drawing.photo.bytes.byteLength } : null
+    } : null
+  }));
+}, lessonID);
+
+async function openDrawingEditorFromNote(page, lessonID, html) {
+  await page.evaluate(([id, text]) => window.lexicards.library.saveNote(id, { html: text }), [lessonID, html]);
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${lessonID}`);
+  await page.click('[data-testid=lesson-note]');
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-editor]').waitFor();
+  await dialog.locator('[data-testid=note-image-draw]').click();
+  const editor = drawingDialog(page);
+  await editor.waitFor();
+  await waitUntil(() => editor.locator('[data-testid=drawing-canvas]').evaluate((canvas) => canvas.width > 0), 'Płótno gotowe');
+  await nextFrames(page);
+  return { dialog, editor };
+}
+
+test('rysunek: „Narysuj” – pióro z naciskiem rysika, mysz, palec przesuwa, zakreślacz, kolory, gumka, cofnij i ponów, tło, ustawienia pióra; zapis i „Edytuj rysunek” (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Bilans</p>');
+  await expectText(editor.locator('.sheet__title'), 'Rysunek 1');
+  assert.equal(await editor.locator('[data-testid=drawing-pen-only]').isHidden(), true, 'zanim pojawi się rysik – bez pigułki');
+  assert.equal(await editor.locator('[data-testid=drawing-undo]').isDisabled(), true);
+  await expectText(editor.locator('[data-testid=drawing-paper]'), 'Tło: kratka');
+  assert.equal(await darkAt(page, 0.4, 0.3), false, 'pusta strona');
+
+  const canvasBox = await editor.locator('[data-testid=drawing-canvas]').boundingBox();
+  const at = (x, y) => [canvasBox.x + canvasBox.width * x, canvasBox.y + canvasBox.height * y];
+
+  // Rysik z rosnącym naciskiem: kreska od cienkiej do grubej.
+  await drawStroke(page, segment([0.2, 0.3], [0.6, 0.3], 20, (t) => 0.05 + t * 0.95));
+  await waitUntil(() => darkAt(page, 0.55, 0.3), 'Kreska pióra na płótnie');
+  assert.equal(await editor.locator('[data-testid=drawing-pen-only]').isVisible(), true, 'po rysiku: „Rysuje tylko rysik · palec przesuwa”');
+  assert.equal(await editor.locator('[data-testid=drawing-undo]').isDisabled(), false);
+
+  // Mysz rysuje jak pióro (prawdziwe zdarzenia przeglądarki).
+  await page.mouse.move(...at(0.25, 0.65));
+  await page.mouse.down();
+  for (let step = 1; step <= 10; step += 1) await page.mouse.move(...at(0.25 + step * 0.02, 0.65));
+  await page.mouse.up();
+  await waitUntil(() => darkAt(page, 0.35, 0.65), 'Kreska myszą');
+
+  // Palec po użyciu rysika nie rysuje (przesuwa stronę).
+  await drawStroke(page, segment([0.2, 0.55], [0.6, 0.55]), { type: 'touch', id: 12 });
+  await nextFrames(page);
+  assert.equal(await darkAt(page, 0.4, 0.55), false, 'palec nie rysuje, gdy jest rysik');
+
+  // Dwa palce rozsuwane – powiększenie; pigułka „100%” wraca do całej strony.
+  await page.locator('[data-testid=drawing-canvas]').evaluate((canvas) => {
+    const box = canvas.getBoundingClientRect();
+    const fire = (kind, pointerId, x) => canvas.dispatchEvent(new window.PointerEvent(kind, {
+      bubbles: true, cancelable: true, pointerId, pointerType: 'touch', clientX: box.left + box.width * x, clientY: box.top + box.height * 0.5,
+      buttons: kind === 'pointerup' ? 0 : 1, button: kind === 'pointermove' ? -1 : 0
+    }));
+    fire('pointerdown', 21, 0.45);
+    fire('pointerdown', 22, 0.55);
+    fire('pointermove', 21, 0.4);
+    fire('pointermove', 22, 0.6);
+    fire('pointerup', 21, 0.4);
+    fire('pointerup', 22, 0.6);
+  });
+  await expectText(editor.locator('[data-testid=drawing-zoom]'), '200%');
+
+  // Dłoń oparta o ekran (i przesuwana) w trakcie pisania rysikiem nie przesuwa powiększonej strony.
+  await page.locator('[data-testid=drawing-canvas]').evaluate((canvas) => {
+    const box = canvas.getBoundingClientRect();
+    const fire = (kind, pointerId, pointerType, x, y) => canvas.dispatchEvent(new window.PointerEvent(kind, {
+      bubbles: true, cancelable: true, pointerId, pointerType, pressure: kind === 'pointerup' ? 0 : 0.5,
+      clientX: box.left + box.width * x, clientY: box.top + box.height * y, buttons: kind === 'pointerup' ? 0 : 1, button: kind === 'pointermove' ? -1 : 0
+    }));
+    fire('pointerdown', 31, 'touch', 0.85, 0.85);
+    fire('pointerdown', 11, 'pen', 0.3, 0.7);
+    for (let step = 1; step <= 10; step += 1) {
+      fire('pointermove', 31, 'touch', 0.85 - step * 0.02, 0.85 - step * 0.02);
+      fire('pointermove', 11, 'pen', 0.3 + step * 0.02, 0.7);
+    }
+    fire('pointerup', 11, 'pen', 0.5, 0.7);
+    fire('pointerup', 31, 'touch', 0.65, 0.65);
+  });
+  await waitUntil(() => darkAt(page, 0.4, 0.7), 'Kreska rysikiem tam, gdzie była pisana – strona się nie przesunęła');
+  await editor.locator('[data-testid=drawing-zoom]').click();
+  await expectText(editor.locator('[data-testid=drawing-zoom]'), '100%');
+  await waitUntil(() => darkAt(page, 0.55, 0.3), 'Cała strona z powrotem na miejscu');
+
+  // Zakreślacz – zielony, pod nim czarny tusz zostaje ciemny.
+  await editor.locator('[data-testid=drawing-tool-highlighter]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-tool-highlighter]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await editor.locator('[data-testid=drawing-color-pink]').count(), 1, 'kolory zakreślacza');
+  await editor.locator('[data-testid=drawing-color-green]').click();
+  await drawStroke(page, segment([0.3, 0.3], [0.5, 0.3]));
+  // Pas zakreślacza 6 px pod czarną kreską – sam zielony.
+  await waitUntil(async () => { const [r, g, b] = await pixelAt(page, 0.4, 0.3 + 6 / canvasBox.height); return g > r + 40 && g > b + 40; }, 'Zielony zakreślacz');
+  assert.equal(await darkAt(page, 0.45, 0.3), true, 'tusz pod zakreślaczem zostaje ciemny');
+
+  // Pióro czerwone, gruba kreska.
+  await editor.locator('[data-testid=drawing-tool-pen]').click();
+  await editor.locator('[data-testid=drawing-color-red]').click();
+  await editor.locator('[data-testid=drawing-width-2]').click();
+  await drawStroke(page, segment([0.7, 0.2], [0.7, 0.8]));
+  await waitUntil(() => redAt(page, 0.7, 0.3), 'Czerwona kreska');
+
+  // Gumka ściera całą kreskę; cofnij, ponów, Ctrl+Z.
+  await editor.locator('[data-testid=drawing-tool-eraser]').click();
+  assert.equal(await editor.locator('.drawing__swatches').isHidden(), true, 'gumka – bez kolorów i grubości');
+  await drawStroke(page, segment([0.66, 0.5], [0.74, 0.5], 6));
+  await waitUntil(async () => !(await redAt(page, 0.7, 0.3)), 'Gumka starła całą czerwoną kreskę');
+  assert.equal(await darkAt(page, 0.55, 0.3), true, 'czarna kreska zostaje');
+  await editor.locator('[data-testid=drawing-undo]').click();
+  await waitUntil(() => redAt(page, 0.7, 0.3), 'Cofnij przywraca kreskę');
+  await editor.locator('[data-testid=drawing-redo]').click();
+  await waitUntil(async () => !(await redAt(page, 0.7, 0.3)), 'Ponów znowu ją ściera');
+  await page.keyboard.press('Control+z');
+  await waitUntil(() => redAt(page, 0.7, 0.3), 'Ctrl+Z cofa');
+
+  // Tło strony po kolei: kratka → gładkie → linie.
+  await editor.locator('[data-testid=drawing-paper]').click();
+  await expectText(editor.locator('[data-testid=drawing-paper]'), 'Tło: gładkie');
+  await editor.locator('[data-testid=drawing-paper]').click();
+  await expectText(editor.locator('[data-testid=drawing-paper]'), 'Tło: linie');
+
+  // Ustawienia pióra: drugie dotknięcie pióra. Suwak zostaje ten sam w trakcie przesuwania.
+  await editor.locator('[data-testid=drawing-tool-pen]').click();
+  await editor.locator('[data-testid=drawing-tool-pen]').click();
+  const settings = editor.locator('[data-testid=drawing-settings]');
+  await settings.waitFor();
+  await settings.locator('[data-testid=drawing-sensitivity-high]').click();
+  assert.equal(await settings.locator('[data-testid=drawing-sensitivity-high]').getAttribute('aria-checked'), 'true');
+  const slider = await settings.locator('[data-testid=drawing-width-max]').elementHandle();
+  await slider.evaluate((input) => { input.value = '12'; input.dispatchEvent(new window.Event('input', { bubbles: true })); });
+  await expectText(settings.locator('.drawing__settings-label').nth(1), 'od 4.5 do 12.0');
+  assert.equal(await slider.evaluate((input) => input.isConnected && document.activeElement !== null), true, 'suwak nie jest budowany od nowa');
+  const tools = await page.evaluate(() => JSON.parse(localStorage.getItem('lexicards-drawing-tools')));
+  assert.deepEqual([tools.sensitivity, tools.penWidth, tools.penWidths[2].max, tools.penColor, tools.highlighterColor], ['high', 2, 12, 'red', 'green']);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-ustawienia-piora-ipad.png') });
+  await editor.locator('[data-testid=drawing-tool-pen]').click();
+  assert.equal(await settings.isHidden(), true);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-edytor-ipad.png') });
+
+  // Gotowe: miniatura ze znaczkiem rysunku; odwołanie w tekście i zapis notatki.
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  const tile = dialog.locator('.note-images__item--drawing');
+  await tile.locator('img').waitFor();
+  await expectText(tile.locator('[data-testid=note-image-label-text]'), 'Rysunek 1');
+  assert.equal(await tile.locator('[data-testid=note-image-drawing]').count(), 1);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-w-edytorze-notatki-ipad.png') });
+  await dialog.locator('[data-testid=note-editor]').click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('[[Rysunek 1]]');
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+
+  const meta = (await storedNote(page, ids.statements)).images;
+  assert.deepEqual(meta.map((image) => [image.label, image.drawing]), [['Rysunek 1', true]]);
+  const [first] = await storedDrawings(page, ids.statements);
+  assert.deepEqual([first.type, first.width, first.height], ['image/png', 1600, 1100]);
+  assert.equal(first.drawing.paper, 'lines');
+  assert.deepEqual(first.drawing.strokes.map((stroke) => [stroke.tool, stroke.color]),
+    [['pen', '#1d1d1f'], ['pen', '#1d1d1f'], ['pen', '#1d1d1f'], ['highlighter', '#5ee07a'], ['pen', '#d70015']]);
+  const pressure = first.drawing.strokes[0].widths;
+  assert.ok(pressure[0] < 3.2 && Math.max(...pressure) > 6, `grubość z nacisku: ${pressure[0]} → ${Math.max(...pressure)}`);
+  assert.deepEqual([...new Set(first.drawing.strokes[1].widths)], [4.55], 'mysz – stała grubość (środek zakresu)');
+  assert.deepEqual([...new Set(first.drawing.strokes[3].widths)], [24], 'zakreślacz – stała grubość');
+  assert.deepEqual([...new Set(first.drawing.strokes[4].widths)], [7.75], 'gruba kreska, nacisk 0,5');
+
+  // Podgląd: rysunek w miejscu odwołania.
+  await waitUntil(() => dialog.locator('.note-page__figure img').evaluate((image) => image.complete && image.naturalWidth === 1600), 'Rysunek w podglądzie');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-podglad-notatki-ipad.png') });
+
+  // „Edytuj rysunek”: kreski wracają do poprawy, „Anuluj” po zmianie pyta.
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('.note-images__item--drawing .note-images__open').click();
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-menu-ipad.png') });
+  await menuItem(page, 'Edytuj rysunek');
+  await editor.waitFor();
+  await waitUntil(() => darkAt(page, 0.55, 0.3), 'Zapisane kreski w edytorze');
+  await waitUntil(() => redAt(page, 0.7, 0.3), 'Czerwona kreska w edytorze');
+  await expectText(editor.locator('[data-testid=drawing-paper]'), 'Tło: linie');
+  assert.equal(await editor.locator('[data-testid=drawing-undo]').isDisabled(), true, 'nowa historia cofania');
+  await drawStroke(page, segment([0.3, 0.75], [0.5, 0.75]));
+  await editor.locator('[data-testid=drawing-cancel]').click();
+  await expectText(page.locator('dialog.alert[open] .alert__title'), 'Odrzucić zmiany w rysunku?');
+  await page.locator('dialog.alert[open]').getByRole('button', { name: 'Rysuj dalej' }).click();
+  assert.equal(await editor.isVisible(), true, 'edytor zostaje otwarty');
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const [second] = await storedDrawings(page, ids.statements);
+  assert.equal(second.label, 'Rysunek 1');
+  assert.notEqual(second.id, first.id, 'nowy obraz rysunku');
+  assert.equal(second.drawing.strokes.length, 6);
+  assert.equal((await page.evaluate(() => window.lexicards.library.missingMedia())).images, 0);
+  assert.match((await storedNote(page, ids.statements)).html, /\[\[Rysunek 1\]\]/);
+}, { device: IPAD });
+
+test('rysunek na zdjęciu: „Rysuj na zdjęciu” – zdjęcie pod kreskami, sygnatura i miejsce bez zmian; bez rysika rysuje palec; nowy pusty rysunek nie trafia do notatki; kopia zapasowa przenosi kreski', async ({ open, browser, track }) => {
+  const page = await open();
+  const { ids } = await openNoteWithImages(page, { html: '<p>Schemat:</p><p>[[Schemat]]</p>', labels: ['Schemat'] });
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-editor]').waitFor();
+
+  // „Narysuj” i „Gotowe” bez kreski – nic nie dochodzi.
+  await dialog.locator('[data-testid=note-image-draw]').click();
+  const editor = drawingDialog(page);
+  await editor.waitFor();
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  assert.equal(await dialog.locator('.note-images__item').count(), 1, 'pusty rysunek nie trafia do notatki');
+
+  await dialog.locator('.note-images__open').first().click();
+  assert.equal(await page.locator('dialog.menu[open]').getByRole('menuitem', { name: 'Edytuj rysunek' }).count(), 0, 'zwykły obraz – bez „Edytuj rysunek”');
+  await menuItem(page, 'Rysuj na zdjęciu');
+  await editor.waitFor();
+  await waitUntil(() => editor.locator('[data-testid=drawing-canvas]').evaluate((canvas) => canvas.width > 0), 'Płótno gotowe');
+  await expectText(editor.locator('.sheet__title'), 'Schemat');
+  assert.equal(await editor.locator('[data-testid=drawing-paper]').isHidden(), true, 'na zdjęciu bez wyboru tła');
+  await waitUntil(async () => { const [r, , b] = await pixelAt(page, 0.15, 0.4); return b > 150 && r < 120; }, 'Zdjęcie pod kreskami');
+
+  // Bez rysika (telefon) rysuje palec.
+  await drawStroke(page, segment([0.1, 0.42], [0.9, 0.42]), { type: 'touch', id: 3 });
+  await waitUntil(() => darkAt(page, 0.15, 0.42), 'Kreska palcem na zdjęciu');
+  assert.equal(await editor.locator('[data-testid=drawing-pen-only]').isHidden(), true, 'bez rysika – bez pigułki');
+  assert.equal(await overflowX(page), 0, 'edytor mieści się na telefonie');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-na-zdjeciu-telefon.png') });
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  const tile = dialog.locator('.note-images__item').first();
+  await expectText(tile.locator('[data-testid=note-image-label-text]'), 'Schemat');
+  assert.equal(await tile.locator('[data-testid=note-image-drawing]').count(), 1, 'zdjęcie stało się rysunkiem w tym samym miejscu');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-w-edytorze-notatki-telefon.png') });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+
+  const photoSize = await page.evaluate(async () => (await (await fetch('./icons/icon-512.png')).arrayBuffer()).byteLength);
+  const stored = await storedDrawings(page, ids.statements);
+  assert.equal(stored.length, 1);
+  assert.deepEqual([stored[0].label, stored[0].type, stored[0].width, stored[0].height], ['Schemat', 'image/jpeg', 512, 512]);
+  assert.deepEqual(stored[0].drawing.photo, { type: 'image/png', size: photoSize }, 'zdjęcie zostaje pod kreskami bez zmian');
+  assert.deepEqual(stored[0].drawing.strokes.map((stroke) => stroke.tool), ['pen']);
+  await waitUntil(() => dialog.locator('.note-page__figure img').evaluate((image) => image.complete && image.naturalWidth === 512), 'Rysunek na zdjęciu w podglądzie');
+
+  // Kopia zapasowa: kreski i zdjęcie w pliku obrazów i załączników, przywrócenie na drugim urządzeniu.
+  await dialog.locator('[data-testid=note-left]').click();
+  await dialog.waitFor({ state: 'detached' });
+  await page.goto(`${page.url().split('#')[0]}#/settings`);
+  const data = await download(page, () => page.click('[data-testid=backup-export]'));
+  const media = await download(page, () => page.click('[data-testid=backup-media-export]'));
+  const backup = JSON.parse(new TextDecoder().decode(data.bytes));
+  const note = backup.data.notes.find((item) => item.lessonID === ids.statements);
+  assert.equal(note.images[0].drawing, true, 'plik danych: znacznik rysunku');
+  const names = [...readZipDirectory(media.bytes).keys()];
+  assert.ok(names.includes(`rysunki/${stored[0].id}.json`), 'kreski w pliku obrazów');
+  assert.ok(names.includes(`rysunki/${stored[0].id}-zdjecie.png`), 'zdjęcie pod kreskami w pliku obrazów');
+  const context = await browser.newContext({ ...PHONE, locale: 'pl-PL' });
+  try {
+    const other = await context.newPage();
+    track(other);
+    await other.goto(page.url().split('#')[0]);
+    await other.waitForSelector('#app[data-ready="true"]');
+    await restoreFiles(other, [path.join(OUTPUT, media.name), path.join(OUTPUT, data.name)]);
+    await confirm(other);
+    await expectText(other.locator('.alert__message'), 'Dodano 1 obraz');
+    assert.deepEqual(await storedDrawings(other, ids.statements), stored, 'rysunek z kreskami i zdjęciem na drugim urządzeniu');
+  } finally {
+    await context.close();
+  }
+});
+
 test('notatka: sygnatury obrazów – obraz w miejscu odwołania, brak obrazu na czerwono, wstawienie i zmiana sygnatury w edytorze, kopiowanie', async ({ open, context }) => {
   const page = await open();
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin });

@@ -31,6 +31,7 @@ js/ui/notes.js             okno notatki lekcji: podgląd, edytor z paskiem forma
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
+js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, obraz PNG / JPEG
 js/ui/images.js            obrazy w przeglądarce: odczyt, zmniejszanie dużych zdjęć, adresy do wyświetlenia
 js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
@@ -38,6 +39,7 @@ js/core/model.js           kształt rekordów, wartości domyślne, stałe
 js/core/backup.js          kopia zapasowa: plik danych i plik obrazów i załączników – tworzenie, walidacja, przywracanie
 js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (PDF, Word, Excel, PowerPoint…)
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
+js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, sprawdzanie danych rysunku
 js/core/zip.js             odczyt i zapis archiwów ZIP (także kawałkami przez Blob – duże pliki)
 js/core/xlsx.js            odczyt i zapis skoroszytów XLSX
 js/core/csv.js             kodowanie, separator, odczyt i zapis CSV
@@ -77,7 +79,7 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | `quizSessions` | historia wyników quizów: rodzaj, kierunek, liczby odpowiedzi, procent, próg, zaliczenie, czas, limit, błędne pojęcia | – |
 | `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki i quizu (od 1.2 okres powtórek lekcji utrwalonych `consolidatedReviewDays` i znacznik `domainColorsGray`), trwająca sesja nauki i trwający quiz | – |
 | `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML (`html` po polsku, od 1.6 `htmlEN` po angielsku), opis obrazów (typ, wymiary, rozmiar, CRC-32, od 1.6 `label` – sygnatura), `imagesFirst` – obrazy bez odwołania w podglądzie przed tekstem (od 1.5) i od 1.8 `files` – opis załączników (nazwa, typ, rozmiar, CRC-32, od 1.10 `duration` – czas nagrania w sekundach) – w pamięci | identyfikator = `lessonID` |
-| `noteImages` | bajty obrazów notatek (`ArrayBuffer`) – czytane z bazy dopiero przy otwarciu notatki | `lessonID` |
+| `noteImages` | bajty obrazów notatek (`ArrayBuffer`) – czytane z bazy dopiero przy otwarciu notatki; rysunek (od 1.12) ma też `drawing` – kreski i zdjęcie pod nimi, a opis w notatce `drawing: true` | `lessonID` |
 | `noteFiles` | bajty załączników notatek (od 1.8, `ArrayBuffer`, do 50 MB) – czytane dopiero przy otwarciu pliku | `lessonID` |
 
 Decyzje:
@@ -335,6 +337,24 @@ w języku notatki: „x do kwadratu”, „a przez b”, „pierwiastek z x”);
 a słuchanie lekcji (`noteSteps`) – z `spokenText()`. Edytor: przycisk „Wzór” (`$$` z kursorem w środku
 albo `$zaznaczenie$`) i „Równania – ściągawka” (`openMathHelp`: pole z podglądem, przykłady
 z `MATH_CHEATSHEET`, wstawienie po zamknięciu okna – wcześniej edytor pod oknem jest zablokowany).
+
+Od 1.12 **rysunki** (`js/core/drawing.js`, `js/ui/drawing.js`): rysunek to obraz notatki – PNG
+strony (JPEG, gdy pod spodem jest zdjęcie) w `bytes`, więc podgląd, powiększenie, sygnatury, eksport
+i „Kopiuj notatkę” działają bez zmian – a w tym samym rekordzie `noteImages` pole `drawing`:
+`{ version, width, height, paper, strokes, photo? }`. Kreska to `{ tool: 'pen' | 'highlighter', color,
+points: [x, y, w, …] }` – `w` to grubość w punkcie (pióro: `penWidth(nacisk, od–do, czułość)`,
+zakreślacz: stała), współrzędne w jednostkach strony (1600 × 1100, na zdjęciu – jego wielkość,
+najwyżej 2048 px), zaokrąglone do 0,1. `cleanDrawing()` sprawdza dane przy zapisie i z kopii (złe
+kreski i liczby pomija, ogranicza do strony, limity kresek i punktów). Edytor: dwa płótna – zapisane
+kreski (rysowane od nowa po zmianie widoku albo cofnięciu) i bieżąca kreska nad nimi; Pointer Events
+(`pointerType`, `pressure`, `getCoalescedEvents`, przycisk gumki rysika `buttons & 32`). Po pierwszym
+zdarzeniu rysika (`localStorage`) palec tylko przesuwa, a dotyk w trakcie kreski rysikiem (dłoń) nie
+rusza strony; dwa palce – powiększenie wokół środka palców. Gumka usuwa całe kreski (odległość od
+odcinków z ich grubością); kolejne kreski starte jednym pociągnięciem to jeden krok `DrawingHistory`.
+Zakreślacz: `multiply` i przezroczystość 0,45 – tusz pod spodem zostaje ciemny. Ustawienia narzędzi
+(kolory, grubości, czułość, wygładzanie) – `localStorage` urządzenia. Edytor notatki: „Narysuj”
+dodaje obraz „Rysunek N”, „Edytuj rysunek” i „Rysuj na zdjęciu” zastępują obraz nowym w tym samym
+miejscu, z tą samą sygnaturą (stary rekord znika przy zapisie notatki, jak usunięty obraz).
 
 Od 1.6 **wersja angielska**: `htmlEN` obok `html`; w edytorze przełącznik Polski / Angielski zamienia
 treść jednego pola `contenteditable` (stan drugiej wersji jest w pamięci edytora; zmiana języka
@@ -685,7 +705,11 @@ Od wersji 1.8 dwa pliki (przeniesienie dwustopniowe):
 2. **Plik obrazów i załączników** (`LexiCards-obrazy-i-zalaczniki-RRRR-MM-DD.zip`): jedno archiwum
    ZIP bez kompresji (obrazy, PDF i pliki Office są już skompresowane, więc bez Base64 i bez
    narzutu 33%) – `obrazy/<id>.png`, `zalaczniki/<id>/<nazwa pliku>` i spis treści
-   `lexicards-pliki.json` (identyfikator, rodzaj, lekcja, ścieżka, typ, rozmiar, CRC-32). Archiwum
+   `lexicards-pliki.json` (identyfikator, rodzaj, lekcja, ścieżka, typ, rozmiar, CRC-32). Rysunek
+   (od 1.12) ma dodatkowo `rysunki/<id>.json` (kreski, skompresowane) i `rysunki/<id>-zdjecie.<typ>`
+   (zdjęcie pod kreskami), a pozycja spisu – `drawing: { path, photo }`. Rysunek bez kresek
+   w archiwum (albo z uszkodzonymi) wraca jako zwykły obraz; starsza wersja aplikacji przywróci sam
+   obraz. Format spisu bez zmian (`formatVersion` 1), w pliku danych – znacznik `drawing: true`. Archiwum
    powstaje plik po pliku (`ZipWriter` → `Blob`, bajty czytane z bazy po jednym) i jest czytane
    kawałkami (`openZipBlob` – `Blob.slice`), więc nawet kilkaset MB nie trafia naraz do pamięci.
    Granica formatu ZIP bez ZIP64: 4 GB i 65 535 plików.
@@ -721,7 +745,7 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
 - `tests/unit/` – Node.js (`node --test`), bez przeglądarki: reguły biblioteki, wycofywanie
   nieudanych zmian, glosariusz, odczyt i zapis plików, import i eksport, nauka z fiszkami,
   FSRS (zgodność z py-fsrs i zapis powtórek), quizy, statystyki, kopia zapasowa (oba pliki),
-  załączniki, spójność plików wydania.
+  załączniki, rysunki (nacisk, wygładzanie, gumka, historia, dane, zapis i kopia), spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.
   Notatki: skoroszyt z openpyxl (fragmenty z formatowaniem, obrazy przy komórkach), ten sam
@@ -732,6 +756,9 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
   są wykonywane zdarzeniami dotyku przeglądarki, a syntezator mowy zastępuje atrapa.
   Upływ czasu przy powtórkach i limit czasu quizu symuluje zegar Playwright (`context.clock`).
   Mikrofon (notatka głosowa) to udawane urządzenie Chromium (`--use-fake-device-for-media-stream`).
+  Rysik (1.12) to syntetyczne zdarzenia `PointerEvent` z `pointerType: 'pen'` i naciskiem – nie
+  prawdziwy Apple Pencil; mysz to prawdziwe zdarzenia przeglądarki. Kreski sprawdzane są po pikselach
+  płótna i po danych zapisanych w bazie.
 
 ## Możliwy dalszy rozwój
 

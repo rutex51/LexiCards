@@ -4645,7 +4645,7 @@ a.row__main:active,
 }
 
 .note-images__add:disabled { opacity: 0.4; }
-.note-editor--drop .note-images__add { background: var(--accent-soft); border-style: solid; }
+.note-editor--drop .note-images__add:not(.note-images__add--draw) { background: var(--accent-soft); border-style: solid; }
 
 .note-images__item--pending {
   display: grid;
@@ -5170,6 +5170,343 @@ svg.icon--note { color: var(--note-icon); }
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* Rysunek w obrazach notatki (od 1.12): cała strona w miniaturze i znaczek pióra. */
+.note-images__item--drawing .note-images__open img { object-fit: contain; }
+
+.note-images__badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  color: #3a4049;
+  pointer-events: none;
+}
+
+/* Edytor rysunku (od 1.12): na cały ekran, pasek narzędzi na środku u góry, strona na płótnie. */
+.dialog.drawing-dialog {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.drawing-dialog .sheet__panel {
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding-top: env(safe-area-inset-top);
+}
+
+.drawing__body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.drawing__top {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  align-self: center;
+  max-width: calc(100% - 16px);
+  margin-top: 10px;
+}
+
+.drawing__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px 4px;
+  padding: 5px 8px;
+  border-radius: 18px;
+  background: var(--elevated);
+  box-shadow: 0 1px 0 var(--separator), 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+
+.drawing__tool {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  color: var(--text);
+}
+
+.drawing__tool[aria-pressed="true"] { background: var(--fill); }
+.drawing__tool:disabled { color: var(--text-3); opacity: 0.6; }
+.drawing__tool .icon__accent { stroke: var(--highlighter-ink, #ffd60a); }
+
+.drawing__group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.drawing__group[hidden] { display: none; }
+
+/* Kreska podziału między grupami (pierwsza grupa – narzędzia – jest zawsze widoczna). */
+.drawing__group + .drawing__group {
+  margin-left: 4px;
+  padding-left: 8px;
+  border-left: 1px solid var(--separator);
+}
+
+.drawing__swatch {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 42px;
+}
+
+.drawing__swatch::before {
+  content: "";
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--swatch);
+  /* Obwódka w kolorze tekstu – czarny tusz widać też na ciemnym pasku. */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 28%, transparent);
+}
+
+.drawing__swatch[aria-pressed="true"]::before {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 28%, transparent), 0 0 0 2px var(--elevated), 0 0 0 4px var(--text);
+}
+
+.drawing__width {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 42px;
+  border-radius: 12px;
+}
+
+.drawing__width span {
+  display: block;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+.drawing__width[aria-pressed="true"] { background: var(--fill); }
+
+.drawing__chip {
+  min-height: 34px;
+  margin-left: 4px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--fill);
+  color: var(--text);
+  font-size: var(--size-sub);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Telefon: grupy w dwóch wierszach, bez kresek podziału. */
+@media (max-width: 599px) {
+  .drawing__toolbar { gap: 2px 10px; }
+  .drawing__tool { width: 40px; }
+  .drawing__swatch { width: 34px; }
+
+  .drawing__group + .drawing__group {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+/* Ustawienia pióra pod paskiem narzędzi. */
+.drawing__settings {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  width: min(360px, calc(100vw - 24px));
+  padding: 16px 18px 14px;
+  border-radius: 18px;
+  background: var(--elevated);
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+}
+
+.drawing__settings[hidden] { display: none; }
+
+.drawing__settings-title {
+  margin-bottom: 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.drawing__settings-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 6px;
+  color: var(--text-2);
+  font-size: var(--size-sub);
+}
+
+.drawing__segmented {
+  display: flex;
+  padding: 2px;
+  border-radius: 11px;
+  background: var(--fill);
+}
+
+.drawing__segmented button {
+  flex: 1 1 0;
+  min-height: 34px;
+  border-radius: 9px;
+  color: var(--text);
+  font-size: var(--size-sub);
+  font-weight: 500;
+}
+
+.drawing__segmented button[aria-checked="true"] {
+  background: var(--elevated);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+  font-weight: 600;
+}
+
+/* Suwaki: własny wygląd w Safari, Chrome i Firefoksie. */
+.drawing__range {
+  display: block;
+  width: 100%;
+  height: 30px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.drawing__range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--text-2) var(--fill-to, 0%), var(--fill) var(--fill-to, 0%));
+}
+
+.drawing__range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--fill);
+}
+
+.drawing__range::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-2);
+}
+
+.drawing__range::-webkit-slider-thumb {
+  width: 26px;
+  height: 26px;
+  margin-top: -11px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.2);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.drawing__range::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* Dwa suwaki na jednym torze: grubość przy lekkim i mocnym nacisku; między nimi – zakres. */
+.drawing__dual {
+  position: relative;
+  height: 30px;
+  /* Tor pod suwakami: środek pierwszego i ostatniego położenia gałki to 13 px od krawędzi. */
+  background: linear-gradient(to right, var(--fill) var(--from), var(--text-2) var(--from), var(--text-2) var(--to), var(--fill) var(--to))
+    center / calc(100% - 26px) 4px no-repeat;
+}
+
+.drawing__dual .drawing__range {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.drawing__dual .drawing__range::-webkit-slider-runnable-track { background: none; }
+.drawing__dual .drawing__range::-moz-range-track,
+.drawing__dual .drawing__range::-moz-range-progress { background: none; }
+.drawing__dual .drawing__range::-webkit-slider-thumb { pointer-events: auto; }
+.drawing__dual .drawing__range::-moz-range-thumb { pointer-events: auto; }
+
+.drawing__preview {
+  display: block;
+  width: 100%;
+  aspect-ratio: 328 / 72;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px var(--separator);
+}
+
+/* Płótno: zapisane kreski pod spodem, bieżąca kreska na wierzchu. Gesty obsługuje edytor. */
+.drawing__stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.drawing__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.drawing__canvas--live {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.drawing__status {
+  position: absolute;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+}
+
+.drawing__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  background: var(--elevated);
+  box-shadow: 0 1px 0 var(--separator), 0 3px 10px rgba(0, 0, 0, 0.08);
+  color: var(--text-2);
+  font-size: var(--size-foot);
+  pointer-events: auto;
+}
+
+.drawing__pill[hidden] { display: none; }
+.drawing__pill--info { pointer-events: none; }
 
 /* ------------------------------------------------------------------ 13. postęp i utrwalenie */
 

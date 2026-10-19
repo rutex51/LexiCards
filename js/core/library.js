@@ -966,9 +966,10 @@ export class Library {
   }
 
   /**
-   * Obrazy notatki z bajtami ({ ...opis, bytes: ArrayBuffer }) w kolejności z notatki. Obrazów,
-   * których plików nie ma na urządzeniu (przywrócone same dane), nie ma na liście – chyba że
-   * `withMissing`: wtedy są z `bytes: null` i `missing: true`.
+   * Obrazy notatki z bajtami ({ ...opis, bytes: ArrayBuffer }) w kolejności z notatki; rysunek ma
+   * też `drawing` – kreski do edycji (od 1.12). Obrazów, których plików nie ma na urządzeniu
+   * (przywrócone same dane), nie ma na liście – chyba że `withMissing`: wtedy są z `bytes: null`
+   * i `missing: true`.
    */
   async noteImages(lessonID, { withMissing = false } = {}) {
     return this.#withBytes('noteImages', this.getNote(lessonID)?.images ?? [], withMissing);
@@ -1003,7 +1004,13 @@ export class Library {
     const records = await this.adapter.getMany(store, metas.map((meta) => meta.id));
     return metas
       .map((meta, index) => {
-        if (records[index]) return { ...meta, bytes: records[index].bytes };
+        const record = records[index];
+        if (record) {
+          // Znacznik rysunku w opisie zastępują same kreski (rysunek bez kresek – zwykły obraz).
+          const plain = { ...meta };
+          delete plain.drawing;
+          return { ...plain, bytes: record.bytes, ...(record.drawing ? { drawing: record.drawing } : {}) };
+        }
         return withMissing ? { ...meta, bytes: null, missing: true } : null;
       })
       .filter(Boolean);
@@ -1011,8 +1018,14 @@ export class Library {
 
   /** Bajty pliku obrazu albo załącznika (store: 'noteImages' | 'noteFiles') albo null, gdy go nie ma. */
   async mediaBytes(store, id) {
+    return (await this.mediaRecord(store, id))?.bytes ?? null;
+  }
+
+  /** Plik obrazu albo załącznika: { bytes, drawing? } (rysunek – z kreskami) albo null, gdy go nie ma. */
+  async mediaRecord(store, id) {
     const [record] = await this.adapter.getMany(store, [id]);
-    return record?.bytes ?? null;
+    if (!record) return null;
+    return { bytes: record.bytes, ...(record.drawing ? { drawing: record.drawing } : {}) };
   }
 
   /** Obrazy i załączniki wszystkich notatek: liczba i łączny rozmiar (z opisów, bez czytania plików). */
@@ -1067,8 +1080,8 @@ export class Library {
 
   /**
    * Dopisuje do bazy pliki obrazów i załączników notatek (przywracanie pliku obrazów
-   * i załączników). items: [{ id, bytes }]. Zapisywane są tylko te, które opisuje któraś notatka
-   * i których jeszcze nie ma; zwraca ich liczbę { images, files }.
+   * i załączników). items: [{ id, bytes, drawing? }] – drawing: kreski rysunku. Zapisywane są
+   * tylko te, które opisuje któraś notatka i których jeszcze nie ma; zwraca ich liczbę { images, files }.
    */
   addMedia(items) {
     return this.#mutate((unit, present) => {
@@ -1085,7 +1098,8 @@ export class Library {
         const { meta, lessonID } = target;
         const make = target.store === 'noteImages' ? makeNoteImage : makeNoteFile;
         // Rekord ma identyfikator z opisu w notatce (fabryka nadaje nowy).
-        unit.append(target.store, { ...make(lessonID, { ...meta, bytes }, meta.crc ?? crc32(bytes)), id: meta.id });
+        const source = { ...meta, bytes, drawing: item.drawing ?? null };
+        unit.append(target.store, { ...make(lessonID, source, meta.crc ?? crc32(bytes)), id: meta.id });
         added[target.store === 'noteImages' ? 'images' : 'files'] += 1;
       }
       return added;
@@ -1095,7 +1109,8 @@ export class Library {
   /**
    * Zapisuje notatkę lekcji. draft: { html, htmlEN?, images, imagesFirst?, files? } – images
    * w kolejności wyświetlania: { id, label? } zostawia istniejący obraz, { bytes, type, width,
-   * height, name, label? } dodaje nowy, pominięte istniejące obrazy są usuwane; label – sygnatura
+   * height, name, label?, drawing? } dodaje nowy (drawing – kreski rysunku, od 1.12), pominięte
+   * istniejące obrazy są usuwane; label – sygnatura
    * (brakująca dostaje „Obraz N”). files – załączniki tak samo: { id, name? } zostawia (name –
    * nowa nazwa), { bytes, name, type } dodaje. htmlEN – treść po angielsku, imagesFirst – obrazy
    * w podglądzie przed tekstem; bez pól htmlEN, imagesFirst i files zostaje to, co jest

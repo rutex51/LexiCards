@@ -4,6 +4,7 @@
 // (domainID, moduleID, lessonID, termID). Pojęcie przechowuje także kopie moduleID
 // i domainID, żeby filtrowanie i zliczanie nie wymagało przechodzenia po hierarchii.
 
+import { cleanDrawing } from './drawing.js';
 import { blankToNull, collapseWhitespace, normalizeKey, uniqueTags } from './text.js';
 
 export const SCHEMA_VERSION = 2;
@@ -253,10 +254,12 @@ export const NOTE_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
 /**
  * Obraz notatki do zapisania w bazie: { id, lessonID, type, width, height, size, crc, name, bytes }.
  * `bytes` to ArrayBuffer (bezpieczniejszy w IndexedDB Safari niż Blob). `crc` pozwala rozpoznać,
- * że import przynosi ten sam obraz.
+ * że import przynosi ten sam obraz. Rysunek (od 1.12) ma też `drawing` – kreski i zdjęcie pod
+ * nimi do późniejszej edycji (core/drawing.js); `bytes` to wtedy obraz całego rysunku.
  */
 export function makeNoteImage(lessonID, image, crc) {
   const bytes = ownBuffer(image.bytes);
+  const drawing = cleanDrawing(image.drawing);
   return {
     id: newID(),
     lessonID,
@@ -266,6 +269,7 @@ export function makeNoteImage(lessonID, image, crc) {
     size: bytes.byteLength,
     crc,
     name: image.name ?? null,
+    ...(drawing ? { drawing } : {}),
     bytes,
     createdAt: nowISO()
   };
@@ -303,7 +307,10 @@ export function noteFileMeta(record, name = null) {
   };
 }
 
-/** Opis obrazu przechowywany w notatce (bez bajtów); `label` – sygnatura obrazu w notatce (od 1.6). */
+/**
+ * Opis obrazu przechowywany w notatce (bez bajtów); `label` – sygnatura obrazu w notatce (od 1.6),
+ * `drawing: true` – obraz jest rysunkiem do edycji (od 1.12; same kreski są w rekordzie obrazu).
+ */
 export function noteImageMeta(record, label = null) {
   return {
     id: record.id,
@@ -313,7 +320,8 @@ export function noteImageMeta(record, label = null) {
     size: record.size ?? 0,
     crc: record.crc ?? null,
     name: record.name ?? null,
-    label: label ?? null
+    label: label ?? null,
+    ...(record.drawing ? { drawing: true } : {})
   };
 }
 

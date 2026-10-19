@@ -11,6 +11,7 @@ import {
   ALL_STORES, MEDIA_STORES, SCHEMA_VERSION, SETTINGS_ID, TERM_HISTORY_STORES, defaultSettings, nowISO, termFieldsFromDraft
 } from './model.js';
 import { base64ToBytes } from './base64.js';
+import { cleanDrawing, drawingWithoutPhotoBytes } from './drawing.js';
 import { LibraryError } from './library.js';
 import { IMAGE_EXTENSIONS, imageInfo } from './images.js';
 import { cleanFileName, fileTypeOf } from './note-files.js';
@@ -263,7 +264,9 @@ function imageMeta(meta, image = null) {
     size: finiteOr(source.size, 0),
     crc: Number.isInteger(source.crc) ? source.crc : null,
     name: typeof source.name === 'string' ? source.name : null,
-    label: typeof meta.label === 'string' ? meta.label : null
+    label: typeof meta.label === 'string' ? meta.label : null,
+    // Rysunek do edycji (od 1.12) – kreski są w pliku obrazów i załączników.
+    ...(meta.drawing === true ? { drawing: true } : {})
   };
 }
 
@@ -300,6 +303,40 @@ function mediaPath(store, meta) {
 }
 
 /**
+ * Kreski rysunku (od 1.12) w archiwum: rysunki/<id>.json i zdjęcie pod kreskami
+ * rysunki/<id>-zdjecie.jpeg. Zwraca opis do spisu treści: { path, photo } (photo – ścieżka albo null).
+ */
+async function addDrawing(writer, id, drawing) {
+  const path = `rysunki/${id}.json`;
+  await writer.add({ name: path, data: new TextEncoder().encode(JSON.stringify(drawingWithoutPhotoBytes(drawing))) });
+  let photo = null;
+  if (drawing.photo?.bytes) {
+    photo = `rysunki/${id}-zdjecie.${IMAGE_EXTENSIONS[drawing.photo.type] ?? 'bin'}`;
+    await writer.add({ name: photo, data: new Uint8Array(drawing.photo.bytes), stored: true });
+  }
+  return { path, photo };
+}
+
+/** Kreski rysunku z archiwum (z jego zdjęciem) albo null, gdy ich nie ma albo są uszkodzone. */
+async function readDrawing(archive, description) {
+  if (!description || typeof description.path !== 'string') return null;
+  try {
+    const entry = archive.entries.get(description.path);
+    if (!entry) return null;
+    const raw = JSON.parse(new TextDecoder().decode(await archive.read(entry)));
+    if (raw?.photo && typeof description.photo === 'string') {
+      const photo = archive.entries.get(description.photo);
+      if (!photo) return null;
+      raw.photo = { ...raw.photo, bytes: await archive.read(photo) };
+    }
+    return cleanDrawing(raw);
+  } catch (error) {
+    if (error instanceof ZipError || error instanceof SyntaxError) return null;
+    throw error;
+  }
+}
+
+/**
  * Plik obrazów i załączników wszystkich notatek (ZIP bez kompresji – obrazy, PDF i pliki Office
  * są już skompresowane). Pliki są czytane z bazy po jednym. Spis treści (MEDIA_MANIFEST) wiąże
  * każdy plik z jego opisem w notatce. Zwraca { blob, images, files, size, missing } – missing:
@@ -314,18 +351,19 @@ export async function createMediaArchive(library, appVersion = '', { onProgress 
   for (const [id, entry] of index) {
     onProgress?.(done, index.size);
     done += 1;
-    const bytes = entry.present ? await library.mediaBytes(entry.store, id) : null;
-    if (!bytes) {
+    const record = entry.present ? await library.mediaRecord(entry.store, id) : null;
+    if (!record?.bytes) {
       report.missing += 1;
       continue;
     }
-    const data = new Uint8Array(bytes);
+    const data = new Uint8Array(record.bytes);
     const path = mediaPath(entry.store, entry.meta);
     await writer.add({ name: path, data, stored: true });
     const kind = entry.store === 'noteImages' ? 'image' : 'file';
     items.push({
       id, kind, lessonID: entry.lessonID, path, name: entry.meta.name ?? null, type: entry.meta.type, size: data.byteLength,
-      crc: entry.meta.crc ?? null
+      crc: entry.meta.crc ?? null,
+      ...(record.drawing ? { drawing: await addDrawing(writer, id, record.drawing) } : {})
     });
     report[kind === 'image' ? 'images' : 'files'] += 1;
     report.size += data.byteLength;
@@ -409,7 +447,9 @@ export async function restoreMedia(library, blob, { onProgress = null } = {}) {
       continue;
     }
     target.present = true;
-    batch.push({ id: item.id, bytes });
+    // Rysunek bez (albo z uszkodzonymi) kreskami wraca jako zwykły obraz.
+    const drawing = item.kind === 'file' ? null : await readDrawing(archive, item.drawing);
+    batch.push({ id: item.id, bytes, ...(drawing ? { drawing } : {}) });
     batchBytes += bytes.byteLength;
     if (batchBytes >= MEDIA_BATCH_BYTES) await flush();
   }

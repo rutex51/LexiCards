@@ -9,6 +9,7 @@
 import { sentences } from '../core/listen.js';
 import { NOTE_FILE_LIMIT, NOTE_FILE_MAX_BYTES, NOTE_IMAGE_LIMIT } from '../core/model.js';
 import { bytesToBase64 } from '../core/base64.js';
+import { nextDrawingLabel } from '../core/drawing.js';
 import { NOTE_COLORS, PAGE_BREAK_LINE, isEmptyNoteHtml, noteText, normalizeNoteHtml, portableNoteHtml } from '../core/note-format.js';
 import {
   IMAGE_LABEL_MAX, cleanImageLabel, findImageByLabel, labelKey, referenceLabel, referenceToken, renameReferences, withImageLabels
@@ -19,6 +20,7 @@ import { attachmentList, fileBadge, fileDescription, openAttachment } from './at
 import { field, iconButton, segmented, textInput } from './components.js';
 import { confirmDialog, mountDialog, openFormSheet, openMenu, showError, toast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
+import { openDrawingEditor } from './drawing.js';
 import { icon } from './icons.js';
 import { prepareImage, urlPool } from './images.js';
 import { openMathHelp } from './math.js';
@@ -1027,16 +1029,59 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     requestAnimationFrame(() => input.select());
   }
 
+  // ---- rysunki (od 1.12): obraz z kreskami do późniejszej edycji
+  const isDrawing = (image) => Boolean(image.drawing && typeof image.drawing === 'object');
+
+  /** Wynik edytora rysunku jako nowy (jeszcze niezapisany) obraz notatki. */
+  const drawnImage = (result, label) => ({
+    ...result.image, name: null, drawing: result.drawing, stored: false, url: urls.add(result.image), label
+  });
+
+  async function drawNew() {
+    if (state.images.length + state.pending >= NOTE_IMAGE_LIMIT) return;
+    const label = nextDrawingLabel(state.images.map((image) => image.label));
+    const result = await openDrawingEditor({ title: label });
+    if (!result) return;
+    state.images = withImageLabels([...state.images, drawnImage(result, label)]);
+    renderImages();
+  }
+
+  /** Poprawka rysunku albo rysowanie na zdjęciu – obraz zostaje na swoim miejscu, z tą samą sygnaturą. */
+  async function redraw(image) {
+    let options;
+    if (isDrawing(image)) {
+      options = { drawing: image.drawing, title: image.label };
+    } else {
+      // Wymiary z obrazu, jak go widać (po obrocie zdjęcia z aparatu).
+      const picture = new Image();
+      picture.src = image.url;
+      try {
+        await picture.decode();
+      } catch {
+        toast('Nie udało się otworzyć tego obrazu do rysowania.', { kind: 'error' });
+        return;
+      }
+      options = { photo: { bytes: image.bytes, type: image.type, width: picture.naturalWidth, height: picture.naturalHeight }, title: image.label };
+    }
+    const result = await openDrawingEditor(options);
+    const position = state.images.indexOf(image);
+    if (!result || position < 0) return;
+    state.images[position] = drawnImage(result, image.label);
+    renderImages();
+  }
+
   function renderImages() {
-    const tiles = state.images.map((image, index) => h('div', { class: 'note-images__item' },
+    const tiles = state.images.map((image, index) => h('div', { class: isDrawing(image) ? 'note-images__item note-images__item--drawing' : 'note-images__item' },
       h('button', {
         type: 'button', class: 'note-images__open', 'aria-label': `${image.label} – polecenia`,
         onClick: () => openMenu({
           title: image.label,
           items: [
+            isDrawing(image) ? { label: 'Edytuj rysunek', icon: 'pen', onSelect: () => redraw(image) } : null,
             { label: 'Wstaw do tekstu', icon: 'note', onSelect: () => insertReference(image) },
-            { label: 'Zmień sygnaturę', icon: 'edit', onSelect: () => renameImage(image) },
+            { label: 'Zmień sygnaturę', icon: 'tag', onSelect: () => renameImage(image) },
             { label: 'Powiększ', icon: 'zoomIn', disabled: !image.url, onSelect: () => openImage(state.images, index) },
+            isDrawing(image) || !image.url ? null : { label: 'Rysuj na zdjęciu', icon: 'pen', onSelect: () => redraw(image) },
             { label: 'Przesuń wcześniej', icon: 'arrowLeft', disabled: index === 0, onSelect: () => moveImage(index, -1) },
             { label: 'Przesuń dalej', icon: 'arrowRight', disabled: index === state.images.length - 1, onSelect: () => moveImage(index, 1) },
             'separator',
@@ -1050,6 +1095,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
         type: 'button', class: 'note-images__remove', 'aria-label': `Usuń obraz ${image.label}`, dataset: { testid: 'note-image-remove' },
         onClick: () => { state.images.splice(index, 1); renderImages(); }
       }, icon('close', { size: 14 })),
+      isDrawing(image) ? h('span', { class: 'note-images__badge', title: 'Rysunek', dataset: { testid: 'note-image-drawing' } }, icon('pen', { size: 14 })) : null,
       h('span', { class: 'note-images__label', dataset: { testid: 'note-image-label-text' } }, image.label)
     ));
     for (let index = 0; index < state.pending; index += 1) {
@@ -1060,6 +1106,10 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
       type: 'button', class: 'note-images__add', disabled: full, dataset: { testid: 'note-image-add' },
       onClick: () => fileInput.click()
     }, icon('plus', { size: 22 }), h('span', null, 'Dodaj obraz')));
+    tiles.push(h('button', {
+      type: 'button', class: 'note-images__add note-images__add--draw', disabled: full, dataset: { testid: 'note-image-draw' },
+      onClick: () => drawNew()
+    }, icon('pen', { size: 22 }), h('span', null, 'Narysuj')));
     replaceChildren(grid, tiles);
     placement.hidden = state.images.length === 0;
     status.textContent = state.pending > 0 ? 'Przygotowanie obrazu…' : (full ? `Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów.` : '');
@@ -1103,7 +1153,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     status,
     placement,
     h('p', { class: 'field__hint' },
-      'Dotknij obrazu, żeby wstawić go do tekstu, zmienić sygnaturę, powiększyć, przesunąć albo usunąć. Linijka ',
+      'Dotknij obrazu, żeby wstawić go do tekstu, zmienić sygnaturę, powiększyć, przesunąć albo usunąć – rysunek możesz też poprawić, a na zdjęciu rysować. Linijka ',
       h('code', null, '[[sygnatura]]'),
       ' w tekście to miejsce obrazu w notatce; obrazy bez odwołania są przed tekstem albo po nim. Obraz możesz też wkleić do tekstu – trafi tutaj.'),
     fileInput
@@ -1393,7 +1443,10 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
         imagesFirst: state.imagesFirst,
         images: state.images.map((image) => (image.stored
           ? { id: image.id, label: image.label }
-          : { bytes: image.bytes, type: image.type, width: image.width, height: image.height, name: image.name ?? null, label: image.label })),
+          : {
+            bytes: image.bytes, type: image.type, width: image.width, height: image.height, name: image.name ?? null, label: image.label,
+            ...(image.drawing ? { drawing: image.drawing } : {})
+          })),
         files: state.files.map((file) => (file.stored
           ? { id: file.id, name: file.name }
           : { bytes: file.bytes, name: file.name, type: file.type, duration: file.duration }))

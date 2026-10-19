@@ -1,4 +1,4 @@
-# LexiCards 1.11
+# LexiCards 1.12
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -20,8 +20,9 @@ Załączniki notatek, przeniesienie dwoma plikami – dane oraz obrazy z załąc
 Przesuwanie wierszy lekcji i modułów, data utworzenia i filtr daty, kolejność utrwalonych do wyboru (wersja 1.9): [docs/RELEASE-1.9.md](docs/RELEASE-1.9.md).
 Notatka głosowa nagrywana w trakcie pisania notatki (wersja 1.10): [docs/RELEASE-1.10.md](docs/RELEASE-1.10.md).
 Równania w notatkach – zapis tekstem, wzory w podglądzie, ściągawka (wersja 1.11): [docs/RELEASE-1.11.md](docs/RELEASE-1.11.md).
+Rysunki odręczne w notatce – rysik z naciskiem, zakreślacz, gumka, rysowanie na zdjęciu (wersja 1.12): [docs/RELEASE-1.12.md](docs/RELEASE-1.12.md).
 
-## Co potrafi wersja 1.11
+## Co potrafi wersja 1.12
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -63,6 +64,10 @@ Równania w notatkach – zapis tekstem, wzory w podglądzie, ściągawka (wersj
   `$\frac{a}{b}$`, `$\sqrt{x}$`…), a podgląd notatki pokazuje go jak w podręczniku; `$$…$$` – wzór
   w osobnym wierszu. Przycisk **Σ** wstawia wzór, a ikona **ⓘ** obok otwiera ściągawkę zapisu
   z polem do wypróbowania. Czytanie na głos i słuchanie czytają wzór słowami („x do kwadratu”).
+- Rysunki odręczne w notatce: **Narysuj** przy obrazach otwiera edytor na cały ekran – pióro
+  z naciskiem rysika (Apple Pencil, rysik w laptopie), zakreślacz, gumka, kolory, grubości, cofnij
+  i ponów, tło gładkie, w linie albo w kratkę. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest
+  obrazem notatki (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
   Notatki do lekcji przychodzą z osobnego arkusza tego samego pliku – razem z pojęciami albo osobno.
@@ -108,7 +113,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.8 – załączniki, przeniesienie dwoma plikami](docs/RELEASE-1.8.md),
 [wersja 1.9 – przesuwanie wierszy, data utworzenia, kolejność utrwalonych](docs/RELEASE-1.9.md),
 [wersja 1.10 – notatka głosowa](docs/RELEASE-1.10.md),
-[wersja 1.11 – równania w notatkach](docs/RELEASE-1.11.md).
+[wersja 1.11 – równania w notatkach](docs/RELEASE-1.11.md),
+[wersja 1.12 – rysunki odręczne](docs/RELEASE-1.12.md).
 
 ## Jak korzystać
 
@@ -279,6 +285,27 @@ przykładu wpisuje go do pola. Kwoty pisane ze znakiem dolara („$20 i $30”) 
 `\$` to zawsze zwykły dolar. Wzór nie dzieli się między strony, a czytanie na głos i słuchanie
 czytają go słowami w języku notatki. Zapis trafia bez zmian do eksportu, kopii i „Kopiuj notatkę”
 (inne aplikacje dostają tekst `$…$`).
+
+**Rysunki:** w sekcji obrazów edytora kafelek **Narysuj** otwiera edytor rysunku na cały ekran –
+z nagłówkiem **Anuluj – Rysunek 1 – Gotowe** i paskiem narzędzi na środku u góry: **pióro**,
+**zakreślacz** (półprzezroczysty, nie zasłania tuszu), **gumka** (ściera całe kreski), kolory (pióro:
+czarny, niebieski, czerwony, zielony, pomarańczowy, fioletowy; zakreślacz: żółty, zielony, różowy,
+niebieski), trzy grubości, **cofnij** i **ponów** (też Ctrl+Z, Ctrl+Shift+Z albo Ctrl+Y) oraz **Tło**
+(kratka, gładkie, linie). Drugie dotknięcie aktywnego pióra otwiera **ustawienia pióra**: czułość
+nacisku (Wył., Mała, Średnia, Duża), grubość kreski od–do (przy lekkim i mocnym nacisku), wygładzanie
+kreski i podgląd; ustawienia zostają na urządzeniu. Grubość zależy od nacisku tylko przy rysiku –
+palcem i myszą kreska ma stałą grubość. Gdy aplikacja raz zobaczy rysik, rysuje tylko rysik, a palec
+przesuwa stronę (pigułka „Rysuje tylko rysik · palec przesuwa” w rogu) – dłoń oparta o ekran nie
+zostawia śladów; na iPhonie bez rysika rysuje palec. Dwa palce powiększają i przesuwają, pigułka
+z procentami wraca do całej strony; na komputerze kółko przesuwa, Ctrl + kółko powiększa. Gumka
+na końcu rysika (Windows) ściera bez zmiany narzędzia. **Gotowe** dodaje rysunek do obrazów notatki
+jako „Rysunek 1”, „Rysunek 2”… (miniatura ze znaczkiem pióra); dalej działa jak obraz: sygnatura,
+`[[Rysunek 1]]` w tekście, powiększenie, przesuwanie. W menu rysunku **Edytuj rysunek** otwiera go
+z kreskami do poprawy. Menu zwykłego obrazu ma **Rysuj na zdjęciu** – zdjęcie zostaje pod spodem,
+a kreski osobno (gumka nie ściera zdjęcia); obraz zostaje w tym samym miejscu i z tą samą sygnaturą.
+**Anuluj** po zmianach pyta, czy je odrzucić. Strona rysunku ma 1600 × 1100 punktów (na zdjęciu –
+wielkość zdjęcia, najwyżej 2048 px). Rysunek przenosi plik obrazów i załączników kopii zapasowej
+(razem z kreskami i zdjęciem pod spodem); eksport do XLSX i „Kopiuj notatkę” biorą sam obraz.
 
 ### Postęp i lekcje utrwalone
 
@@ -493,7 +520,8 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 16. **Wersja 1.9: przesuwanie wierszy lekcji i modułów (utrwal / usuń), data utworzenia i filtr daty, kolejność utrwalonych do wyboru** – gotowe.
 17. **Wersja 1.10: notatka głosowa – nagrywanie w trakcie pisania notatki, nagranie w załącznikach, odtwarzanie** – gotowe.
 18. **Wersja 1.11: równania w notatkach – zapis tekstem, wzory w podglądzie, ściągawka, czytanie słowami** – gotowe.
-19. **Rysunki odręczne w notatce (rysik, nacisk, rozpoznawanie kształtów)** – makiety do akceptacji.
+19. **Wersja 1.12: rysunki odręczne w notatce – rysik z naciskiem, zakreślacz, gumka, rysowanie na zdjęciu (etap 1)** – gotowe.
+20. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), uchwyty, zaznaczanie i przesuwanie** – po akceptacji makiet.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

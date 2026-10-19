@@ -63,6 +63,7 @@ const ICONS = {
   skipBack: [filled('M19 6.2v11.6a.7.7 0 0 1-1.1.6l-8.6-5.8a.7.7 0 0 1 0-1.2l8.6-5.8a.7.7 0 0 1 1.1.6z'), filled('M5 5.5h2.5v13H5z')],
   headphones: [p('M4 15v-3a8 8 0 0 1 16 0v3'), p('M4 15h3.5v5H5.5A1.5 1.5 0 0 1 4 18.5z'), p('M20 15h-3.5v5h2a1.5 1.5 0 0 0 1.5-1.5z')],
   undo: [p('M9 6.5L4.5 11 9 15.5'), p('M5 11h9.5a4.5 4.5 0 0 1 0 9H12')],
+  redo: [p('M15 6.5l4.5 4.5-4.5 4.5'), p('M19 11H9.5a4.5 4.5 0 0 0 0 9H12')],
   // Wstecz / dalej w pasku nawigacji (od 1.11.2): zawinięte strzałki jak w aplikacjach Apple.
   historyBack: [p('M8.5 4L4 8.5 8.5 13'), p('M4.5 8.5H15a5 5 0 0 1 0 10h-3.5')],
   historyForward: [p('M15.5 4L20 8.5 15.5 13'), p('M19.5 8.5H9a5 5 0 0 0 0 10h3.5')],
@@ -100,7 +101,16 @@ const ICONS = {
   ],
   textColor: [p('M6.5 15.5L12 3.5l5.5 12'), p('M8.4 11.3h7.2')],
   clearFormat: [p('M6 5h11'), p('M11.5 5L9 17'), p('M14 14l5.5 5.5'), p('M19.5 14L14 19.5')],
-  zoomIn: [{ tag: 'circle', cx: 11, cy: 11, r: 6.5 }, p('M20 20l-4.3-4.3'), p('M11 8.3v5.4'), p('M8.3 11h5.4')]
+  zoomIn: [{ tag: 'circle', cx: 11, cy: 11, r: 6.5 }, p('M20 20l-4.3-4.3'), p('M11 8.3v5.4'), p('M8.3 11h5.4')],
+  // Rysunki (od 1.12). Pasek pod zakreślaczem ma kolor wybranego zakreślacza (klasa icon__accent).
+  pen: [p('M4 20l1.2-4.6L15.6 5a2.1 2.1 0 0 1 3 3L8.2 18.4z'), p('M13.8 6.8l3 3')],
+  highlighter: [
+    p('M9 15l-3 3h5l1.5-1.5'), p('M8 13.5l7.8-7.8a2 2 0 0 1 2.8 0l.7.7a2 2 0 0 1 0 2.8L11.5 17z'),
+    { d: 'M4 21h16', class: 'icon__accent', 'stroke-width': 2.6 }
+  ],
+  // Sygnatura obrazu (etykieta) – od 1.12, odróżnia się od ołówka „Edytuj rysunek”.
+  tag: [p('M3.5 12.5V4h8.5l8.5 8.5-8.5 8.5z'), { tag: 'circle', cx: 8, cy: 8.5, r: 1.4 }],
+  eraser: [p('M8.5 19.5h11'), p('M5.2 14.3l8.6-8.6a2 2 0 0 1 2.8 0l2.7 2.7a2 2 0 0 1 0 2.8L12 18.5H9.4l-4.2-4.2z'), p('M9.3 10.2l5.5 5.5')]
 };
 
 /** Zwraca element SVG ikony o podanej nazwie. */
