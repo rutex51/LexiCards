@@ -10,7 +10,7 @@ import {
 import { DIRECTIONS } from '../../core/model.js';
 import { MIXED, STUDY_DIRECTIONS, STUDY_SCOPES, buildQueue, scopeCounts } from '../../core/study.js';
 import { pluralNotes, pluralTerms } from '../../core/text.js';
-import { checkRow, emptyState, field, formGroup, group, navButton, segmented, selectInput } from '../components.js';
+import { checkRow, emptyState, field, formGroup, group, navButton, segmented, selectInput, startBubble } from '../components.js';
 import { AudioKeepAlive } from '../audio-keepalive.js';
 import { toast } from '../dialogs.js';
 import { h, onTap } from '../dom.js';
@@ -351,13 +351,10 @@ export class ListenScreen {
 
     // Telefon: „Rozpocznij” to środkowy przycisk paska zakładek; szeroki ekran: przycisk na pasku poleceń.
     const wide = ctx.isWide();
-    const startButton = wide ? h('button', {
-      type: 'button',
-      class: 'button button--primary',
-      disabled: planned === 0 || !available,
-      dataset: { testid: 'listen-start' },
-      onClick: () => this.#start()
-    }, icon('play', { size: 18 }), h('span', null, 'Rozpocznij słuchanie')) : null;
+    // Start w obsłudze kliknięcia – pierwsza wypowiedź musi paść bezpośrednio po geście (Safari).
+    const startButton = wide
+      ? startBubble({ label: 'Rozpocznij słuchanie', disabled: planned === 0 || !available, testID: 'listen-start', onClick: () => this.#start() })
+      : null;
 
     return {
       title: 'Słuchanie',
@@ -454,7 +451,7 @@ export class ListenScreen {
               h('a', { href: routes.settings() }, 'Ustawieniach'), '.'))))
         )
       ],
-      bottomBar: h('div', { class: `bottombar__inner${startButton ? '' : ' bottombar__inner--note'}` },
+      bottomBar: h('div', { class: `bottombar__inner ${startButton ? 'bottombar__inner--bubble' : 'bottombar__inner--note'}` },
         h('span', { class: 'bottombar__note', role: 'status', dataset: { testid: 'listen-planned' } },
           planned === 0 ? 'Brak pojęć dla tych ustawień'
             : `${notes.length > 0 ? `${pluralNotes(notes.length)} i ` : ''}${pluralTerms(planned)}, ${formatMinutes(estimate)}`),

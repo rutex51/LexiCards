@@ -71,6 +71,23 @@ Testy wersji 1.8.1:
 - Czego nie sprawdzono: **Safari na iPhonie** – klawiatura w teście jest udawana; do sprawdzenia
   u Ciebie, czy po zapisie z otwartą klawiaturą notatka po chwili pokazuje właściwe strony.
 
+## Uzupełnienie w wersji 1.8.2
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Na ekranach Nauka, Quiz i Słuchanie zamiast prostokątnych przycisków – na dole na środku przycisk play jak w aplikacji na telefonie, z podpisem, wychodzący ponad linię stopki | Na komputerze pasek na dole ekranu ma na środku okrągły przycisk (64 px) w kolorze aplikacji z symbolem odtwarzania, wystający ponad linię paska, z obwódką w kolorze paska – tak jak środkowy przycisk paska zakładek na telefonie. Pod kółkiem podpis: **Rozpocznij naukę**, **Rozpocznij quiz**, **Rozpocznij słuchanie**; opis („20 fiszek z 40 pasujących”, „9 pojęć, ok. 4 min”) zostaje po lewej. Gdy nie ma czego zacząć – szare, nieaktywne kółko. Komunikaty na tych ekranach pojawiają się nad kółkiem, nie na nim. Na telefonie quiz też zaczyna się teraz środkowym kółkiem paska zakładek (nauka i słuchanie już tak miały) – bez prostokątnego przycisku na pasku poleceń |
+
+Testy wersji 1.8.2:
+
+- **Testy logiki: 252 – wszystkie zaliczone.**
+- **Testy w przeglądarce: 102 – wszystkie zaliczone w dwóch przebiegach** (bez nowych testów;
+  2 dostosowane): komputer – na ekranach nauki, quizu i słuchania okrągły przycisk o średnicy 64 px
+  na środku paska, wystający co najmniej 20 px ponad jego linię, podpis pod kółkiem, komunikat nad
+  kółkiem, pusty zakres – nieaktywny, kliknięcie zaczyna naukę; telefon – quiz zaczyna się
+  środkowym kółkiem paska zakładek („Rozpocznij quiz”), pasek poleceń bez przycisku.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium, komputer): nauka, quiz, słuchanie.
+
 ## Czego nie sprawdzono
 
 - **Na iPhonie** – testy działają w Chromium z ekranem telefonu, nie w Safari na iOS. Do

@@ -8,7 +8,9 @@ import {
 } from '../../core/quiz.js';
 import { MIXED, STUDY_DIRECTIONS } from '../../core/study.js';
 import { plural } from '../../core/text.js';
-import { actionRow, emptyState, field, formGroup, group, segmented, selectInput, settingsAction } from '../components.js';
+import {
+  actionRow, emptyState, field, formGroup, group, segmented, selectInput, settingsAction, startBubble
+} from '../components.js';
 import { showError, toast } from '../dialogs.js';
 import { h } from '../dom.js';
 import { initialSelection, lessonsGroup, materialGroup, sanitizeSelection, selectionConfig } from '../material.js';
@@ -165,13 +167,11 @@ export class QuizSetupScreen {
     const active = quiz && !quiz.finishedAt ? quiz : null;
     const enough = available >= 2;
 
-    const startButton = h('button', {
-      type: 'button',
-      class: 'button button--primary',
-      disabled: !enough,
-      dataset: { testid: 'quiz-start' },
-      onClick: () => this.#start()
-    }, 'Rozpocznij quiz');
+    // Szeroki ekran – okrągły „Rozpocznij” na pasku poleceń; telefon – środkowy przycisk paska zakładek.
+    const wide = ctx.isWide();
+    const startButton = wide
+      ? startBubble({ label: 'Rozpocznij quiz', disabled: !enough, testID: 'quiz-start', onClick: () => this.#start() })
+      : null;
 
     const directionHint = this.direction === MIXED
       ? 'Każde pytanie i każda runda dostaje losowo jeden z kierunków.'
@@ -227,14 +227,17 @@ export class QuizSetupScreen {
               ]
         )
       ],
-      bottomBar: h('div', { class: 'bottombar__inner' },
+      bottomBar: h('div', { class: `bottombar__inner ${startButton ? 'bottombar__inner--bubble' : 'bottombar__inner--note'}` },
         h('span', { class: 'bottombar__note', role: 'status', dataset: { testid: 'quiz-planned' } },
           // „z N pojęć” – po „z” zawsze dopełniacz, a przycisk jest aktywny od dwóch pojęć.
           enough
             ? `${this.type === 'matching' ? pluralPairs(planned) : pluralQuestions(planned)} z ${available} pojęć`
             : 'Za mało pojęć – potrzebne są co najmniej dwa'),
         startButton
-      )
+      ),
+      primaryAction: wide ? null : {
+        label: 'Rozpocznij quiz', short: 'Rozpocznij', disabled: !enough, testID: 'quiz-start', onAction: () => this.#start()
+      }
     };
   }
 }

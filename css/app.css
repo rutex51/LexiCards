@@ -647,6 +647,67 @@ button:disabled { cursor: default; }
 .bottombar__inner .button--primary { flex: none; min-height: 44px; padding: 0 16px; white-space: nowrap; }
 .bottombar__inner .button--plain { white-space: normal; text-align: left; line-height: 1.15; }
 
+/* Szeroki ekran (od 1.8.2): „Rozpocznij” jako okrągły przycisk na środku paska poleceń, wystający
+   ponad pasek jak środkowy przycisk paska zakładek na telefonie; podpis pod kółkiem, opis po lewej. */
+.bottombar__inner--bubble {
+  position: relative;
+  justify-content: flex-start;
+  min-height: 74px;
+}
+
+.bottombar__inner--bubble .bottombar__note { max-width: calc(50% - 92px); }
+
+.start-bubble {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--size-foot);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transform: translateX(-50%);
+}
+
+.start-bubble__circle {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  box-shadow:
+    0 0 0 4px var(--bar-solid),
+    0 10px 22px -8px color-mix(in srgb, var(--accent-fill) 75%, transparent);
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+/* Trójkąt odtwarzania wyrównany na oko (jak w kółku paska zakładek). */
+.start-bubble__circle svg { margin-left: 3px; }
+
+.start-bubble:hover:not(:disabled) .start-bubble__circle { filter: brightness(1.1); transform: scale(1.04); }
+.start-bubble:active:not(:disabled) .start-bubble__circle { transform: scale(0.94); }
+.start-bubble:focus-visible { outline: none; }
+.start-bubble:focus-visible .start-bubble__circle { outline: 2px solid var(--accent); outline-offset: 6px; }
+
+.start-bubble:disabled { color: var(--text-3); cursor: default; }
+
+.start-bubble:disabled .start-bubble__circle {
+  /* Pełny kolor – wystająca część kółka nie prześwituje treścią spod paska. */
+  background: color-mix(in srgb, var(--text-3) 24%, var(--bar-solid));
+  color: var(--text-3);
+  box-shadow: 0 0 0 4px var(--bar-solid);
+}
+
 /* ------------------------------------------------------------------ 4. przyciski */
 
 .button {
@@ -3789,6 +3850,9 @@ a.row__main:active,
     left: var(--sidebar-width);
     bottom: 28px;
   }
+
+  /* Nad paskiem poleceń z wystającym „Rozpocznij” – komunikat go nie zasłania. */
+  .app--bottombar:not(.app--focus) ~ .toasts { bottom: 124px; }
 
   .tiles { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
 

@@ -9,7 +9,7 @@ import { startTodaysReview, todaysReviewQueue } from '../actions.js';
 import { initialSelection, lessonsGroup, materialGroup, sanitizeSelection, selectionConfig } from '../material.js';
 import { REPEAT_LABELS } from './study-session.js';
 import {
-  actionRow, emptyState, field, formGroup, group, segmented, selectInput, settingsAction
+  actionRow, emptyState, field, formGroup, group, segmented, selectInput, settingsAction, startBubble
 } from '../components.js';
 import { showError, toast } from '../dialogs.js';
 import { h } from '../dom.js';
@@ -178,13 +178,9 @@ export class StudySetupScreen {
 
     // Telefon: „Rozpocznij” to środkowy przycisk paska zakładek; szeroki ekran: przycisk na pasku poleceń.
     const wide = ctx.isWide();
-    const startButton = wide ? h('button', {
-      type: 'button',
-      class: 'button button--primary',
-      disabled: planned === 0,
-      dataset: { testid: 'study-start' },
-      onClick: () => this.#start()
-    }, 'Rozpocznij naukę') : null;
+    const startButton = wide
+      ? startBubble({ label: 'Rozpocznij naukę', disabled: planned === 0, testID: 'study-start', onClick: () => this.#start() })
+      : null;
 
     return {
       title: 'Nauka',
@@ -274,7 +270,7 @@ export class StudySetupScreen {
             'Gdy pojęcie nie ma takiej treści w języku pytania, na pierwszej stronie zobaczysz samo pojęcie.')
         )
       ],
-      bottomBar: h('div', { class: `bottombar__inner${startButton ? '' : ' bottombar__inner--note'}` },
+      bottomBar: h('div', { class: `bottombar__inner ${startButton ? 'bottombar__inner--bubble' : 'bottombar__inner--note'}` },
         h('span', { class: 'bottombar__note', role: 'status', dataset: { testid: 'study-planned' } },
           planned === 0
             ? 'Brak fiszek dla tych ustawień'

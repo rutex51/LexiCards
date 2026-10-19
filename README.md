@@ -245,9 +245,10 @@ a kreator importu uprzedza przed importem. Oznaczenie cofniesz w menu „…” 
 
 ### Nauka z fiszkami
 
-1. W zakładce **Nauka** wybierz materiał i dotknij **Rozpocznij** – na telefonie to okrągły przycisk
-   z symbolem odtwarzania w środku paska zakładek, na komputerze „Rozpocznij naukę” na dole ekranu
-   (albo „Ucz się tej lekcji” na ekranie lekcji).
+1. W zakładce **Nauka** wybierz materiał i dotknij **Rozpocznij** – okrągły przycisk z symbolem
+   odtwarzania: na telefonie w środku paska zakładek, na komputerze na środku paska na dole ekranu,
+   z podpisem „Rozpocznij naukę” (albo „Ucz się tej lekcji” na ekranie lekcji). Tak samo zaczynasz
+   quiz i słuchanie.
 2. Przypomnij sobie odpowiedź i dotknij fiszki, żeby ją odwrócić.
 3. Zaznacz kafelki tego, co umiesz: pojęcie, definicję, przykład.
 4. Przesuń fiszkę **w lewo – Umiem** albo **w prawo – Powtórz** (są też przyciski).

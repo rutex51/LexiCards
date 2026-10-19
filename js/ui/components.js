@@ -16,6 +16,17 @@ export function iconButton(name, label, onClick, { className = '', pressed = nul
   }, icon(name));
 }
 
+/**
+ * „Rozpocznij” na pasku poleceń szerokiego ekranu (od 1.8.2): okrągły przycisk z symbolem
+ * odtwarzania na środku, wystający ponad pasek, z podpisem pod spodem – jak środkowy przycisk
+ * paska zakładek na telefonie.
+ */
+export function startBubble({ label, disabled = false, testID = null, onClick }) {
+  return h('button', { type: 'button', class: 'start-bubble', disabled, title: label, dataset: { testid: testID }, onClick },
+    h('span', { class: 'start-bubble__circle', 'aria-hidden': 'true' }, icon('play', { size: 30 })),
+    h('span', { class: 'start-bubble__label' }, label));
+}
+
 /** Przycisk tekstowy w pasku nawigacji. */
 export function navButton(label, onClick, { strong = false } = {}) {
   return h('button', { type: 'button', class: `button button--plain${strong ? ' button--strong' : ''}`, onClick }, label);

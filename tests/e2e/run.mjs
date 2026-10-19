@@ -503,7 +503,7 @@ test('kolor aplikacji: wybór w ustawieniach, osobno od motywu, ustawiany przed 
   assert.equal(await page.evaluate(() => localStorage.getItem('lexicards-accent')), 'blue');
 });
 
-test('telefon: środkowy przycisk „Nauka” – na ekranach przygotowania nauki i słuchania to „Rozpocznij”', async ({ open }) => {
+test('telefon: środkowy przycisk „Nauka” – na ekranach przygotowania nauki, quizu i słuchania to „Rozpocznij”', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
   const tabbar = page.locator('.tabbar');
@@ -546,22 +546,67 @@ test('telefon: środkowy przycisk „Nauka” – na ekranach przygotowania nauk
   assert.equal(await action.getAttribute('aria-label'), 'Rozpocznij słuchanie');
   assert.equal(await action.getAttribute('data-testid'), 'listen-start');
 
-  // Inna zakładka – znowu zwykła „Nauka”.
+  // Quiz (od 1.8.2): też kółko zamiast prostokątnego przycisku na pasku poleceń.
   await tabbar.getByRole('link', { name: 'Quiz' }).click();
-  await page.locator('[data-testid=quiz-start]').waitFor();
+  await page.locator('[data-testid=quiz-planned]').waitFor();
+  assert.equal(await action.getAttribute('aria-label'), 'Rozpocznij quiz');
+  assert.equal(await action.getAttribute('data-testid'), 'quiz-start');
+  assert.equal(await page.locator('.bottombar button').count(), 0, 'pasek poleceń quizu bez przycisku');
+
+  // Inna zakładka – znowu zwykła „Nauka”.
+  await tabbar.getByRole('link', { name: 'Statystyki' }).click();
+  await page.locator('[data-testid=quiz-planned]').waitFor({ state: 'detached' });
   assert.equal(await studyLink.isVisible(), true);
   assert.equal(await action.isVisible(), false);
   assert.equal(await action.getAttribute('data-testid'), null);
 });
 
-test('szeroki ekran: „Rozpocznij naukę” zostaje na pasku poleceń (bez paska zakładek)', async ({ open }) => {
+test('szeroki ekran: „Rozpocznij” – okrągły przycisk na środku paska poleceń, wystający ponad pasek, z podpisem (nauka, quiz, słuchanie)', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
+  for (const [hash, kind, label] of [['#/study', 'study', 'Rozpocznij naukę'], ['#/quiz', 'quiz', 'Rozpocznij quiz'], ['#/study/listen', 'listen', 'Rozpocznij słuchanie']]) {
+    await page.evaluate((target) => { location.hash = target; }, hash);
+    await page.locator(`[data-testid=${kind}-planned]`).waitFor();
+    assert.equal(await page.locator('.tabbar').isVisible(), false);
+    const start = page.locator(`.bottombar [data-testid=${kind}-start]`);
+    assert.equal(await page.locator(`[data-testid=${kind}-start]`).count(), 1);
+    assert.equal(await start.locator('.start-bubble__label').textContent(), label);
+    assert.equal((await start.getAttribute('class')).includes('start-bubble'), true);
+    const geometry = await start.evaluate((button) => {
+      const bar = button.closest('.bottombar').getBoundingClientRect();
+      const inner = button.closest('.bottombar__inner').getBoundingClientRect();
+      const circle = button.querySelector('.start-bubble__circle').getBoundingClientRect();
+      const caption = button.querySelector('.start-bubble__label').getBoundingClientRect();
+      return {
+        centered: Math.abs(circle.left + circle.width / 2 - (inner.left + inner.width / 2)),
+        round: getComputedStyle(button.querySelector('.start-bubble__circle')).borderRadius,
+        above: bar.top - circle.top,
+        below: circle.bottom - bar.top,
+        caption: caption.top >= circle.bottom && caption.bottom <= bar.bottom,
+        size: [circle.width, circle.height]
+      };
+    });
+    assert.ok(geometry.centered < 1, `kółko na środku paska (${geometry.centered})`);
+    assert.equal(geometry.round, '50%');
+    assert.deepEqual(geometry.size, [64, 64]);
+    assert.ok(geometry.above >= 20 && geometry.below >= 20, `kółko wystaje ponad linię paska (${geometry.above} nad, ${geometry.below} pod)`);
+    assert.ok(geometry.caption, 'podpis pod kółkiem, w pasku');
+    // Komunikat (np. po wczytaniu danych) jest nad kółkiem, nie na nim.
+    const toast = page.locator('.toast').first();
+    if (await toast.count()) {
+      const [toastBox, circleBox] = [await toast.boundingBox(), await start.locator('.start-bubble__circle').boundingBox()];
+      assert.ok(toastBox.y + toastBox.height <= circleBox.y, 'komunikat nad kółkiem');
+    }
+    await page.screenshot({ path: path.join(OUTPUT, `start-${kind}-komputer.png`) });
+  }
+  // Pusty zakres – szare, nieaktywne kółko.
   await page.evaluate(() => { location.hash = '#/study'; });
   await page.locator('[data-testid=study-planned]').waitFor();
-  assert.equal(await page.locator('.tabbar').isVisible(), false);
-  await expectText(page.locator('.bottombar [data-testid=study-start]'), 'Rozpocznij naukę');
-  assert.equal(await page.locator('[data-testid=study-start]').count(), 1);
+  await page.selectOption('[data-testid=study-scope]', 'repeat');
+  assert.equal(await page.locator('[data-testid=study-start]').isDisabled(), true);
+  await page.selectOption('[data-testid=study-scope]', 'all');
+  await page.click('[data-testid=study-start]');
+  await page.locator('[data-testid=study-session]').waitFor();
 }, { device: DESKTOP });
 
 test('szeroki ekran: panel boczny i tabela glosariusza; wąski: zakładki i lista', async ({ open }) => {
