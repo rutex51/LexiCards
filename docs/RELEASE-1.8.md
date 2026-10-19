@@ -88,6 +88,15 @@ Testy wersji 1.8.2:
 - **Lint: bez błędów.**
 - Zrzuty (Chromium, komputer): nauka, quiz, słuchanie.
 
+## Poprawka w wersji 1.8.3
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Czy znaczek play na komputerze nie jest przesunięty w prawo – na telefonie wydaje się lepiej wyśrodkowany | Był: w 1.8.2 trójkąt w kółku na komputerze był przesunięty ok. 2,6 px w prawo względem kółka paska zakładek na telefonie (zbędne przesunięcie ikony w prawo – sam rysunek ma środek ciężkości w środku pola). Teraz oba kółka mają tę samą korektę, a testy w przeglądarce sprawdzają położenie trójkąta w obu (na komputerze test nie przechodzi na kodzie z 1.8.2) |
+
+Testy wersji 1.8.3: testy logiki – 252, testy w przeglądarce – 102 w dwóch przebiegach (2 testy
+uzupełnione o położenie trójkąta), lint bez błędów.
+
 ## Czego nie sprawdzono
 
 - **Na iPhonie** – testy działają w Chromium z ekranem telefonu, nie w Safari na iOS. Do

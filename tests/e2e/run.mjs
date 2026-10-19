@@ -524,6 +524,13 @@ test('telefon: środkowy przycisk „Nauka” – na ekranach przygotowania nauk
   assert.equal(await page.locator('.bottombar button').count(), 0, 'pasek poleceń bez przycisku');
   // Rozmiar po krótkiej animacji pojawienia się.
   await action.locator('.tabbar__bubble').evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+  // Trójkąt odtwarzania jak na komputerze: środek ciężkości 1 px w lewo od środka kółka.
+  const glyphOffset = await action.locator('.tabbar__bubble').evaluate((bubble) => {
+    const circle = bubble.getBoundingClientRect();
+    const glyph = bubble.querySelector('svg').getBoundingClientRect();
+    return glyph.left + (12.07 / 24) * glyph.width - (circle.left + circle.width / 2);
+  });
+  assert.ok(Math.abs(glyphOffset + 1) < 0.6, `trójkąt na środku kółka (przesunięcie ${glyphOffset.toFixed(2)} px)`);
   const bubble = await action.locator('.tabbar__bubble').boundingBox();
   await page.evaluate(() => { location.hash = '#/start'; });
   const normal = await studyLink.locator('.tabbar__bubble').boundingBox();
@@ -591,6 +598,14 @@ test('szeroki ekran: „Rozpocznij” – okrągły przycisk na środku paska po
     assert.deepEqual(geometry.size, [64, 64]);
     assert.ok(geometry.above >= 20 && geometry.below >= 20, `kółko wystaje ponad linię paska (${geometry.above} nad, ${geometry.below} pod)`);
     assert.ok(geometry.caption, 'podpis pod kółkiem, w pasku');
+    // Trójkąt odtwarzania: środek ciężkości (x = 12,07 z 24) przesunięty o tyle samo co w kółku
+    // paska zakładek na telefonie (−1 px) – nie w prawo.
+    const offset = await start.evaluate((button) => {
+      const circle = button.querySelector('.start-bubble__circle').getBoundingClientRect();
+      const glyph = button.querySelector('.start-bubble__circle svg').getBoundingClientRect();
+      return glyph.left + (12.07 / 24) * glyph.width - (circle.left + circle.width / 2);
+    });
+    assert.ok(Math.abs(offset + 1) < 0.6, `trójkąt na środku kółka (przesunięcie ${offset.toFixed(2)} px)`);
     // Komunikat (np. po wczytaniu danych) jest nad kółkiem, nie na nim.
     const toast = page.locator('.toast').first();
     if (await toast.count()) {

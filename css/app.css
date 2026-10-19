@@ -691,8 +691,9 @@ button:disabled { cursor: default; }
   transition: transform 0.15s ease, filter 0.15s ease;
 }
 
-/* Trójkąt odtwarzania wyrównany na oko (jak w kółku paska zakładek). */
-.start-bubble__circle svg { margin-left: 3px; }
+/* Trójkąt odtwarzania wyrównany na oko tak samo jak w kółku paska zakładek na telefonie: środek
+   ciężkości rysunku jest w środku pola ikony, więc tylko lekkie przesunięcie w lewo. */
+.start-bubble__circle svg { margin-left: -1px; }
 
 .start-bubble:hover:not(:disabled) .start-bubble__circle { filter: brightness(1.1); transform: scale(1.04); }
 .start-bubble:active:not(:disabled) .start-bubble__circle { transform: scale(0.94); }
