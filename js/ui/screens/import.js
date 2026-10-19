@@ -471,7 +471,7 @@ export class ImportScreen {
         const images = [];
         for (const image of note.images) {
           try {
-            images.push(await this.#preparedImage(image));
+            images.push({ ...(await this.#preparedImage(image)), label: image.label ?? null });
           } catch {
             built.counts.skippedImages += 1;
             built.counts.warnings += 1;
@@ -487,7 +487,7 @@ export class ImportScreen {
       this.noteRows = built.notes.map((note) => ({
         lessonID: note.lessonID, domainID: note.domainID, moduleID: note.moduleID,
         domain: note.domain ?? '', module: note.module ?? '', lesson: note.lesson ?? '',
-        html: note.html, images: note.images
+        html: note.html, ...(typeof note.htmlEN === 'string' ? { htmlEN: note.htmlEN } : {}), images: note.images
       }));
       this.#computePlan();
       return true;
@@ -1035,7 +1035,7 @@ export class ImportScreen {
       h('ul', { class: 'group__list terms', role: 'list', dataset: { testid: 'import-notes-list' } },
         noteRows.map((row, index) => {
           const status = report.statuses[index];
-          const text = noteText(row.html).replace(/\s+/g, ' ').trim();
+          const text = noteText(row.html || row.htmlEN || '').replace(/\s+/g, ' ').trim();
           const numbers = built.notes[index]?.numbers ?? [];
           const rowsLabel = numbers.length > 1 ? `Wiersze ${numbers[0]}–${numbers[numbers.length - 1]}` : `Wiersz ${numbers[0] ?? '?'}`;
           return h('li', { class: 'term term--preview note-preview' },

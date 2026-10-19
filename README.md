@@ -1,4 +1,4 @@
-# LexiCards 1.5
+# LexiCards 1.6
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -14,8 +14,9 @@ Postęp na listach i lekcje utrwalone (wersja 1.2): [docs/RELEASE-1.2.md](docs/R
 Stos fiszek, notatki w stronach, utrwalone na końcu list (wersja 1.3): [docs/RELEASE-1.3.md](docs/RELEASE-1.3.md).
 Kartki notatek zaginane od rogu, dwie strony obok siebie na komputerze (wersja 1.4): [docs/RELEASE-1.4.md](docs/RELEASE-1.4.md).
 Obrazy notatki przed tekstem albo po nim (wersja 1.5): [docs/RELEASE-1.5.md](docs/RELEASE-1.5.md).
+Sygnatury obrazów w treści notatki, notatka po angielsku, czytanie notatki na głos (wersja 1.6): [docs/RELEASE-1.6.md](docs/RELEASE-1.6.md).
 
-## Co potrafi wersja 1.5
+## Co potrafi wersja 1.6
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -77,7 +78,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.0](docs/RELEASE-1.0.md), [wersja 1.1 – notatki](docs/RELEASE-1.1.md),
 [wersja 1.2 – postęp i utrwalenie](docs/RELEASE-1.2.md), [wersja 1.3 – stos fiszek i strony notatek](docs/RELEASE-1.3.md),
 [wersja 1.4 – kartki zaginane od rogu, dwie strony](docs/RELEASE-1.4.md),
-[wersja 1.5 – obrazy notatki przed tekstem albo po nim](docs/RELEASE-1.5.md).
+[wersja 1.5 – obrazy notatki przed tekstem albo po nim](docs/RELEASE-1.5.md),
+[wersja 1.6 – sygnatury obrazów, notatka po angielsku, czytanie na głos](docs/RELEASE-1.6.md).
 
 ## Jak korzystać
 
@@ -140,12 +142,15 @@ trzeba najpierw zapisać w Excelu jako `.xlsx`.
 | Kolumna | Znaczenie |
 | --- | --- |
 | `Domain`, `Module`, `Lesson` | lekcja notatki; brakujące elementy zostaną utworzone |
-| `Note` | treść – formatowanie z Excela (pogrubienie, kursywa, podkreślenie, przekreślenie, kolor) zostaje; wiersz `---` to nowa strona |
+| `Note` | treść – formatowanie z Excela (pogrubienie, kursywa, podkreślenie, przekreślenie, kolor) zostaje; wiersz `---` to nowa strona, wiersz `[[sygnatura]]` – miejsce obrazu |
+| `Note EN` | ta sama notatka po angielsku (opcjonalnie; w aplikacji przełącznik PL / EN) |
 | `Image` | obrazy wklejone do komórki („Umieść w komórce”) albo na arkusz przy tej komórce |
+| `Image label` | sygnatura obrazu z tego wiersza, np. „Schemat bilansu” (opcjonalnie; bez niej obrazy lekcji to „Obraz 1”, „Obraz 2”… po kolei) |
 
 W treści: wiersz zaczynający się od „• ” albo „- ” to punkt listy, od „1. ” – lista numerowana, od „# ” –
 nagłówek, a pusty wiersz rozdziela akapity (nowy wiersz w komórce: Alt+Enter). Kilka wierszy z tą
-samą lekcją składa się na jedną notatkę – np. jeden obraz w wierszu. Gdy plik ma i pojęcia, i notatki,
+samą lekcją składa się na jedną notatkę – np. jeden obraz w wierszu. Plik bez kolumny `Note EN` nie
+zmienia istniejącej wersji angielskiej notatki. Gdy plik ma i pojęcia, i notatki,
 kreator pyta, co zaimportować; w kroku „Sprawdź notatki” widać podgląd każdej notatki z obrazami
 i można zdecydować, co zrobić z lekcjami, które mają już notatkę (zastąpić, dopisać, zostawić).
 Obrazy w formatach EMF i WMF (Windows) są pomijane z ostrzeżeniem – zapisz je jako PNG albo JPEG.
@@ -158,7 +163,24 @@ fiszek (ikona u góry). Okno pokazuje tekst i obrazy; dotknięcie obrazu powięk
 dwukrotne dotknięcie). **Edytuj** pokazuje u góry sekcję obrazów – **Dodaj obraz** (zdjęcie, plik,
 aparat), dotknięcie obrazu – powiększ, przesuń, usuń – a pod nią tekst z paskiem formatowania. Przy
 obrazach wybierasz, gdzie są w podglądzie: **Przed tekstem** albo **Po tekście** (domyślnie po
-tekście; wybór jest zapisany w notatce). Duże zdjęcia są zmniejszane do 2048 px dłuższego boku. Wklejony tekst zachowuje formatowanie (bez skryptów, stylów i obrazów z sieci).
+tekście; wybór jest zapisany w notatce). Duże zdjęcia są zmniejszane do 2048 px dłuższego boku.
+
+**Sygnatury obrazów:** każdy obraz ma sygnaturę widoczną na miniaturze – „Obraz 1”, „Obraz 2”…
+(nadaną przy dodaniu, więc nie zmienia się przy przesuwaniu obrazów); w menu obrazu **Zmień
+sygnaturę** nadaje własną, np. „Schemat bilansu”. Linijka `[[Schemat bilansu]]` w tekście to miejsce
+obrazu w podglądzie – **Wstaw do tekstu** w menu obrazu wpisuje ją w miejscu kursora. Wielkość liter
+i polskie znaki w odwołaniu nie mają znaczenia; po zmianie sygnatury odwołania zmieniają się same.
+Odwołanie do sygnatury, której notatka nie ma, jest w podglądzie czerwone. Obrazy bez odwołania są
+przed tekstem albo po nim – według wyboru przy obrazach.
+
+**Notatka po angielsku:** w edytorze nad tekstem jest przełącznik **Polski / Angielski** – każda
+wersja ma osobną treść, obrazy są wspólne. W podglądzie notatki z obiema wersjami przełącznik
+**PL / EN** obok nazwy lekcji; wybór jest zapamiętany. „Kopiuj notatkę” kopiuje widoczną wersję.
+
+**Czytanie na głos:** przycisk z głośnikiem obok nazwy lekcji czyta widoczną wersję notatki głosem
+z Ustawień (synteza mowy urządzenia, bez internetu), zdanie po zdaniu, od widocznej strony: czytany
+akapit jest wyróżniony, a strony przewracają się same. Ten sam przycisk zatrzymuje i wznawia
+czytanie. Wklejony tekst zachowuje formatowanie (bez skryptów, stylów i obrazów z sieci).
 
 Długa notatka dzieli się na strony o wysokości okna: przewracasz je, przeciągając stronę palcem
 w lewo lub w prawo, przyciskami ‹ › pod stroną albo klawiszami ←/→ (Home i End – pierwsza
@@ -339,6 +361,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 10. **Wersja 1.3: stos fiszek, notatki w stronach, utrwalone na końcu list** – gotowe.
 11. **Wersja 1.4: kartki notatek zaginane od rogu, dwie strony obok siebie na komputerze** – gotowe.
 12. **Wersja 1.5: obrazy notatki na górze edytora, w podglądzie przed tekstem albo po nim** – gotowe.
+13. **Wersja 1.6: sygnatury obrazów i odwołania w treści, notatka po angielsku, czytanie notatki na głos** – gotowe.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

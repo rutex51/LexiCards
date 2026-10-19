@@ -52,5 +52,4 @@ Testy wersji 1.5.1:
 ## Do decyzji
 
 - Sygnatury obrazów: obraz w dowolnym miejscu treści przez odwołanie do jego sygnatury (także
-  z arkusza Excela) – sprawdzone, że jest możliwe; czeka na decyzję co do zapisu, nic jeszcze
-  nie jest zrobione.
+  z arkusza Excela) – zrobione w wersji 1.6 ([RELEASE-1.6.md](RELEASE-1.6.md)).

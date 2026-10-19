@@ -128,6 +128,7 @@ export function defaultSettings() {
     desiredRetention: 0.9,         // FSRS: docelowa szansa przypomnienia w dniu powtórki
     consolidatedReviewDays: 30,    // lekcje oznaczone jako utrwalone: fiszki wracają najwcześniej po tylu dniach
     noteSpread: true,              // notatka na dużym ekranie: dwie strony obok siebie
+    noteLanguage: 'pl',            // wersja notatki w podglądzie: pl | en (gdy notatka ma obie)
     domainColorsGray: true,        // wersja 1.2: tło ikon istniejących dziedzin zmienione jednorazowo na szare
     studySelection: null,          // ostatnio wybrany materiał: { domainID, moduleID, lessonIDs }
     lastBackupAt: null,
@@ -261,8 +262,8 @@ export function makeNoteImage(lessonID, image, crc) {
   };
 }
 
-/** Opis obrazu przechowywany w notatce (bez bajtów). */
-export function noteImageMeta(record) {
+/** Opis obrazu przechowywany w notatce (bez bajtów); `label` – sygnatura obrazu w notatce (od 1.6). */
+export function noteImageMeta(record, label = null) {
   return {
     id: record.id,
     type: record.type,
@@ -270,7 +271,8 @@ export function noteImageMeta(record) {
     height: record.height ?? null,
     size: record.size ?? 0,
     crc: record.crc ?? null,
-    name: record.name ?? null
+    name: record.name ?? null,
+    label: label ?? null
   };
 }
 

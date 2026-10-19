@@ -41,6 +41,7 @@ js/core/exporter.js        zakres eksportu → plik XLSX (z arkuszem notatek) lu
 js/core/note-format.js     treść notatki: bezpieczny HTML ↔ dokument ↔ tekst sformatowany komórki arkusza
 js/core/note-import.js     arkusz notatek: rozpoznanie, wiersze → notatki lekcji z obrazami
 js/core/page-curl.js       zaginana kartka notatki: chwyt, zgięcie, odbicie płata, ograniczenia papieru
+js/core/note-refs.js       sygnatury obrazów notatki i odwołania [[sygnatura]] w treści
 js/core/images.js          format i wymiary obrazu z nagłówka pliku
 js/core/study.js           fiszki: dobór do sesji, treść stron, ocena, postęp, podsumowanie
 js/core/fsrs.js            algorytm powtórek FSRS-6 (przeniesiony z py-fsrs 6.3.2)
@@ -69,7 +70,7 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | `studySessions` | dziennik zakończonych sesji nauki | – |
 | `quizSessions` | historia wyników quizów: rodzaj, kierunek, liczby odpowiedzi, procent, próg, zaliczenie, czas, limit, błędne pojęcia | – |
 | `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki i quizu (od 1.2 okres powtórek lekcji utrwalonych `consolidatedReviewDays` i znacznik `domainColorsGray`), trwająca sesja nauki i trwający quiz | – |
-| `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML, opis obrazów (typ, wymiary, rozmiar, CRC-32) i `imagesFirst` – obrazy w podglądzie przed tekstem (od 1.5) – w pamięci | identyfikator = `lessonID` |
+| `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML (`html` po polsku, od 1.6 `htmlEN` po angielsku), opis obrazów (typ, wymiary, rozmiar, CRC-32, od 1.6 `label` – sygnatura) i `imagesFirst` – obrazy bez odwołania w podglądzie przed tekstem (od 1.5) – w pamięci | identyfikator = `lessonID` |
 | `noteImages` | bajty obrazów notatek (`ArrayBuffer`) – czytane z bazy dopiero przy otwarciu notatki | `lessonID` |
 
 Decyzje:
@@ -223,6 +224,13 @@ w arkuszu i wczytać z powrotem.
   samymi mapami nazw – notatka trafia też do lekcji, którą tworzą pojęcia z tego samego pliku.
   Sama nazwa lekcji (bez dziedziny i modułu) musi wskazywać dokładnie jedną lekcję. Lekcja z
   notatką: zastąp (domyślnie), dopisz albo pomiń; ta sama treść i te same obrazy (CRC-32) – „bez zmian”.
+- **Od 1.6** arkusz ma też kolumny `Note EN` (wersja angielska; `guessNoteField` rozpoznaje język
+  jak w arkuszu pojęć – „Note EN”, „Notatka po angielsku”) i `Image label` (sygnatura obrazu z tego
+  wiersza; „Label”, „Sygnatura”, „Etykieta”). Nagłówek „Note EN” nie jest już brany za kolumnę
+  pojęcia (`guessField` pomija język przy nazwach pól innych niż pojęcie). Wiersz komórki z samym
+  `[[…]]` jest zawsze osobnym akapitem (także po pojedynczym Alt+Enter). Arkusz bez `Note EN` nie
+  zmienia wersji angielskiej istniejącej notatki (pole `htmlEN` nie trafia do importu), a eksport
+  zapisuje obie wersje i sygnatury – import odtwarza notatkę bez zmian (test).
 
 ### Treść notatki
 
@@ -235,6 +243,32 @@ porządkuje `DOMParser`. Edytor to `contenteditable` z `document.execCommand` (c
 działa), kolory zapisane są nazwą, więc w ciemnym motywie są jaśniejsze. „Kopiuj notatkę”
 kładzie do schowka HTML z kolorami w stylu i obrazami jako `data:` (przed tekstem albo po nim,
 jak w podglądzie) oraz zwykły tekst.
+
+Od 1.6 **sygnatury i odwołania** (`js/core/note-refs.js`): każdy obraz ma w notatce `label` –
+brakujący albo powtórzony dostaje kolejną wolną „Obraz N” (`withImageLabels`, przy zapisie, w kopii
+zapasowej i przy odczycie starych notatek), więc sygnatura nie zmienia się przy przesuwaniu obrazów.
+Akapit z samym `[[sygnatura]]` (`referenceLabel`; porównanie `labelKey` – bez wielkości liter,
+znaków diakrytycznych i odstępów) to w podglądzie obraz (`contentUnits` w `note-book.js`); odwołanie
+bez obrazu zostaje tekstem z klasą `note-ref--missing` (czerwony), a obrazy bez odwołania idą przed
+tekst albo za niego. W edytorze miniatura pokazuje sygnaturę, menu obrazu ma „Wstaw do tekstu”
+(akapit z odwołaniem w miejscu kursora – ta sama funkcja co „Nowa strona”: `insertBlock`) i „Zmień
+sygnaturę” (jedyna w notatce; `renameReferences` zmienia odwołania w obu wersjach językowych).
+„Kopiuj notatkę” wstawia obrazy w miejsca odwołań.
+
+Od 1.6 **wersja angielska**: `htmlEN` obok `html`; w edytorze przełącznik Polski / Angielski zamienia
+treść jednego pola `contenteditable` (stan drugiej wersji jest w pamięci edytora; zmiana języka
+kończy historię cofania), z `lang` pola dla sprawdzania pisowni. Podgląd: przełącznik PL / EN, gdy
+notatka ma obie wersje; wybór w ustawieniach (`noteLanguage`), a gdy wybranej wersji nie ma –
+pokazuje się ta, która jest. Zapis bez `htmlEN` (import) zostawia wersję angielską.
+
+Od 1.6 **czytanie na głos** (`noteReader` w `js/ui/notes.js`): fragmenty z `book.readingParts()`
+(nagłówki, akapity, punkty list – bez list zagnieżdżonych i odwołań bez obrazu) dzielone na zdania,
+czytane po kolei przez `speakThen()` (głos i tempo z Ustawień, język wersji) – pierwsza wypowiedź
+pada w obsłudze dotknięcia (wymóg Safari). Start od pierwszego fragmentu widocznej strony; czytany
+akapit ma klasę `note-reading`, a `book.showPage()` przewraca kartkę, gdy czytanie przechodzi na
+następną stronę. Pauza przerywa zdanie i wznawia od niego; po ponownym podziale na strony (obrót
+telefonu) czytanie idzie dalej od widocznej strony. Zmiana wersji, edycja i zamknięcie okna kończą
+czytanie.
 
 Od 1.5 w edytorze sekcja obrazów jest na górze, nad tekstem, a przy obrazach jest wybór „W podglądzie:
 Przed tekstem / Po tekście” (`imagesFirst` w notatce, domyślnie po tekście). Zapis bez tego pola

@@ -9,6 +9,7 @@ import { base64ToBytes, bytesToBase64 } from './base64.js';
 import { LibraryError } from './library.js';
 import { imageInfo } from './images.js';
 import { normalizeNoteHtml } from './note-format.js';
+import { withImageLabels } from './note-refs.js';
 import { blankToNull, collapseWhitespace, normalizeKey } from './text.js';
 
 export const BACKUP_FORMAT = 'lexicards-backup';
@@ -173,17 +174,22 @@ export function validateBackup(raw) {
     const metas = (Array.isArray(record.images) ? record.images : []).filter((meta) => meta && images.has(meta.id) && !usedImages.has(meta.id));
     for (const meta of metas) usedImages.add(meta.id);
     const html = normalizeNoteHtml(typeof record.html === 'string' ? record.html : '');
-    if (html === '' && metas.length === 0) continue;
+    const htmlEN = normalizeNoteHtml(typeof record.htmlEN === 'string' ? record.htmlEN : '');
+    if (html === '' && htmlEN === '' && metas.length === 0) continue;
     data.notes.push({
       ...record,
       id: lessonID,
       lessonID,
       html,
+      htmlEN,
       imagesFirst: record.imagesFirst === true,
-      images: metas.map((meta) => {
+      images: withImageLabels(metas.map((meta) => {
         const image = images.get(meta.id);
-        return { id: meta.id, type: image.type, width: image.width ?? null, height: image.height ?? null, size: image.size, crc: image.crc ?? null, name: image.name ?? null };
-      }),
+        return {
+          id: meta.id, type: image.type, width: image.width ?? null, height: image.height ?? null, size: image.size,
+          crc: image.crc ?? null, name: image.name ?? null, label: typeof meta.label === 'string' ? meta.label : null
+        };
+      })),
       createdAt: record.createdAt ?? nowISO(),
       updatedAt: record.updatedAt ?? record.createdAt ?? nowISO()
     });

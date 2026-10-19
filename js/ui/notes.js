@@ -1,5 +1,6 @@
-// Notatka lekcji: okno z podglądem (tekst z formatowaniem i obrazy), edytor z paskiem
-// formatowania, powiększanie obrazów oraz elementy pokazujące notatkę na listach.
+// Notatka lekcji: okno z podglądem (tekst z formatowaniem i obrazy, po polsku i po angielsku,
+// czytanie na głos), edytor z paskiem formatowania, powiększanie obrazów oraz elementy
+// pokazujące notatkę na listach.
 //
 // Edytor to pole contenteditable obsługiwane przez document.execCommand – jedyny sposób na
 // formatowanie z cofaniem (Ctrl+Z) bez dodatkowych bibliotek. Treść przy wklejaniu i zapisie
@@ -8,13 +9,17 @@
 import { NOTE_IMAGE_LIMIT } from '../core/model.js';
 import { bytesToBase64 } from '../core/base64.js';
 import { NOTE_COLORS, PAGE_BREAK_LINE, isEmptyNoteHtml, noteText, normalizeNoteHtml, portableNoteHtml } from '../core/note-format.js';
+import {
+  IMAGE_LABEL_MAX, cleanImageLabel, findImageByLabel, labelKey, referenceLabel, referenceToken, renameReferences, withImageLabels
+} from '../core/note-refs.js';
 import { pluralImages } from '../core/text.js';
-import { iconButton, segmented } from './components.js';
-import { confirmDialog, mountDialog, openMenu, showError, toast } from './dialogs.js';
+import { field, iconButton, segmented, textInput } from './components.js';
+import { confirmDialog, mountDialog, openFormSheet, openMenu, showError, toast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
 import { prepareImage, urlPool } from './images.js';
 import { noteBook } from './note-book.js';
+import { speakThen, speechAvailable, stopSpeaking } from './speech.js';
 
 let titleCounter = 0;
 
@@ -39,7 +44,8 @@ const FORMAT_BUTTONS = [
 
 /** Krótki opis notatki: początek tekstu (akapity w osobnych wierszach) albo liczba obrazów. */
 export function noteSummary(note) {
-  const text = noteText(note.html).split('\n').filter((line) => line.trim() !== PAGE_BREAK_LINE).join('\n')
+  const source = isEmptyNoteHtml(note.html) ? (note.htmlEN ?? '') : note.html;
+  const text = noteText(source).split('\n').filter((line) => line.trim() !== PAGE_BREAK_LINE && referenceLabel(line) === null).join('\n')
     .replace(/\n\s*\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
   if (text) return text.length > 160 ? `${text.slice(0, 160)}…` : text;
   return pluralImages(note.images.length);
@@ -103,17 +109,35 @@ export function noteMenuItem(ctx, lesson) {
 
 // ---------------------------------------------------------------- schowek
 
-async function copyNote(note, images) {
-  const text = noteText(note.html);
-  let pictures = '';
+/**
+ * Kopiuje wersję notatki w danym języku: HTML z obrazami w tych samych miejscach co w podglądzie
+ * (odwołania [[sygnatura]] zamienione na obrazy, pozostałe obrazy przed tekstem albo po nim)
+ * i zwykły tekst.
+ */
+async function copyNote(note, images, language = 'pl') {
+  const source = language === 'en' ? (note.htmlEN ?? '') : note.html;
+  const text = noteText(source);
+  const labeled = withImageLabels(images);
   let total = 0;
-  for (const image of images) {
+  const picture = (image) => {
     total += image.bytes.byteLength;
-    if (total > CLIPBOARD_IMAGE_BYTES) break;
-    pictures += `<p><img src="data:${image.type};base64,${bytesToBase64(image.bytes)}" alt="" style="max-width:100%"></p>`;
+    if (total > CLIPBOARD_IMAGE_BYTES) return '';
+    return `<p><img src="data:${image.type};base64,${bytesToBase64(image.bytes)}" alt="" style="max-width:100%"></p>`;
+  };
+  const holder = document.createElement('template');
+  holder.innerHTML = portableNoteHtml(source);
+  const placed = new Set();
+  for (const paragraph of holder.content.querySelectorAll('p')) {
+    const label = referenceLabel(paragraph.textContent);
+    const index = label === null ? -1 : findImageByLabel(labeled, label);
+    if (index < 0) continue;
+    placed.add(index);
+    const replacement = document.createElement('template');
+    replacement.innerHTML = picture(labeled[index]);
+    paragraph.replaceWith(replacement.content);
   }
-  // Obrazy w tym samym miejscu co w podglądzie: przed tekstem albo po nim.
-  const html = note.imagesFirst ? pictures + portableNoteHtml(note.html) : portableNoteHtml(note.html) + pictures;
+  const rest = labeled.map((image, index) => (placed.has(index) ? '' : picture(image))).join('');
+  const html = note.imagesFirst ? rest + holder.innerHTML : holder.innerHTML + rest;
   try {
     if (typeof window.ClipboardItem === 'function' && navigator.clipboard?.write) {
       await navigator.clipboard.write([new window.ClipboardItem({
@@ -298,6 +322,92 @@ function focusPanel(panel) {
   panel.focus({ preventScroll: true });
 }
 
+// ---------------------------------------------------------------- czytanie na głos
+
+/** Zdania tekstu – czytanie kawałkami, żeby pauza i wznowienie nie cofały o cały akapit. */
+function sentences(text) {
+  const parts = text.match(/[^.!?…]+(?:[.!?…]+["”»)]*|$)/g) ?? [];
+  const result = parts.map((part) => part.trim()).filter(Boolean);
+  return result.length > 0 ? result : [text];
+}
+
+/**
+ * Czytanie notatki na głos (synteza mowy urządzenia, głos i tempo z Ustawień): zdanie po
+ * zdaniu, od pierwszej widocznej strony. Czytany akapit jest wyróżniony, a strony przewracają
+ * się same. Zwraca { playing, play(), pause(), stop() }; onChange(playing) – zmiana stanu.
+ */
+function noteReader(book, language, settings, onChange) {
+  let parts = [];
+  let position = 0;
+  let version = -1;
+  let cancel = null;
+  let marked = null;
+  const reader = { playing: false };
+
+  const mark = (element) => {
+    if (marked === element) return;
+    marked?.classList.remove('note-reading');
+    marked = element;
+    marked?.classList.add('note-reading');
+  };
+  const load = () => {
+    parts = book.readingParts().flatMap((part) => sentences(part.text).map((text) => ({ ...part, text })));
+    version = book.version;
+  };
+  /** Gdy bieżący fragment nie jest na widocznej stronie – od pierwszego fragmentu tej strony. */
+  const fromVisible = () => {
+    const visible = book.visiblePages();
+    if (parts[position] && visible.includes(parts[position].page)) return;
+    const found = parts.findIndex((part) => visible.includes(part.page));
+    position = found >= 0 ? found : 0;
+  };
+  const step = () => {
+    if (!reader.playing) return;
+    if (version !== book.version) {
+      // Strony podzielone od nowa (np. obrót telefonu) – dalej od widocznej strony.
+      load();
+      fromVisible();
+    }
+    const part = parts[position];
+    if (!part) {
+      reader.stop();
+      return;
+    }
+    mark(part.element);
+    book.showPage(part.page);
+    cancel = speakThen(part.text, language, settings(), () => {
+      cancel = null;
+      if (!reader.playing) return;
+      position += 1;
+      step();
+    });
+  };
+
+  reader.play = () => {
+    if (reader.playing) return;
+    if (version !== book.version || parts.length === 0) load();
+    if (position >= parts.length) position = 0;
+    fromVisible();
+    reader.playing = true;
+    onChange(true);
+    step();
+  };
+  reader.pause = () => {
+    if (!reader.playing) return;
+    reader.playing = false;
+    cancel?.();
+    cancel = null;
+    stopSpeaking();
+    onChange(false);
+  };
+  reader.stop = () => {
+    reader.pause();
+    mark(null);
+    position = 0;
+  };
+  return reader;
+}
+
 // ---------------------------------------------------------------- okno notatki
 
 /**
@@ -317,6 +427,9 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
     let mode = null;
     let editor = null;
     let book = null;
+    let reader = null;
+    /** Wersja językowa w podglądzie ('pl' | 'en'); null – ostatnio wybrana w aplikacji. */
+    let language = null;
     let dialog;
 
     const leftButton = h('button', { type: 'button', class: 'button button--plain', dataset: { testid: 'note-left' } });
@@ -334,13 +447,26 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       stored = images.map((image) => ({ ...image, stored: true, url: urls.add(image) }));
     };
 
-    const heading = () => {
+    /** Ścieżka i nazwa lekcji; tools – przełącznik języka i czytanie (w podglądzie). */
+    const heading = (tools = null) => {
       const path = library.lessonPath(lessonID).split(' › ');
       const current = library.getLesson(lessonID);
       return h('div', { class: 'note-sheet__heading' },
-        path.length > 1 ? h('p', { class: 'note-sheet__path' }, path.slice(0, -1).join(' › ')) : null,
-        h('h3', { class: 'note-sheet__lesson' }, current?.name ?? lesson.name)
+        h('div', { class: 'note-sheet__titles' },
+          path.length > 1 ? h('p', { class: 'note-sheet__path' }, path.slice(0, -1).join(' › ')) : null,
+          h('h3', { class: 'note-sheet__lesson' }, current?.name ?? lesson.name)
+        ),
+        tools
       );
+    };
+
+    /** Wersja do pokazania: wybrana, a gdy jej nie ma w notatce – ta, która jest. */
+    const pickLanguage = (note) => {
+      const has = { pl: !isEmptyNoteHtml(note.html), en: !isEmptyNoteHtml(note.htmlEN ?? '') };
+      const wanted = language ?? (library.getSettings().noteLanguage === 'en' ? 'en' : 'pl');
+      if (has[wanted]) return wanted;
+      if (has.pl) return 'pl';
+      return has.en ? 'en' : 'pl';
     };
 
     const close = () => dialog.close('done');
@@ -374,6 +500,8 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
     };
 
     function showView() {
+      reader?.stop();
+      reader = null;
       const note = library.getNote(lessonID);
       if (!note) {
         close();
@@ -386,24 +514,27 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       leftButton.textContent = 'Zamknij';
       rightButton.textContent = 'Edytuj';
       rightButton.disabled = false;
+      language = pickLanguage(note);
+      const html = language === 'en' ? (note.htmlEN ?? '') : note.html;
       // Treść jest normalizowana przed wstawieniem – tylko bezpieczne znaczniki notatki.
       book = noteBook({
-        html: note.html,
+        html,
         images: stored,
         imagesFirst: note.imagesFirst === true,
+        language,
         onOpenImage: (index) => openLightbox(stored, index),
         onLayout: setPaged,
         spread: library.getSettings().noteSpread !== false,
         onSpreadChange: (spread) => library.updateSettings({ noteSpread: spread }).catch((error) => console.error(error))
       });
       replaceChildren(body,
-        heading(),
+        heading(viewTools(note, html)),
         book.element,
         h('div', { class: 'note-sheet__footer' },
-          note.html
+          !isEmptyNoteHtml(html)
             ? h('button', {
                 type: 'button', class: 'button button--secondary note-sheet__copy', dataset: { testid: 'note-copy' },
-                onClick: () => copyNote(note, stored)
+                onClick: () => copyNote(note, stored, language)
               }, icon('copy', { size: 18 }), h('span', null, 'Kopiuj notatkę'))
             : null,
           book.pager
@@ -412,8 +543,42 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       book.layout();
     }
 
+    /** Przełącznik PL / EN (gdy notatka ma obie wersje) i czytanie na głos. */
+    function viewTools(note, html) {
+      const tools = [];
+      if (!isEmptyNoteHtml(note.html) && !isEmptyNoteHtml(note.htmlEN ?? '')) {
+        tools.push(h('div', { class: 'note-sheet__language', dataset: { testid: 'note-language' } }, segmented({
+          name: `${titleID}-language`,
+          label: 'Język notatki',
+          value: language,
+          options: [{ value: 'pl', label: 'PL' }, { value: 'en', label: 'EN' }],
+          onChange: (value) => {
+            language = value;
+            library.updateSettings({ noteLanguage: value }).catch((error) => console.error(error));
+            showView();
+          }
+        })));
+      }
+      if (speechAvailable() && !isEmptyNoteHtml(html)) {
+        const button = iconButton('speaker', 'Czytaj notatkę na głos', () => (reader.playing ? reader.pause() : reader.play()),
+          { className: 'note-sheet__listen', pressed: false });
+        button.dataset.testid = 'note-listen';
+        reader = noteReader(book, language, () => library.getSettings(), (playing) => {
+          button.setAttribute('aria-pressed', String(playing));
+          const label = playing ? 'Zatrzymaj czytanie' : 'Czytaj notatkę na głos';
+          button.setAttribute('aria-label', label);
+          button.title = label;
+          replaceChildren(button, icon(playing ? 'pause' : 'speaker'));
+        });
+        tools.push(button);
+      }
+      return tools.length > 0 ? h('div', { class: 'note-sheet__tools' }, tools) : null;
+    }
+
     function showEdit() {
       mode = 'edit';
+      reader?.stop();
+      reader = null;
       book?.destroy();
       book = null;
       setPaged(null);
@@ -423,9 +588,12 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       editor?.destroy();
       editor = noteEditor({
         html: note?.html ?? '',
+        htmlEN: note?.htmlEN ?? '',
+        language: language ?? 'pl',
         images: stored,
         imagesFirst: note?.imagesFirst === true,
-        urls
+        urls,
+        titleID
       });
       replaceChildren(body,
         heading(),
@@ -465,6 +633,8 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       try {
         const draft = editor.draft();
         const saved = await library.saveNote(lessonID, draft);
+        // Po zapisie podgląd w języku, w którym była edytowana treść (jeśli ta wersja nie jest pusta).
+        language = editor.language();
         await loadImages();
         if (!saved) {
           toast('Notatka jest pusta – usunięto ją.');
@@ -501,6 +671,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
     dialog = mountDialog('sheet note-dialog', panel, {
       onDismiss: () => requestClose(),
       onClose: () => {
+        reader?.stop();
         editor?.destroy();
         book?.destroy();
         urls.release();
@@ -528,15 +699,19 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
  * Edytor notatki: pasek formatowania, pole tekstu i obrazy.
  * Zwraca { element, draft(), dirty(), busy(), focus(), destroy() }.
  */
-function noteEditor({ html, images, urls, imagesFirst = false }) {
-  const initialHtml = normalizeNoteHtml(html);
+function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFirst = false, titleID = 'note' }) {
+  const initialTexts = { pl: normalizeNoteHtml(html), en: normalizeNoteHtml(htmlEN) };
   const state = {
-    images: images.map((image) => ({ ...image })),
+    images: withImageLabels(images.map((image) => ({ ...image }))),
     imagesFirst,
+    /** Treść obu wersji językowych; w polu jest wersja `language` (jej stan jest w polu). */
+    texts: { ...initialTexts },
+    language: language === 'en' ? 'en' : 'pl',
     pending: 0,
     range: null
   };
-  const initialImages = state.images.map((image) => image.id).join(',');
+  const imagesKey = () => state.images.map((image) => `${image.id ?? image.url}:${image.label}`).join(',');
+  const initialImages = imagesKey();
 
   const area = h('div', {
     class: 'note-text note-editor__area',
@@ -545,10 +720,20 @@ function noteEditor({ html, images, urls, imagesFirst = false }) {
     'aria-multiline': 'true',
     'aria-label': 'Treść notatki',
     spellcheck: 'true',
-    lang: 'pl',
-    dataset: { testid: 'note-editor', placeholder: 'Wpisz albo wklej treść notatki…' }
+    lang: state.language,
+    dataset: { testid: 'note-editor' }
   });
-  area.innerHTML = initialHtml || '<p><br></p>';
+
+  /** Pole pokazuje wersję w danym języku (podpowiedź, język sprawdzania pisowni, etykieta). */
+  const showLanguage = (value) => {
+    state.language = value;
+    area.innerHTML = state.texts[value] || '<p><br></p>';
+    area.lang = value;
+    area.dataset.placeholder = value === 'en' ? 'Treść notatki po angielsku…' : 'Wpisz albo wklej treść notatki…';
+    area.setAttribute('aria-label', value === 'en' ? 'Treść notatki po angielsku' : 'Treść notatki');
+    state.range = null;
+  };
+  showLanguage(state.language);
 
   const syncEmpty = () => area.classList.toggle('note-editor__area--empty', area.textContent.trim() === '' && !area.querySelector('li'));
 
@@ -582,7 +767,7 @@ function noteEditor({ html, images, urls, imagesFirst = false }) {
             return;
           }
           if (definition.command === 'pageBreak') {
-            insertPageBreak();
+            insertBlock(h('hr', { 'data-page': '' }));
             return;
           }
           if (definition.command === 'heading') {
@@ -617,17 +802,17 @@ function noteEditor({ html, images, urls, imagesFirst = false }) {
   }
 
   /**
-   * „Nowa strona” zawsze między blokami: na końcu bloku – linia i pusty akapit do pisania dalej;
-   * w środku akapitu – akapit dzieli się na dwa; w liście – lista dzieli się po bieżącym punkcie.
+   * „Nowa strona” i odwołanie do obrazu zawsze między blokami: na końcu bloku – wstawiony blok
+   * i pusty akapit do pisania dalej; w środku akapitu – akapit dzieli się na dwa; w liście – lista
+   * dzieli się po bieżącym punkcie. Bez kursora w tekście – na końcu.
    */
-  function insertPageBreak() {
+  function insertBlock(inserted) {
     restoreSelection();
     const selection = window.getSelection();
     const range = selection.rangeCount ? selection.getRangeAt(0) : null;
     let block = range && area.contains(range.startContainer) ? range.startContainer : area.lastChild;
     if (block === area) block = area.childNodes[Math.max(0, range.startOffset - 1)] ?? area.lastChild;
     while (block && block.parentNode !== area) block = block.parentNode;
-    const rule = h('hr', { 'data-page': '' });
     const empty = h('p', null, h('br'));
     let after = [empty];
     let caretTarget = empty;
@@ -655,8 +840,8 @@ function noteEditor({ html, images, urls, imagesFirst = false }) {
       }
       if (block.textContent === '' && !block.querySelector('br')) block.append(h('br'));
     }
-    if (block) block.after(rule, ...after);
-    else area.append(rule, ...after);
+    if (block) block.after(inserted, ...after);
+    else area.append(inserted, ...after);
     const caret = document.createRange();
     caret.setStart(caretTarget, 0);
     caret.collapse(true);
@@ -749,13 +934,46 @@ function noteEditor({ html, images, urls, imagesFirst = false }) {
     renderImages();
   };
 
+  /** Odwołanie [[sygnatura]] w osobnej linijce w miejscu kursora (bez kursora – na końcu tekstu). */
+  const insertReference = (image) => insertBlock(h('p', null, referenceToken(image.label)));
+
+  /** Zmiana sygnatury obrazu; odwołania w obu wersjach treści dostają nową sygnaturę. */
+  function renameImage(image) {
+    let value = image.label;
+    const input = textInput({ value, onInput: (text) => { value = text; }, autocapitalize: 'sentences', testID: 'note-image-label' });
+    input.maxLength = IMAGE_LABEL_MAX;
+    openFormSheet({
+      title: 'Sygnatura obrazu',
+      build: () => field('Sygnatura', input, { hint: `W tekście obraz wstawisz linijką ${referenceToken(image.label)} – po zmianie sygnatury odwołania zmienią się same.` }),
+      onSubmit: () => {
+        const label = cleanImageLabel(value);
+        if (label === '') throw new Error('Wpisz sygnaturę obrazu.');
+        if (state.images.some((other) => other !== image && labelKey(other.label) === labelKey(label))) {
+          throw new Error('Inny obraz tej notatki ma już tę sygnaturę.');
+        }
+        const previous = image.label;
+        image.label = label;
+        state.texts[state.language] = areaHtml();
+        for (const key of ['pl', 'en']) state.texts[key] = renameReferences(state.texts[key], previous, label);
+        if (areaHtml() !== state.texts[state.language]) {
+          area.innerHTML = state.texts[state.language] || '<p><br></p>';
+          state.range = null;
+        }
+        renderImages();
+      }
+    });
+    requestAnimationFrame(() => input.select());
+  }
+
   function renderImages() {
     const tiles = state.images.map((image, index) => h('div', { class: 'note-images__item' },
       h('button', {
-        type: 'button', class: 'note-images__open', 'aria-label': `Obraz ${index + 1} z ${state.images.length} – polecenia`,
+        type: 'button', class: 'note-images__open', 'aria-label': `${image.label} – polecenia`,
         onClick: () => openMenu({
-          title: `Obraz ${index + 1} z ${state.images.length}`,
+          title: image.label,
           items: [
+            { label: 'Wstaw do tekstu', icon: 'note', onSelect: () => insertReference(image) },
+            { label: 'Zmień sygnaturę', icon: 'edit', onSelect: () => renameImage(image) },
             { label: 'Powiększ', icon: 'zoomIn', onSelect: () => openLightbox(state.images, index) },
             { label: 'Przesuń wcześniej', icon: 'arrowLeft', disabled: index === 0, onSelect: () => moveImage(index, -1) },
             { label: 'Przesuń dalej', icon: 'arrowRight', disabled: index === state.images.length - 1, onSelect: () => moveImage(index, 1) },
@@ -765,9 +983,10 @@ function noteEditor({ html, images, urls, imagesFirst = false }) {
         })
       }, h('img', { src: image.url, alt: '' })),
       h('button', {
-        type: 'button', class: 'note-images__remove', 'aria-label': `Usuń obraz ${index + 1}`, dataset: { testid: 'note-image-remove' },
+        type: 'button', class: 'note-images__remove', 'aria-label': `Usuń obraz ${image.label}`, dataset: { testid: 'note-image-remove' },
         onClick: () => { state.images.splice(index, 1); renderImages(); }
-      }, icon('close', { size: 14 }))
+      }, icon('close', { size: 14 })),
+      h('span', { class: 'note-images__label', dataset: { testid: 'note-image-label-text' } }, image.label)
     ));
     for (let index = 0; index < state.pending; index += 1) {
       tiles.push(h('div', { class: 'note-images__item note-images__item--pending', 'aria-hidden': 'true' }, h('span', { class: 'note-images__spinner' })));
@@ -791,7 +1010,8 @@ function noteEditor({ html, images, urls, imagesFirst = false }) {
     for (const file of accepted) {
       try {
         const prepared = await prepareImage(file, { name: file.name || null });
-        state.images.push({ ...prepared, stored: false, url: urls.add(prepared) });
+        // Nowy obraz dostaje kolejną wolną sygnaturę „Obraz N”.
+        state.images = withImageLabels([...state.images, { ...prepared, stored: false, url: urls.add(prepared), label: null }]);
       } catch (error) {
         toast(error?.message ?? 'Nie udało się dodać obrazu.', { kind: 'error' });
       } finally {
@@ -818,7 +1038,10 @@ function noteEditor({ html, images, urls, imagesFirst = false }) {
     grid,
     status,
     placement,
-    h('p', { class: 'field__hint' }, 'Dotknij obrazu, żeby go powiększyć, przesunąć albo usunąć. Obraz możesz też wkleić do tekstu – trafi tutaj.'),
+    h('p', { class: 'field__hint' },
+      'Dotknij obrazu, żeby wstawić go do tekstu, zmienić sygnaturę, powiększyć, przesunąć albo usunąć. Linijka ',
+      h('code', null, '[[sygnatura]]'),
+      ' w tekście to miejsce obrazu w notatce; obrazy bez odwołania są przed tekstem albo po nim. Obraz możesz też wkleić do tekstu – trafi tutaj.'),
     fileInput
   );
 
@@ -826,7 +1049,20 @@ function noteEditor({ html, images, urls, imagesFirst = false }) {
   const element = h('div', { class: 'note-editor' },
     imagesSection,
     h('section', { class: 'note-editor__text' },
-      h('h3', { class: 'form-group__title' }, 'Tekst'),
+      h('div', { class: 'note-editor__text-head' },
+        h('h3', { class: 'form-group__title' }, 'Tekst'),
+        h('div', { class: 'note-editor__language', dataset: { testid: 'note-edit-language' } }, segmented({
+          name: `${titleID}-edit-language`,
+          label: 'Język treści',
+          value: state.language,
+          options: [{ value: 'pl', label: 'Polski' }, { value: 'en', label: 'Angielski' }],
+          onChange: (value) => {
+            state.texts[state.language] = areaHtml();
+            showLanguage(value);
+            syncEmpty();
+          }
+        }))
+      ),
       h('div', { class: 'note-editor__toolbar' }, toolbar, colorPanel),
       area
     )
@@ -855,25 +1091,36 @@ function noteEditor({ html, images, urls, imagesFirst = false }) {
     return normalizeNoteHtml(area.innerHTML);
   };
 
+  /** Treść obu wersji z bieżącym stanem pola. */
+  const texts = () => ({ ...state.texts, [state.language]: areaHtml() });
+
   return {
     element,
     draft() {
+      const current = texts();
       return {
-        html: areaHtml(),
+        html: current.pl,
+        htmlEN: current.en,
         imagesFirst: state.imagesFirst,
         images: state.images.map((image) => (image.stored
-          ? { id: image.id }
-          : { bytes: image.bytes, type: image.type, width: image.width, height: image.height, name: image.name ?? null }))
+          ? { id: image.id, label: image.label }
+          : { bytes: image.bytes, type: image.type, width: image.width, height: image.height, name: image.name ?? null, label: image.label }))
       };
     },
     dirty() {
-      return areaHtml() !== initialHtml
-        || state.images.map((image) => image.id ?? image.url).join(',') !== initialImages
+      const current = texts();
+      return current.pl !== initialTexts.pl || current.en !== initialTexts.en
+        || imagesKey() !== initialImages
         || state.imagesFirst !== imagesFirst
         || state.pending > 0;
     },
     busy: () => state.pending > 0,
-    isEmpty: () => isEmptyNoteHtml(area.innerHTML) && state.images.length === 0,
+    isEmpty: () => {
+      const current = texts();
+      return isEmptyNoteHtml(current.pl) && isEmptyNoteHtml(current.en) && state.images.length === 0;
+    },
+    /** Język treści w polu ('pl' | 'en'). */
+    language: () => state.language,
     focus() {
       requestAnimationFrame(() => {
         // Na telefonie bez automatycznego fokusu – klawiatura zasłoniłaby obrazy i przyciski.

@@ -78,6 +78,8 @@ export function guessField(header) {
   if (language) {
     const kind = matchPrefixes(words, KIND_PREFIXES);
     if (kind) return `${kind}${language}`;
+    // „Note EN” (arkusz notatek) to nie pojęcie.
+    if (matchPrefixes(words, OTHER_PREFIXES)) return null;
     // Sam język („Polski”, „EN”, „Język angielski”) oznacza kolumnę z pojęciem.
     return words.length <= 2 ? `term${language}` : null;
   }

@@ -1410,15 +1410,16 @@ test('import samych notatek do istniejących lekcji: zastąp albo zostaw istniej
   assert.equal((await summary(page)).lessons, 13, 'żadna nowa lekcja');
 });
 
-test('eksport lekcji z notatką do XLSX i import do pustej aplikacji odtwarza notatkę z obrazami', async ({ open, browser, track }) => {
+test('eksport lekcji z notatką do XLSX i import do pustej aplikacji odtwarza notatkę z obrazami, wersją angielską i sygnaturami', async ({ open, browser, track }) => {
   const source = await open();
   await loadSamples(source);
   const ids = await sampleLessons(source);
   await source.evaluate(async (id) => {
     const bytes = await (await fetch('./icons/icon-192.png')).arrayBuffer();
     await window.lexicards.library.saveNote(id, {
-      html: '<h3>Bilans</h3><p><strong>Aktywa</strong> = <em>pasywa</em></p><ul><li><span data-color="blue">niebieski</span></li></ul>',
-      images: [{ bytes, type: 'image/png', width: 192, height: 192, name: 'ikona.png' }]
+      html: '<h3>Bilans</h3><p><strong>Aktywa</strong> = <em>pasywa</em></p><p>[[Schemat]]</p><ul><li><span data-color="blue">niebieski</span></li></ul>',
+      htmlEN: '<h3>Balance sheet</h3><p><strong>Assets</strong> = liabilities</p><p>[[Schemat]]</p>',
+      images: [{ bytes, type: 'image/png', width: 192, height: 192, name: 'ikona.png', label: 'Schemat' }]
     });
   }, ids.statements);
   await source.goto(`${source.url().split('#')[0]}#/library/lesson/${ids.statements}`);
@@ -1430,9 +1431,11 @@ test('eksport lekcji z notatką do XLSX i import do pustej aplikacji odtwarza no
   const book = await openWorkbook(exported.bytes);
   assert.deepEqual(book.sheets.map((item) => item.name), ['Pojęcia', 'Notatki']);
   const notes = await book.readSheet(1, { rich: true });
-  assert.deepEqual(notes.rows[0].cells, ['Domain', 'Module', 'Lesson', 'Note', 'Image']);
+  assert.deepEqual(notes.rows[0].cells, ['Domain', 'Module', 'Lesson', 'Note', 'Note EN', 'Image', 'Image label']);
   assert.ok(notes.rows[1].rich[3].some((run) => run.text === 'Aktywa' && run.b));
-  assert.deepEqual(notes.images.map((item) => [item.row, item.column, item.type]), [[2, 4, 'image/png']]);
+  assert.ok(notes.rows[1].rich[4].some((run) => run.text === 'Assets' && run.b), 'wersja angielska w kolumnie Note EN');
+  assert.equal(notes.rows[1].cells[6], 'Schemat', 'sygnatura obrazu w kolumnie Image label');
+  assert.deepEqual(notes.images.map((item) => [item.row, item.column, item.type]), [[2, 5, 'image/png']]);
 
   const other = await browser.newContext({ ...PHONE, locale: 'pl-PL' });
   try {
@@ -1454,12 +1457,17 @@ test('eksport lekcji z notatką do XLSX i import do pustej aplikacji odtwarza no
       const { library } = window.lexicards;
       const lesson = [...library.maps.lessons.values()][0];
       const images = await library.noteImages(lesson.id);
-      return { html: library.getNote(lesson.id).html, sizes: images.map((image) => image.bytes.byteLength) };
+      const note = library.getNote(lesson.id);
+      return { html: note.html, htmlEN: note.htmlEN, labels: note.images.map((image) => image.label), sizes: images.map((image) => image.bytes.byteLength) };
     });
-    const original = await source.evaluate(async (id) => ({
-      html: window.lexicards.library.getNote(id).html,
-      sizes: (await window.lexicards.library.noteImages(id)).map((image) => image.bytes.byteLength)
-    }), ids.statements);
+    const original = await source.evaluate(async (id) => {
+      const note = window.lexicards.library.getNote(id);
+      return {
+        html: note.html, htmlEN: note.htmlEN, labels: note.images.map((image) => image.label),
+        sizes: (await window.lexicards.library.noteImages(id)).map((image) => image.bytes.byteLength)
+      };
+    }, ids.statements);
+    assert.deepEqual(original.labels, ['Schemat']);
     assert.deepEqual(restored, original);
   } finally {
     await other.close();
@@ -2001,6 +2009,211 @@ test('notatka: dwie strony obok siebie na dużym ekranie – przewracanie jak w 
   await dialog.locator('[data-testid=note-spread]').click();
   await waitUntil(async () => (await book.getAttribute('data-spread')) === 'true' && (await shown().count()) === 2, 'Znów dwie strony');
 }, { device: DESKTOP });
+
+/** Zapisuje notatkę lekcji „Financial Statements” z obrazami (ikony aplikacji) i otwiera ją w podglądzie. */
+async function openNoteWithImages(page, { html, htmlEN = '', labels = [], imagesFirst = false }) {
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate(async ([id, note]) => {
+    const files = ['./icons/icon-512.png', './icons/icon-192.png'];
+    const images = [];
+    for (const [index, label] of note.labels.entries()) {
+      const bytes = await (await fetch(files[index % files.length])).arrayBuffer();
+      images.push({ bytes, type: 'image/png', width: index % 2 ? 192 : 512, height: index % 2 ? 192 : 512, label });
+    }
+    await window.lexicards.library.saveNote(id, { html: note.html, htmlEN: note.htmlEN, images, imagesFirst: note.imagesFirst });
+  }, [ids.statements, { html, htmlEN, labels, imagesFirst }]);
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await page.click('[data-testid=lesson-note]');
+  const book = noteDialog(page).locator('[data-testid=note-book]');
+  await book.waitFor();
+  await waitUntil(() => noteDialog(page).locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'Okno notatki otwarte');
+  return { ids, book };
+}
+
+test('notatka: sygnatury obrazów – obraz w miejscu odwołania, brak obrazu na czerwono, wstawienie i zmiana sygnatury w edytorze, kopiowanie', async ({ open, context }) => {
+  const page = await open();
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin });
+  const { ids, book } = await openNoteWithImages(page, {
+    html: '<p>Bilans pokazuje majątek.</p><p>[[ schemat ]]</p><ul><li>Aktywa = Pasywa</li></ul><p>[[Brak]]</p>',
+    htmlEN: '<p>A balance sheet.</p><p>[[Schemat]]</p>',
+    labels: ['Schemat', null]
+  });
+  const dialog = noteDialog(page);
+  assert.deepEqual((await storedNote(page, ids.statements)).images.map((image) => image.label), ['Schemat', 'Obraz 1'], 'brakująca sygnatura – „Obraz N”');
+
+  // Obraz z odwołaniem stoi między akapitem a listą (wielkość liter i odstępy bez znaczenia);
+  // odwołanie bez obrazu zostaje tekstem na czerwono; obraz bez odwołania – na końcu.
+  const order = await book.evaluate((element) => {
+    const page = element.querySelector('[data-testid=note-page]');
+    return [...page.querySelectorAll('.note-page__text > *, .note-page__figure')].map((item) => (item.matches('.note-page__figure')
+      ? `obraz ${item.dataset.index}` : item.textContent.trim()));
+  });
+  assert.deepEqual(order.slice(0, 4), ['Bilans pokazuje majątek.', 'obraz 0', 'Aktywa = Pasywa', '[[Brak]]']);
+  const missing = dialog.locator('.note-ref--missing');
+  assert.equal(await missing.evaluate((element) => getComputedStyle(element).color), 'rgb(201, 0, 15)');
+  await page.keyboard.press('End');
+  await waitUntil(async () => (await dialog.locator('[data-testid=note-page] .note-page__figure').last().getAttribute('data-index')) === '1',
+    'Obraz bez odwołania na końcu notatki');
+
+  // Kopiowanie: obraz w miejscu odwołania, nie na końcu.
+  await dialog.locator('[data-testid=note-copy]').click();
+  await page.locator('.toast', { hasText: 'Skopiowano notatkę' }).waitFor();
+  const copied = await page.evaluate(async () => (await (await (await navigator.clipboard.read())[0].getType('text/html')).text()));
+  assert.ok(copied.indexOf('<img') > copied.indexOf('majątek') && copied.indexOf('<img') < copied.indexOf('Aktywa'), 'obraz po pierwszym akapicie');
+  assert.equal(copied.match(/<img/g).length, 2);
+  assert.ok(!copied.includes('[[ schemat ]]'));
+
+  // Edytor: sygnatury pod miniaturami, wstawienie odwołania w miejscu kursora.
+  await dialog.locator('[data-testid=note-right]').click();
+  const editor = dialog.locator('[data-testid=note-editor]');
+  await editor.waitFor();
+  assert.deepEqual(await dialog.locator('[data-testid=note-image-label-text]').allTextContents(), ['Schemat', 'Obraz 1']);
+  await editor.evaluate((area) => {
+    const text = area.querySelector('p').firstChild;
+    const range = document.createRange();
+    range.setStart(text, text.length);
+    range.collapse(true);
+    area.focus();
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+  });
+  await page.waitForTimeout(50);
+  await dialog.locator('.note-images__open').nth(1).click();
+  await menuItem(page, 'Wstaw do tekstu');
+  assert.deepEqual(await editor.locator(':scope > *').evaluateAll((items) => items.slice(0, 3).map((item) => item.textContent)),
+    ['Bilans pokazuje majątek.', '[[Obraz 1]]', ''], 'odwołanie w osobnej linijce za akapitem z kursorem');
+
+  // Zmiana sygnatury: odwołania w obu wersjach językowych zmieniają się same; sygnatura musi być jedyna.
+  await dialog.locator('.note-images__open').first().click();
+  await menuItem(page, 'Zmień sygnaturę');
+  await sheet(page).locator('[data-testid=note-image-label]').fill('obraz 1');
+  await sheet(page).locator('.sheet__submit').click();
+  await expectText(sheet(page).locator('.form-message--error'), 'Inny obraz tej notatki ma już tę sygnaturę.');
+  await sheet(page).locator('[data-testid=note-image-label]').fill('Wykres [główny]');
+  await saveSheet(page);
+  assert.deepEqual(await dialog.locator('[data-testid=note-image-label-text]').allTextContents(), ['Wykres główny', 'Obraz 1']);
+  assert.equal(await editor.locator('p', { hasText: '[[Wykres główny]]' }).count(), 1);
+  await dialog.getByRole('radiogroup', { name: 'Język treści' }).locator('.segmented__option', { hasText: 'Angielski' }).click();
+  await expectText(editor, '[[Wykres główny]]');
+  await dialog.locator('[data-testid=note-right]').click();
+  await book.waitFor();
+  const saved = await storedNote(page, ids.statements);
+  assert.deepEqual(saved.images.map((image) => image.label), ['Wykres główny', 'Obraz 1']);
+  assert.equal(saved.html, '<p>Bilans pokazuje majątek.</p><p>[[Obraz 1]]</p><p>[[Wykres główny]]</p><ul><li>Aktywa = Pasywa</li></ul><p>[[Brak]]</p>');
+  assert.equal(saved.htmlEN, '<p>A balance sheet.</p><p>[[Wykres główny]]</p>');
+  // Oba obrazy mają teraz miejsce w tekście – nic nie zostaje na końcu.
+  assert.equal(await dialog.locator('[data-testid=note-language] .segmented__input:checked').getAttribute('value'), 'en', 'po zapisie – wersja edytowana');
+});
+
+test('notatka po angielsku: przełącznik PL / EN w podglądzie i w edytorze, wybór zapamiętany, notatka tylko po polsku bez przełącznika', async ({ open }) => {
+  const page = await open();
+  const { ids, book } = await openNoteWithImages(page, {
+    html: '<h3>Bilans</h3><p>Pokazuje majątek firmy.</p>',
+    htmlEN: '<h3>Balance sheet</h3><p>Shows what a company owns.</p>'
+  });
+  const dialog = noteDialog(page);
+  const language = dialog.getByRole('radiogroup', { name: 'Język notatki' });
+  assert.equal(await language.getByRole('radio', { name: 'PL' }).isChecked(), true, 'domyślnie po polsku');
+  await expectText(dialog.locator('[data-testid=note-text]'), 'Pokazuje majątek firmy.');
+  assert.equal(await dialog.locator('[data-testid=note-text]').getAttribute('lang'), 'pl');
+
+  await language.locator('.segmented__option', { hasText: 'EN' }).click();
+  await expectText(dialog.locator('[data-testid=note-text]'), 'Shows what a company owns.');
+  assert.equal(await dialog.locator('[data-testid=note-text]').getAttribute('lang'), 'en');
+  await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().noteLanguage === 'en'), 'Wybór języka zapisany');
+
+  // Po ponownym otwarciu – ta sama wersja; edytor otwiera się w niej.
+  await dialog.locator('[data-testid=note-left]').click();
+  await noteDialog(page).waitFor({ state: 'detached' });
+  await page.click('[data-testid=lesson-note]');
+  await book.waitFor();
+  await expectText(dialog.locator('[data-testid=note-text]'), 'Shows what a company owns.');
+  await dialog.locator('[data-testid=note-right]').click();
+  const editor = dialog.locator('[data-testid=note-editor]');
+  await editor.waitFor();
+  const editLanguage = dialog.getByRole('radiogroup', { name: 'Język treści' });
+  assert.equal(await editLanguage.getByRole('radio', { name: 'Angielski' }).isChecked(), true);
+  await expectText(editor, 'Shows what a company owns.');
+  assert.equal(await editor.getAttribute('lang'), 'en');
+
+  // Przełączenie na polski i dopisanie zdania – wersja angielska zostaje bez zmian.
+  await editLanguage.locator('.segmented__option', { hasText: 'Polski' }).click();
+  await expectText(editor, 'Pokazuje majątek firmy.');
+  assert.equal(await editor.getAttribute('lang'), 'pl');
+  await editor.click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Dopisane zdanie.');
+  await dialog.locator('[data-testid=note-right]').click();
+  await book.waitFor();
+  const saved = await storedNote(page, ids.statements);
+  assert.equal(saved.html, '<h3>Bilans</h3><p>Pokazuje majątek firmy.</p><p>Dopisane zdanie.</p>');
+  assert.equal(saved.htmlEN, '<h3>Balance sheet</h3><p>Shows what a company owns.</p>');
+  await expectText(dialog.locator('[data-testid=note-text]'), 'Dopisane zdanie.', 'po zapisie podgląd w edytowanej wersji');
+
+  // Notatka bez wersji angielskiej: bez przełącznika, po polsku mimo wyboru „EN”.
+  await page.evaluate((id) => window.lexicards.library.saveNote(id, { html: '<p>Tylko polski</p>', htmlEN: '', images: [] }), ids.statements);
+  await dialog.locator('[data-testid=note-left]').click();
+  await noteDialog(page).waitFor({ state: 'detached' });
+  await page.click('[data-testid=lesson-note]');
+  await book.waitFor();
+  await expectText(dialog.locator('[data-testid=note-text]'), 'Tylko polski');
+  assert.equal(await dialog.locator('[data-testid=note-language]').count(), 0);
+});
+
+test('notatka: czytanie na głos – od widocznej strony, wyróżniony akapit, strony przewracają się same, pauza i wznowienie', async ({ open, context }) => {
+  await fakeSpeechForListening(context);
+  const page = await open();
+  const paragraphs = Array.from({ length: 12 }, (_, index) => `<p>Akapit numer ${index + 1}. ${LONG_SENTENCE}</p>`).join('');
+  const { book } = await openNoteWithImages(page, {
+    html: `<h3>Bilans</h3>${paragraphs}`,
+    htmlEN: '<p>English version.</p>'
+  });
+  const dialog = noteDialog(page);
+  const total = Number(await book.getAttribute('data-pages'));
+  assert.ok(total >= 3, `kilka stron (jest ${total})`);
+  const listen = dialog.locator('[data-testid=note-listen]');
+  assert.equal(await listen.getAttribute('aria-pressed'), 'false');
+  await listen.click();
+  assert.equal(await listen.getAttribute('aria-pressed'), 'true');
+  await waitUntil(() => page.evaluate(() => window.spokenTexts.length > 0), 'Czytanie się zaczęło');
+  const first = await page.evaluate(() => window.spokenTexts[0]);
+  assert.equal(first.text, 'Bilans');
+  assert.match(first.lang, /^pl/);
+  await expectText(dialog.locator('.note-reading'), 'Bilans');
+
+  // Czytanie przechodzi na kolejne strony samo (zdanie po zdaniu).
+  await waitUntil(async () => Number(await book.getAttribute('data-page')) >= 2, 'Strony przewracają się w trakcie czytania', 30000);
+  const reading = await dialog.locator('.note-reading').textContent();
+  assert.ok(await dialog.locator('[data-testid=note-page]').last().locator('.note-reading').count() === 1, 'wyróżniony akapit na widocznej stronie');
+
+  // Pauza: czytanie stoi; wznowienie – od tego samego zdania.
+  await listen.click();
+  assert.equal(await listen.getAttribute('aria-pressed'), 'false');
+  const paused = await page.evaluate(() => window.spokenTexts.length);
+  await page.waitForTimeout(700);
+  assert.equal(await page.evaluate(() => window.spokenTexts.length), paused, 'w pauzie nic nie jest czytane');
+  const last = await page.evaluate(() => window.spokenTexts[window.spokenTexts.length - 1].text);
+  await listen.click();
+  await waitUntil(() => page.evaluate((count) => window.spokenTexts.length > count, paused), 'Czytanie wznowione');
+  assert.equal(await page.evaluate((count) => window.spokenTexts[count].text, paused), last, 'wznowienie od przerwanego zdania');
+  assert.ok(reading.length > 0);
+
+  // Przełączenie na wersję angielską zatrzymuje czytanie; czyta po angielsku od początku.
+  await dialog.getByRole('radiogroup', { name: 'Język notatki' }).locator('.segmented__option', { hasText: 'EN' }).click();
+  await expectText(dialog.locator('[data-testid=note-text]'), 'English version.');
+  assert.equal(await dialog.locator('.note-reading').count(), 0);
+  const before = await page.evaluate(() => window.spokenTexts.length);
+  await dialog.locator('[data-testid=note-listen]').click();
+  await waitUntil(() => page.evaluate((count) => window.spokenTexts.length > count, before), 'Czytanie po angielsku');
+  const english = await page.evaluate((count) => window.spokenTexts[count], before);
+  assert.equal(english.text, 'English version.');
+  assert.match(english.lang, /^en/);
+  // Po przeczytaniu całości przycisk wraca do stanu początkowego.
+  await waitUntil(async () => (await dialog.locator('[data-testid=note-listen]').getAttribute('aria-pressed')) === 'false', 'Koniec czytania');
+  assert.equal(await dialog.locator('.note-reading').count(), 0);
+});
 
 test('notatka: „Nowa strona” w edytorze; podgląd na liście bez znacznika; ograniczony ruch – strony bez animacji', async ({ open }) => {
   const page = await open();

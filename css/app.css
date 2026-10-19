@@ -3830,10 +3830,39 @@ a.row__main:active,
 .note-sheet__body { gap: 18px; }
 
 .note-sheet__heading {
-  display: grid;
-  gap: 3px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
   padding: 0 4px;
 }
+
+.note-sheet__titles {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+/* Przełącznik PL / EN i czytanie na głos – po prawej od nazwy lekcji. */
+.note-sheet__tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.note-sheet__language .segmented { min-width: 92px; }
+.note-sheet__listen[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+
+/* Akapit czytany na głos. */
+.note-reading {
+  border-radius: 6px;
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Odwołanie [[sygnatura]] do obrazu, którego notatka nie ma. */
+.note-ref--missing { color: var(--danger); }
 
 .note-sheet__path {
   font-size: var(--size-foot);
@@ -4236,6 +4265,33 @@ a.row__main:active,
 }
 
 .note-images__item { background: #ffffff; box-shadow: inset 0 0 0 1px var(--separator); }
+
+/* Sygnatura obrazu na dole miniatury. */
+.note-images__label {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 3px 6px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.58);
+  color: #ffffff;
+  font-size: var(--size-foot);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Nagłówek sekcji tekstu z przełącznikiem języka treści. */
+.note-editor__text-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.note-editor__language .segmented { min-width: 180px; }
 
 .note-images__open {
   display: block;

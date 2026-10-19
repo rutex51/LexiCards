@@ -13,6 +13,7 @@ import {
   termFieldsFromDraft, termToDraft
 } from './model.js';
 import { NOTE_HTML_LIMIT, normalizeNoteHtml } from './note-format.js';
+import { labelKey, withImageLabels } from './note-refs.js';
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
 import { emptyChanges } from './storage.js';
 import { crc32 } from './zip.js';
@@ -103,6 +104,13 @@ function sameImages(metas, images) {
     const crc = images[index].crc ?? (bytes ? crc32(bytes) : null);
     return meta.crc === crc && meta.size === (bytes?.byteLength ?? images[index].size);
   });
+}
+
+/** Te same sygnatury obrazów (brakujące liczą się jako „Obraz N” po kolei). */
+function sameLabels(metas, images) {
+  const current = withImageLabels(metas);
+  const incoming = withImageLabels(images);
+  return current.every((meta, index) => labelKey(meta.label) === labelKey(incoming[index]?.label));
 }
 
 function bySortOrder(a, b) {
@@ -907,7 +915,9 @@ export class Library {
       );
       terms.forEach((term, index) => unit.put('terms', this.#copyOfTerm(term, copy, index)));
       const note = this.getNote(source.id);
-      if (note) this.#writeNote(unit, copy.id, { html: note.html, images, imagesFirst: note.imagesFirst === true }, null);
+      if (note) {
+        this.#writeNote(unit, copy.id, { html: note.html, htmlEN: note.htmlEN ?? '', images, imagesFirst: note.imagesFirst === true }, null);
+      }
       return copy;
     }, () => this.noteImages(id));
   }
@@ -935,10 +945,11 @@ export class Library {
   }
 
   /**
-   * Zapisuje notatkę lekcji. draft: { html, images, imagesFirst? } – images w kolejności wyświetlania:
-   * { id } zostawia istniejący obraz, { bytes, type, width, height, name } dodaje nowy,
-   * pominięte istniejące obrazy są usuwane. imagesFirst – obrazy w podglądzie przed tekstem
-   * (bez tego pola zostaje wybór zapisany w notatce). Notatka bez tekstu i obrazów jest usuwana.
+   * Zapisuje notatkę lekcji. draft: { html, htmlEN?, images, imagesFirst? } – images w kolejności
+   * wyświetlania: { id, label? } zostawia istniejący obraz, { bytes, type, width, height, name, label? }
+   * dodaje nowy, pominięte istniejące obrazy są usuwane; label – sygnatura (brakująca dostaje
+   * „Obraz N”). htmlEN – treść po angielsku, imagesFirst – obrazy w podglądzie przed tekstem; bez
+   * tych pól zostaje to, co jest w notatce. Notatka bez tekstu i obrazów jest usuwana.
    * Zwraca zapisaną notatkę albo null.
    */
   saveNote(lessonID, draft) {
@@ -952,9 +963,10 @@ export class Library {
     return this.#mutate((unit) => this.#removeNote(unit, lessonID));
   }
 
-  #writeNote(unit, lessonID, { html, images = [], imagesFirst }, existing) {
+  #writeNote(unit, lessonID, { html, htmlEN, images = [], imagesFirst }, existing) {
     const clean = normalizeNoteHtml(html ?? '');
-    if (clean.length > NOTE_HTML_LIMIT) throw errors.noteTooLong();
+    const cleanEN = typeof htmlEN === 'string' ? normalizeNoteHtml(htmlEN) : (existing?.htmlEN ?? '');
+    if (clean.length > NOTE_HTML_LIMIT || cleanEN.length > NOTE_HTML_LIMIT) throw errors.noteTooLong();
     if (images.length > NOTE_IMAGE_LIMIT) throw errors.tooManyImages();
     const metas = [];
     const kept = new Set();
@@ -962,19 +974,19 @@ export class Library {
       if (imageBytes(image)) {
         const record = newNoteImage(lessonID, image);
         unit.append('noteImages', record);
-        metas.push(noteImageMeta(record));
+        metas.push(noteImageMeta(record, image.label));
       } else {
         const meta = existing?.images.find((item) => item.id === image.id);
         if (meta && !kept.has(meta.id)) {
           kept.add(meta.id);
-          metas.push(meta);
+          metas.push({ ...meta, label: image.label ?? meta.label ?? null });
         }
       }
     }
     for (const meta of existing?.images ?? []) {
       if (!kept.has(meta.id)) unit.erase('noteImages', meta.id);
     }
-    if (clean === '' && metas.length === 0) {
+    if (clean === '' && cleanEN === '' && metas.length === 0) {
       if (existing) unit.delete('notes', lessonID);
       return null;
     }
@@ -982,7 +994,7 @@ export class Library {
     // Obrazy w podglądzie przed tekstem (od 1.5); zapis bez tego pola (np. import) zostawia wybór notatki.
     const first = typeof imagesFirst === 'boolean' ? imagesFirst : existing?.imagesFirst === true;
     const note = {
-      id: lessonID, lessonID, html: clean, images: metas, imagesFirst: first,
+      id: lessonID, lessonID, html: clean, htmlEN: cleanEN, images: withImageLabels(metas), imagesFirst: first,
       createdAt: existing?.createdAt ?? now, updatedAt: now
     };
     unit.put('notes', note);
@@ -1452,6 +1464,8 @@ export class Library {
 
       const newImages = row.images ?? [];
       const html = normalizeNoteHtml(row.html ?? '');
+      // Treść po angielsku tylko wtedy, gdy arkusz ma na nią kolumnę – inaczej zostaje istniejąca.
+      const htmlEN = typeof row.htmlEN === 'string' ? normalizeNoteHtml(row.htmlEN) : undefined;
       // Druga grupa wierszy dla tej samej lekcji w pliku jest dopisywana do pierwszej.
       const repeated = notesDone.has(lesson.id);
       const current = this.getNote(lesson.id);
@@ -1470,7 +1484,8 @@ export class Library {
         if (noteMode === 'append') {
           status = 'appended';
           merge = true;
-        } else if (html === current.html && sameImages(current.images, newImages)) {
+        } else if (html === current.html && (htmlEN === undefined || htmlEN === (current.htmlEN ?? ''))
+          && sameImages(current.images, newImages) && sameLabels(current.images, newImages)) {
           report.notes.unchanged += 1;
           report.notes.statuses[index] = 'unchanged';
           notesDone.add(lesson.id);
@@ -1482,17 +1497,18 @@ export class Library {
       const base = merge && current ? current : null;
       const imageCount = (base?.images.length ?? 0) + newImages.length;
       const fullHtml = base ? `${base.html}${html}` : html;
+      const fullHtmlEN = base && htmlEN !== undefined ? `${base.htmlEN ?? ''}${htmlEN}` : htmlEN;
       if (imageCount > NOTE_IMAGE_LIMIT) {
         fail('tooManyImages');
         return;
       }
-      if (fullHtml.length > NOTE_HTML_LIMIT) {
+      if (fullHtml.length > NOTE_HTML_LIMIT || (fullHtmlEN?.length ?? 0) > NOTE_HTML_LIMIT) {
         fail('tooLong');
         return;
       }
       if (unit) {
         const images = [...(base?.images ?? []).map((meta) => ({ id: meta.id })), ...newImages];
-        this.#writeNote(unit, lesson.id, { html: fullHtml, images }, current);
+        this.#writeNote(unit, lesson.id, { html: fullHtml, htmlEN: fullHtmlEN, images }, current);
       }
       notesDone.add(lesson.id);
       touchedLessons.add(lesson.id);

@@ -1,13 +1,15 @@
 // Eksport pojęć do pliku XLSX albo CSV. Układ kolumn jest taki sam jak przy imporcie,
 // więc wyeksportowany plik można poprawić w arkuszu i wczytać z powrotem.
-// XLSX ma też arkusz „Notatki” z notatkami lekcji: tekst z formatowaniem i obrazy
-// (każdy obraz w osobnym wierszu tej samej lekcji). CSV to jedna tabela – tylko pojęcia.
+// XLSX ma też arkusz „Notatki” z notatkami lekcji: tekst z formatowaniem (po polsku i po
+// angielsku) i obrazy z sygnaturami (każdy obraz w osobnym wierszu tej samej lekcji).
+// CSV to jedna tabela – tylko pojęcia.
 
 import { base64ToBytes } from './base64.js';
 import { encodeCsv, writeCsv } from './csv.js';
 import { IMPORT_FIELDS } from './importer.js';
 import { docFromHtml, richTextFromDoc } from './note-format.js';
 import { NOTE_HEADER } from './note-import.js';
+import { withImageLabels } from './note-refs.js';
 import { TEMPLATE_IMAGE, TEMPLATE_IMAGE_BASE64 } from './template-image.js';
 import { formatTags, normalizeKey } from './text.js';
 import { createWorkbook } from './xlsx.js';
@@ -28,8 +30,8 @@ export const EXPORT_HEADER = Object.freeze(IMPORT_FIELDS.map((field) => field.he
 /** Nazwy arkuszy eksportu i wzoru. */
 export const TERMS_SHEET = 'Pojęcia';
 export const NOTES_SHEET = 'Notatki';
-const NOTE_COLUMN_WIDTHS = [20, 22, 24, 70, 48];
-const NOTE_IMAGE_COLUMN = 4;
+const NOTE_COLUMN_WIDTHS = [20, 22, 24, 64, 64, 48, 18];
+const NOTE_IMAGE_COLUMN = NOTE_HEADER.indexOf('Image');
 
 function termRow(domain, module, lesson, term) {
   return [
@@ -93,18 +95,28 @@ export function collectExportNotes(library, scope) {
 }
 
 /**
- * Arkusz notatek: pierwszy wiersz lekcji ma treść i pierwszy obraz, kolejne obrazy
- * są w następnych wierszach tej samej lekcji. entries: [{ domain, module, lesson, html, images }].
+ * Arkusz notatek: pierwszy wiersz lekcji ma treść (po polsku i po angielsku) i pierwszy obraz
+ * z sygnaturą, kolejne obrazy są w następnych wierszach tej samej lekcji.
+ * entries: [{ domain, module, lesson, html, htmlEN, images }].
  */
 function notesSheet(entries) {
   const rows = [];
   const images = [];
   for (const entry of entries) {
     const runs = richTextFromDoc(docFromHtml(entry.html));
-    const count = Math.max(1, entry.images.length);
+    const runsEN = richTextFromDoc(docFromHtml(entry.htmlEN ?? ''));
+    const labeled = withImageLabels(entry.images);
+    const count = Math.max(1, labeled.length);
     for (let index = 0; index < count; index += 1) {
-      rows.push([entry.domain, entry.module, entry.lesson, index === 0 && runs.length > 0 ? { runs } : null, null]);
-      const image = entry.images[index];
+      const first = index === 0;
+      const image = labeled[index];
+      rows.push([
+        entry.domain, entry.module, entry.lesson,
+        first && runs.length > 0 ? { runs } : null,
+        first && runsEN.length > 0 ? { runs: runsEN } : null,
+        null,
+        image ? image.label : null
+      ]);
       if (image) images.push({ ...image, row: rows.length, column: NOTE_IMAGE_COLUMN });
     }
   }
@@ -142,7 +154,10 @@ export async function buildExportFile(library, scope, format, date = new Date(),
   const entries = [];
   if (format === 'xlsx' && withNotes) {
     for (const { domain, module, lesson, note } of collectExportNotes(library, scope)) {
-      entries.push({ domain: domain.name, module: module.name, lesson: lesson.name, html: note.html, images: await library.noteImages(lesson.id) });
+      entries.push({
+        domain: domain.name, module: module.name, lesson: lesson.name,
+        html: note.html, htmlEN: note.htmlEN ?? '', images: await library.noteImages(lesson.id)
+      });
     }
   }
   return {
@@ -155,14 +170,24 @@ export async function buildExportFile(library, scope, format, date = new Date(),
   };
 }
 
-/** Przykładowa notatka wzoru: pokazuje formatowanie, listy i obraz. */
+/** Przykładowa notatka wzoru: pokazuje formatowanie, listy, obraz w miejscu odwołania i wersję angielską. */
 const TEMPLATE_NOTE_HTML = '<h3>Bilans – najważniejsze</h3>'
   + '<p><strong>Bilans</strong> (<em>balance sheet</em>) pokazuje majątek firmy i źródła jego finansowania '
   + '<u>na określony dzień</u>.</p>'
+  + '<p>[[Schemat bilansu]]</p>'
   + '<ul><li>Aktywa = Pasywa</li><li>Pasywa to <span data-color="green">kapitał własny</span> i <span data-color="red">zobowiązania</span></li></ul>'
   + '<p>Formatowanie komórki (pogrubienie, kursywa, podkreślenie, kolor) przechodzi do notatki. '
-  + 'Wiersz od „• ” to punkt listy, od „1. ” – lista numerowana, od „# ” – nagłówek. '
-  + 'Obraz wklej do kolumny Image w wierszu lekcji; kolejne obrazy – w kolejnych wierszach z tą samą lekcją.</p>';
+  + 'Wiersz od „• ” to punkt listy, od „1. ” – lista numerowana, od „# ” – nagłówek, „---” – nowa strona. '
+  + 'Obraz wklej do kolumny Image w wierszu lekcji, a jego sygnaturę wpisz w kolumnie Image label (bez niej: '
+  + 'Obraz 1, Obraz 2… po kolei); kolejne obrazy – w kolejnych wierszach z tą samą lekcją. Wiersz z samym '
+  + 'odwołaniem [[sygnatura]] to miejsce obrazu w notatce; obrazy bez odwołania są po tekście. '
+  + 'Kolumna Note EN – ta sama notatka po angielsku (w aplikacji przełącznik PL / EN).</p>';
+
+const TEMPLATE_NOTE_HTML_EN = '<h3>Balance sheet – key points</h3>'
+  + '<p>A <strong>balance sheet</strong> shows what a company owns and how it is financed '
+  + '<u>at a specific date</u>.</p>'
+  + '<p>[[Schemat bilansu]]</p>'
+  + '<ul><li>Assets = Liabilities + Equity</li><li>Equity and liabilities are the <span data-color="green">sources of funding</span></li></ul>';
 
 /** Wzór pliku do importu: nagłówki i dwa przykładowe pojęcia, w XLSX także arkusz notatek. */
 export async function buildTemplateFile(format = 'xlsx') {
@@ -178,8 +203,9 @@ export async function buildTemplateFile(format = 'xlsx') {
   ];
   const notes = format === 'xlsx'
     ? [{
-        domain: 'Business English', module: 'Finance', lesson: 'Financial Statements', html: TEMPLATE_NOTE_HTML,
-        images: [{ ...TEMPLATE_IMAGE, bytes: new Uint8Array(base64ToBytes(TEMPLATE_IMAGE_BASE64)) }]
+        domain: 'Business English', module: 'Finance', lesson: 'Financial Statements',
+        html: TEMPLATE_NOTE_HTML, htmlEN: TEMPLATE_NOTE_HTML_EN,
+        images: [{ ...TEMPLATE_IMAGE, label: 'Schemat bilansu', bytes: new Uint8Array(base64ToBytes(TEMPLATE_IMAGE_BASE64)) }]
       }]
     : [];
   return {

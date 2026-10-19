@@ -637,6 +637,8 @@ export function textFromDoc(doc) {
 
 /** Podział strony w zwykłym tekście i w komórce arkusza: wiersz z trzema łącznikami. */
 export const PAGE_BREAK_LINE = '---';
+/** Wiersz z samym odwołaniem do obrazu notatki: [[sygnatura]] (zob. note-refs.js). */
+const REFERENCE_LINE_RE = /^\[\[[^[\]]+\]\]$/;
 
 /** Zwykły tekst notatki zapisanej w HTML (podgląd, kopiowanie, wyszukiwanie). */
 export function noteText(html) {
@@ -760,6 +762,12 @@ export function docFromRichText(runs) {
     if (text.trim() === PAGE_BREAK_LINE) {
       paragraph = null;
       blocks.push({ type: 'break', runs: [] });
+      continue;
+    }
+    if (REFERENCE_LINE_RE.test(text.trim())) {
+      // Odwołanie do obrazu [[sygnatura]] (od 1.6) – zawsze osobny akapit, także po pojedynczym Enterze.
+      paragraph = null;
+      blocks.push({ type: 'p', runs: [{ text: text.trim() }] });
       continue;
     }
     const leading = /^[ \t]*/.exec(text)[0];

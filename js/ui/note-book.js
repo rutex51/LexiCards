@@ -7,8 +7,8 @@
 //     (formatowanie zostaje po obu stronach podziału), a numeracja listy biegnie dalej;
 //   - nagłówek nie zostaje sam na dole strony – przechodzi z treścią na następną;
 //   - „Nowa strona” wstawiona w edytorze (<hr data-page>) zaczyna nową stronę;
-//   - obrazy są po tekście albo – gdy tak wybrano w notatce – przed nim, każdy zmniejszony najwyżej
-//     do wysokości strony;
+//   - obraz z odwołaniem [[sygnatura]] stoi w miejscu odwołania (od 1.6), pozostałe obrazy są po
+//     tekście albo – gdy tak wybrano w notatce – przed nim; każdy zmniejszony najwyżej do wysokości strony;
 //   - blok, którego nie da się podzielić (np. bardzo długa lista zagnieżdżona), dostaje stronę
 //     przewijaną – to jedyny wyjątek od zasady „bez przewijania”.
 // Krótka notatka (jedna strona) wygląda jak dawniej: karta o wysokości treści.
@@ -19,6 +19,7 @@
 // ze stroną, która po przewróceniu leży po drugiej stronie grzbietu.
 
 import { normalizeNoteHtml } from '../core/note-format.js';
+import { findImageByLabel, referenceLabel, withImageLabels } from '../core/note-refs.js';
 import {
   IDENTITY, applyMatrix, constrainCorner, cornerLift, cornerOf, cornerPath, foldGeometry, gripOf, mirror, multiply, turnedCorner
 } from '../core/page-curl.js';
@@ -40,15 +41,16 @@ function reducedMotion() {
 /**
  * Treść notatki jako ciąg jednostek: { kind: 'block', node } | { kind: 'item', node, list,
  * listID, number } | { kind: 'break' } | { kind: 'image', index }. `source` – numer jednostki
- * w notatce (do odnalezienia strony po ponownym podziale).
+ * w notatce (do odnalezienia strony po ponownym podziale). images – obrazy z sygnaturami:
+ * akapit z samym odwołaniem [[sygnatura]] staje się obrazem, odwołanie bez obrazu zostaje
+ * tekstem oznaczonym na czerwono; obrazy bez odwołania są na początku albo na końcu.
  */
-function contentUnits(html, imageCount, imagesFirst = false) {
+function contentUnits(html, images, imagesFirst = false) {
   const template = document.createElement('template');
   template.innerHTML = normalizeNoteHtml(html);
   const root = document.importNode(template.content, true);
   const units = [];
-  const images = Array.from({ length: imageCount }, (_, index) => ({ kind: 'image', index }));
-  if (imagesFirst) units.push(...images);
+  const referenced = new Set();
   let listID = 0;
   for (const node of [...root.childNodes]) {
     if (node.nodeType !== window.Node.ELEMENT_NODE) continue;
@@ -59,11 +61,23 @@ function contentUnits(html, imageCount, imagesFirst = false) {
       listID += 1;
       [...node.children].forEach((item, index) => units.push({ kind: 'item', node: item, list: tag, listID, number: index + 1 }));
     } else {
+      const label = tag === 'p' ? referenceLabel(node.textContent) : null;
+      const index = label === null ? -1 : findImageByLabel(images, label);
+      if (index >= 0) {
+        units.push({ kind: 'image', index });
+        referenced.add(index);
+        continue;
+      }
+      if (label !== null) {
+        node.classList.add('note-ref--missing');
+        node.title = 'Notatka nie ma obrazu o tej sygnaturze';
+      }
       units.push({ kind: 'block', node });
     }
   }
-  if (!imagesFirst) units.push(...images);
-  return units.map((unit, source) => ({ ...unit, source }));
+  const rest = images.map((_, index) => index).filter((index) => !referenced.has(index)).map((index) => ({ kind: 'image', index }));
+  const all = imagesFirst ? [...rest, ...units] : [...units, ...rest];
+  return all.map((unit, source) => ({ ...unit, source }));
 }
 
 /** Punkt tekstu (węzeł, przesunięcie) dla przesunięcia liczonego w znakach treści elementu. */
@@ -112,7 +126,7 @@ function splittable(unit) {
  * (ta sama szerokość i style co prawdziwa strona), available – wysokość treści strony.
  * Zwraca [{ source, scroll, nodes }].
  */
-function paginate(units, images, content, available) {
+function paginate(units, images, content, available, language = 'pl') {
   const pages = [];
   const queue = units.map((unit) => ({ ...unit }));
   const width = content.clientWidth;
@@ -176,7 +190,7 @@ function paginate(units, images, content, available) {
     }
     let createdText = false;
     if (!text) {
-      text = h('div', { class: 'note-text note-page__text', lang: 'pl', dataset: { testid: 'note-text' } });
+      text = h('div', { class: 'note-text note-page__text', lang: language, dataset: { testid: 'note-text' } });
       content.append(text);
       createdText = true;
     }
@@ -377,12 +391,13 @@ const foldDepth = (geometry) => Math.max(0, ...geometry.folded.map((vertex) =>
  * element – miejsce na strony (rozciąga się na dostępną wysokość), pager – przyciski stron.
  * images: [{ url, width, height }]; onOpenImage(index) – dotknięcie obrazu.
  * spread – dwie strony obok siebie na dużym ekranie (wybór zapamiętuje onSpreadChange);
- * imagesFirst – obrazy przed tekstem.
+ * imagesFirst – obrazy bez odwołania przed tekstem; language – język treści ('pl' | 'en').
  */
 export function noteBook({
-  html, images, imagesFirst = false, onOpenImage, onLayout = () => {}, spread: spreadChosen = false, onSpreadChange = () => {}
+  html, images, imagesFirst = false, language = 'pl', onOpenImage, onLayout = () => {}, spread: spreadChosen = false,
+  onSpreadChange = () => {}
 }) {
-  const units = contentUnits(html, images.length, imagesFirst);
+  const units = contentUnits(html, withImageLabels(images), imagesFirst);
   const element = h('div', { class: 'note-book', dataset: { testid: 'note-book' } });
   const indicator = h('span', { class: 'note-pager__indicator', 'aria-live': 'polite', dataset: { testid: 'note-page-indicator' } });
   const spreadButton = h('button', {
@@ -418,6 +433,8 @@ export function noteBook({
   let suppressClick = false;
   let lastSize = '';
   let resizeTimer = null;
+  /** Numer podziału na strony – rośnie przy każdym ponownym podziale (np. po obrocie telefonu). */
+  let version = 0;
   let wheelSum = 0;
   let wheelLocked = false;
   let wheelTimer = null;
@@ -476,7 +493,7 @@ export function noteBook({
     showPages(measure);
     const style = getComputedStyle(measure);
     const available = measure.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
-    const result = paginate(units, images, measure.firstChild, Math.max(120, available));
+    const result = paginate(units, images, measure.firstChild, Math.max(120, available), language);
     return result.length > 0 ? result : [{ source: 0, scroll: false, nodes: [] }];
   }
 
@@ -516,6 +533,7 @@ export function noteBook({
     onLayout(single ? 'single' : spread ? 'spread' : 'paged');
     update();
     lastSize = `${window.innerWidth}x${window.innerHeight}`;
+    version += 1;
   }
 
   // ---- przewracanie kartek
@@ -790,6 +808,43 @@ export function noteBook({
     pager,
     layout,
     turn,
+    /** Numer podziału na strony (zmienia się po ponownym podziale). */
+    get version() {
+      return version;
+    },
+    /** Widoczne strony (numery od 0). */
+    visiblePages() {
+      return spread ? [index, index + 1].filter((number) => number < pages.length) : [index];
+    },
+    /**
+     * Fragmenty treści do czytania na głos, w kolejności: [{ text, page, element }] – nagłówki,
+     * akapity i punkty list (punkt bez list zagnieżdżonych); bez obrazów i odwołań bez obrazu.
+     */
+    readingParts() {
+      const parts = [];
+      elements.forEach((pageElement, page) => {
+        for (const block of pageElement.querySelectorAll('.note-page__text h3, .note-page__text p, .note-page__text li')) {
+          if (block.classList.contains('note-ref--missing')) continue;
+          const copy = block.cloneNode(true);
+          for (const nested of copy.querySelectorAll('ul, ol')) nested.remove();
+          const text = copy.textContent.replace(/\s+/g, ' ').trim();
+          if (text) parts.push({ text, page, element: block });
+        }
+      });
+      return parts;
+    },
+    /** Pokazuje stronę (numer od 0): sąsiednią przewraca jak kartkę, dalszą – od razu. */
+    async showPage(page) {
+      const first = spread ? page - (page % 2) : page;
+      if (first === index || first < 0 || first >= pages.length || busy || drag?.active) return;
+      if (first === index + shown()) await turn(1);
+      else if (first === index - shown()) await turn(-1);
+      else {
+        index = first;
+        showCurrent();
+        update();
+      }
+    },
     /**
      * Kółko myszy i przewijanie na gładziku: w dół (albo w lewo na gładziku) – następna strona,
      * w górę – poprzednia. Jeden ruch to jedna kartka: kolejną przewraca dopiero ruch po chwili
