@@ -72,6 +72,22 @@ Testy wersji 1.11.1:
   poprawki ten test nie przechodzi (ramka widoczna w menu).
 - **Lint: bez błędów.**
 
+## Uzupełnienie w wersji 1.11.2
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Przewijane dziedziny na Starcie przycięte do strefy wyznaczonej liniami (marginesy treści) – nic nie wychodzi poza obrys | Lista kafelków nie sięga już krawędzi ekranu: zaczyna się i kończy na tych samych liniach co pozostałe sekcje Startu, a kafelki przy przewijaniu znikają na linii marginesu. Następna kolumna nadal wystaje spod prawej linii (widać, że jest dalej) |
+| Ikony wstecz i dalej – zawinięte, jak w aplikacjach Apple | Przyciski **←** i **→** na pasku nawigacji mają teraz zawinięte strzałki (jak cofnij / ponów w aplikacjach Apple). Działanie bez zmian |
+
+Testy wersji 1.11.2:
+
+- **Testy logiki: 264 – wszystkie zaliczone** (bez zmian w logice).
+- **Testy w przeglądarce: 117 – wszystkie zaliczone w dwóch przebiegach** (test kafelków
+  dostosowany: lista od lewej do prawej linii marginesu, trzecia kolumna sięga za prawą linię,
+  a za linią kafelka nie widać – w tym miejscu jest tło strony).
+- **Lint: bez błędów.**
+- Zrzuty (Chromium): Start z dziewięcioma dziedzinami (telefon, przed i po przewinięciu), komputer.
+
 ## Czego nie sprawdzono
 
 - **Safari na iPhonie i iPadzie** – testy działają w Chromium (zachowanie fokusu Safari jest w teście

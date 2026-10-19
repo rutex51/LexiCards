@@ -135,7 +135,8 @@ przeglądarki nie widać, i tylko w obrębie aplikacji; pojawiają się, gdy jes
 
 Na **Starcie** kafelki dziedzin zajmują najwyżej dwa wiersze: przy więcej niż czterech dziedzinach
 kolejne kolumny przesuwasz w bok (palcem, kółkiem z Shift albo paskiem przewijania na komputerze);
-następna kolumna lekko wystaje, a przewinięcie zostaje po powrocie na Start.
+lista mieści się w marginesach ekranu, następna kolumna lekko wystaje spod prawej krawędzi listy,
+a przewinięcie zostaje po powrocie na Start.
 
 ### Aktualizacje
 

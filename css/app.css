@@ -936,16 +936,14 @@ a.row__main:active,
 }
 
 /* Więcej niż cztery dziedziny (od 1.10.8): najwyżej dwa wiersze, kolejne kolumny przewijane w bok.
-   Lista sięga krawędzi ekranu, a pierwsza kolumna zaczyna się przy marginesie treści. */
+   Od 1.11.2 lista jest w marginesach treści: kafelki znikają na linii marginesu, nic nie wychodzi
+   poza obrys pozostałych sekcji. */
 .tiles--scroll {
   grid-template-columns: none;
   grid-template-rows: repeat(2, auto);
   grid-auto-flow: column;
   /* Na telefonie widać dwie kolumny i kawałek trzeciej. */
   grid-auto-columns: minmax(calc((100% - 24px) / 2.2), 1fr);
-  margin-inline: calc(-1 * var(--gutter));
-  padding-inline: var(--gutter);
-  scroll-padding-inline: var(--gutter);
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory;

@@ -21,8 +21,8 @@ export class Shell {
       type: 'button', class: 'icon-button navbar__history-button', 'aria-label': label, title: label,
       dataset: { testid: testID }, onClick: action
     }, icon(iconName));
-    this.historyBack = historyButton('arrowLeft', 'Wstecz – poprzedni ekran', 'history-back', () => router.back());
-    this.historyForward = historyButton('arrowRight', 'Dalej – następny ekran', 'history-forward', () => router.forward());
+    this.historyBack = historyButton('historyBack', 'Wstecz – poprzedni ekran', 'history-back', () => router.back());
+    this.historyForward = historyButton('historyForward', 'Dalej – następny ekran', 'history-forward', () => router.forward());
     this.historySlot = h('div', { class: 'navbar__history', hidden: true }, this.historyBack, this.historyForward);
     this.actionSlot = h('div', { class: 'navbar__actions' });
     this.inlineTitle = h('div', { class: 'navbar__inline-title', 'aria-hidden': 'true' });

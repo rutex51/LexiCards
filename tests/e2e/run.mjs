@@ -2068,8 +2068,8 @@ test('Start: do czterech dziedzin zwykła siatka, więcej – najwyżej dwa wier
   assert.equal(tiles.scroll, true);
   assert.equal(tiles.rows, 2, 'dziewięć dziedzin – nadal dwa wiersze');
   assert.ok(tiles.overflow > 300, `przewijanie w bok (${tiles.overflow} px)`);
-  // Lista sięga krawędzi ekranu, a pierwsza kolumna – marginesu treści; strona się nie poszerza.
-  assert.deepEqual([tiles.left, tiles.right], [0, 390]);
+  // Lista w marginesach treści (jak pozostałe sekcje); strona się nie poszerza.
+  assert.deepEqual([tiles.left, tiles.right], [16, 374]);
   assert.equal(tiles.firstLeft, 16);
   assert.ok((await overflowX(page)) <= 0, 'strona bez przewijania w bok');
   // Kolejność kolumnami: pierwsza kolumna – 1. i 2. dziedzina, następna kolumna lekko wystaje.
@@ -2079,7 +2079,10 @@ test('Start: do czterech dziedzin zwykła siatka, więcej – najwyżej dwa wier
   }));
   assert.equal(columns[0].left, columns[1].left);
   assert.ok(columns[1].top > columns[0].top);
-  assert.ok(columns[4].left < 390 && columns[4].right > 390, 'trzecia kolumna wystaje za krawędź');
+  assert.ok(columns[4].left < 374 && columns[4].right > 374, 'trzecia kolumna sięga za linię marginesu');
+  // Za linią marginesu kafelka nie widać – w tym miejscu jest tło strony.
+  const clipped = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('.tile') === null, [382, columns[4].top + 40]);
+  assert.ok(clipped, 'kafelek przycięty na linii marginesu');
   const showTiles = () => page.evaluate(() => {
     for (const toast of document.querySelectorAll('.toast')) toast.remove();
     document.querySelector('[data-testid=start-domains]').closest('section').scrollIntoView({ block: 'center' });

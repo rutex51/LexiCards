@@ -32,7 +32,8 @@ let tilesScrollLeft = 0;
 
 /**
  * Kafelki dziedzin. Do czterech – zwykła siatka; więcej – dwa wiersze, kolejne kafelki w kolumnach
- * w prawo (przewijanie w bok, następna kolumna lekko wystaje, żeby było widać, że jest dalej).
+ * w prawo (przewijanie w bok w marginesach treści; następna kolumna wystaje spod linii marginesu,
+ * żeby było widać, że jest dalej).
  */
 function domainTiles(library, domains) {
   const scrolling = domains.length >= TILES_SCROLL_FROM;

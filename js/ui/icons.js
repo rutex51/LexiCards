@@ -63,6 +63,9 @@ const ICONS = {
   skipBack: [filled('M19 6.2v11.6a.7.7 0 0 1-1.1.6l-8.6-5.8a.7.7 0 0 1 0-1.2l8.6-5.8a.7.7 0 0 1 1.1.6z'), filled('M5 5.5h2.5v13H5z')],
   headphones: [p('M4 15v-3a8 8 0 0 1 16 0v3'), p('M4 15h3.5v5H5.5A1.5 1.5 0 0 1 4 18.5z'), p('M20 15h-3.5v5h2a1.5 1.5 0 0 0 1.5-1.5z')],
   undo: [p('M9 6.5L4.5 11 9 15.5'), p('M5 11h9.5a4.5 4.5 0 0 1 0 9H12')],
+  // Wstecz / dalej w pasku nawigacji (od 1.11.2): zawinięte strzałki jak w aplikacjach Apple.
+  historyBack: [p('M8.5 4L4 8.5 8.5 13'), p('M4.5 8.5H15a5 5 0 0 1 0 10h-3.5')],
+  historyForward: [p('M15.5 4L20 8.5 15.5 13'), p('M19.5 8.5H9a5 5 0 0 0 0 10h3.5')],
   clock: [{ tag: 'circle', cx: 12, cy: 12, r: 8.5 }, p('M12 7.5V12l3 2')],
   flip: [p('M19.5 12a7.5 7.5 0 0 1-13.2 4.9'), p('M4.5 12a7.5 7.5 0 0 1 13.2-4.9'), p('M18.2 3.6v3.8h-3.8'), p('M5.8 20.4v-3.8h3.8')],
   minus: [p('M5 12h14')],
