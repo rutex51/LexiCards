@@ -603,8 +603,8 @@ export function noteBook({
     placeBand(sheet.cast.firstChild, origin, normal, width * (0.04 + 0.2 * lift), lift * 1.6, length);
     placeBand(sheet.fold.firstChild, origin, { x: -normal.x, y: -normal.y }, width * (0.03 + 0.12 * lift), lift * 2, length);
     const backNormal = { x: (sheet.backMirror ? -1 : 1) * geometry.normal.x, y: geometry.normal.y };
-    placeBand(sheet.light, applyMatrix(backLocal, geometry.point), backNormal,
-      Math.min(foldDepth(geometry), width * 0.45), lift * 2.5, length);
+    // Jasny pas obejmuje cały płat – jego koniec wypada na najdalszym punkcie płata, bez widocznej granicy.
+    placeBand(sheet.light, applyMatrix(backLocal, geometry.point), backNormal, foldDepth(geometry) + 1, lift * 2.5, length);
   }
 
   /** Ruch rogu po drodze `path` (t = 0..1) w czasie `duration`. */

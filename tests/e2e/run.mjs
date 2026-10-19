@@ -2233,6 +2233,8 @@ test('fiszki: obrót, trzy kafelki, wynik, decyzje, podsumowanie i runda powtór
   }
   assert.equal(await page.locator('[data-testid=study-hint]').isVisible(), true);
   assert.equal(await page.locator('[data-testid=study-undo]').isDisabled(), true, 'nie ma czego cofać');
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  const frontBox = await flashcard(page).boundingBox();
 
   // Dotknięcie fiszki obraca ją; na odwrocie tłumaczenie, opis i przykład w obu językach.
   await flashcard(page).locator('[data-testid=card-front] .flashcard__text').click();
@@ -2244,6 +2246,11 @@ test('fiszki: obrót, trzy kafelki, wynik, decyzje, podsumowanie i runda powtór
     await expectText(back, text);
   }
   assert.equal(await page.locator('[data-testid=study-hint]').isVisible(), false);
+  // Fiszka po obrocie ma tę samą wielkość i położenie co przed obrotem.
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  const backBox = await flashcard(page).boundingBox();
+  assert.ok(Math.abs(backBox.height - frontBox.height) < 1 && Math.abs(backBox.y - frontBox.y) < 1,
+    `ta sama wielkość fiszki: ${frontBox.height} → ${backBox.height}`);
 
   // Kafelki działają jak przełączniki, wynik liczy zaznaczone elementy.
   await expectText(score(page), '0/3');
@@ -4485,6 +4492,25 @@ async function openListening(page, ids) {
   await page.click('[data-testid=study-listen]');
   await page.locator('[data-testid=listen-start]').waitFor();
 }
+
+test('słuchanie: „Słuchaj lekcji” z ekranu lekcji otwiera słuchanie z materiałem tej lekcji', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await page.evaluate((id) => { location.hash = `#/library/lesson/${id}`; }, ids.basicsID);
+  await page.locator('[data-testid=lesson-listen]').waitFor();
+  // Na telefonie: nauka na całą szerokość, pod nią quiz i słuchanie obok siebie.
+  const [study, quiz, listen] = await Promise.all(['lesson-study', 'lesson-quiz', 'lesson-listen']
+    .map((id) => page.locator(`[data-testid=${id}]`).boundingBox()));
+  assert.ok(quiz.y > study.y + study.height - 1 && Math.abs(quiz.y - listen.y) < 1 && listen.x > quiz.x, 'układ przycisków lekcji');
+  await expectText(page.locator('[data-testid=lesson-listen]'), 'Słuchaj lekcji');
+  await page.click('[data-testid=lesson-listen]');
+  await page.locator('[data-testid=listen-start]').waitFor();
+  assert.match(page.url(), /#\/study\/listen\/lesson\//);
+  assert.equal(await page.locator('[data-testid=listen-domain]').inputValue(), ids.domainID);
+  assert.equal(await page.locator('[data-testid=listen-module]').inputValue(), ids.financeID);
+  assert.equal(await page.locator('.group--compact .row', { hasText: 'Podstawy' }).locator('input').isChecked(), true);
+  await expectText(page.locator('[data-testid=listen-planned]'), '3 pojęcia');
+});
 
 test('słuchanie: pojęcie, czas na zastanowienie, odpowiedź, definicja i przykład; koniec; powtórki bez zmian', async ({ open, context }) => {
   await fakeSpeechForListening(context);

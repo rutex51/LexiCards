@@ -246,7 +246,8 @@ powtórek fiszek; pojęcia, na które ostatnio odpowiedziałeś źle, znajdziesz
 
 ### Słuchanie (np. w samochodzie)
 
-W zakładce **Nauka** wybierz **Słuchaj, np. w samochodzie**, ustaw materiał, kierunek (domyślnie mieszany),
+W zakładce **Nauka** wybierz **Słuchaj, np. w samochodzie** (albo **Słuchaj lekcji** na ekranie lekcji –
+wtedy materiałem jest ta lekcja), ustaw materiał, kierunek (domyślnie mieszany),
 zakres, liczbę pojęć i czas na zastanowienie (3–12 s), a potem **Rozpocznij słuchanie** – jeszcze przed
 jazdą. Aplikacja czyta pojęcie, czeka, czyta odpowiedź, a potem definicję i przykład (po angielsku albo
 po polsku). Duży przycisk w środku zatrzymuje i wznawia, boczne przechodzą do poprzedniego i następnego

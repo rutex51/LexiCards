@@ -148,7 +148,8 @@ export class StudySessionScreen {
       this.elements.scoreBar.setAttribute('aria-valuenow', String(score));
     }
     for (const control of this.elements.afterReveal ?? []) control.disabled = !this.revealed || this.busy;
-    if (this.elements.hint) this.elements.hint.hidden = this.revealed;
+    // Po obrocie podpowiedź znika, ale zostawia swoje miejsce – fiszka i przyciski się nie przesuwają.
+    if (this.elements.hint) this.elements.hint.classList.toggle('study__hint--used', this.revealed);
     this.#updatePreview();
   }
 

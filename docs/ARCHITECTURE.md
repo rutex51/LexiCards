@@ -354,7 +354,9 @@ Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany 
   miejsce (te same 220 ms co lot fiszki), a nowa fiszka pojawia się w tym samym położeniu bez
   animacji wejścia (`data-enter="stack"`, także przy kolejnych odświeżeniach ekranu). Ostatnia
   fiszka nie ma nic pod spodem; miejsce pod stosem jest zarezerwowane zawsze, więc fiszka nie
-  zmienia wysokości w trakcie sesji.
+  zmienia wysokości w trakcie sesji. Od 1.5.1 także podpowiedź pod przyciskami („Odwróć fiszkę…”)
+  po obrocie tylko znika (`visibility: hidden`), zostawiając miejsce – fiszka ma tę samą wielkość
+  przed i po obrocie, a przyciski się nie przesuwają.
 - **Dzienniki** (`assessments`, `studySessions`) nie są trzymane w pamięci: zapis idzie przez
   `UnitOfWork.append()` / `erase()` w tej samej transakcji co reszta zmian, a odczyt historii
   pojęcia przez indeks `termID`.
@@ -473,6 +475,9 @@ Reguły są w `js/core/quiz.js` (bez przeglądarki), zapis w `Library`, ekrany w
 
 ## Słuchanie
 
+- **Wejście** z zakładki Nauka (materiał wybrany ostatnio) albo – od 1.5.1 – przyciskiem „Słuchaj
+  lekcji” na ekranie lekcji: adres `#/study/listen/lesson/<id>` ustawia materiał na tę lekcję
+  (`initialSelection()` jak w nauce i quizie).
 - **Scenariusz** (`listenSteps()` w `js/core/listen.js`): pojęcie w języku pytania, czas na
   zastanowienie, odpowiedź, opcjonalnie odpowiedź drugi raz, definicja i przykład w wybranym
   języku (gdy brak – w drugim). Kolejka pojęć powstaje tak jak w nauce (`buildQueue()`: materiał,

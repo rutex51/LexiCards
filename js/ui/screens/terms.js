@@ -377,7 +377,12 @@ export class LessonScreen {
             class: 'button button--secondary',
             href: routes.quiz({ level: 'lesson', id: lesson.id }),
             dataset: { testid: 'lesson-quiz' }
-          }, 'Quiz z tej lekcji')
+          }, 'Quiz z tej lekcji'),
+          h('a', {
+            class: 'button button--secondary',
+            href: routes.listen({ level: 'lesson', id: lesson.id }),
+            dataset: { testid: 'lesson-listen' }
+          }, 'Słuchaj lekcji')
         ),
         noteGroup,
         searchField({

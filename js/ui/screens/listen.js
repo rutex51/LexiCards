@@ -33,10 +33,11 @@ function formatMinutes(milliseconds) {
 }
 
 export class ListenScreen {
-  constructor(ctx) {
+  constructor(ctx, route = {}) {
     this.ctx = ctx;
     const settings = ctx.library.getSettings();
-    this.selection = initialSelection(ctx.library, settings.listenSelection, null);
+    // Z ekranu lekcji („Słuchaj lekcji”) materiał to ta lekcja; inaczej – wybrany ostatnio.
+    this.selection = initialSelection(ctx.library, settings.listenSelection, route.preset ?? null);
     this.direction = known(STUDY_DIRECTIONS, settings.listenDirection, MIXED);
     this.scope = known(STUDY_SCOPES, settings.listenScope, 'all');
     this.count = known(LISTEN_COUNTS, settings.listenCount, 20);

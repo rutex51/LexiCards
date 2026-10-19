@@ -31,6 +31,24 @@ budowy: [ARCHITECTURE.md](ARCHITECTURE.md) (sekcje „Treść notatki” i „No
 - „Kopiuj notatkę” z obrazami przed tekstem – kolejność w schowku sprawdzona tylko w kodzie,
   bez wklejenia do innej aplikacji.
 
+## Uzupełnienie w wersji 1.5.1
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Cień przy przewracaniu kartki nie wygląda naturalnie – płynny gradient | Jasny pas na płacie kończył się wewnątrz płata lekko ciemnym brzegiem – stąd widoczna granica. Teraz pas sięga do najdalszego punktu płata, więc nigdzie na nim nie ma granicy, a wszystkie trzy cienie (przy zgięciu, na płacie, na stronie pod spodem) zanikają łagodnie, w kilku krokach gradientu, i kończą się przezroczystością |
+| Fiszka przy nowym wyświetleniu mniejsza niż po obrocie – ta sama wielkość | Podpowiedź pod przyciskami („Odwróć fiszkę…”) po obrocie znikała razem ze swoim miejscem, więc fiszka rosła (54 px na telefonie, 36 px na komputerze). Teraz po obrocie podpowiedź jest niewidoczna, ale miejsce zostaje: fiszka ma tę samą wielkość i położenie na obu etapach, a kafelki i przyciski się nie przesuwają |
+| Trzeci przycisk na ekranie lekcji: „Słuchaj lekcji” | Obok „Ucz się tej lekcji” i „Quiz z tej lekcji”. Otwiera słuchanie z materiałem ustawionym na tę lekcję (dziedzina, moduł, zaznaczona lekcja). Na telefonie „Ucz się tej lekcji” jest na całą szerokość, pod nim quiz i słuchanie; na szerszym ekranie trzy przyciski w rzędzie |
+
+Testy wersji 1.5.1:
+
+- **Testy logiki: 231 – wszystkie zaliczone.**
+- **Testy w przeglądarce: 92 – wszystkie zaliczone w dwóch przebiegach** (91 + 1 nowy: „Słuchaj
+  lekcji” – układ przycisków, adres, ustawiony materiał i liczba pojęć; test fiszek uzupełniony
+  o tę samą wielkość i położenie fiszki przed i po obrocie).
+- **Lint: bez błędów.**
+- Zrzuty: fiszka przed i po obrocie, ekran lekcji (telefon i komputer), przewracana kartka
+  z nowym cieniem (komputer). Na iPhonie nie sprawdzono.
+
 ## Do decyzji
 
 - Sygnatury obrazów: obraz w dowolnym miejscu treści przez odwołanie do jego sygnatury (także

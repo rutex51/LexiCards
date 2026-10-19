@@ -35,6 +35,7 @@
   --page-spine-strong: rgba(60, 60, 67, 0.09);
   --page-back: #f7f7f8;
   --curl-light: rgba(255, 255, 255, 0.9);
+  --curl-light-soft: rgba(255, 255, 255, 0.4);
 
   /* Kolory aplikacji (Ustawienia → Wygląd → Kolor). Każdy: tekst i zaznaczenia, wypełnienie
      przycisków (biały tekst na nim) i tło delikatne; wszystkie z kontrastem co najmniej 4,5:1.
@@ -138,6 +139,7 @@
     --page-spine-strong: rgba(0, 0, 0, 0.42);
     --page-back: #323235;
     --curl-light: rgba(255, 255, 255, 0.1);
+    --curl-light-soft: rgba(255, 255, 255, 0.04);
     --tone-blue: #78b7ff;
     --tone-blue-fill: #0a6fe0;
     --tone-blue-soft: rgba(120, 183, 255, 0.18);
@@ -210,6 +212,7 @@
   --page-spine-strong: rgba(0, 0, 0, 0.42);
   --page-back: #323235;
   --curl-light: rgba(255, 255, 255, 0.1);
+  --curl-light-soft: rgba(255, 255, 255, 0.04);
   --tone-blue: #78b7ff;
   --tone-blue-fill: #0a6fe0;
   --tone-blue-soft: rgba(120, 183, 255, 0.18);
@@ -2045,6 +2048,9 @@ a.row__main:active,
   text-align: center;
 }
 
+/* Po obrocie fiszki: niewidoczna, ale z zarezerwowanym miejscem (ta sama wielkość fiszki na obu etapach). */
+.study__hint--used { visibility: hidden; }
+
 .study__keys { display: none; }
 
 .term__learning {
@@ -2224,10 +2230,18 @@ a.row__main:active,
 
 .speech-check__result--problem svg { color: var(--warning); }
 
+/* Nauka, quiz i słuchanie lekcji: na telefonie nauka na całą szerokość, pod nią dwa przyciski. */
 .lesson-actions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.lesson-actions > :first-child { grid-column: 1 / -1; }
+
+@media (min-width: 600px) {
+  .lesson-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lesson-actions > :first-child { grid-column: auto; }
 }
 
 /* Quiz: pytanie, odpowiedzi, łączenie par, wynik. */
@@ -3959,18 +3973,26 @@ a.row__main:active,
   pointer-events: none;
 }
 
+/* Cienie zanikają łagodnie (kilka punktów gradientu zamiast prostej linii) i kończą się przezroczystością. */
 .note-curl__band--cast {
-  background: linear-gradient(to right, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.1) 30%, rgba(0, 0, 0, 0));
+  background: linear-gradient(to right,
+    rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.22) 8%, rgba(0, 0, 0, 0.14) 20%, rgba(0, 0, 0, 0.07) 38%,
+    rgba(0, 0, 0, 0.025) 62%, rgba(0, 0, 0, 0));
 }
 
 .note-curl__band--fold {
-  background: linear-gradient(to right, rgba(0, 0, 0, 0.26), rgba(0, 0, 0, 0));
+  background: linear-gradient(to right,
+    rgba(0, 0, 0, 0.24), rgba(0, 0, 0, 0.15) 15%, rgba(0, 0, 0, 0.07) 40%, rgba(0, 0, 0, 0.02) 70%, rgba(0, 0, 0, 0));
 }
 
-/* Jasny pas na płacie udaje zaokrąglenie papieru przy zgięciu; dalej płat lekko ciemnieje. */
+/*
+ * Jasny pas na płacie udaje zaokrąglenie papieru przy zgięciu, dalej płat łagodnie ciemnieje
+ * ku krawędzi. Pas sięga do najdalszego punktu płata, więc nigdzie na płacie nie ma jego granicy.
+ */
 .note-curl__band--light {
   background: linear-gradient(to right,
-    rgba(0, 0, 0, 0.12), var(--curl-light) 7%, rgba(255, 255, 255, 0) 30%, rgba(0, 0, 0, 0.05));
+    rgba(0, 0, 0, 0.1), var(--curl-light) 5%, var(--curl-light-soft) 13%, rgba(255, 255, 255, 0) 30%,
+    rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.025) 72%, rgba(0, 0, 0, 0.05));
 }
 
 .note-page--flap {
