@@ -5110,6 +5110,83 @@ test('lekcje i moduły: przesunięcie w prawo utrwala, w lewo usuwa; lekkie pyta
   await page.locator('.toast', { hasText: 'Moduł nie ma pojęć – nie ma czego utrwalić.' }).waitFor();
 });
 
+test('pojęcia w lekcji: przesunięcie w prawo – do ulubionych i z powrotem, w lewo – usuń (pytanie albo od razu, z „Cofnij”)', async ({ open, context }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await page.evaluate(() => document.querySelectorAll('.toast').forEach((toast) => toast.remove()));
+  const row = (name) => page.locator('.terms > .term', { has: page.locator('.term__pl', { hasText: name }) });
+  const term = (name) => page.evaluate((termPL) => [...window.lexicards.library.maps.terms.values()].find((item) => item.termPL === termPL) ?? null, name);
+  const first = (await page.locator('.terms > .term .term__pl').first().textContent()).trim();
+
+  // W prawo – od razu do ulubionych (bez pytania), drugi raz – z ulubionych.
+  const holding = await swipeRowBy(context, page, row(first), 120, { release: false });
+  const favoriteLayer = page.locator('.swipe__layer--right.swipe__layer--shown');
+  await expectText(favoriteLayer.locator('.swipe__label--light'), 'Do ulubionych');
+  // Złoto gwiazdki (--star) z ciemną ikoną.
+  const colors = await favoriteLayer.evaluate((layer) => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--star)';
+    document.body.append(probe);
+    const star = getComputedStyle(probe).color;
+    probe.remove();
+    return { background: getComputedStyle(layer).backgroundColor, star, text: getComputedStyle(layer).color };
+  });
+  assert.equal(colors.background, colors.star, 'kolor gwiazdki');
+  assert.equal(colors.text, 'rgb(29, 29, 31)');
+  await page.screenshot({ path: path.join(OUTPUT, 'przesuniecie-pojecie-ulubione-telefon.png') });
+  await holding.end();
+  await waitUntil(async () => (await term(first)).isFavorite === true, 'Pojęcie w ulubionych');
+  assert.equal(await page.locator('dialog.alert[open]').count(), 0, 'bez pytania');
+  assert.equal(await row(first).locator('.term__details').isVisible(), false, 'przesunięcie nie rozwija pojęcia');
+  await swipeRowBy(context, page, row(first), 260);
+  await waitUntil(async () => (await term(first)).isFavorite === false, 'Pojęcie z powrotem poza ulubionymi');
+
+  // W lewo lekko – pytanie; „Anuluj” – zostaje. Zdecydowanie – od razu, „Cofnij” przywraca.
+  await swipeRowBy(context, page, row(first), -110);
+  await expectText(page.locator('.alert__title'), `Usunąć pojęcie „${first}”?`);
+  await page.locator('dialog.alert[open]').getByRole('button', { name: 'Anuluj' }).click();
+  assert.ok(await term(first));
+  await swipeRowBy(context, page, row(first), -270);
+  await waitUntil(async () => (await term(first)) === null, 'Pojęcie usunięte bez pytania');
+  const undo = page.locator('[data-testid=undo-toast]', { hasText: `Usunięto pojęcie „${first}”.` });
+  await undo.getByRole('button', { name: 'Cofnij' }).click();
+  await waitUntil(async () => (await term(first)) !== null, 'Pojęcie przywrócone');
+  await waitUntil(async () => (await row(first).count()) === 1, 'Pojęcie znowu na liście');
+
+  // Ruch zaczęty na gwiazdce nie przesuwa wiersza; zwykłe dotknięcie rozwija pojęcie.
+  await page.waitForTimeout(350);
+  const star = await row(first).locator('.term__star').boundingBox();
+  const touch = await touchAt(context, page, star.x + star.width / 2, star.y + star.height / 2);
+  await touch.move(star.x + star.width / 2 - 200, star.y + star.height / 2, 10);
+  await touch.end();
+  assert.ok(await term(first), 'po ruchu od gwiazdki pojęcie zostaje');
+  assert.equal(await page.locator('dialog.alert[open]').count(), 0);
+  await row(first).locator('.term__toggle').click();
+  await waitUntil(() => row(first).locator('.term__details').isVisible(), 'Pojęcie rozwinięte');
+});
+
+test('lista wyboru na komputerze (Chrome, Edge): rozwijana lista w stylu aplikacji, wybór kliknięciem', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.goto(`${page.url().split('#')[0]}#/library/module/${ids.module}`);
+  const select = page.locator('[data-testid=lessons-created-preset]');
+  assert.equal(await select.evaluate((element) => getComputedStyle(element).appearance), 'base-select');
+  await select.click();
+  await waitUntil(() => select.evaluate((element) => element.matches(':open')), 'Lista rozwinięta');
+  const picker = await select.evaluate((element) => {
+    const style = getComputedStyle(element, '::picker(select)');
+    return { radius: style.borderRadius, padding: style.paddingTop };
+  });
+  assert.deepEqual(picker, { radius: '14px', padding: '6px' });
+  await page.getByRole('option', { name: 'Ostatnie 7 dni' }).click();
+  await waitUntil(async () => (await select.inputValue()) === '7d', 'Wybrano „Ostatnie 7 dni”');
+  await waitUntil(() => page.evaluate(() => !document.querySelector('[data-testid=lessons-created-preset]').matches(':open')), 'Lista zwinięta');
+  await expectText(page.locator('.created-filter'), 'Ostatnie 7 dni');
+}, { device: DESKTOP });
+
 test('„Cofnij” po usunięciu wisi około minuty i znika sam; usunięcie z menu też można cofnąć', async ({ open, context }) => {
   await context.clock.install();
   const page = await open();

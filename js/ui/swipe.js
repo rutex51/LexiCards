@@ -24,13 +24,14 @@ const SETTLE_MS = 260;
 
 /**
  * Dodaje przesuwanie do wiersza listy (li.row). right – działanie po przesunięciu w prawo,
- * left – w lewo: { label, strongLabel, icon, tone: 'green' | 'red' | 'gray', confirm(), run(), unavailable? }.
+ * left – w lewo: { label, strongLabel, icon, tone: 'green' | 'red' | 'gray' | 'gold', confirm(), run(), unavailable? }.
  * label – napis przy lekkim przesunięciu, strongLabel – przy zdecydowanym; confirm() – po lekkim
- * przesunięciu (zwykle okno z pytaniem), run() – po zdecydowanym (obietnica; false – nie wyszło,
- * wiersz wraca). unavailable – tekst komunikatu zamiast działania (np. pusta lekcja), pokazywany
- * przez onUnavailable(text).
+ * przesunięciu (zwykle okno z pytaniem; bez confirm – lekkie też wykonuje od razu), run() – po
+ * zdecydowanym (obietnica; false – nie wyszło, wiersz wraca). unavailable – tekst komunikatu zamiast
+ * działania (np. pusta lekcja), pokazywany przez onUnavailable(text). ignore – elementy wiersza,
+ * od których przesuwanie się nie zaczyna (domyślnie przyciski).
  */
-export function swipeRow(row, { right = null, left = null, onUnavailable = () => {} } = {}) {
+export function swipeRow(row, { right = null, left = null, onUnavailable = () => {}, ignore = 'button' } = {}) {
   if (!right && !left) return row;
   row.classList.add('row--swipe');
 
@@ -93,7 +94,7 @@ export function swipeRow(row, { right = null, left = null, onUnavailable = () =>
 
   row.addEventListener('pointerdown', (event) => {
     if (event.pointerType === 'mouse' || !event.isPrimary || row.classList.contains('row--swiping')) return;
-    if (event.target.closest('button')) return;
+    if (event.target.closest(ignore)) return;
     if (event.clientX < EDGE || event.clientX > window.innerWidth - EDGE) return;
     gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, active: false, dx: 0 };
   });
@@ -143,7 +144,7 @@ export function swipeRow(row, { right = null, left = null, onUnavailable = () =>
       onUnavailable(action.unavailable);
       return;
     }
-    if (strength === 'strong') {
+    if (strength === 'strong' || !action.confirm) {
       // Usunięcie: wiersz odjeżdża; inne działania – wraca na miejsce.
       settle(action.tone === 'red' ? Math.sign(dx) * (row.clientWidth + 40) : 0);
       Promise.resolve(action.run()).then((done) => {

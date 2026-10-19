@@ -1076,6 +1076,8 @@ a.row__main:active,
 .swipe__layer--green { background: var(--success-fill); }
 .swipe__layer--red { background: var(--danger-fill); }
 .swipe__layer--gray { background: var(--tone-graphite-fill); }
+/* Ulubione – złoty kolor gwiazdki, ciemna ikona i napis (czytelne na złotym tle). */
+.swipe__layer--gold { background: var(--star); color: #1d1d1f; }
 
 .swipe__layer svg { flex: none; transition: transform 0.15s ease; }
 .swipe__layer--strong svg { transform: scale(1.25); }
@@ -3802,6 +3804,57 @@ a.row__main:active,
   gap: 14px;
   padding: 7px 8px 7px 16px;
   pointer-events: auto;
+}
+
+/* Lista wyboru (od 1.9.2): w Chrome i Edge (od wersji 135) rozwijana lista w stylu aplikacji –
+   zaokrąglona, z cieniem, odstępami i znacznikiem wybranej pozycji. Safari i Firefox zostają przy
+   liście systemowej (na iPhonie – koło wyboru). */
+@supports (appearance: base-select) {
+  .input--select,
+  .input--select::picker(select) { appearance: base-select; }
+
+  .input--select {
+    border: 0;
+    border-radius: 0;
+    padding: 3px 26px 3px 0;
+    background-color: transparent;
+    color: inherit;
+    /* Krój jak w aplikacji; rozmiar zostaje co najmniej 16 px (bez powiększania strony na iPhonie). */
+    font-family: inherit;
+  }
+
+  .input--select::picker-icon { display: none; }
+
+  .input--select::picker(select) {
+    min-width: anchor-size(width);
+    max-height: min(60vh, 440px);
+    margin-top: 6px;
+    padding: 6px;
+    border: 1px solid var(--separator);
+    border-radius: 14px;
+    background: var(--sheet-surface);
+    color: var(--text);
+    box-shadow: 0 14px 36px -10px rgba(0, 0, 0, 0.32), 0 2px 8px rgba(0, 0, 0, 0.08);
+    overflow-y: auto;
+  }
+
+  .input--select option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+    padding: 8px 14px 8px 10px;
+    border-radius: 9px;
+    font-size: 0.97rem;
+    cursor: pointer;
+  }
+
+  .input--select option:hover,
+  .input--select option:focus-visible { background: var(--fill); outline: none; }
+
+  .input--select option:checked { color: var(--accent); font-weight: 600; }
+
+  .input--select option::checkmark { color: var(--accent); }
 }
 
 /* „Cofnij” po usunięciu (od 1.9): pasek u dołu komunikatu kurczy się przez czas, w którym można cofnąć. */

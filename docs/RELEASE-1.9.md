@@ -60,6 +60,29 @@ Testy wersji 1.9.1:
   (test nie przechodzi, gdy komunikat nie znika sam).
 - **Lint: bez błędów.**
 
+## Uzupełnienie w wersji 1.9.2
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Lista wyboru w filtrach nowocześniej w przeglądarce na Windows (za mały odstęp od lewej krawędzi); w Safari jest dobrze | W Chrome i Edge (od wersji 135) rozwijana lista ma teraz wygląd aplikacji: zaokrąglone okno z cieniem i cienką ramką, odstępy wokół pozycji (także od lewej krawędzi), podświetlenie pod kursorem, wybrana pozycja w kolorze aplikacji ze znacznikiem ✓, jasny i ciemny motyw. Dotyczy wszystkich list wyboru w aplikacji (filtr daty, zakres fiszek, filtry glosariusza…). Safari i Firefox zostają przy swojej, systemowej liście – bez zmian |
+| Przesunięcie także dla lekcji: w prawo – dodaj do ulubionych, w lewo – usuń | Na ekranie lekcji wiersz **pojęcia** przesuwasz palcem: w prawo – **Do ulubionych** (złota warstwa w kolorze gwiazdki, z ciemną ikoną; na ulubionym – szara **Usuń z ulubionych**), w lewo – **Usuń** (czerwona). Ulubione zmieniają się od razu przy każdym przesunięciu ponad próg – bez pytania, bo to łatwo odwrócić. Usuwanie jak przy lekcjach: lekkie przesunięcie pyta, zdecydowane usuwa od razu, a przez minutę działa „Cofnij”. Przesunięcie nie rozwija pojęcia; ruch zaczęty na gwiazdce albo „…” nie przesuwa wiersza |
+
+Testy wersji 1.9.2:
+
+- **Testy logiki: 258 – wszystkie zaliczone** (bez zmian w logice).
+- **Testy w przeglądarce: 108 – wszystkie zaliczone w dwóch przebiegach** (106 wcześniejszych
+  + 2 nowe): pojęcia w lekcji – w prawo do ulubionych i z powrotem bez pytania, wiersz się nie rozwija,
+  lekko w lewo – pytanie i „Anuluj”, zdecydowanie – usunięcie bez pytania i „Cofnij”, ruch od gwiazdki
+  nic nie robi, zwykłe dotknięcie rozwija pojęcie, warstwa ulubionych w kolorze gwiazdki z ciemną
+  ikoną; lista wyboru na komputerze – wygląd aplikacji
+  (zaokrąglenie 14 px, odstęp 6 px), rozwinięcie kliknięciem, wybór pozycji kliknięciem, zwinięcie.
+- **Lint: bez błędów.**
+- W trakcie wydania test „iPhone: pole formularza nie powiększa strony” wyłapał, że nowy wygląd listy
+  zmniejszał jej czcionkę poniżej 16 px (Safari powiększałby wtedy stronę przy dotknięciu) –
+  poprawione przed wysłaniem.
+- Zrzuty (Chromium): rozwinięta lista w jasnym i ciemnym motywie (komputer), przesunięcie pojęcia do
+  ulubionych (telefon).
+
 ## Czego nie sprawdzono
 
 - **Na iPhonie** – testy działają w Chromium z ekranem telefonu (dotyk wysyłany przez przeglądarkę),

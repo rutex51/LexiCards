@@ -158,7 +158,13 @@ działa na adapterze pamięciowym i wyświetla ostrzeżenie, że dane znikną po
   `position: relative`). Próg lekki – 56 px (po puszczeniu pytanie: `requestDeletion`,
   `confirmConsolidation`), zdecydowany – połowa szerokości wiersza (od razu: `deleteNow`,
   `setConsolidated`). Napis działania widać, gdy mieści się w odsłoniętej części. Kliknięcie
-  w link tuż po przesunięciu jest pomijane.
+  w link tuż po przesunięciu jest pomijane. Od 1.9.2 także pojęcia w lekcji (`termList(…, { swipe })`):
+  w prawo – ulubione (działanie bez `confirm`, więc od razu przy każdym przesunięciu ponad próg),
+  w lewo – usunięcie; ruch od gwiazdki i „…” (`ignore: '.icon-button'`) nie przesuwa wiersza.
+- **Lista wyboru** (od 1.9.2): w przeglądarkach z `appearance: base-select` (Chrome i Edge od 135)
+  `<select>` i jego lista (`::picker(select)`) mają style aplikacji – zaokrąglenie, cień, odstępy,
+  znacznik wybranej pozycji w kolorze aplikacji; strzałka zostaje własna (`::picker-icon` ukryte).
+  Pozostałe przeglądarki (Safari, Firefox) – lista systemowa, bez zmian (`@supports`).
 - **Cofnij po usunięciu** (od 1.9.1): `deleteWithUndo(target)` przed usunięciem kopiuje wszystko, co
   zniknie – rekordy z pamięci (dziedzina, moduły, lekcje, pojęcia, postępy, notatki), dzienniki
   nauki tych pojęć (`readByTerm`) i pliki notatek – a `restoreDeleted(kopia)` zapisuje je z powrotem

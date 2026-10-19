@@ -32,7 +32,8 @@ Przesuwanie wierszy lekcji i modułów, data utworzenia i filtr daty, kolejnoś�
   końcu listy – albo, po wyłączeniu w Ustawieniach, tam, gdzie je ustawisz.
 - Na telefonie wiersz lekcji albo modułu przesunięty palcem w prawo utrwala (albo cofa utrwalenie),
   w lewo – usuwa; lekkie przesunięcie pyta o potwierdzenie, zdecydowane (ponad pół wiersza)
-  wykonuje od razu. Po każdym usunięciu przez około minutę działa przycisk „Cofnij” w komunikacie.
+  wykonuje od razu; pojęcie w lekcji: w prawo – do ulubionych, w lewo – usuń. Po każdym usunięciu przez
+  około minutę działa przycisk „Cofnij” w komunikacie.
 - Data utworzenia przy każdym module i lekcji (i w szczegółach pojęcia) oraz filtr po dacie
   utworzenia: na liście modułów, lekcji, pojęć lekcji i w glosariuszu (dziś, 7 dni, 30 dni, ten rok
   albo wybrany okres).
@@ -261,6 +262,10 @@ się stanie. Lekkie przesunięcie i puszczenie pokazuje pytanie z potwierdzeniem
 połowę szerokości wiersza, napis zmienia się na „Puść – …” – wykonuje od razu, **bez pytania** (także
 usunięcie modułu z lekcjami i pojęciami). Krótki ruch albo przewijanie listy w pionie niczego nie
 robi. Myszą na komputerze wiersz działa jak dotąd – polecenia są w menu „…”.
+
+Na ekranie lekcji tak samo przesuwasz **pojęcia**: w prawo – **do ulubionych** (na ulubionym –
+z ulubionych; od razu, bez pytania, bo łatwo to odwrócić), w lewo – **usuń** (lekkie przesunięcie
+pyta, zdecydowane usuwa od razu). Ruch zaczęty na gwiazdce albo „…” nie przesuwa wiersza.
 
 **Cofnij po usunięciu:** po każdym usunięciu (przesunięciem, z menu „…”, zaznaczonych pojęć)
 u dołu ekranu jest komunikat z przyciskiem **Cofnij** – bez okna, przez około minutę (pasek

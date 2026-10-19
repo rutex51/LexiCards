@@ -9,7 +9,7 @@ import {
   DIRECTION_NAMES, MASTERY_NAMES, cardDueTime, describeDue, describeProgress, dueTime, masteryLevel
 } from '../../core/study.js';
 import {
-  copyLesson, copyTerms, moveLesson, moveTerms, openAssessmentHistory, openExportSheet, openLessonForm, openTermForm,
+  copyLesson, copyTerms, deleteNow, moveLesson, moveTerms, openAssessmentHistory, openExportSheet, openLessonForm, openTermForm,
   requestDeletion, setFavorite
 } from '../actions.js';
 import {
@@ -21,6 +21,7 @@ import { icon } from '../icons.js';
 import { consolidationMenuItem, consolidationRow } from '../mastery.js';
 import { lessonNoteRow, noteMenuItem, openLessonNote } from '../notes.js';
 import { routes } from '../router.js';
+import { swipeRow } from '../swipe.js';
 import { missingView } from './library.js';
 import { statsDirection } from './stats.js';
 
@@ -154,11 +155,34 @@ export function termMenu(ctx, term) {
 }
 
 /**
+ * Przesuwanie wiersza pojęcia w lekcji (od 1.9.2): w prawo – do ulubionych (na ulubionym – usunięcie
+ * z ulubionych, od razu), w lewo – usunięcie (lekkie pyta, zdecydowane od razu; „Cofnij” przez minutę).
+ */
+function swipeTerm(ctx, row, term) {
+  const target = { kind: 'terms', ids: [term.id] };
+  const label = term.isFavorite ? 'Usuń z ulubionych' : 'Do ulubionych';
+  return swipeRow(row, {
+    ignore: '.icon-button',
+    right: {
+      label, strongLabel: label, icon: term.isFavorite ? 'star' : 'starFilled', tone: term.isFavorite ? 'gray' : 'gold',
+      confirm: null,
+      run: () => setFavorite(ctx, !term.isFavorite, [term.id])
+    },
+    left: {
+      label: 'Usuń…', strongLabel: 'Puść – usuń', icon: 'trash', tone: 'red',
+      confirm: () => requestDeletion(ctx, target),
+      run: () => deleteNow(ctx, target)
+    }
+  });
+}
+
+/**
  * Lista pojęć z rozwijanymi szczegółami. W trybie zaznaczania wiersz działa jak pole wyboru.
  * options.path(term) zwraca ścieżkę lekcji pokazywaną pod pojęciem (glosariusz),
- * options.statusDirection – kierunek, w którym pokazywany jest status nauki.
+ * options.statusDirection – kierunek, w którym pokazywany jest status nauki, options.swipe –
+ * przesuwanie wierszy palcem (lekcja).
  */
-export function termList(ctx, state, terms, { path = null, statusDirection = BOTH } = {}) {
+export function termList(ctx, state, terms, { path = null, statusDirection = BOTH, swipe = false } = {}) {
   return h('ul', { class: `group__list terms${state.selecting ? ' terms--selecting' : ''}`, role: 'list' },
     terms.map((term) => {
       const detailsID = `term-details-${term.id}`;
@@ -200,7 +224,7 @@ export function termList(ctx, state, terms, { path = null, statusDirection = BOT
         }
       }, text, h('span', { class: 'term__chevron' }, icon('chevronDown', { size: 18 })));
 
-      return h('li', { class: 'term', dataset: { termId: term.id } },
+      const item = h('li', { class: 'term', dataset: { termId: term.id } },
         h('div', { class: 'term__row' },
           toggle,
           iconButton(
@@ -213,6 +237,7 @@ export function termList(ctx, state, terms, { path = null, statusDirection = BOT
         ),
         details
       );
+      return swipe ? swipeTerm(ctx, item, term) : item;
     })
   );
 }
@@ -304,7 +329,7 @@ export class LessonScreen {
     replaceChildren(this.results,
       h('section', { class: 'group' },
         h('h2', { class: 'group__title' }, visible.length === all.length ? pluralTerms(all.length) : `${visible.length} z ${ofTerms(all.length)}`),
-        termList(ctx, this.list, visible, { statusDirection: direction }),
+        termList(ctx, this.list, visible, { statusDirection: direction, swipe: true }),
         h('p', { class: 'group__footer' }, STATUS_NOTE[direction])
       )
     );
