@@ -51,7 +51,7 @@ Szczegóły:
 
 | Prośba | Jak jest zrobione |
 | --- | --- |
-| Pole notatki na ekranie lekcji bardzo delikatnie żółte | Wiersz **Notatka** nad listą pojęć ma bardzo jasne, żółtawe tło (jak kartka notesu), a kwadrat z ikoną notatki – odrobinę mocniejsze (od 1.10.2 – szare). To samo przy lekcji bez notatki („Dodaj notatkę do lekcji”). W ciemnym motywie odcień jest przyciemniony, żeby nie raził. Wiersz utrwalenia, lista pojęć i pozostałe pola – bez zmian |
+| Pole notatki na ekranie lekcji bardzo delikatnie żółte | Wiersz **Notatka** nad listą pojęć ma bardzo jasne, żółtawe tło (jak kartka notesu), a kwadrat z ikoną notatki – odrobinę mocniejsze (od 1.10.2 – szare, od 1.10.3 – żółte z ciemnożółtą ikoną). To samo przy lekcji bez notatki („Dodaj notatkę do lekcji”). W ciemnym motywie odcień jest przyciemniony, żeby nie raził. Wiersz utrwalenia, lista pojęć i pozostałe pola – bez zmian |
 
 Testy wersji 1.10.1:
 
@@ -77,6 +77,23 @@ Testy wersji 1.10.2:
   w jasnym i ciemnym motywie).
 - **Lint: bez błędów.**
 - Zrzuty (Chromium, ekran telefonu): ekran lekcji w jasnym i ciemnym motywie.
+
+## Uzupełnienie w wersji 1.10.3
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Utrwalona lekcja z obwódką nad żółtą notatką bez niej – ramka wokół notatki albo utrwalona bez obwódki (najpierw makiety obu wariantów); wybrany wariant B z żółtym piktogramem | Na ekranie lekcji wiersz **Lekcja utrwalona** nie ma już cienkiej zielonej obwódki – zostaje zielone tło z miękką poświatą – a między nim a wierszem notatki nie ma szarej linii: wiersze rozdzielają same kolory tła. Kwadrat z ikoną notatki jest żółty z ciemnożółtą ikoną (w ciemnym motywie – jasnożółtą), tak jak zielony kwadrat przy utrwaleniu; kontrast ikony do kwadratu ok. 5,3:1 (jasny) i 5,8:1 (ciemny). Na listach modułów i lekcji utrwalone wiersze mają obwódkę jak dotąd – stoją tam między białymi wierszami |
+
+Testy wersji 1.10.3:
+
+- **Testy logiki: 259 – wszystkie zaliczone** (bez zmian w logice).
+- **Testy w przeglądarce: 110 – wszystkie zaliczone w dwóch przebiegach** (test wiersza notatki
+  przebudowany): na utrwalonej lekcji z notatką, w jasnym i ciemnym motywie – wiersz notatki
+  delikatnie żółty, kwadrat ikony żółty, ikona ciemnożółta (w ciemnym – jasnożółta), utrwalenie bez
+  obwódki (sama poświata), brak linii między wierszami; na liście lekcji w module utrwalona lekcja
+  nadal ma obwódkę; „Dodaj notatkę do lekcji” – ten sam kolor wiersza i piktogramu.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium, ekran telefonu): utrwalona lekcja z notatką w jasnym i ciemnym motywie.
 
 ## Czego nie sprawdzono
 

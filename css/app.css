@@ -73,8 +73,10 @@
   --note-blue: #0040dd;
   --note-purple: #8944ab;
   --star: #e09b00;
-  /* Odcień kartki notatki (tło wiersza notatki – domieszka do tła wiersza). */
+  /* Odcień kartki notatki (tło wiersza notatki – domieszka do tła wiersza) i jej piktogram. */
   --note-paper: #ffcc00;
+  --note-icon: #7f5a00;
+  --note-icon-soft: rgba(255, 204, 0, 0.3);
   --switch-on: #2fa84f;
   --success: #166c2e;
   --success-fill: #1b7f38;
@@ -168,6 +170,8 @@
     --note-blue: #409cff;
     --note-purple: #da8fff;
     --star: #ffcc33;
+    --note-icon: #ffd426;
+    --note-icon-soft: rgba(255, 214, 10, 0.2);
     --success: #5fd880;
     --success-soft: rgba(48, 209, 88, 0.2);
     --success-border: rgba(48, 209, 88, 0.6);
@@ -241,6 +245,8 @@
   --note-blue: #409cff;
   --note-purple: #da8fff;
   --star: #ffcc33;
+  --note-icon: #ffd426;
+  --note-icon-soft: rgba(255, 214, 10, 0.2);
   --success: #5fd880;
   --success-soft: rgba(48, 209, 88, 0.2);
   --success-border: rgba(48, 209, 88, 0.6);
@@ -4901,8 +4907,8 @@ a.row__main:active,
 
 /* Wiersz notatki na ekranie lekcji (od 1.10.1): bardzo delikatnie żółty, jak kartka notesu. */
 .row--note { background: color-mix(in srgb, var(--note-paper) 9%, var(--surface)); }
-/* Kwadrat z ikoną – neutralnie szary (nieprzezroczysty, więc żółte tło przez niego nie prześwituje). */
-.row--note .row__leading--icon { background: color-mix(in srgb, #767680 14%, var(--surface)); }
+/* Kwadrat z ikoną (od 1.10.3) – żółty z ciemnożółtą ikoną, jak zielony przy utrwaleniu. */
+.row--note .row__leading--icon { background: var(--note-icon-soft); color: var(--note-icon); }
 
 .note-row__preview {
   white-space: pre-line;
@@ -5107,6 +5113,11 @@ a.row__main:active,
 
 .group__list > li.row--consolidated + li::before,
 .group__list > li + li.row--consolidated::before { opacity: 0.5; }
+
+/* Ekran lekcji (od 1.10.3): utrwalenie nad żółtym wierszem notatki – bez obwódki i linii
+   między wierszami, rozdzielają je same kolory tła. Na listach modułów i lekcji obwódka zostaje. */
+.lesson-note .row--consolidated { box-shadow: inset 0 0 20px color-mix(in srgb, var(--status-mastered) 8%, transparent); }
+.lesson-note .group__list > li + li::before { display: none; }
 
 .mastery-done { font-weight: 600; color: var(--success); }
 
