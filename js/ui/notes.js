@@ -9,7 +9,7 @@ import { NOTE_IMAGE_LIMIT } from '../core/model.js';
 import { bytesToBase64 } from '../core/base64.js';
 import { NOTE_COLORS, PAGE_BREAK_LINE, isEmptyNoteHtml, noteText, normalizeNoteHtml, portableNoteHtml } from '../core/note-format.js';
 import { pluralImages } from '../core/text.js';
-import { iconButton } from './components.js';
+import { iconButton, segmented } from './components.js';
 import { confirmDialog, mountDialog, openMenu, showError, toast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
@@ -105,13 +105,15 @@ export function noteMenuItem(ctx, lesson) {
 
 async function copyNote(note, images) {
   const text = noteText(note.html);
-  let html = portableNoteHtml(note.html);
+  let pictures = '';
   let total = 0;
   for (const image of images) {
     total += image.bytes.byteLength;
     if (total > CLIPBOARD_IMAGE_BYTES) break;
-    html += `<p><img src="data:${image.type};base64,${bytesToBase64(image.bytes)}" alt="" style="max-width:100%"></p>`;
+    pictures += `<p><img src="data:${image.type};base64,${bytesToBase64(image.bytes)}" alt="" style="max-width:100%"></p>`;
   }
+  // Obrazy w tym samym miejscu co w podglądzie: przed tekstem albo po nim.
+  const html = note.imagesFirst ? pictures + portableNoteHtml(note.html) : portableNoteHtml(note.html) + pictures;
   try {
     if (typeof window.ClipboardItem === 'function' && navigator.clipboard?.write) {
       await navigator.clipboard.write([new window.ClipboardItem({
@@ -388,6 +390,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       book = noteBook({
         html: note.html,
         images: stored,
+        imagesFirst: note.imagesFirst === true,
         onOpenImage: (index) => openLightbox(stored, index),
         onLayout: setPaged,
         spread: library.getSettings().noteSpread !== false,
@@ -421,6 +424,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       editor = noteEditor({
         html: note?.html ?? '',
         images: stored,
+        imagesFirst: note?.imagesFirst === true,
         urls
       });
       replaceChildren(body,
@@ -524,10 +528,11 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
  * Edytor notatki: pasek formatowania, pole tekstu i obrazy.
  * Zwraca { element, draft(), dirty(), busy(), focus(), destroy() }.
  */
-function noteEditor({ html, images, urls }) {
+function noteEditor({ html, images, urls, imagesFirst = false }) {
   const initialHtml = normalizeNoteHtml(html);
   const state = {
     images: images.map((image) => ({ ...image })),
+    imagesFirst,
     pending: 0,
     range: null
   };
@@ -773,6 +778,7 @@ function noteEditor({ html, images, urls }) {
       onClick: () => fileInput.click()
     }, icon('plus', { size: 22 }), h('span', null, 'Dodaj obraz')));
     replaceChildren(grid, tiles);
+    placement.hidden = state.images.length === 0;
     status.textContent = state.pending > 0 ? 'Przygotowanie obrazu…' : (full ? `Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów.` : '');
   }
 
@@ -795,22 +801,35 @@ function noteEditor({ html, images, urls }) {
     }
   }
 
+  // Gdzie obrazy są w podglądzie notatki: przed tekstem albo po nim (widać, gdy są obrazy).
+  const placement = h('div', { class: 'note-images__placement', dataset: { testid: 'note-image-placement' } },
+    h('span', { class: 'note-images__placement-label' }, 'W podglądzie'),
+    segmented({
+      name: 'note-image-placement',
+      label: 'Obrazy w podglądzie',
+      value: state.imagesFirst ? 'before' : 'after',
+      options: [{ value: 'before', label: 'Przed tekstem' }, { value: 'after', label: 'Po tekście' }],
+      onChange: (value) => { state.imagesFirst = value === 'before'; }
+    })
+  );
+
   const imagesSection = h('section', { class: 'note-editor__images' },
     h('h3', { class: 'form-group__title' }, 'Obrazy'),
     grid,
     status,
+    placement,
     h('p', { class: 'field__hint' }, 'Dotknij obrazu, żeby go powiększyć, przesunąć albo usunąć. Obraz możesz też wkleić do tekstu – trafi tutaj.'),
     fileInput
   );
 
-  // Upuszczenie plików na edytor (komputer).
+  // Obrazy na górze, tekst pod nimi. Upuszczenie plików na edytor (komputer) dodaje obrazy.
   const element = h('div', { class: 'note-editor' },
+    imagesSection,
     h('section', { class: 'note-editor__text' },
       h('h3', { class: 'form-group__title' }, 'Tekst'),
       h('div', { class: 'note-editor__toolbar' }, toolbar, colorPanel),
       area
-    ),
-    imagesSection
+    )
   );
   element.addEventListener('dragover', (event) => {
     if ([...(event.dataTransfer?.items ?? [])].some((item) => item.kind === 'file')) {
@@ -841,6 +860,7 @@ function noteEditor({ html, images, urls }) {
     draft() {
       return {
         html: areaHtml(),
+        imagesFirst: state.imagesFirst,
         images: state.images.map((image) => (image.stored
           ? { id: image.id }
           : { bytes: image.bytes, type: image.type, width: image.width, height: image.height, name: image.name ?? null }))
@@ -849,6 +869,7 @@ function noteEditor({ html, images, urls }) {
     dirty() {
       return areaHtml() !== initialHtml
         || state.images.map((image) => image.id ?? image.url).join(',') !== initialImages
+        || state.imagesFirst !== imagesFirst
         || state.pending > 0;
     },
     busy: () => state.pending > 0,

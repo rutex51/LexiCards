@@ -7,7 +7,8 @@
 //     (formatowanie zostaje po obu stronach podziału), a numeracja listy biegnie dalej;
 //   - nagłówek nie zostaje sam na dole strony – przechodzi z treścią na następną;
 //   - „Nowa strona” wstawiona w edytorze (<hr data-page>) zaczyna nową stronę;
-//   - obrazy są po tekście, każdy zmniejszony najwyżej do wysokości strony;
+//   - obrazy są po tekście albo – gdy tak wybrano w notatce – przed nim, każdy zmniejszony najwyżej
+//     do wysokości strony;
 //   - blok, którego nie da się podzielić (np. bardzo długa lista zagnieżdżona), dostaje stronę
 //     przewijaną – to jedyny wyjątek od zasady „bez przewijania”.
 // Krótka notatka (jedna strona) wygląda jak dawniej: karta o wysokości treści.
@@ -41,11 +42,13 @@ function reducedMotion() {
  * listID, number } | { kind: 'break' } | { kind: 'image', index }. `source` – numer jednostki
  * w notatce (do odnalezienia strony po ponownym podziale).
  */
-function contentUnits(html, imageCount) {
+function contentUnits(html, imageCount, imagesFirst = false) {
   const template = document.createElement('template');
   template.innerHTML = normalizeNoteHtml(html);
   const root = document.importNode(template.content, true);
   const units = [];
+  const images = Array.from({ length: imageCount }, (_, index) => ({ kind: 'image', index }));
+  if (imagesFirst) units.push(...images);
   let listID = 0;
   for (const node of [...root.childNodes]) {
     if (node.nodeType !== window.Node.ELEMENT_NODE) continue;
@@ -59,7 +62,7 @@ function contentUnits(html, imageCount) {
       units.push({ kind: 'block', node });
     }
   }
-  for (let index = 0; index < imageCount; index += 1) units.push({ kind: 'image', index });
+  if (!imagesFirst) units.push(...images);
   return units.map((unit, source) => ({ ...unit, source }));
 }
 
@@ -165,8 +168,11 @@ function paginate(units, images, content, available) {
       const node = figure(unit);
       content.append(node);
       const previous = list;
+      const previousText = text;
+      // Tekst po obrazie (obrazy przed tekstem) zaczyna nowy blok pod obrazem.
       list = null;
-      return () => { node.remove(); list = previous; };
+      text = null;
+      return () => { node.remove(); list = previous; text = previousText; };
     }
     let createdText = false;
     if (!text) {
@@ -370,10 +376,13 @@ const foldDepth = (geometry) => Math.max(0, ...geometry.folded.map((vertex) =>
  * destroy() }.
  * element – miejsce na strony (rozciąga się na dostępną wysokość), pager – przyciski stron.
  * images: [{ url, width, height }]; onOpenImage(index) – dotknięcie obrazu.
- * spread – dwie strony obok siebie na dużym ekranie (wybór zapamiętuje onSpreadChange).
+ * spread – dwie strony obok siebie na dużym ekranie (wybór zapamiętuje onSpreadChange);
+ * imagesFirst – obrazy przed tekstem.
  */
-export function noteBook({ html, images, onOpenImage, onLayout = () => {}, spread: spreadChosen = false, onSpreadChange = () => {} }) {
-  const units = contentUnits(html, images.length);
+export function noteBook({
+  html, images, imagesFirst = false, onOpenImage, onLayout = () => {}, spread: spreadChosen = false, onSpreadChange = () => {}
+}) {
+  const units = contentUnits(html, images.length, imagesFirst);
   const element = h('div', { class: 'note-book', dataset: { testid: 'note-book' } });
   const indicator = h('span', { class: 'note-pager__indicator', 'aria-live': 'polite', dataset: { testid: 'note-page-indicator' } });
   const spreadButton = h('button', {

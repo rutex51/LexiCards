@@ -4287,6 +4287,25 @@ a.row__main:active,
 
 .note-images__status:empty { display: none; }
 
+/* Wybór: obrazy w podglądzie przed tekstem albo po nim. */
+.note-images__placement {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+
+.note-images__placement[hidden] { display: none; }
+
+.note-images__placement-label {
+  font-size: var(--size-sub);
+  color: var(--text-2);
+}
+
+.note-images__placement .segmented { flex: 1 1 15rem; }
+.note-images__placement .segmented__option span { white-space: nowrap; }
+
 .note-clipboard {
   position: fixed;
   top: 0;

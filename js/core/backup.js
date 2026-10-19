@@ -179,6 +179,7 @@ export function validateBackup(raw) {
       id: lessonID,
       lessonID,
       html,
+      imagesFirst: record.imagesFirst === true,
       images: metas.map((meta) => {
         const image = images.get(meta.id);
         return { id: meta.id, type: image.type, width: image.width ?? null, height: image.height ?? null, size: image.size, crc: image.crc ?? null, name: image.name ?? null };

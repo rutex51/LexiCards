@@ -69,7 +69,7 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | `studySessions` | dziennik zakończonych sesji nauki | – |
 | `quizSessions` | historia wyników quizów: rodzaj, kierunek, liczby odpowiedzi, procent, próg, zaliczenie, czas, limit, błędne pojęcia | – |
 | `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki i quizu (od 1.2 okres powtórek lekcji utrwalonych `consolidatedReviewDays` i znacznik `domainColorsGray`), trwająca sesja nauki i trwający quiz | – |
-| `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML i opis obrazów (typ, wymiary, rozmiar, CRC-32) – w pamięci | identyfikator = `lessonID` |
+| `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML, opis obrazów (typ, wymiary, rozmiar, CRC-32) i `imagesFirst` – obrazy w podglądzie przed tekstem (od 1.5) – w pamięci | identyfikator = `lessonID` |
 | `noteImages` | bajty obrazów notatek (`ArrayBuffer`) – czytane z bazy dopiero przy otwarciu notatki | `lessonID` |
 
 Decyzje:
@@ -233,7 +233,13 @@ Docs, Notatki, tabele z Excela), zawartość edytora przy zapisie, kopię zapaso
 parser HTML w `js/core` pozwala testować to w Node.js; w przeglądarce wklejony HTML najpierw
 porządkuje `DOMParser`. Edytor to `contenteditable` z `document.execCommand` (cofanie Ctrl+Z
 działa), kolory zapisane są nazwą, więc w ciemnym motywie są jaśniejsze. „Kopiuj notatkę”
-kładzie do schowka HTML z kolorami w stylu i obrazami jako `data:` oraz zwykły tekst.
+kładzie do schowka HTML z kolorami w stylu i obrazami jako `data:` (przed tekstem albo po nim,
+jak w podglądzie) oraz zwykły tekst.
+
+Od 1.5 w edytorze sekcja obrazów jest na górze, nad tekstem, a przy obrazach jest wybór „W podglądzie:
+Przed tekstem / Po tekście” (`imagesFirst` w notatce, domyślnie po tekście). Zapis bez tego pola
+(import z arkusza, w każdym trybie) zostawia wybór notatki; kopia lekcji i kopia zapasowa go
+przenoszą. Arkusz XLSX go nie zawiera – kolumna Image to tylko obrazy po kolei.
 
 Od 1.3 dokument ma też blok `break` – podział na strony. W HTML to `<hr data-page="">`
 (zwykła linia `<hr>`, np. ze strony WWW, tylko kończy akapit); podział strony z Worda
@@ -254,8 +260,9 @@ przewija:
   (wyszukiwanie binarne po początkach wyrazów; `Range.cloneContents()` zachowuje formatowanie
   po obu stronach), o ile na dole zostały co najmniej ~2 wiersze. Lista na kolejnej stronie ma
   `start`, a ciąg dalszy punktu – bez drugiego punktora. Nagłówek nie zostaje sam na dole strony.
-  Obrazy są po tekście, zmniejszone najwyżej do wysokości strony; obraz, który nie mieści się
-  pod tekstem, zostaje na tej stronie zmniejszony, jeśli zachowa co najmniej 55% wysokości
+  Obrazy są po tekście albo – gdy notatka ma `imagesFirst` (od 1.5) – przed nim; tekst po obrazie
+  zaczyna nowy blok pod obrazem. Obrazy są zmniejszone najwyżej do wysokości strony; obraz, który
+  nie mieści się pod tekstem, zostaje na tej stronie zmniejszony, jeśli zachowa co najmniej 55% wysokości
   (i 140 px) – inaczej przechodzi na następną. Blok niepodzielny wyższy niż strona (np. długa
   lista zagnieżdżona) dostaje stronę przewijaną – jedyny wyjątek.
 - **Jedna strona** wygląda jak dawniej: karta o wysokości treści, bez przycisków stron. Na

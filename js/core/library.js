@@ -907,7 +907,7 @@ export class Library {
       );
       terms.forEach((term, index) => unit.put('terms', this.#copyOfTerm(term, copy, index)));
       const note = this.getNote(source.id);
-      if (note) this.#writeNote(unit, copy.id, { html: note.html, images }, null);
+      if (note) this.#writeNote(unit, copy.id, { html: note.html, images, imagesFirst: note.imagesFirst === true }, null);
       return copy;
     }, () => this.noteImages(id));
   }
@@ -935,9 +935,10 @@ export class Library {
   }
 
   /**
-   * Zapisuje notatkę lekcji. draft: { html, images } – images w kolejności wyświetlania:
+   * Zapisuje notatkę lekcji. draft: { html, images, imagesFirst? } – images w kolejności wyświetlania:
    * { id } zostawia istniejący obraz, { bytes, type, width, height, name } dodaje nowy,
-   * pominięte istniejące obrazy są usuwane. Notatka bez tekstu i obrazów jest usuwana.
+   * pominięte istniejące obrazy są usuwane. imagesFirst – obrazy w podglądzie przed tekstem
+   * (bez tego pola zostaje wybór zapisany w notatce). Notatka bez tekstu i obrazów jest usuwana.
    * Zwraca zapisaną notatkę albo null.
    */
   saveNote(lessonID, draft) {
@@ -951,7 +952,7 @@ export class Library {
     return this.#mutate((unit) => this.#removeNote(unit, lessonID));
   }
 
-  #writeNote(unit, lessonID, { html, images = [] }, existing) {
+  #writeNote(unit, lessonID, { html, images = [], imagesFirst }, existing) {
     const clean = normalizeNoteHtml(html ?? '');
     if (clean.length > NOTE_HTML_LIMIT) throw errors.noteTooLong();
     if (images.length > NOTE_IMAGE_LIMIT) throw errors.tooManyImages();
@@ -978,7 +979,12 @@ export class Library {
       return null;
     }
     const now = nowISO();
-    const note = { id: lessonID, lessonID, html: clean, images: metas, createdAt: existing?.createdAt ?? now, updatedAt: now };
+    // Obrazy w podglądzie przed tekstem (od 1.5); zapis bez tego pola (np. import) zostawia wybór notatki.
+    const first = typeof imagesFirst === 'boolean' ? imagesFirst : existing?.imagesFirst === true;
+    const note = {
+      id: lessonID, lessonID, html: clean, images: metas, imagesFirst: first,
+      createdAt: existing?.createdAt ?? now, updatedAt: now
+    };
     unit.put('notes', note);
     return note;
   }

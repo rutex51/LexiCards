@@ -1196,9 +1196,15 @@ test('notatka lekcji: dodanie z listy lekcji, formatowanie, obraz, podgląd, pow
   await dialog.locator('.note-colors__swatch[data-color=green]').click();
   await page.keyboard.type('własny');
 
+  // Obrazy są na górze edytora, nad tekstem; wybór miejsca w podglądzie widać, gdy jest obraz.
+  const topOf = (selector) => dialog.locator(selector).evaluate((element) => element.getBoundingClientRect().top);
+  assert.ok(await topOf('.note-editor__images') < await topOf('.note-editor__text'), 'obrazy nad tekstem');
+  assert.equal(await dialog.locator('[data-testid=note-image-placement]').isHidden(), true, 'bez obrazów nie ma wyboru');
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), dialog.locator('[data-testid=note-image-add]').click()]);
   await chooser.setFiles(IMAGE_FILE);
   await dialog.locator('.note-images__item img').waitFor();
+  const placement = page.getByRole('radiogroup', { name: 'Obrazy w podglądzie' });
+  assert.equal(await placement.getByRole('radio', { name: 'Po tekście' }).isChecked(), true, 'domyślnie obrazy po tekście');
 
   await dialog.locator('[data-testid=note-right]').click();
   await dialog.locator('[data-testid=note-text]').waitFor();
@@ -1212,6 +1218,17 @@ test('notatka lekcji: dodanie z listy lekcji, formatowanie, obraz, podgląd, pow
   const note = await storedNote(page, ids.statements);
   assert.equal(note.images.length, 1);
   assert.deepEqual([note.images[0].type, note.images[0].width, note.images[0].height], ['image/png', 192, 192]);
+  assert.ok(await topOf('.note-page__figure') > await topOf('[data-testid=note-text]'), 'w podglądzie obraz po tekście');
+
+  // Obrazy przed tekstem: wybór w edytorze, zapisany w notatce, w podglądzie obraz nad tekstem.
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-editor]').waitFor();
+  await placement.locator('.segmented__option', { hasText: 'Przed tekstem' }).click();
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('.note-page__figure img').waitFor();
+  assert.equal((await storedNote(page, ids.statements)).imagesFirst, true);
+  assert.ok(await topOf('.note-page__figure') < await topOf('[data-testid=note-text]'), 'w podglądzie obraz przed tekstem');
+  await waitUntil(() => imagesLoaded(dialog.locator('[data-testid=note-book]')), 'Obraz notatki powinien się wyświetlić');
 
   // Powiększenie: dwukrotne kliknięcie i klawisze; Esc zamyka tylko podgląd obrazu.
   await dialog.locator('.note-page__figure').click();
@@ -1645,6 +1662,22 @@ test('notatka w stronach: długi tekst bez przewijania, podział akapitu i listy
   await page.setViewportSize({ width: 390, height: 640 });
   await waitUntil(async () => Number(await book.getAttribute('data-pages')) > total, 'Na niższym ekranie powinno być więcej stron');
   for (const [index, item] of (await walkNotePages(page)).entries()) assert.ok(item.overflow <= 1, `po zmianie: strona ${index + 1} wystaje o ${item.overflow} px`);
+
+  // Obrazy przed tekstem: obraz na pierwszej stronie, za nim cała treść – nadal bez przewijania.
+  await page.evaluate(async (id) => {
+    const library = window.lexicards.library;
+    const note = library.getNote(id);
+    await library.saveNote(id, { html: note.html, images: note.images.map((image) => ({ id: image.id })), imagesFirst: true });
+  }, ids.statements);
+  await dialog.locator('[data-testid=note-left]').click();
+  await noteDialog(page).waitFor({ state: 'detached' });
+  await page.click('[data-testid=lesson-note]');
+  await book.waitFor();
+  const first = await walkNotePages(page);
+  assert.equal(first[0].figures, 1, 'obraz na pierwszej stronie');
+  assert.equal(first.reduce((sum, item) => sum + item.figures, 0), 1);
+  first.forEach((item, index) => assert.ok(item.overflow <= 1, `obrazy przed tekstem: strona ${index + 1} wystaje o ${item.overflow} px`));
+  assert.ok(first.map((item) => item.text).join(' ').includes(paragraph), 'cała treść po obrazie');
 });
 
 /** Długa notatka (kilka stron) w lekcji „Financial Statements”, otwarta w podglądzie. */

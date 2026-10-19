@@ -204,6 +204,30 @@ test('kopia lekcji ma kopię notatki z własnymi obrazami; usunięcie wszystkieg
   assert.equal((await adapter.readStore('noteImages')).length, 0);
 });
 
+test('obrazy przed tekstem: wybór zostaje przy zapisie bez wyboru i imporcie, w kopii lekcji i w kopii zapasowej', async () => {
+  const { library } = await makeLibrary();
+  const { lesson, module } = await makeBranch(library, { domain: 'BE', module: 'Finance', lesson: 'Ratios' });
+  const note = await library.saveNote(lesson.id, { html: '<p>tekst</p>', images: [image(1)] });
+  assert.equal(note.imagesFirst, false, 'domyślnie obrazy po tekście');
+  const kept = [{ id: note.images[0].id }];
+  await library.saveNote(lesson.id, { html: '<p>tekst</p>', images: kept, imagesFirst: true });
+  assert.equal(library.getNote(lesson.id).imagesFirst, true);
+  await library.saveNote(lesson.id, { html: '<p>inny tekst</p>', images: kept });
+  assert.equal(library.getNote(lesson.id).imagesFirst, true, 'zapis bez wyboru zostawia wybór');
+  await library.importRows([], { notes: [{ domain: 'BE', module: 'Finance', lesson: 'Ratios', html: '<p>z arkusza</p>', images: [image(2)] }] });
+  assert.equal(library.getNote(lesson.id).html, '<p>z arkusza</p>');
+  assert.equal(library.getNote(lesson.id).imagesFirst, true, 'import zastępuje treść, wybór zostaje');
+  const copy = await library.copyLesson(lesson.id, module.id);
+  assert.equal(library.getNote(copy.id).imagesFirst, true, 'kopia lekcji');
+  const backup = JSON.parse(JSON.stringify(await createBackup(library, 'test')));
+  backup.data.notes.find((item) => item.lessonID === copy.id).imagesFirst = 'tak';
+  const result = validateBackup(backup);
+  assert.equal(result.data.notes.find((item) => item.lessonID === lesson.id).imagesFirst, true, 'kopia zapasowa');
+  assert.equal(result.data.notes.find((item) => item.lessonID === copy.id).imagesFirst, false, 'niepoprawna wartość – po tekście');
+  await library.saveNote(lesson.id, { html: '<p>x</p>', images: [], imagesFirst: false });
+  assert.equal(library.getNote(lesson.id).imagesFirst, false);
+});
+
 test('kopia zapasowa przenosi notatki z obrazami (Base64 w JSON) i odrzuca osierocone obrazy', async () => {
   const { library } = await makeLibrary();
   const { lesson } = await makeBranch(library);
