@@ -481,6 +481,10 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       if (mode === 'view') showEdit();
       else save();
     });
+    // Kółko myszy w podglądzie przewraca strony notatki (nasłuch nie pasywny – blokuje przewijanie).
+    panel.addEventListener('wheel', (event) => {
+      if (mode === 'view' && book?.handleWheel(event)) event.preventDefault();
+    }, { passive: false });
     panel.addEventListener('keydown', (event) => {
       if (mode === 'edit' && (event.ctrlKey || event.metaKey) && event.key === 'Enter') {
         event.preventDefault();

@@ -166,7 +166,9 @@ pod spodem rosną, gdy kartka się unosi. Przyciski i klawisze przewracają kart
 Na komputerze (okno co najmniej 960 × 520 px) dwie strony leżą obok siebie jak w otwartej książce:
 prawa strona przewraca się przez grzbiet, a na jej odwrocie jest następna strona. Myszą kartkę
 chwytasz za narożnik (kursor zmienia się w dłoń) albo klikasz narożnik; przeciąganie w tekście
-zaznacza tekst. Przycisk z otwartą książką obok numeru strony przełącza jedną i dwie strony
+zaznacza tekst. Kółko myszy przewraca strony: w dół – następna, w górę – poprzednia (jeden ruch
+kółka – jedna kartka). W trakcie przewracania kartka może na chwilę zakryć tytuł lekcji i przyciski,
+ale nie wychodzi poza okno notatki. Przycisk z otwartą książką obok numeru strony przełącza jedną i dwie strony
 (wybór jest zapamiętany). Przy ograniczonym ruchu w systemie strony zmieniają się bez animacji.
 Obrazy są po tekście. Przycisk **Nowa strona** w pasku
 formatowania (dwie połówki kartki) zaczyna nową stronę w miejscu kursora; w komórce arkusza

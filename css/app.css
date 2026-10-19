@@ -3850,6 +3850,14 @@ a.row__main:active,
   gap: 14px;
 }
 
+/*
+ * W trakcie przewracania kartka może wyjść poza strony – nad tytuł lekcji, pasek okna i przyciski
+ * pod stronami. Przycina ją dopiero panel okna (z zaokrąglonymi rogami), więc nie wychodzi poza okno.
+ * Książka leży wtedy nad przyciskami pod nią.
+ */
+.note-sheet__body--book:has(> .note-book--turning) { overflow: visible; }
+.sheet__body > .note-book--turning { z-index: 2; }
+
 .sheet__body > .note-book {
   position: relative;
   flex: 1 1 auto;
@@ -3929,12 +3937,13 @@ a.row__main:active,
   pointer-events: none;
 }
 
+.note-curl__layer { overflow: hidden; }
+
 /*
- * Płat nie wychodzi poza książkę: w jednej stronie kartka znika za lewą krawędzią, a górna
- * i dolna krawędź płata zostają na wysokości stron (jak kartka przytrzymana w grzbiecie).
+ * Jedna strona: w poziomie kartka znika za lewą krawędzią strony (inaczej na początku i końcu
+ * przewracania w marginesie zostawałby pasek kartki); w pionie może wyjść poza stronę.
  */
-.note-curl__layer,
-.note-curl__flap { overflow: hidden; }
+.note-book:not(.note-book--spread) .note-curl__flap { clip-path: inset(-200vh 0); }
 
 .note-curl__lift {
   position: absolute;

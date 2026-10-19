@@ -1707,6 +1707,41 @@ function curlState(page) {
   });
 }
 
+/**
+ * Czy zagięty płat widać w punkcie przy jego skrajnym wierzchołku (which: 'top' – najwyższy,
+ * 'left' – najbardziej z lewej); punkt leży 4 px w głąb płata. Zwraca punkt, obrys książki
+ * i okna oraz to, czy w tym miejscu na wierzchu jest płat (z uwzględnieniem przycięć).
+ */
+function flapProbe(page, which) {
+  return noteDialog(page).locator('[data-testid=note-book]').evaluate((book, side) => {
+    const flap = book.querySelector('.note-page--flap');
+    const box = book.getBoundingClientRect();
+    const matrix = new window.DOMMatrix(getComputedStyle(flap).transform);
+    const points = /polygon\((.*)\)/.exec(flap.style.clipPath)[1].split(',').map((pair) => {
+      const [x, y] = pair.trim().split(/\s+/).map((value) => parseFloat(value));
+      const point = matrix.transformPoint(new window.DOMPoint(x, y));
+      return { x: box.left + point.x, y: box.top + point.y };
+    });
+    const center = { x: points.reduce((sum, point) => sum + point.x, 0) / points.length, y: points.reduce((sum, point) => sum + point.y, 0) / points.length };
+    const extreme = points.reduce((best, point) => ((side === 'top' ? point.y < best.y : point.x < best.x) ? point : best));
+    const toward = Math.hypot(center.x - extreme.x, center.y - extreme.y) || 1;
+    const probe = { x: extreme.x + ((center.x - extreme.x) * 4) / toward, y: extreme.y + ((center.y - extreme.y) * 4) / toward };
+    // Płat nie przyjmuje dotknięć (i bywa inert) – na czas sprawdzenia elementFromPoint go „widzi”.
+    const layers = [book.querySelector('.note-curl__flap'), book.querySelector('.note-curl__lift'), flap];
+    const inert = flap.inert;
+    flap.inert = false;
+    for (const layer of layers) layer.style.pointerEvents = 'auto';
+    const hit = document.elementFromPoint(probe.x, probe.y);
+    for (const layer of layers) layer.style.pointerEvents = '';
+    flap.inert = inert;
+    const panel = book.closest('.sheet__panel').getBoundingClientRect();
+    return {
+      probe, book: { top: box.top, left: box.left }, panel: { top: panel.top, left: panel.left },
+      visible: Boolean(hit?.closest('.note-curl__flap'))
+    };
+  }, which);
+}
+
 /** Dotyk przytrzymany: start w punkcie (x, y), ruchy palca, puszczenie osobno. */
 async function touchAt(context, page, x, y) {
   const client = await context.newCDPSession(page);
@@ -1791,12 +1826,19 @@ test('notatka: kartka zagina się od chwyconego rogu (dół, góra, krawędź), 
 
   // Wstecz od lewej krawędzi: poprzednia strona wraca nad bieżącą i zagina się tak samo.
   touch = await touchAt(context, page, box.x + 12, bottom);
-  await touch.move(box.x + 170, bottom - 30);
+  await touch.move(box.x + 150, bottom + 8);
   state = await curlState(page);
   assert.deepEqual(state.pages, ['2', '1'], 'poprzednia strona nad bieżącą');
   assert.equal(state.turning, '1');
   assert.ok(state.flap.determinant < -0.99);
   assert.ok(!hasPoint(polygonPoints(state.clip), state.width, state.height), 'dolny róg zagięty');
+  // Kartka wychodzi w górę poza stronę (nad tytuł lekcji), ale w lewy margines – nie.
+  const above = await flapProbe(page, 'top');
+  assert.ok(above.probe.y < above.book.top - 2, `płat sięga nad stronę: ${JSON.stringify(above)}`);
+  assert.equal(above.visible, true, 'nad stroną widać kartkę');
+  const aside = await flapProbe(page, 'left');
+  assert.ok(aside.probe.x < aside.book.left - 2, `płat sięga w lewo za stronę: ${JSON.stringify(aside)}`);
+  assert.equal(aside.visible, false, 'w lewym marginesie kartki nie widać');
   await touch.end();
   await notePageShown(page, 1);
 
@@ -1859,6 +1901,13 @@ test('notatka: dwie strony obok siebie na dużym ekranie – przewracanie jak w 
   state = await curlState(page);
   assert.equal(state.turning, '4');
   assert.equal(state.flap.page, '5');
+  // Mocno uniesiony róg: kartka wychodzi nad strony (na tytuł lekcji), a przycina ją dopiero okno.
+  await page.mouse.move(bookBox.x + bookBox.width * 0.48, bookBox.y + bookBox.height - 170, { steps: 8 });
+  const above = await flapProbe(page, 'top');
+  assert.ok(above.probe.y < above.book.top - 2, `płat sięga nad strony: ${JSON.stringify(above)}`);
+  assert.equal(above.visible, true, 'nad stronami widać kartkę');
+  assert.ok(above.probe.y > above.panel.top, 'w obrębie okna');
+  assert.equal(await dialog.locator('.sheet__panel').evaluate((panel) => getComputedStyle(panel).overflow), 'hidden', 'okno przycina kartkę');
   await page.mouse.move(bookBox.x + bookBox.width * 0.2, bookBox.y + bookBox.height - 30, { steps: 8 });
   await page.mouse.up();
   await showing(5);
@@ -1890,6 +1939,20 @@ test('notatka: dwie strony obok siebie na dużym ekranie – przewracanie jak w 
   assert.equal(await shown().nth(1).evaluate((element) => element.classList.contains('note-page--blank')), total % 2 === 1);
   assert.equal(await dialog.locator('[data-testid=note-page-next]').isDisabled(), true);
   await page.keyboard.press('Home');
+  await showing(1);
+
+  // Kółko myszy: w dół – następna para stron, w górę – poprzednia.
+  await page.mouse.move(bookBox.x + bookBox.width / 2, bookBox.y + bookBox.height / 2);
+  await page.mouse.wheel(0, 100);
+  await showing(3);
+  await page.mouse.wheel(0, -100);
+  await showing(1);
+  // Szybka seria drobnych ruchów (gładzik z bezwładnością) przewraca tylko jedną kartkę.
+  for (let step = 0; step < 14; step += 1) await page.mouse.wheel(0, 15);
+  await showing(3);
+  await page.waitForTimeout(900);
+  assert.equal(await book.getAttribute('data-page'), '3', 'seria ruchów to jedna kartka');
+  await page.mouse.wheel(0, -100);
   await showing(1);
 
   // Przełącznik: jedna strona; wybór zapamiętany (ustawienia) i po ponownym otwarciu notatki.

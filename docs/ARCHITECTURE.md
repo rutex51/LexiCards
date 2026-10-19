@@ -277,8 +277,11 @@ przewija:
   (pas gradientu wzdłuż zgięcia, przycięty do odsłoniętej części; szerokość i siła rosną z
   „uniesieniem” sin(π·postęp)), przewracana strona przycięta do płaskiej części, cień przy zgięciu
   na płaskiej części, płat (odwrót kartki z jasnym pasem przy zgięciu i miękkim cieniem
-  `drop-shadow` pod sobą). Płat jest przycięty do obrysu książki – nie zachodzi na nagłówek okna,
-  a w jednej stronie znika za lewą krawędzią. Klatki rysuje `requestAnimationFrame`; po skończeniu
+  `drop-shadow` pod sobą). Od 1.4.1 płat może wyjść poza strony – nad tytuł lekcji, pasek okna
+  i przyciski pod stronami: na czas przewracania część okna z treścią nie przycina zawartości
+  (`:has(> .note-book--turning)`), a książka leży nad przyciskami (`z-index`); przycina dopiero
+  panel okna z zaokrąglonymi rogami. W jednej stronie płat jest przycięty w poziomie do strony
+  (`clip-path: inset(-200vh 0)`) – znika za lewą krawędzią, bez paska kartki w marginesie. Klatki rysuje `requestAnimationFrame`; po skończeniu
   warstwy znikają, a strony wracają bez stylów.
 - **Odwrót kartki:** w jednej stronie to kopia tej samej strony (`inert`, `aria-hidden`), wyblakła
   (przezroczystość treści 0,2) i odbita – prześwitujący tekst. W dwóch stronach to prawdziwa
@@ -288,7 +291,11 @@ przewija:
   w górę, górnego w dół, które znika pod koniec ruchu); jedna strona wstecz – poprzednia kartka
   wraca spoza lewej krawędzi, a zgięcie idzie za palcem. Po puszczeniu kartka kończy ruch albo
   wraca (28% szerokości albo szybki ruch). Przyciski ‹ › i klawisze ←/→, Page Up/Down przewracają
-  od dolnego rogu łukiem (`cornerPath`), Home/End – bez animacji. Mysz: kartkę chwyta się za
+  od dolnego rogu łukiem (`cornerPath`), Home/End – bez animacji. Kółko myszy i przewijanie na
+  gładziku (od 1.4.1, `handleWheel`, nasłuch na panelu okna): w dół lub w lewo – następna strona,
+  w górę – poprzednia; ruch sumuje się do 40 px, a kolejną kartkę przewraca dopiero ruch po 180 ms
+  ciszy, więc bezwładność gładzika nie przerzuca kilku stron; strona przewijana najpierw się
+  przewija, Ctrl + kółko (powiększenie) zostaje przeglądarce. Mysz: kartkę chwyta się za
   narożnik strony (48 px; kursor `grab`), kliknięcie narożnika przewraca; w pozostałym miejscu
   mysz zaznacza tekst. Ograniczony ruch – strony zmieniają się od razu. Fokus z usuwanej strony
   (np. z obrazu) przechodzi na okno, żeby klawisze działały dalej; po otwarciu okna fokus jest na

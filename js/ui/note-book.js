@@ -329,6 +329,9 @@ const MOUSE_CORNER = 48;
 /** Dwie strony obok siebie – od takiej wielkości okna (px). */
 const SPREAD_MIN_WIDTH = 960;
 const SPREAD_MIN_HEIGHT = 520;
+/** Kółko myszy: ruch (px), który przewraca kartkę, i cisza (ms), po której można przewrócić następną. */
+const WHEEL_STEP = 40;
+const WHEEL_QUIET = 180;
 
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - ((2 - 2 * t) ** 3) / 2);
 const easeOut = (t) => 1 - (1 - t) ** 3;
@@ -363,7 +366,8 @@ const foldDepth = (geometry) => Math.max(0, ...geometry.folded.map((vertex) =>
 // ---------------------------------------------------------------- książka
 
 /**
- * Notatka w stronach. Zwraca { element, pager, layout(), turn(delta), handleKey(event), destroy() }.
+ * Notatka w stronach. Zwraca { element, pager, layout(), turn(delta), handleWheel(event), handleKey(event),
+ * destroy() }.
  * element – miejsce na strony (rozciąga się na dostępną wysokość), pager – przyciski stron.
  * images: [{ url, width, height }]; onOpenImage(index) – dotknięcie obrazu.
  * spread – dwie strony obok siebie na dużym ekranie (wybór zapamiętuje onSpreadChange).
@@ -405,6 +409,9 @@ export function noteBook({ html, images, onOpenImage, onLayout = () => {}, sprea
   let suppressClick = false;
   let lastSize = '';
   let resizeTimer = null;
+  let wheelSum = 0;
+  let wheelLocked = false;
+  let wheelTimer = null;
 
   /** Ile stron widać naraz. */
   const shown = () => (spread ? 2 : 1);
@@ -764,11 +771,45 @@ export function noteBook({ html, images, onOpenImage, onLayout = () => {}, sprea
   };
   window.addEventListener('resize', onResize);
 
+  /** Czy strona przewijana (wyjątek dla bardzo długiego bloku) może się jeszcze przewinąć w tę stronę. */
+  const canScroll = (scroller, delta) => (delta > 0
+    ? scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1
+    : scroller.scrollTop > 0);
+
   return {
     element,
     pager,
     layout,
     turn,
+    /**
+     * Kółko myszy i przewijanie na gładziku: w dół (albo w lewo na gładziku) – następna strona,
+     * w górę – poprzednia. Jeden ruch to jedna kartka: kolejną przewraca dopiero ruch po chwili
+     * ciszy (bezwładność gładzika nie przerzuca kilku stron). Strona przewijana najpierw się
+     * przewija. Zwraca true, gdy zdarzenie obsłużono (wtedy okno się nie przewija).
+     */
+    handleWheel(event) {
+      if (pages.length < 2 || event.ctrlKey || element.classList.contains('note-book--single')) return false;
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1;
+      const delta = (Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX) * unit;
+      if (delta === 0) return false;
+      const scroller = event.target?.closest?.('.note-page--scroll');
+      if (scroller && element.contains(scroller) && canScroll(scroller, delta)) return false;
+      clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(() => {
+        wheelLocked = false;
+        wheelSum = 0;
+      }, WHEEL_QUIET);
+      if (wheelLocked || busy || drag) return true;
+      // Zmiana kierunku zaczyna liczenie od nowa.
+      wheelSum = Math.sign(wheelSum) === Math.sign(delta) ? wheelSum + delta : delta;
+      if (Math.abs(wheelSum) >= WHEEL_STEP) {
+        wheelLocked = true;
+        const direction = Math.sign(wheelSum);
+        wheelSum = 0;
+        if (canTurn(direction)) turn(direction);
+      }
+      return true;
+    },
     /** Klawisze stron: ←/→, Page Up/Down, Home/End. Zwraca true, gdy klawisz obsłużono. */
     handleKey(event) {
       if (pages.length < 2 || event.altKey || event.ctrlKey || event.metaKey) return false;
@@ -793,6 +834,7 @@ export function noteBook({ html, images, onOpenImage, onLayout = () => {}, sprea
     },
     destroy() {
       clearTimeout(resizeTimer);
+      clearTimeout(wheelTimer);
       window.removeEventListener('resize', onResize);
     }
   };

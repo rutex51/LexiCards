@@ -59,6 +59,23 @@ książka – dwie strony obok siebie. Fiszki w stosie leżą bliżej siebie. Op
   wstecz, ciemny motyw; komputer – dwie strony w spoczynku, przewracanie myszą i przyciskiem,
   wstecz od górnego rogu, jedna strona po przełączeniu; stos fiszek przed i po.
 
+## Uzupełnienie w wersji 1.4.1
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Przewracana kartka może wyjść poza białe strony, zakrywając na chwilę teksty i przyciski, ale nie poza okno | W trakcie przewracania płat nie jest już przycinany do stron: wychodzi nad tytuł lekcji, pasek „Zamknij / Notatka / Edytuj” i przyciski pod stronami, a przycina go dopiero okno notatki (z zaokrąglonymi rogami). Cień spod płata pada też na tło okna. Na telefonie (jedna strona) w poziomie kartka nadal znika za lewą krawędzią strony – inaczej na początku i końcu przewracania w marginesie zostawałby pasek kartki |
+| Kółko myszy przewraca strony | W podglądzie notatki kółko w dół – następna strona (w dwóch stronach – następna para), w górę – poprzednia; działa w całym oknie notatki. Jeden ruch kółka to jedna kartka; szybka seria drobnych ruchów gładzika (z bezwładnością) też przewraca tylko jedną – kolejną dopiero ruch po krótkiej przerwie. Strona przewijana (bardzo długi blok) najpierw się przewija. Ctrl + kółko nadal powiększa stronę |
+
+Testy wersji 1.4.1:
+
+- **Testy logiki: 230 – wszystkie zaliczone.**
+- **Testy w przeglądarce: 91 – wszystkie zaliczone w dwóch przebiegach** (bez nowych testów;
+  2 testy notatek uzupełnione): na telefonie przy przewracaniu wstecz kartkę widać nad stroną,
+  a w lewym marginesie – nie; na komputerze przy mocno uniesionym rogu kartkę widać nad stronami,
+  w obrębie okna; kółko myszy w dół i w górę, seria drobnych ruchów – jedna kartka. Sprawdzone
+  też, że nowe sprawdzenia nie przechodzą ze stylami z 1.4.0 (kartka była przycięta do stron).
+- **Lint: bez błędów.**
+
 ## Czego nie sprawdzono
 
 - **Na iPhonie** – testy działają w Chromium z ekranem telefonu, nie w Safari na iOS. Do
@@ -72,8 +89,8 @@ książka – dwie strony obok siebie. Fiszki w stosie leżą bliżej siebie. Op
 
 - Zgięcie jest płaskie (jak złożona kartka), nie wygięte jak walec – zaokrąglenie udaje jasny pas
   przy zgięciu. Prawdziwe wygięcie tekstu wymagałoby zamiany strony na obraz.
-- Zagięty płat nie wychodzi poza obrys książki: na telefonie kartka znika za lewą krawędzią,
-  a przy mocno uniesionym rogu górna krawędź płata zostaje na wysokości stron.
+- Od 1.4.1 zagięty płat może wyjść poza strony (zakryć na chwilę tytuł, pasek okna, przyciski),
+  ale nie poza okno notatki; na telefonie w poziomie nadal znika za lewą krawędzią strony.
 - W trybie dwustronicowym na odwrocie przewracanej kartki jest następna strona, jak w prawdziwej
   książce – prześwitujący lustrzany tekst jest w trybie jednej strony (na telefonie).
 - Narożnik do chwytania myszą ma 48 px; tekst zaczynający się w samym narożniku zaznaczysz,
