@@ -1,5 +1,5 @@
 // Notatka lekcji: okno z podglądem (tekst z formatowaniem i obrazy, po polsku i po angielsku,
-// czytanie na głos), edytor z paskiem formatowania, powiększanie obrazów oraz elementy
+// czytanie na głos, załączniki), edytor z paskiem formatowania, powiększanie obrazów oraz elementy
 // pokazujące notatkę na listach.
 //
 // Edytor to pole contenteditable obsługiwane przez document.execCommand – jedyny sposób na
@@ -7,13 +7,15 @@
 // przechodzi przez normalizeNoteHtml(), więc w bazie zawsze jest bezpieczny, prosty HTML.
 
 import { sentences } from '../core/listen.js';
-import { NOTE_IMAGE_LIMIT } from '../core/model.js';
+import { NOTE_FILE_LIMIT, NOTE_FILE_MAX_BYTES, NOTE_IMAGE_LIMIT } from '../core/model.js';
 import { bytesToBase64 } from '../core/base64.js';
 import { NOTE_COLORS, PAGE_BREAK_LINE, isEmptyNoteHtml, noteText, normalizeNoteHtml, portableNoteHtml } from '../core/note-format.js';
 import {
   IMAGE_LABEL_MAX, cleanImageLabel, findImageByLabel, labelKey, referenceLabel, referenceToken, renameReferences, withImageLabels
 } from '../core/note-refs.js';
-import { pluralImages } from '../core/text.js';
+import { FILE_NAME_MAX, cleanFileName, fileExtension, fileTypeOf, renamedFile } from '../core/note-files.js';
+import { joinList, pluralAttachments, pluralImages } from '../core/text.js';
+import { attachmentList, fileBadge, fileDescription, openAttachment } from './attachments.js';
 import { field, iconButton, segmented, textInput } from './components.js';
 import { confirmDialog, mountDialog, openFormSheet, openMenu, showError, toast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
@@ -49,7 +51,10 @@ export function noteSummary(note) {
   const text = noteText(source).split('\n').filter((line) => line.trim() !== PAGE_BREAK_LINE && referenceLabel(line) === null).join('\n')
     .replace(/\n\s*\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
   if (text) return text.length > 160 ? `${text.slice(0, 160)}…` : text;
-  return pluralImages(note.images.length);
+  return joinList([
+    note.images.length > 0 ? pluralImages(note.images.length) : null,
+    note.files?.length > 0 ? pluralAttachments(note.files.length) : null
+  ].filter(Boolean));
 }
 
 /**
@@ -64,7 +69,7 @@ export function lessonNoteRow(ctx, lesson) {
         h('span', { class: 'row__leading row__leading--icon' }, icon('note')),
         h('span', { class: 'row__text' },
           h('span', { class: 'row__title' }, 'Dodaj notatkę do lekcji'),
-          h('span', { class: 'row__subtitle' }, 'Tekst z formatowaniem i obrazy')
+          h('span', { class: 'row__subtitle' }, 'Tekst z formatowaniem, obrazy i załączniki')
         )
       )
     );
@@ -121,6 +126,7 @@ async function copyNote(note, images, language = 'pl') {
   const labeled = withImageLabels(images);
   let total = 0;
   const picture = (image) => {
+    if (!image.bytes) return '';
     total += image.bytes.byteLength;
     if (total > CLIPBOARD_IMAGE_BYTES) return '';
     return `<p><img src="data:${image.type};base64,${bytesToBase64(image.bytes)}" alt="" style="max-width:100%"></p>`;
@@ -316,6 +322,17 @@ export function openLightbox(images, startIndex = 0) {
   return dialog;
 }
 
+/** Powiększenie obrazu notatki; obrazy bez pliku na urządzeniu są pomijane. */
+function openImage(images, index) {
+  const shown = images.filter((image) => image.url);
+  const at = shown.indexOf(images[index]);
+  if (at < 0) {
+    toast('Pliku tego obrazu nie ma na tym urządzeniu. Przywróć plik obrazów i załączników w Ustawieniach (Kopia zapasowa).', { kind: 'error' });
+    return;
+  }
+  openLightbox(shown, at);
+}
+
 /** Fokus na panelu okna zamiast na pierwszym przycisku (bez ramki fokusu po otwarciu). */
 function focusPanel(panel) {
   panel.tabIndex = -1;
@@ -416,8 +433,10 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
   return new Promise((resolve) => {
     const titleID = `note-title-${++titleCounter}`;
     const urls = urlPool();
-    /** Obrazy notatki z bajtami: { id, stored, bytes, type, width, height, name, url }. */
+    /** Obrazy notatki z bajtami: { id, stored, bytes, type, width, height, name, url } (bez pliku – url null). */
     let stored = [];
+    /** Załączniki notatki: opisy bez bajtów, `missing` – pliku nie ma na urządzeniu. */
+    let files = [];
     let mode = null;
     let editor = null;
     let book = null;
@@ -435,11 +454,13 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       body
     );
 
-    const loadImages = async () => {
+    const loadMedia = async () => {
       urls.release();
-      const images = await library.noteImages(lessonID);
-      stored = images.map((image) => ({ ...image, stored: true, url: urls.add(image) }));
+      const images = await library.noteImages(lessonID, { withMissing: true });
+      stored = images.map((image) => ({ ...image, stored: true, url: image.bytes ? urls.add(image) : null }));
+      files = await library.noteFileList(lessonID);
     };
+    const loadFile = (meta) => library.mediaBytes('noteFiles', meta.id);
 
     /** Ścieżka i nazwa lekcji; tools – przełącznik języka i czytanie (w podglądzie). */
     const heading = (tools = null) => {
@@ -510,19 +531,28 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       rightButton.disabled = false;
       language = pickLanguage(note);
       const html = language === 'en' ? (note.htmlEN ?? '') : note.html;
+      const attachments = files.length > 0 ? attachmentList(files, (meta) => openAttachment(meta, () => loadFile(meta))) : null;
+      if (isEmptyNoteHtml(html) && stored.length === 0) {
+        // Notatka z samymi załącznikami – bez stron.
+        book = null;
+        setPaged(null);
+        replaceChildren(body, heading(), attachments, h('p', { class: 'note-sheet__only-files' }, 'Notatka ma tylko załączniki.'));
+        return;
+      }
       // Treść jest normalizowana przed wstawieniem – tylko bezpieczne znaczniki notatki.
       book = noteBook({
         html,
         images: stored,
         imagesFirst: note.imagesFirst === true,
         language,
-        onOpenImage: (index) => openLightbox(stored, index),
+        onOpenImage: (index) => openImage(stored, index),
         onLayout: setPaged,
         spread: library.getSettings().noteSpread !== false,
         onSpreadChange: (spread) => library.updateSettings({ noteSpread: spread }).catch((error) => console.error(error))
       });
       replaceChildren(body,
         heading(viewTools(note, html)),
+        attachments,
         book.element,
         h('div', { class: 'note-sheet__footer' },
           !isEmptyNoteHtml(html)
@@ -586,6 +616,8 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
         language: language ?? 'pl',
         images: stored,
         imagesFirst: note?.imagesFirst === true,
+        files,
+        loadFile,
         urls,
         titleID
       });
@@ -598,7 +630,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
             onClick: async () => {
               const confirmed = await confirmDialog({
                 title: 'Usunąć notatkę?',
-                message: 'Tekst i obrazy notatki zostaną usunięte. Pojęcia lekcji zostają.',
+                message: 'Tekst, obrazy i załączniki notatki zostaną usunięte. Pojęcia lekcji zostają.',
                 confirmLabel: 'Usuń',
                 destructive: true
               });
@@ -620,16 +652,18 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
     const save = async () => {
       if (!editor || rightButton.disabled) return;
       if (editor.busy()) {
-        toast('Poczekaj, aż obrazy zostaną przygotowane.');
+        toast('Poczekaj, aż obrazy i załączniki zostaną wczytane.');
         return;
       }
       rightButton.disabled = true;
       try {
         const draft = editor.draft();
         const saved = await library.saveNote(lessonID, draft);
+        // Załączniki bywają duże – prosimy przeglądarkę, żeby nie usuwała danych przy braku miejsca.
+        if (draft.files.some((file) => file.bytes)) navigator.storage?.persist?.().catch(() => {});
         // Po zapisie podgląd w języku, w którym była edytowana treść (jeśli ta wersja nie jest pusta).
         language = editor.language();
-        await loadImages();
+        await loadMedia();
         if (!saved) {
           toast('Notatka jest pusta – usunięto ją.');
           close();
@@ -677,7 +711,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
     // ramką. Fokus na samym oknie: bez ramki, a Tab i klawisze dalej działają w oknie.
     focusPanel(panel);
     replaceChildren(body, heading(), h('p', { class: 'picker__empty' }, 'Wczytywanie…'));
-    loadImages()
+    loadMedia()
       .catch((error) => console.error(error))
       .finally(() => {
         if (!dialog.open) return;
@@ -690,14 +724,18 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
 // ---------------------------------------------------------------- edytor
 
 /**
- * Edytor notatki: pasek formatowania, pole tekstu i obrazy.
+ * Edytor notatki: obrazy, pasek formatowania, pole tekstu i załączniki.
+ * files – opisy załączników notatki, loadFile(meta) → bajty zapisanego załącznika.
  * Zwraca { element, draft(), dirty(), busy(), focus(), destroy() }.
  */
-function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFirst = false, titleID = 'note' }) {
+function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFirst = false, files = [], loadFile = null, titleID = 'note' }) {
   const initialTexts = { pl: normalizeNoteHtml(html), en: normalizeNoteHtml(htmlEN) };
   const state = {
     images: withImageLabels(images.map((image) => ({ ...image }))),
     imagesFirst,
+    /** Załączniki: zapisane { id, name, type, size, stored: true } albo nowe { name, type, size, bytes }. */
+    files: files.map((file) => ({ ...file, stored: true })),
+    filesPending: 0,
     /** Treść obu wersji językowych; w polu jest wersja `language` (jej stan jest w polu). */
     texts: { ...initialTexts },
     language: language === 'en' ? 'en' : 'pl',
@@ -706,6 +744,9 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
   };
   const imagesKey = () => state.images.map((image) => `${image.id ?? image.url}:${image.label}`).join(',');
   const initialImages = imagesKey();
+  let added = 0;
+  const filesKey = () => state.files.map((file) => `${file.id ?? file.key}:${file.name}`).join('\n');
+  const initialFiles = filesKey();
 
   const area = h('div', {
     class: 'note-text note-editor__area',
@@ -968,14 +1009,16 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
           items: [
             { label: 'Wstaw do tekstu', icon: 'note', onSelect: () => insertReference(image) },
             { label: 'Zmień sygnaturę', icon: 'edit', onSelect: () => renameImage(image) },
-            { label: 'Powiększ', icon: 'zoomIn', onSelect: () => openLightbox(state.images, index) },
+            { label: 'Powiększ', icon: 'zoomIn', disabled: !image.url, onSelect: () => openImage(state.images, index) },
             { label: 'Przesuń wcześniej', icon: 'arrowLeft', disabled: index === 0, onSelect: () => moveImage(index, -1) },
             { label: 'Przesuń dalej', icon: 'arrowRight', disabled: index === state.images.length - 1, onSelect: () => moveImage(index, 1) },
             'separator',
             { label: 'Usuń obraz', icon: 'trash', destructive: true, onSelect: () => { state.images.splice(index, 1); renderImages(); } }
           ]
         })
-      }, h('img', { src: image.url, alt: '' })),
+      }, image.url
+        ? h('img', { src: image.url, alt: '' })
+        : h('span', { class: 'note-images__missing', dataset: { testid: 'note-image-missing' } }, icon('image', { size: 20 }), 'Brak pliku')),
       h('button', {
         type: 'button', class: 'note-images__remove', 'aria-label': `Usuń obraz ${image.label}`, dataset: { testid: 'note-image-remove' },
         onClick: () => { state.images.splice(index, 1); renderImages(); }
@@ -1039,7 +1082,131 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     fileInput
   );
 
-  // Obrazy na górze, tekst pod nimi. Upuszczenie plików na edytor (komputer) dodaje obrazy.
+  // ---- załączniki
+  const fileList = h('ul', { class: 'note-attachments', dataset: { testid: 'note-attachments' } });
+  const fileStatus = h('p', { class: 'note-images__status', role: 'status' });
+  const attachInput = h('input', {
+    type: 'file', multiple: true, hidden: true, dataset: { testid: 'note-file-input' },
+    onChange: () => {
+      addAttachments([...attachInput.files]);
+      attachInput.value = '';
+    }
+  });
+
+  const moveFile = (index, delta) => {
+    const [file] = state.files.splice(index, 1);
+    state.files.splice(index + delta, 0, file);
+    renderFiles();
+  };
+  const removeFile = (index) => {
+    state.files.splice(index, 1);
+    renderFiles();
+  };
+
+  function renameFile(file) {
+    let value = file.name;
+    const input = textInput({ value, onInput: (text) => { value = text; }, autocapitalize: 'off', testID: 'note-attachment-rename' });
+    input.maxLength = FILE_NAME_MAX;
+    const extension = fileExtension(file.name);
+    openFormSheet({
+      title: 'Nazwa załącznika',
+      build: () => field('Nazwa pliku', input, { hint: extension ? `Rozszerzenie .${extension} zostaje – po nim system wie, czym otworzyć plik.` : null }),
+      onSubmit: () => {
+        if (value.trim() === '') throw new Error('Wpisz nazwę pliku.');
+        file.name = renamedFile(file.name, value);
+        renderFiles();
+      }
+    });
+    requestAnimationFrame(() => {
+      // Zaznaczona sama nazwa, bez rozszerzenia.
+      const end = extension && input.value.toLowerCase().endsWith(`.${extension}`) ? input.value.length - extension.length - 1 : input.value.length;
+      input.setSelectionRange(0, end);
+    });
+  }
+
+  /** Otwarcie załącznika z edytora: zapisany – z bazy, dodany przed chwilą – z pamięci. */
+  const openFile = (file) => openAttachment(file, async () => (file.stored ? loadFile?.(file) ?? null : file.bytes));
+
+  function renderFiles() {
+    const rows = state.files.map((file, index) => h('li', { class: 'note-attachments__item' },
+      h('button', {
+        type: 'button', class: 'note-attachments__open', 'aria-label': `${file.name} – polecenia`, dataset: { testid: 'note-attachment' },
+        onClick: () => openMenu({
+          title: file.name,
+          items: [
+            { label: 'Zmień nazwę', icon: 'edit', onSelect: () => renameFile(file) },
+            { label: 'Otwórz', icon: 'external', disabled: Boolean(file.missing), onSelect: () => openFile(file) },
+            { label: 'Przesuń wyżej', icon: 'arrowUp', disabled: index === 0, onSelect: () => moveFile(index, -1) },
+            { label: 'Przesuń niżej', icon: 'arrowDown', disabled: index === state.files.length - 1, onSelect: () => moveFile(index, 1) },
+            'separator',
+            { label: 'Usuń załącznik', icon: 'trash', destructive: true, onSelect: () => removeFile(index) }
+          ]
+        })
+      },
+        fileBadge(file),
+        h('span', { class: 'note-attachments__text' },
+          h('span', { class: 'note-attachments__name', dataset: { testid: 'note-attachment-name' } }, file.name),
+          h('span', { class: 'note-attachments__meta' }, fileDescription(file))
+        )
+      ),
+      h('button', {
+        type: 'button', class: 'note-attachments__remove', 'aria-label': `Usuń załącznik ${file.name}`, dataset: { testid: 'note-attachment-remove' },
+        onClick: () => removeFile(index)
+      }, icon('close', { size: 16 }))
+    ));
+    for (let index = 0; index < state.filesPending; index += 1) {
+      rows.push(h('li', { class: 'note-attachments__item note-attachments__item--pending', 'aria-hidden': 'true' }, h('span', { class: 'note-images__spinner' })));
+    }
+    const full = state.files.length + state.filesPending >= NOTE_FILE_LIMIT;
+    rows.push(h('li', null, h('button', {
+      type: 'button', class: 'note-attachments__add', disabled: full, dataset: { testid: 'note-attachment-add' },
+      onClick: () => attachInput.click()
+    }, icon('paperclip', { size: 20 }), h('span', null, 'Dodaj załącznik'))));
+    replaceChildren(fileList, rows);
+    fileStatus.textContent = state.filesPending > 0 ? 'Wczytywanie pliku…' : (full ? `Notatka może mieć najwyżej ${NOTE_FILE_LIMIT} załączników.` : '');
+  }
+
+  async function addAttachments(list) {
+    const room = NOTE_FILE_LIMIT - state.files.length - state.filesPending;
+    const accepted = list.slice(0, Math.max(0, room));
+    if (accepted.length < list.length) toast(`Notatka może mieć najwyżej ${NOTE_FILE_LIMIT} załączników.`);
+    for (const file of accepted) {
+      const name = cleanFileName(file.name);
+      if (file.size > NOTE_FILE_MAX_BYTES) {
+        toast(`Plik „${name}” jest za duży (limit to 50 MB).`, { kind: 'error' });
+        continue;
+      }
+      if (file.size === 0) {
+        toast(`Plik „${name}” jest pusty.`, { kind: 'error' });
+        continue;
+      }
+      state.filesPending += 1;
+      renderFiles();
+      try {
+        const bytes = await file.arrayBuffer();
+        added += 1;
+        state.files.push({ key: `new-${added}`, stored: false, name, type: fileTypeOf(name, file.type), size: bytes.byteLength, bytes });
+      } catch {
+        toast(`Nie udało się wczytać pliku „${name}”.`, { kind: 'error' });
+      } finally {
+        state.filesPending -= 1;
+        renderFiles();
+      }
+    }
+  }
+
+  const filesSection = h('section', { class: 'note-editor__files' },
+    h('h3', { class: 'form-group__title' }, 'Załączniki'),
+    fileList,
+    fileStatus,
+    h('p', { class: 'field__hint' },
+      'PDF, Word, Excel, PowerPoint i inne pliki do 50 MB. Dotknij pliku, żeby zmienić nazwę, otworzyć, przesunąć albo usunąć. '
+      + 'Załączniki przenosi plik obrazów i załączników kopii zapasowej; eksport do arkusza ich nie obejmuje.'),
+    attachInput
+  );
+
+  // Obrazy na górze, tekst pod nimi, załączniki na końcu. Upuszczenie plików na edytor
+  // (komputer) dodaje obrazy albo załączniki.
   const element = h('div', { class: 'note-editor' },
     imagesSection,
     h('section', { class: 'note-editor__text' },
@@ -1059,7 +1226,8 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
       ),
       h('div', { class: 'note-editor__toolbar' }, toolbar, colorPanel),
       area
-    )
+    ),
+    filesSection
   );
   element.addEventListener('dragover', (event) => {
     if ([...(event.dataTransfer?.items ?? [])].some((item) => item.kind === 'file')) {
@@ -1068,15 +1236,20 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     }
   });
   element.addEventListener('dragleave', () => element.classList.remove('note-editor--drop'));
+  // Upuszczone obrazy trafiają do obrazów, pozostałe pliki – do załączników.
   element.addEventListener('drop', (event) => {
-    const files = [...(event.dataTransfer?.files ?? [])].filter((file) => file.type.startsWith('image/'));
+    const dropped = [...(event.dataTransfer?.files ?? [])];
     element.classList.remove('note-editor--drop');
-    if (files.length === 0) return;
+    if (dropped.length === 0) return;
     event.preventDefault();
-    addFiles(files);
+    const pictures = dropped.filter((file) => file.type.startsWith('image/'));
+    if (pictures.length > 0) addFiles(pictures);
+    const others = dropped.filter((file) => !file.type.startsWith('image/'));
+    if (others.length > 0) addAttachments(others);
   });
 
   renderImages();
+  renderFiles();
   syncEmpty();
 
   /** Treść pola: linie poziome w edytorze pochodzą tylko z „Nowa strona”, więc to podziały stron. */
@@ -1098,20 +1271,24 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
         imagesFirst: state.imagesFirst,
         images: state.images.map((image) => (image.stored
           ? { id: image.id, label: image.label }
-          : { bytes: image.bytes, type: image.type, width: image.width, height: image.height, name: image.name ?? null, label: image.label }))
+          : { bytes: image.bytes, type: image.type, width: image.width, height: image.height, name: image.name ?? null, label: image.label })),
+        files: state.files.map((file) => (file.stored
+          ? { id: file.id, name: file.name }
+          : { bytes: file.bytes, name: file.name, type: file.type }))
       };
     },
     dirty() {
       const current = texts();
       return current.pl !== initialTexts.pl || current.en !== initialTexts.en
         || imagesKey() !== initialImages
+        || filesKey() !== initialFiles
         || state.imagesFirst !== imagesFirst
-        || state.pending > 0;
+        || state.pending > 0 || state.filesPending > 0;
     },
-    busy: () => state.pending > 0,
+    busy: () => state.pending > 0 || state.filesPending > 0,
     isEmpty: () => {
       const current = texts();
-      return isEmptyNoteHtml(current.pl) && isEmptyNoteHtml(current.en) && state.images.length === 0;
+      return isEmptyNoteHtml(current.pl) && isEmptyNoteHtml(current.en) && state.images.length === 0 && state.files.length === 0;
     },
     /** Język treści w polu ('pl' | 'en'). */
     language: () => state.language,

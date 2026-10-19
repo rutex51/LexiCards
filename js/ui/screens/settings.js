@@ -1,13 +1,18 @@
 // Ustawienia: wygląd, kopia zapasowa, przechowywanie danych, instalacja, dane przykładowe.
 
-import { backupFileName, createBackup, parseBackupText, validateBackup } from '../../core/backup.js';
+import {
+  backupFileName, createBackup, createMediaArchive, isZipFile, mediaFileName, parseBackupText, restoreMedia, validateBackup
+} from '../../core/backup.js';
 import { ACCENT_COLORS, CONSOLIDATED_REVIEW_OPTIONS, accentColor, consolidatedReviewDays, nowISO } from '../../core/model.js';
-import { joinList, pluralDomains, pluralLessons, pluralModules, pluralNotes, pluralTerms } from '../../core/text.js';
+import {
+  formatSize, joinList, plural, pluralAttachments, pluralDomains, pluralFiles, pluralForm, pluralImages, pluralLessons, pluralModules,
+  pluralNotes, pluralTerms
+} from '../../core/text.js';
 import { loadSampleData, openExportSheet } from '../actions.js';
 import { actionRow, field, formGroup, group, segmented, selectInput, valueRow } from '../components.js';
-import { confirmDialog, showError, toast } from '../dialogs.js';
+import { alertDialog, confirmDialog, showError, toast } from '../dialogs.js';
 import { h, onTap } from '../dom.js';
-import { deliverFile, pickFile } from '../files.js';
+import { deliverFile, pickFiles } from '../files.js';
 import { icon } from '../icons.js';
 import { routes } from '../router.js';
 import {
@@ -34,6 +39,21 @@ function contentList(counts) {
     pluralTerms(counts.terms),
     counts.notes > 0 ? `${pluralNotes(counts.notes)} do lekcji` : null
   ].filter(Boolean));
+}
+
+/** „2 obrazy i 1 załącznik” (bez zer); przy braku obu – „bez obrazów i załączników”. */
+function mediaList({ images, files }) {
+  const parts = [images > 0 ? pluralImages(images) : null, files > 0 ? pluralAttachments(files) : null].filter(Boolean);
+  return parts.length > 0 ? joinList(parts) : 'bez obrazów i załączników';
+}
+
+/** Komunikat o postępie długiej operacji (u dołu ekranu) – do aktualizacji i zamknięcia. */
+function progressToast(text) {
+  const element = toast(text, { duration: 24 * 60 * 60 * 1000 });
+  return {
+    update: (next) => { element.firstChild.textContent = next; },
+    done: () => element.remove()
+  };
 }
 
 /** Podsumowanie sprawdzenia wymowy: co zrobić dalej. */
@@ -65,6 +85,11 @@ export class SettingsScreen {
     /** null – jeszcze nie sprawdzono, true/false – stan ochrony danych przed usunięciem. */
     this.persisted = null;
     this.disposed = false;
+    /** Obrazy i załączniki opisane w notatkach, których plików nie ma na urządzeniu: { images, files, size } albo null. */
+    this.missing = null;
+    /** Trwa zapis albo przywracanie pliku – kolejne polecenie czeka. */
+    this.busy = false;
+    this.#checkMissing();
     /** Sprawdzenie wymowy: { results, finished, stop } albo null. */
     this.check = null;
     this.#checkPersistence();
@@ -285,49 +310,167 @@ export class SettingsScreen {
     if (!this.disposed) this.ctx.refresh();
   }
 
-  async #exportBackup() {
-    const { ctx } = this;
+  async #checkMissing() {
     try {
-      const backup = await createBackup(ctx.library, ctx.env.appVersion);
-      const file = new File([JSON.stringify(backup)], backupFileName(), { type: 'application/json' });
-      const outcome = await deliverFile(file, {
-        title: 'Kopia zapasowa jest gotowa',
-        message: `Zawartość: ${contentList(backup.counts)}. W następnym kroku wybierz „Zachowaj w Plikach”.`
-      });
-      if (outcome === 'cancelled') return;
-      await ctx.library.updateSettings({ lastBackupAt: nowISO() });
-      toast(outcome === 'downloaded' ? `Zapisano plik ${file.name}.` : 'Zapisano kopię zapasową.');
+      const missing = await this.ctx.library.missingMedia();
+      this.missing = missing.images + missing.files > 0 ? missing : null;
+    } catch (error) {
+      console.error(error);
+      this.missing = null;
+    }
+    if (!this.disposed) this.ctx.refresh();
+  }
+
+  /** Wykonuje polecenie kopii, o ile nie trwa inne (zapis dużego pliku może chwilę potrwać). */
+  async #exclusive(work) {
+    if (this.busy) {
+      toast('Poczekaj, aż skończy się poprzednia operacja.');
+      return;
+    }
+    this.busy = true;
+    try {
+      await work();
     } catch (error) {
       await showError(error);
+    } finally {
+      this.busy = false;
     }
   }
 
-  async #restoreBackup() {
+  /** Pierwszy krok przeniesienia: plik danych (bez obrazów i załączników). */
+  #exportBackup() {
     const { ctx } = this;
-    // Na telefonie nie zawężamy typu pliku: system potrafi wyszarzyć kopię zapisaną przez inną aplikację.
-    const file = await pickFile(window.matchMedia('(pointer: coarse)').matches ? '' : '.json,application/json');
-    if (!file) return;
-    try {
-      const result = validateBackup(parseBackupText(await file.text()));
-      const current = { ...ctx.library.summary(), notes: ctx.library.noteCount() };
-      const exported = result.exportedAt ? formatDate(result.exportedAt) : null;
-      const parts = [`${exported ? `Kopia z dnia ${exported}. ` : ''}Zawartość: ${contentList(result.counts)}.`];
-      parts.push(ctx.library.isEmpty()
-        ? 'Zostanie wczytana do pustej biblioteki.'
-        : `Obecne dane (${contentList(current)}) zostaną zastąpione. Tej operacji nie można cofnąć.`);
-      const confirmed = await confirmDialog({
-        title: 'Przywrócić dane z kopii?',
-        message: parts.join(' '),
-        confirmLabel: 'Przywróć',
-        destructive: !ctx.library.isEmpty()
+    return this.#exclusive(async () => {
+      const backup = await createBackup(ctx.library, ctx.env.appVersion);
+      const file = new File([JSON.stringify(backup)], backupFileName(), { type: 'application/json' });
+      const media = backup.media.images + backup.media.files > 0
+        ? ` Obrazy i załączniki notatek (${mediaList(backup.media)}) zapisz osobno – poleceniem „Zapisz obrazy i załączniki”.`
+        : '';
+      const outcome = await deliverFile(file, {
+        title: 'Plik danych jest gotowy',
+        message: `Zawartość: ${contentList(backup.counts)}.${media} W następnym kroku wybierz „Zachowaj w Plikach”.`
       });
-      if (!confirmed) return;
-      await ctx.library.replaceAll(result.data);
-      ctx.applyAppearance();
-      toast(`Przywrócono: ${contentList(result.counts)}.`);
-    } catch (error) {
-      await showError(error);
+      if (outcome === 'cancelled') return;
+      await ctx.library.updateSettings({ lastBackupAt: nowISO() });
+      toast(outcome === 'downloaded' ? `Zapisano plik ${file.name}.` : 'Zapisano plik danych.');
+    });
+  }
+
+  /** Drugi krok przeniesienia: jeden plik ze wszystkimi obrazami i załącznikami notatek. */
+  #exportMedia() {
+    const { ctx } = this;
+    return this.#exclusive(async () => {
+      const progress = progressToast('Przygotowanie pliku obrazów i załączników…');
+      let archive;
+      try {
+        archive = await createMediaArchive(ctx.library, ctx.env.appVersion, {
+          onProgress: (done, total) => progress.update(`Przygotowanie pliku obrazów i załączników… ${done} z ${total}`)
+        });
+      } finally {
+        progress.done();
+      }
+      if (archive.images + archive.files === 0) {
+        toast('Na tym urządzeniu nie ma plików obrazów ani załączników do zapisania.');
+        return;
+      }
+      const file = new File([archive.blob], mediaFileName(), { type: 'application/zip' });
+      const missing = archive.missing > 0
+        ? ` ${pluralForm(archive.missing, 'Brakuje 1 pliku opisanego w notatce – nie ma go na tym urządzeniu.',
+          `Brakuje ${archive.missing} plików opisanych w notatkach – nie ma ich na tym urządzeniu.`,
+          `Brakuje ${archive.missing} plików opisanych w notatkach – nie ma ich na tym urządzeniu.`)}`
+        : '';
+      const outcome = await deliverFile(file, {
+        title: 'Plik obrazów i załączników jest gotowy',
+        message: `Zawartość: ${mediaList(archive)}, razem ${formatSize(archive.size)}.${missing} W następnym kroku wybierz „Zachowaj w Plikach”.`
+      });
+      if (outcome === 'cancelled') return;
+      await ctx.library.updateSettings({ lastMediaBackupAt: nowISO() });
+      toast(outcome === 'downloaded' ? `Zapisano plik ${file.name}.` : 'Zapisano plik obrazów i załączników.');
+    });
+  }
+
+  /**
+   * Przywracanie: plik danych, plik obrazów i załączników albo oba naraz (najpierw dane).
+   * Rodzaj pliku rozpoznaje zawartość, nie nazwa.
+   */
+  async #restoreBackup() {
+    if (this.busy) {
+      toast('Poczekaj, aż skończy się poprzednia operacja.');
+      return;
     }
+    // Na telefonie nie zawężamy typu pliku: system potrafi wyszarzyć kopię zapisaną przez inną aplikację.
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    const files = await pickFiles(coarse ? '' : '.json,application/json,.zip,application/zip', { multiple: true });
+    if (files.length === 0) return;
+    await this.#exclusive(async () => {
+      const zips = await Promise.all(files.map((file) => isZipFile(file)));
+      const dataFiles = files.filter((_, index) => !zips[index]);
+      const mediaFiles = files.filter((_, index) => zips[index]);
+      if (dataFiles.length > 1 || mediaFiles.length > 1) {
+        throw new Error('Wybierz jeden plik danych, jeden plik obrazów i załączników albo oba – po jednym z każdego rodzaju.');
+      }
+      if (dataFiles[0] && !(await this.#restoreData(dataFiles[0], { withMedia: Boolean(mediaFiles[0]) }))) return;
+      if (mediaFiles[0]) await this.#restoreMediaFile(mediaFiles[0]);
+    });
+    await this.#checkMissing();
+  }
+
+  /** Przywraca plik danych (po potwierdzeniu). Zwraca true, gdy dane zostały zastąpione. */
+  async #restoreData(file, { withMedia }) {
+    const { ctx } = this;
+    const result = validateBackup(parseBackupText(await file.text()));
+    const current = { ...ctx.library.summary(), notes: ctx.library.noteCount() };
+    const exported = result.exportedAt ? formatDate(result.exportedAt) : null;
+    const parts = [`${exported ? `Kopia z dnia ${exported}. ` : ''}Zawartość: ${contentList(result.counts)}.`];
+    const separate = result.media.images + result.media.files - result.media.included;
+    if (separate > 0) {
+      parts.push(withMedia
+        ? `Potem zostaną dodane obrazy i załączniki notatek z drugiego pliku (${mediaList(result.media)}).`
+        : `Obrazy i załączniki notatek (${mediaList(result.media)}) są w osobnym pliku – przywróć go potem. Te, które już są na tym urządzeniu, zostaną.`);
+    }
+    parts.push(ctx.library.isEmpty()
+      ? 'Dane zostaną wczytane do pustej biblioteki.'
+      : `Obecne dane (${contentList(current)}) zostaną zastąpione. Tej operacji nie można cofnąć.`);
+    const confirmed = await confirmDialog({
+      title: 'Przywrócić dane z kopii?',
+      message: parts.join(' '),
+      confirmLabel: 'Przywróć',
+      destructive: !ctx.library.isEmpty()
+    });
+    if (!confirmed) return false;
+    await ctx.library.replaceAll(result.data);
+    ctx.applyAppearance();
+    toast(`Przywrócono: ${contentList(result.counts)}.`);
+    return true;
+  }
+
+  /** Dodaje obrazy i załączniki z pliku do notatek, które ich nie mają. Niczego nie usuwa. */
+  async #restoreMediaFile(file) {
+    const { ctx } = this;
+    const progress = progressToast('Wczytywanie obrazów i załączników…');
+    let report;
+    try {
+      report = await restoreMedia(ctx.library, file, {
+        onProgress: (done, total) => progress.update(`Wczytywanie obrazów i załączników… ${done} z ${total}`)
+      });
+    } finally {
+      progress.done();
+    }
+    const added = report.images + report.files;
+    const lines = [added > 0 ? `Dodano ${mediaList(report)}.` : 'Nie dodano żadnego pliku.'];
+    if (report.present > 0) {
+      lines.push(`${pluralFiles(report.present)} ${pluralForm(report.present, 'był', 'były', 'było')} już na tym urządzeniu.`);
+    }
+    if (report.unmatched > 0) {
+      lines.push(`${pluralFiles(report.unmatched)} nie ${pluralForm(report.unmatched, 'pasuje', 'pasują', 'pasuje')} do notatek `
+        + 'w bibliotece – najpierw przywróć plik danych zapisany razem z tym plikiem.');
+    }
+    if (report.damaged > 0) {
+      lines.push(`${pluralFiles(report.damaged)} ${pluralForm(report.damaged, 'jest uszkodzony albo nie zgadza się',
+        'są uszkodzone albo nie zgadzają się', 'jest uszkodzonych albo nie zgadza się')} z opisem w notatce.`);
+    }
+    if (report.missing > 0) lines.push(`Wciąż brakuje ${plural(report.missing, 'pliku', 'plików', 'plików')} opisanych w notatkach.`);
+    await alertDialog({ title: 'Obrazy i załączniki', message: lines.join(' ') });
   }
 
   async #deleteEverything() {
@@ -380,20 +523,41 @@ export class SettingsScreen {
     const settings = library.getSettings();
     const summary = library.summary();
     const lastBackup = settings.lastBackupAt ? formatDate(settings.lastBackupAt) : null;
+    const lastMedia = settings.lastMediaBackupAt ? formatDate(settings.lastMediaBackupAt) : null;
+    const media = library.mediaSummary();
+    const hasMedia = media.images + media.files > 0;
 
     const backupFooter = [
-      lastBackup ? `Ostatnia kopia: ${lastBackup}.` : 'Nie zapisano jeszcze żadnej kopii.',
-      'Kopia to jeden plik ze wszystkimi materiałami, notatkami z obrazami i postępami. Przywrócenie zastępuje obecne dane.'
-    ].join(' ');
+      lastBackup ? `Ostatni zapis danych: ${lastBackup}.` : 'Nie zapisano jeszcze danych do pliku.',
+      hasMedia ? (lastMedia ? `Ostatni zapis obrazów i załączników: ${lastMedia}.` : 'Nie zapisano jeszcze obrazów i załączników.') : null,
+      'Przeniesienie to dwa pliki: dane (materiały, notatki, postępy i ustawienia) oraz jeden plik ze wszystkimi obrazami '
+        + 'i załącznikami notatek. Na drugim urządzeniu przywróć najpierw dane, potem obrazy i załączniki – możesz też wybrać '
+        + 'oba pliki naraz. Przywrócenie danych zastępuje obecne dane; obrazy i załączniki, które już są na urządzeniu, zostają.'
+    ].filter(Boolean).join(' ');
 
     return {
       title: 'Ustawienia',
       back: { href: routes.start(), label: 'Start' },
       body: [
         this.#appearanceGroup(),
-        group({ title: 'Kopia zapasowa', footer: backupFooter },
-          actionRow({ label: 'Zapisz kopię do pliku', iconName: 'download', onClick: () => this.#exportBackup(), testID: 'backup-export' }),
-          actionRow({ label: 'Przywróć z pliku', iconName: 'upload', onClick: () => this.#restoreBackup(), testID: 'backup-restore' })
+        group({ title: 'Kopia zapasowa i przeniesienie', footer: backupFooter, className: 'settings-backup' },
+          actionRow({
+            label: 'Zapisz dane do pliku', subtitle: 'Bez obrazów i załączników – mały plik', iconName: 'download',
+            onClick: () => this.#exportBackup(), testID: 'backup-export'
+          }),
+          hasMedia
+            ? actionRow({
+                label: 'Zapisz obrazy i załączniki', subtitle: `Jeden plik: ${mediaList(media)}, ${formatSize(media.size)}`,
+                iconName: 'download', onClick: () => this.#exportMedia(), testID: 'backup-media-export'
+              })
+            : null,
+          this.missing
+            ? valueRow('Brak na tym urządzeniu', mediaList(this.missing))
+            : null,
+          actionRow({
+            label: 'Przywróć z pliku', subtitle: 'Dane, obrazy i załączniki albo oba pliki naraz', iconName: 'upload',
+            onClick: () => this.#restoreBackup(), testID: 'backup-restore'
+          })
         ),
         group({
           title: 'Import i eksport',

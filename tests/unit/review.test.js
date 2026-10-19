@@ -212,7 +212,7 @@ test('przywrócenie kopii z wersji sprzed FSRS też odtwarza harmonogram', async
   // Dane w postaci, w jakiej zapisałaby je kopia z wersji 0.3.
   const data = await asLegacy(library, adapter);
   assert.equal(data.progress[0].schedule, undefined);
-  const backup = await createBackup({ exportAll: async () => data }, '0.3.3');
+  const backup = await createBackup({ exportAll: async () => data, mediaSummary: () => ({ images: 0, files: 0, size: 0 }) }, '0.3.3');
 
   const fresh = new Library(new MemoryAdapter());
   await fresh.load();

@@ -1,4 +1,4 @@
-# LexiCards 1.7
+# LexiCards 1.8
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -16,8 +16,9 @@ Kartki notatek zaginane od rogu, dwie strony obok siebie na komputerze (wersja 1
 Obrazy notatki przed tekstem albo po nim (wersja 1.5): [docs/RELEASE-1.5.md](docs/RELEASE-1.5.md).
 Sygnatury obrazów w treści notatki, notatka po angielsku, czytanie notatki na głos (wersja 1.6): [docs/RELEASE-1.6.md](docs/RELEASE-1.6.md).
 Notatka lekcji w słuchaniu, przyciski wstecz / dalej, czytelne „Anuluj” (wersja 1.7): [docs/RELEASE-1.7.md](docs/RELEASE-1.7.md).
+Załączniki notatek, przeniesienie dwoma plikami – dane oraz obrazy z załącznikami (wersja 1.8): [docs/RELEASE-1.8.md](docs/RELEASE-1.8.md).
 
-## Co potrafi wersja 1.7
+## Co potrafi wersja 1.8
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -42,6 +43,9 @@ Notatka lekcji w słuchaniu, przyciski wstecz / dalej, czytelne „Anuluj” (we
   dwie strony leżą obok siebie jak w otwartej książce; „Nowa strona” w edytorze zaczyna stronę tam, gdzie chcesz. Wklejony tekst z Worda,
   stron WWW czy Notatek zachowuje formatowanie, wklejony obraz trafia do obrazów notatki, a
   „Kopiuj notatkę” przenosi ją z formatowaniem i obrazami do innej aplikacji.
+- Załączniki notatek: PDF, Word, Excel, PowerPoint i inne pliki do 50 MB. Na iPhonie otwierasz je
+  przez systemowy arkusz udostępniania (Word, Excel, Książki, „Zachowaj w Plikach”…), na komputerze
+  PDF otwiera się w nowej karcie, a pozostałe pliki są pobierane i otwierają się w swoich programach.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
   Notatki do lekcji przychodzą z osobnego arkusza tego samego pliku – razem z pojęciami albo osobno.
@@ -67,7 +71,9 @@ Notatka lekcji w słuchaniu, przyciski wstecz / dalej, czytelne „Anuluj” (we
   w trakcie nauki, do powtórki i opanowane, skuteczność quizów i czas nauki.
 - Wymowa pojęć, definicji i przykładów głosem z urządzenia, z głosem zastępczym, gdy wybrany się
   nie odzywa, i sprawdzeniem wymowy w Ustawieniach; historia ocen każdego pojęcia.
-- Kopia zapasowa do pliku i przywracanie z pliku (materiały, notatki z obrazami, postępy, ustawienia).
+- Kopia zapasowa i przeniesienie na inne urządzenie dwoma plikami: dane (materiały, notatki, postępy,
+  ustawienia – mały plik) oraz jeden plik ze wszystkimi obrazami i załącznikami notatek. Przywracasz
+  je po kolei albo oba naraz; obrazy i załączniki, które już są na urządzeniu, zostają.
 - Motyw jasny, ciemny albo zgodny z systemem i kolor aplikacji do wyboru (niebieski, antracytowy,
   pomarańczowy, zielony, czerwony); układ na telefon i na szeroki ekran. Ikony dziedzin mają
   szare tło, a inny kolor można wybrać w edycji dziedziny.
@@ -81,7 +87,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.4 – kartki zaginane od rogu, dwie strony](docs/RELEASE-1.4.md),
 [wersja 1.5 – obrazy notatki przed tekstem albo po nim](docs/RELEASE-1.5.md),
 [wersja 1.6 – sygnatury obrazów, notatka po angielsku, czytanie na głos](docs/RELEASE-1.6.md),
-[wersja 1.7 – notatka w słuchaniu, wstecz / dalej](docs/RELEASE-1.7.md).
+[wersja 1.7 – notatka w słuchaniu, wstecz / dalej](docs/RELEASE-1.7.md),
+[wersja 1.8 – załączniki, przeniesienie dwoma plikami](docs/RELEASE-1.8.md).
 
 ## Jak korzystać
 
@@ -208,6 +215,18 @@ Obrazy są po tekście albo przed nim – jak wybierzesz w edytorze. Przycisk **
 formatowania (dwie połówki kartki) zaczyna nową stronę w miejscu kursora; w komórce arkusza
 importu nową stronę oznacza wiersz `---`.
 
+**Załączniki:** w edytorze pod tekstem jest sekcja **Załączniki** – **Dodaj załącznik** wybiera plik
+(PDF, Word, Excel, PowerPoint i inne, do 50 MB każdy, najwyżej 30 w notatce); na komputerze plik
+możesz też upuścić na edytor. Dotknięcie pliku: **Zmień nazwę** (rozszerzenie, np. `.pdf`, zostaje),
+**Otwórz**, przesunięcie, usunięcie. W podglądzie pliki są w rzędzie pod nazwą lekcji, z plakietką
+rodzaju (PDF, DOCX, XLSX, PPTX…). Dotknięcie pliku na iPhonie – **Otwórz lub zapisz…** otwiera
+systemowy arkusz udostępniania: wybierasz aplikację (Word, Excel, PowerPoint, Książki) albo
+„Zachowaj w Plikach”. Na komputerze – **Otwórz w nowej karcie** (PDF, obrazy, tekst) albo **Pobierz**
+(Word, Excel, PowerPoint otworzą się w Office z folderu Pobrane). Załączniki są zapisane w bazie
+przeglądarki na urządzeniu, tak jak obrazy; nie trafiają do eksportu XLSX, a przenosi je plik obrazów
+i załączników kopii zapasowej. Po dodaniu załącznika aplikacja prosi przeglądarkę o ochronę danych
+przed usunięciem przy braku miejsca.
+
 ### Postęp i lekcje utrwalone
 
 Pasek po lewej stronie wiersza lekcji i modułu wypełnia się w miarę, jak pojęcia dostają status
@@ -318,10 +337,19 @@ w quizach – od wersji 0.6.0 mierzony, dla starszych ocen szacowany.
 ### Gdzie są dane
 
 - Dane zostają w przeglądarce na danym urządzeniu. Nic nie jest wysyłane do internetu.
-- Telefon i komputer mają osobne biblioteki. Żeby przenieść materiały, w Ustawieniach
-  wybierz **Zapisz kopię do pliku** na jednym urządzeniu i **Przywróć z pliku** na drugim
-  (przywrócenie zastępuje dane na urządzeniu docelowym). Same materiały, bez postępów, przeniesiesz też
-  eksportem i importem – wtedy dane na urządzeniu docelowym zostają, a pojęcia są dopisywane.
+- Telefon i komputer mają osobne biblioteki. Przeniesienie (i kopia zapasowa) to dwa pliki –
+  w Ustawieniach, w grupie **Kopia zapasowa i przeniesienie**:
+  1. **Zapisz dane do pliku** – materiały, notatki (tekst i opisy obrazów i załączników), postępy,
+     historia i ustawienia, bez samych obrazów i załączników (mały plik `LexiCards-dane-…json`);
+  2. **Zapisz obrazy i załączniki** – jeden plik `LexiCards-obrazy-i-zalaczniki-…zip` ze wszystkimi
+     obrazami i załącznikami notatek (wiersz pokazuje, ile ich jest i ile zajmują).
+  Na drugim urządzeniu **Przywróć z pliku**: najpierw plik danych (zastępuje dane na urządzeniu),
+  potem plik obrazów i załączników (tylko dodaje brakujące pliki, niczego nie usuwa) – albo oba
+  pliki zaznaczone naraz. Do czasu przywrócenia drugiego pliku notatka pokazuje ramkę „Brak pliku
+  obrazu” i przekreślone załączniki, a Ustawienia – wiersz „Brak na tym urządzeniu”. Przywrócenie
+  samych danych na tym samym urządzeniu nie usuwa obrazów ani załączników, które już na nim są.
+  Kopie z wersji 1.1–1.7 (jeden plik z obrazami) nadal można przywrócić. Same materiały, bez postępów,
+  przeniesiesz też eksportem i importem – wtedy dane na urządzeniu docelowym zostają, a pojęcia są dopisywane.
 - Przeglądarka może usunąć dane witryny, której długo nie otwierasz, albo gdy brakuje miejsca.
   Wyczyszczenie danych przeglądarki także je usuwa. Dlatego regularnie zapisuj kopię zapasową.
 
@@ -378,6 +406,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 12. **Wersja 1.5: obrazy notatki na górze edytora, w podglądzie przed tekstem albo po nim** – gotowe.
 13. **Wersja 1.6: sygnatury obrazów i odwołania w treści, notatka po angielsku, czytanie notatki na głos** – gotowe.
 14. **Wersja 1.7: notatka lekcji w słuchaniu, przyciski wstecz / dalej, czytelne „Anuluj” w menu** – gotowe.
+15. **Wersja 1.8: załączniki notatek (PDF, Word, Excel, PowerPoint), przeniesienie dwoma plikami – dane oraz obrazy z załącznikami** – gotowe.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

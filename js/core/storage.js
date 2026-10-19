@@ -9,11 +9,14 @@
 //   purgeTermIDs: [id pojęć]              – usunięcie dzienników nauki tych pojęć
 //   clear:        [magazyny]              – wyczyszczenie całych magazynów
 
-import { ALL_STORES, MEMORY_STORES, TERM_HISTORY_STORES } from './model.js';
+import { ALL_STORES, MEDIA_STORES, MEMORY_STORES, TERM_HISTORY_STORES } from './model.js';
 
 export const DB_NAME = 'lexicards';
-/** 2 – notatki lekcji i ich obrazy (wersja 1.1). Brakujące magazyny powstają przy otwarciu. */
-export const DB_VERSION = 2;
+/**
+ * 2 – notatki lekcji i ich obrazy (wersja 1.1), 3 – załączniki notatek (wersja 1.8).
+ * Brakujące magazyny powstają przy otwarciu.
+ */
+export const DB_VERSION = 3;
 
 export function emptyChanges() {
   return { puts: {}, deletes: {}, purgeTermIDs: [], clear: [] };
@@ -21,6 +24,11 @@ export function emptyChanges() {
 
 function clone(value) {
   return structuredClone(value);
+}
+
+/** Identyfikatory, które zostają w magazynie obrazów lub załączników: wskazane i zapisywane. */
+function keptIDs(keep, records = []) {
+  return new Set([...keep, ...records.map((record) => record.id)]);
 }
 
 // ---------------------------------------------------------------- pamięć
@@ -90,10 +98,21 @@ export class MemoryAdapter {
     return this.stores.get(name).size;
   }
 
-  async replaceAll(data) {
+  /** Identyfikatory wszystkich rekordów magazynu (bez czytania ich treści). */
+  async readKeys(name) {
+    return [...this.stores.get(name).keys()];
+  }
+
+  /** Zastępuje całą zawartość; `keep` – identyfikatory obrazów i załączników, które zostają. */
+  async replaceAll(data, { keep = null } = {}) {
     for (const name of ALL_STORES) {
       const store = this.stores.get(name);
-      store.clear();
+      if (keep && MEDIA_STORES.includes(name)) {
+        const kept = keptIDs(keep, data[name]);
+        for (const id of [...store.keys()]) if (!kept.has(id)) store.delete(id);
+      } else {
+        store.clear();
+      }
       for (const record of data[name] ?? []) store.set(record.id, clone(record));
     }
   }
@@ -222,13 +241,31 @@ export class IdbAdapter {
     return requestToPromise(transaction.objectStore(name).count());
   }
 
-  /** Zastępuje całą zawartość bazy (przywracanie kopii zapasowej). */
-  async replaceAll(data) {
+  /** Identyfikatory wszystkich rekordów magazynu (bez czytania ich treści). */
+  async readKeys(name) {
+    const transaction = this.db.transaction([name], 'readonly');
+    return requestToPromise(transaction.objectStore(name).getAllKeys());
+  }
+
+  /**
+   * Zastępuje całą zawartość bazy (przywracanie kopii zapasowej). `keep` – identyfikatory
+   * obrazów i załączników, które zostają w bazie (przywrócenie samych danych); pozostałe znikają.
+   */
+  async replaceAll(data, { keep = null } = {}) {
     const transaction = this.db.transaction(ALL_STORES, 'readwrite');
     const done = transactionDone(transaction);
     for (const name of ALL_STORES) {
       const store = transaction.objectStore(name);
-      store.clear();
+      if (keep && MEDIA_STORES.includes(name)) {
+        // Usunięcia przychodzą po zapisach poniżej – zapisywane rekordy też są na liście zostających.
+        const kept = keptIDs(keep, data[name]);
+        const keysRequest = store.getAllKeys();
+        keysRequest.onsuccess = () => {
+          for (const key of keysRequest.result) if (!kept.has(key)) store.delete(key);
+        };
+      } else {
+        store.clear();
+      }
       for (const record of data[name] ?? []) store.put(record);
     }
     await done;

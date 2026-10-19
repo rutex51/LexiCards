@@ -9,6 +9,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { Buffer } from 'node:buffer';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { decodeText, parseCsv } from '../../js/core/csv.js';
 import { openWorkbook } from '../../js/core/xlsx.js';
+import { readZipDirectory } from '../../js/core/zip.js';
 import { startServer } from '../../tools/serve.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -72,8 +74,8 @@ async function expectText(locator, expected, message = '') {
 }
 
 const title = (page) => page.locator('.screen__title');
-/** Opis pod grupą „Kopia zapasowa” w ustawieniach. */
-const backupFooter = (page) => page.locator('.group__footer').filter({ hasText: 'Kopia to jeden plik' });
+/** Opis pod grupą „Kopia zapasowa i przeniesienie” w ustawieniach. */
+const backupFooter = (page) => page.locator('.group__footer').filter({ hasText: 'Przeniesienie to dwa pliki' });
 const sheet = (page) => page.locator('dialog.sheet[open]').last();
 const termRows = (page) => page.locator('.terms > .term');
 
@@ -365,17 +367,18 @@ test('kopia zapasowa: zapis do pliku, usunięcie wszystkich danych, przywróceni
   const page = await open();
   await loadSamples(page);
   await page.goto(`${page.url().split('#')[0]}#/settings`);
-  await expectText(backupFooter(page), 'Nie zapisano jeszcze żadnej kopii.');
+  await expectText(backupFooter(page), 'Nie zapisano jeszcze danych do pliku.');
+  assert.equal(await page.locator('[data-testid=backup-media-export]').count(), 0, 'bez obrazów i załączników – bez drugiego pliku');
 
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('[data-testid=backup-export]')]);
-  assert.match(download.suggestedFilename(), /^LexiCards-kopia-\d{4}-\d{2}-\d{2}\.json$/);
+  assert.match(download.suggestedFilename(), /^LexiCards-dane-\d{4}-\d{2}-\d{2}\.json$/);
   const file = path.join(OUTPUT, 'kopia.json');
   await download.saveAs(file);
   const backup = JSON.parse(await readFile(file, 'utf8'));
   assert.equal(backup.format, 'lexicards-backup');
   assert.equal(backup.counts.terms, 40);
   assert.equal(backup.data.terms.length, 40);
-  await expectText(backupFooter(page), 'Ostatnia kopia:');
+  await expectText(backupFooter(page), 'Ostatni zapis danych:');
 
   await page.click('[data-testid=delete-all]');
   await expectText(page.locator('.alert__message'), 'Usunięte zostaną: 2 dziedziny, 5 modułów, 13 lekcji i 40 pojęć');
@@ -430,12 +433,12 @@ test('telefon z arkuszem udostępniania: kopia trafia do „Zachowaj w Plikach�
   await loadSamples(page);
   await page.goto(`${page.url().split('#')[0]}#/settings`);
   await page.click('[data-testid=backup-export]');
-  await expectText(page.locator('.alert__title'), 'Kopia zapasowa jest gotowa');
+  await expectText(page.locator('.alert__title'), 'Plik danych jest gotowy');
   await confirm(page);
   const shared = await waitUntil(() => page.evaluate(() => window.sharedFile), 'Plik powinien trafić do arkusza udostępniania');
-  assert.match(shared.name, /^LexiCards-kopia-/);
+  assert.match(shared.name, /^LexiCards-dane-/);
   assert.equal(JSON.parse(shared.text).counts.terms, 40);
-  await expectText(backupFooter(page), 'Ostatnia kopia:');
+  await expectText(backupFooter(page), 'Ostatni zapis danych:');
 });
 
 test('motyw ciemny jest zapamiętywany i ustawiany przed narysowaniem strony', async ({ open }) => {
@@ -1474,36 +1477,289 @@ test('eksport lekcji z notatką do XLSX i import do pustej aplikacji odtwarza no
   }
 });
 
-test('kopia zapasowa z notatkami: obrazy wracają po usunięciu wszystkich danych i przywróceniu', async ({ open }) => {
-  const page = await open();
+/** Treść udawanych załączników (PDF i dokument Word) do testów. */
+const FAKE_PDF = '%PDF-1.4 udawany dokument PDF '.repeat(40);
+const fakeDocx = () => Array.from({ length: 3000 }, (_, index) => index % 251);
+
+/** Notatka lekcji „Financial Statements” z tekstem, obrazem „Schemat” i dwoma załącznikami. */
+async function seedNoteWithFiles(page) {
   await loadSamples(page);
   const ids = await sampleLessons(page);
-  await page.evaluate(async (id) => {
+  await page.evaluate(async ([id, pdf, docx]) => {
     const bytes = await (await fetch('./icons/icon-192.png')).arrayBuffer();
-    await window.lexicards.library.saveNote(id, { html: '<p>Notatka w kopii</p>', images: [{ bytes, type: 'image/png', width: 192, height: 192 }] });
-  }, ids.statements);
-  await page.goto(`${page.url().split('#')[0]}#/settings`);
-  const [file] = await Promise.all([page.waitForEvent('download'), page.click('[data-testid=backup-export]')]);
-  const target = path.join(OUTPUT, 'kopia-z-notatkami.json');
-  await file.saveAs(target);
-  const backup = JSON.parse(await readFile(target, 'utf8'));
-  assert.equal(backup.formatVersion, 2);
-  assert.equal(backup.counts.notes, 1);
-  assert.equal(backup.counts.noteImages, 1);
+    await window.lexicards.library.saveNote(id, {
+      html: '<p>Notatka w kopii</p><p>[[Schemat]]</p>',
+      images: [{ bytes, type: 'image/png', width: 192, height: 192, label: 'Schemat' }],
+      files: [
+        { name: 'Instrukcja.pdf', type: 'application/pdf', bytes: new TextEncoder().encode(pdf) },
+        { name: 'Raport.docx', type: '', bytes: new Uint8Array(docx) }
+      ]
+    });
+  }, [ids.statements, FAKE_PDF, fakeDocx()]);
+  return ids;
+}
 
+async function openLessonNote(page, lessonID) {
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${lessonID}`);
+  await page.click('[data-testid=lesson-note]');
+  await noteDialog(page).locator('[data-testid=note-files]').waitFor();
+  await waitUntil(() => noteDialog(page).locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'Okno notatki otwarte');
+}
+
+/** Bajty załącznika notatki z bazy (tablica liczb) albo null. */
+const storedFileBytes = (page, lessonID, name) => page.evaluate(async ([id, fileName]) => {
+  const { library } = window.lexicards;
+  const meta = library.getNote(id).files.find((file) => file.name === fileName);
+  const file = meta ? await library.noteFile(id, meta.id) : null;
+  return file ? [...new Uint8Array(file.bytes)] : null;
+}, [lessonID, name]);
+
+async function restoreFiles(page, files) {
+  await page.evaluate(() => { location.hash = '#/settings'; });
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('[data-testid=backup-restore]')]);
+  await chooser.setFiles(files);
+}
+
+test('przeniesienie dwustopniowe: plik danych bez obrazów i załączników, jeden plik obrazów i załączników; na drugim urządzeniu najpierw dane, potem pliki', async ({ open, browser, track }) => {
+  const page = await open();
+  const ids = await seedNoteWithFiles(page);
+  await page.goto(`${page.url().split('#')[0]}#/settings`);
+  await expectText(page.locator('[data-testid=backup-media-export]'), 'Jeden plik: 1 obraz i 2 załączniki');
+  await expectText(backupFooter(page), 'Nie zapisano jeszcze obrazów i załączników.');
+
+  const data = await download(page, () => page.click('[data-testid=backup-export]'));
+  assert.match(data.name, /^LexiCards-dane-\d{4}-\d{2}-\d{2}\.json$/);
+  const backup = JSON.parse(new TextDecoder().decode(data.bytes));
+  assert.equal(backup.formatVersion, 3);
+  assert.equal(backup.data.noteImages, undefined, 'plik danych nie ma bajtów obrazów');
+  assert.deepEqual([backup.media.images, backup.media.files], [1, 2]);
+  assert.ok(data.bytes.byteLength < 200_000, 'plik danych jest mały');
+
+  const media = await download(page, () => page.click('[data-testid=backup-media-export]'));
+  assert.match(media.name, /^LexiCards-obrazy-i-zalaczniki-\d{4}-\d{2}-\d{2}\.zip$/);
+  const names = [...readZipDirectory(media.bytes).keys()];
+  assert.equal(names.length, 4, 'obraz, dwa załączniki i spis treści w jednym pliku');
+  assert.ok(names.some((name) => /^obrazy\/.+\.png$/.test(name)));
+  assert.ok(names.some((name) => /^zalaczniki\/.+\/Instrukcja\.pdf$/.test(name)));
+  assert.ok(names.some((name) => /^zalaczniki\/.+\/Raport\.docx$/.test(name)));
+  await expectText(backupFooter(page), 'Ostatni zapis obrazów i załączników:');
+  const dataPath = path.join(OUTPUT, data.name);
+  const mediaPath = path.join(OUTPUT, media.name);
+
+  const context = await browser.newContext({ ...PHONE, locale: 'pl-PL', acceptDownloads: true });
+  try {
+    const other = await context.newPage();
+    track(other);
+    await other.goto(page.url().split('#')[0]);
+    await other.waitForSelector('#app[data-ready="true"]');
+
+    // Krok 1: same dane. Notatka jest, ale bez plików obrazu i załączników.
+    await restoreFiles(other, dataPath);
+    await expectText(other.locator('.alert__message'), 'Obrazy i załączniki notatek (1 obraz i 2 załączniki) są w osobnym pliku');
+    await confirm(other);
+    await waitUntil(async () => (await summary(other)).terms === 40, 'Dane powinny zostać przywrócone');
+    await expectText(other.locator('.row--static', { hasText: 'Brak na tym urządzeniu' }), '1 obraz i 2 załączniki');
+    await other.locator('.settings-backup').scrollIntoViewIfNeeded();
+    await other.screenshot({ path: path.join(OUTPUT, 'przeniesienie-ustawienia-brak-plikow.png') });
+
+    await openLessonNote(other, ids.statements);
+    const dialog = noteDialog(other);
+    await expectText(dialog.locator('[data-testid=note-missing-image]'), 'Brak pliku obrazu „Schemat”');
+    assert.equal(await dialog.locator('.note-files__item--missing').count(), 2, 'załączniki oznaczone jako brakujące');
+    await other.screenshot({ path: path.join(OUTPUT, 'przeniesienie-notatka-bez-plikow.png') });
+    await dialog.locator('[data-testid=note-file]').first().click();
+    await other.locator('.toast', { hasText: 'Pliku „Instrukcja.pdf” nie ma na tym urządzeniu' }).waitFor();
+    assert.equal(await other.locator('dialog.menu[open]').count(), 0, 'bez pliku – bez poleceń');
+    await dialog.locator('[data-testid=note-left]').click();
+
+    // Krok 2: plik obrazów i załączników.
+    await restoreFiles(other, mediaPath);
+    await expectText(other.locator('.alert__message'), 'Dodano 1 obraz i 2 załączniki.');
+    await other.locator('dialog.alert[open]').getByRole('button', { name: 'OK' }).click();
+    await waitUntil(async () => (await other.locator('.row--static', { hasText: 'Brak na tym urządzeniu' }).count()) === 0, 'Nie powinno już brakować plików');
+    assert.deepEqual(await storedFileBytes(other, ids.statements, 'Raport.docx'), fakeDocx());
+    assert.equal(new TextDecoder().decode(new Uint8Array(await storedFileBytes(other, ids.statements, 'Instrukcja.pdf'))), FAKE_PDF);
+
+    await openLessonNote(other, ids.statements);
+    await waitUntil(() => noteDialog(other).locator('.note-page__figure img').evaluate((image) => image.complete && image.naturalWidth === 192), 'Obraz z drugiego pliku się wyświetla');
+    assert.equal(await noteDialog(other).locator('.note-files__item--missing').count(), 0);
+  } finally {
+    await context.close();
+  }
+
+  // Trzecie urządzenie: oba pliki wybrane naraz – najpierw dane, potem obrazy i załączniki.
+  const third = await browser.newContext({ ...PHONE, locale: 'pl-PL' });
+  try {
+    const other = await third.newPage();
+    track(other);
+    await other.goto(page.url().split('#')[0]);
+    await other.waitForSelector('#app[data-ready="true"]');
+    await restoreFiles(other, [mediaPath, dataPath]);
+    await expectText(other.locator('.alert__message'), 'Potem zostaną dodane obrazy i załączniki notatek z drugiego pliku');
+    await confirm(other);
+    await expectText(other.locator('.alert__message'), 'Dodano 1 obraz i 2 załączniki.');
+    assert.deepEqual(await storedFileBytes(other, ids.statements, 'Raport.docx'), fakeDocx());
+    assert.deepEqual(await other.evaluate(() => window.lexicards.library.missingMedia()), { images: 0, files: 0, size: 0 });
+  } finally {
+    await third.close();
+  }
+});
+
+test('kopia zapasowa z wersji 1.7 (jeden plik z obrazami) nadal się przywraca; przywrócenie danych na tym samym urządzeniu zostawia obrazy i załączniki', async ({ open }) => {
+  const page = await open();
+  const ids = await seedNoteWithFiles(page);
+  // Kopia w postaci z wersji 1.7: formatVersion 2, obraz w Base64 w tym samym pliku, bez załączników.
+  const legacy = await page.evaluate(async () => {
+    const { library } = window.lexicards;
+    const data = await library.exportAll();
+    const toBase64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+    data.noteImages = data.noteImages.map(({ bytes, ...record }) => ({ ...record, data: toBase64(bytes) }));
+    delete data.noteFiles;
+    // Notatki z exportAll to obiekty biblioteki – kopie bez pola files, oryginałów nie ruszamy.
+    data.notes = data.notes.map((note) => Object.fromEntries(Object.entries(note).filter(([key]) => key !== 'files')));
+    return { format: 'lexicards-backup', formatVersion: 2, appVersion: '1.7.0', exportedAt: new Date().toISOString(), data };
+  });
+  const legacyPath = path.join(OUTPUT, 'kopia-1.7.json');
+  await writeFile(legacyPath, JSON.stringify(legacy));
+
+  // Ten sam telefon: przywrócenie pliku danych z 1.8 nie gubi obrazów ani załączników.
+  await page.goto(`${page.url().split('#')[0]}#/settings`);
+  const data = await download(page, () => page.click('[data-testid=backup-export]'));
+  await restoreFiles(page, path.join(OUTPUT, data.name));
+  await expectText(page.locator('.alert__message'), 'Te, które już są na tym urządzeniu, zostaną.');
+  await confirm(page);
+  await page.locator('.toast', { hasText: 'Przywrócono' }).waitFor();
+  assert.deepEqual(await page.evaluate(() => window.lexicards.library.missingMedia()), { images: 0, files: 0, size: 0 });
+  assert.deepEqual(await storedFileBytes(page, ids.statements, 'Raport.docx'), fakeDocx());
+
+  // Po usunięciu wszystkiego kopia z 1.7 przywraca notatkę z obrazem (załączników wtedy nie było).
   await page.click('[data-testid=delete-all]');
-  await expectText(page.locator('.alert__message'), '40 pojęć i 1 notatka do lekcji');
   await confirm(page);
   await waitUntil(async () => (await page.evaluate(() => window.lexicards.library.noteCount())) === 0, 'Notatki powinny zniknąć');
-  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('[data-testid=backup-restore]')]);
-  await chooser.setFiles(target);
+  assert.deepEqual(await page.evaluate(async () => (await window.lexicards.library.adapter.readKeys('noteFiles')).length), 0);
+  await restoreFiles(page, legacyPath);
   await confirm(page);
   await waitUntil(async () => (await summary(page)).terms === 40, 'Po przywróceniu powinno być 40 pojęć');
   await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
   await page.click('[data-testid=lesson-note]');
   await expectText(noteDialog(page).locator('[data-testid=note-text]'), 'Notatka w kopii');
   assert.equal((await walkNotePages(page)).reduce((sum, item) => sum + item.figures, 0), 1, 'obraz z kopii się wyświetla');
+  assert.equal(await noteDialog(page).locator('[data-testid=note-files]').count(), 0);
 });
+
+test('załączniki w edytorze: dodanie, zmiana nazwy z zachowaniem rozszerzenia, usunięcie; lista w podglądzie; telefon otwiera plik arkuszem udostępniania', async ({ open, context }) => {
+  // Chromium nie ma arkusza udostępniania – podstawiamy go jak w teście kopii zapasowej.
+  await context.addInitScript(() => {
+    navigator.canShare = (data) => Array.isArray(data?.files) && data.files.length === 1;
+    navigator.share = async (data) => {
+      const [file] = data.files;
+      window.sharedFile = { name: file.name, type: file.type, size: file.size, text: await file.text() };
+    };
+  });
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate((id) => window.lexicards.library.saveNote(id, { html: '<p>Notatka z plikami</p>', images: [] }), ids.statements);
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await page.click('[data-testid=lesson-note]');
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  assert.equal(await dialog.locator('[data-testid=note-files]').count(), 0, 'bez załączników – bez listy');
+  await dialog.locator('[data-testid=note-right]').click();
+
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), dialog.locator('[data-testid=note-attachment-add]').click()]);
+  await chooser.setFiles([
+    { name: 'Instrukcja.pdf', mimeType: 'application/pdf', buffer: Buffer.from(FAKE_PDF) },
+    { name: 'Raport.docx', mimeType: '', buffer: Buffer.from(fakeDocx()) },
+    { name: 'Zbędny.txt', mimeType: 'text/plain', buffer: Buffer.from('do usunięcia') }
+  ]);
+  await waitUntil(async () => (await dialog.locator('[data-testid=note-attachment-name]').allTextContents()).length === 3, 'Trzy załączniki na liście');
+  assert.deepEqual(await dialog.locator('.note-attachments__item .file-badge').allTextContents(), ['PDF', 'DOCX', 'TXT']);
+  await expectText(dialog.locator('.note-attachments__meta').nth(1), 'Dokument Word, 3 KB');
+
+  // Zmiana nazwy: rozszerzenie zostaje, nawet gdy zniknie z pola.
+  await dialog.locator('[data-testid=note-attachment]').nth(1).click();
+  await menuItem(page, 'Zmień nazwę');
+  await sheet(page).locator('[data-testid=note-attachment-rename]').fill('Sprawozdanie roczne');
+  await saveSheet(page);
+  await dialog.locator('[data-testid=note-attachment-remove]').nth(2).click();
+  assert.deepEqual(await dialog.locator('[data-testid=note-attachment-name]').allTextContents(), ['Instrukcja.pdf', 'Sprawozdanie roczne.docx']);
+  await dialog.locator('[data-testid=note-right]').click();
+  await page.locator('.toast', { hasText: 'Zapisano notatkę.' }).waitFor();
+
+  const note = await storedNote(page, ids.statements);
+  assert.deepEqual(note.files.map((file) => [file.name, file.type, file.size]), [
+    ['Instrukcja.pdf', 'application/pdf', FAKE_PDF.length],
+    ['Sprawozdanie roczne.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 3000]
+  ]);
+  assert.deepEqual(await storedFileBytes(page, ids.statements, 'Sprawozdanie roczne.docx'), fakeDocx());
+
+  // Podgląd: pliki pod nazwą lekcji; dotknięcie – arkusz udostępniania z tym plikiem.
+  await dialog.locator('[data-testid=note-files]').waitFor();
+  assert.deepEqual(await dialog.locator('.note-files__name').allTextContents(), ['Instrukcja.pdf', 'Sprawozdanie roczne.docx']);
+  await dialog.locator('[data-testid=note-file]').first().click();
+  await expectText(page.locator('dialog.menu[open] .menu__title'), 'Instrukcja.pdf (PDF,');
+  await page.waitForTimeout(150);
+  await menuItem(page, 'Otwórz lub zapisz…');
+  const shared = await waitUntil(() => page.evaluate(() => window.sharedFile), 'Plik powinien trafić do arkusza udostępniania');
+  assert.deepEqual(shared, { name: 'Instrukcja.pdf', type: 'application/pdf', size: FAKE_PDF.length, text: FAKE_PDF });
+
+  // Na liście lekcji notatka bez tekstu pokazuje liczbę załączników; notatka z samymi plikami ma podgląd bez stron.
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-editor]').evaluate((area) => { area.innerHTML = '<p><br></p>'; });
+  await dialog.locator('[data-testid=note-right]').click();
+  await expectText(dialog.locator('.note-sheet__only-files'), 'Notatka ma tylko załączniki.');
+  assert.equal(await dialog.locator('[data-testid=note-book]').count(), 0);
+  await dialog.locator('[data-testid=note-left]').click();
+  await expectText(page.locator('[data-testid=lesson-note] .note-row__preview'), '2 załączniki');
+  await page.screenshot({ path: path.join(OUTPUT, 'zalaczniki-lista-lekcji.png') });
+});
+
+test('załączniki na komputerze: PDF w nowej karcie, dokument Word pobierany; upuszczenie pliku na edytor dodaje załącznik', async ({ open, context }) => {
+  const page = await open();
+  const ids = await seedNoteWithFiles(page);
+  await openLessonNote(page, ids.statements);
+  const dialog = noteDialog(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'zalaczniki-podglad-komputer.png') });
+
+  await dialog.locator('[data-testid=note-file]').first().click();
+  assert.deepEqual(await page.locator('dialog.menu[open] [role=menuitem]').allTextContents(), ['Otwórz w nowej karcie', 'Pobierz']);
+  // Chromium testowy nie ma przeglądarki PDF, więc sprawdzamy adres przekazany nowej karcie i jego treść.
+  await page.evaluate(() => {
+    const original = window.open;
+    window.open = (url, target) => {
+      window.openedURL = { url, target };
+      return original.call(window, url, target);
+    };
+  });
+  const [tab] = await Promise.all([context.waitForEvent('page'), menuItem(page, 'Otwórz w nowej karcie')]);
+  const opened = await page.evaluate(async () => {
+    const { url, target } = window.openedURL;
+    const response = await fetch(url);
+    return { url, target, type: response.headers.get('content-type'), text: await response.text() };
+  });
+  assert.match(opened.url, /^blob:/);
+  assert.deepEqual([opened.target, opened.type, opened.text], ['_blank', 'application/pdf', FAKE_PDF]);
+  await tab.close();
+
+  await dialog.locator('[data-testid=note-file]').nth(1).click();
+  assert.deepEqual(await page.locator('dialog.menu[open] [role=menuitem]').allTextContents(), ['Pobierz i otwórz']);
+  const file = await download(page, () => menuItem(page, 'Pobierz i otwórz'));
+  assert.equal(file.name, 'Raport.docx');
+  assert.deepEqual([...file.bytes], fakeDocx());
+
+  // Upuszczenie pliku (nie obrazu) na edytor – trafia do załączników.
+  await dialog.locator('[data-testid=note-right]').click();
+  const transfer = await page.evaluateHandle(() => {
+    const data = new window.DataTransfer();
+    data.items.add(new File(['a;b\n1;2'], 'Dane.csv', { type: 'text/csv' }));
+    return data;
+  });
+  await dialog.locator('.note-editor').dispatchEvent('drop', { dataTransfer: transfer });
+  await waitUntil(async () => (await dialog.locator('[data-testid=note-attachment-name]').allTextContents()).includes('Dane.csv'), 'Upuszczony plik na liście załączników');
+  await dialog.locator('.note-editor__files').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUTPUT, 'zalaczniki-edytor-komputer.png') });
+}, { device: DESKTOP });
 
 test('notatka w trakcie nauki i w szczegółach pojęcia; klawisze fiszek nie działają pod oknem notatki', async ({ open }) => {
   const page = await open();

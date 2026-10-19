@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { Library, LibraryError } from '../../js/core/library.js';
 import { MemoryAdapter } from '../../js/core/storage.js';
-import { BACKUP_FORMAT, backupFileName, createBackup, parseBackupText, restoreBackup, validateBackup } from '../../js/core/backup.js';
+import { BACKUP_FORMAT, backupFileName, createBackup, mediaFileName, parseBackupText, restoreBackup, validateBackup } from '../../js/core/backup.js';
 import { installSampleData, sampleRows, sampleTermCount } from '../../js/core/samples.js';
 import { hasDescription, hasExample, availableElementCount } from '../../js/core/model.js';
 import { addLearningData, addTerm, historyCounts, makeBranch, makeLibrary } from './helpers.js';
@@ -275,6 +275,7 @@ test('przywracanie naprawia klucze i pomija dane nauki nieistniejących pojęć'
   assert.equal(result.data.progress.length, 1);
 });
 
-test('nazwa pliku kopii zawiera datę', () => {
-  assert.equal(backupFileName(new Date(2026, 9, 11)), 'LexiCards-kopia-2026-10-11.json');
+test('nazwy plików kopii (dane oraz obrazy i załączniki) zawierają datę', () => {
+  assert.equal(backupFileName(new Date(2026, 9, 11)), 'LexiCards-dane-2026-10-11.json');
+  assert.equal(mediaFileName(new Date(2026, 9, 11)), 'LexiCards-obrazy-i-zalaczniki-2026-10-11.zip');
 });

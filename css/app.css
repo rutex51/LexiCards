@@ -4409,6 +4409,181 @@ a.row__main:active,
 .note-images__placement .segmented { flex: 1 1 15rem; }
 .note-images__placement .segmented__option span { white-space: nowrap; }
 
+/* Obraz bez pliku na urządzeniu (przywrócone same dane, wersja 1.8). */
+.note-images__missing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  padding-bottom: 18px;
+  background: var(--fill);
+  color: var(--text-2);
+  font-size: var(--size-foot);
+}
+
+.note-page__figure--missing {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px;
+  border: 1.5px dashed var(--separator);
+  border-radius: var(--radius);
+  color: var(--text-2);
+  font-size: var(--size-sub);
+  text-align: center;
+  cursor: help;
+}
+
+.note-page__figure--missing strong { color: var(--text); }
+
+/* Plakietka rodzaju pliku z rozszerzeniem (załączniki, wersja 1.8). */
+.file-badge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 24px;
+  padding: 0 3px;
+  border-radius: 6px;
+  background: var(--tone-graphite-fill);
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.file-badge--pdf { background: var(--tone-red-fill); }
+.file-badge--word { background: var(--tone-blue-fill); }
+.file-badge--excel { background: var(--tone-green-fill); }
+.file-badge--powerpoint { background: var(--tone-orange-fill); }
+
+/* Załączniki w podglądzie notatki: rząd plików pod nazwą lekcji (przewijany w bok). */
+.note-files {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -4px;
+  padding: 2px 4px 4px;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.note-files__icon { flex: none; display: grid; color: var(--text-2); }
+
+.note-files__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  min-height: 40px;
+  padding: 6px 12px 6px 7px;
+  border-radius: 20px;
+  background: var(--fill);
+  color: var(--text);
+  font-size: var(--size-sub);
+}
+
+.note-files__item:hover { background: color-mix(in srgb, var(--fill) 100%, var(--accent-soft)); }
+
+.note-files__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-files__item--missing { color: var(--text-2); }
+.note-files__item--missing .file-badge { opacity: 0.45; }
+.note-files__item--missing .note-files__name { text-decoration: line-through; }
+
+.note-sheet__only-files {
+  padding: 24px 4px;
+  color: var(--text-2);
+  text-align: center;
+}
+
+/* Załączniki w edytorze. */
+.note-editor__files { min-width: 0; }
+
+.note-attachments {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+}
+
+.note-attachments__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--separator);
+}
+
+.note-attachments__open {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 8px 4px 8px 10px;
+  text-align: left;
+}
+
+.note-attachments__text {
+  display: grid;
+  min-width: 0;
+}
+
+.note-attachments__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-attachments__meta {
+  font-size: var(--size-foot);
+  color: var(--text-2);
+}
+
+.note-attachments__remove {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--text-2);
+}
+
+.note-attachments__item--pending {
+  justify-content: center;
+  min-height: 52px;
+}
+
+.note-attachments__add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 10px;
+  color: var(--accent);
+  font-size: var(--size-sub);
+  font-weight: 600;
+}
+
+.note-attachments__add:disabled { opacity: 0.4; }
+.note-editor--drop .note-attachments__add { background: var(--accent-soft); border-style: solid; }
+
 .note-clipboard {
   position: fixed;
   top: 0;

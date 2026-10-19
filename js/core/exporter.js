@@ -75,7 +75,7 @@ export function collectExportRows(library, scope) {
 
 /**
  * Lekcje z notatkami w zakresie eksportu (w kolejności biblioteki): [{ domain, module, lesson, note }].
- * Zaznaczone pojęcia (scope.kind 'terms') nie mają notatek.
+ * Zaznaczone pojęcia (scope.kind 'terms') nie mają notatek. Załączników arkusz nie obejmuje.
  */
 export function collectExportNotes(library, scope) {
   if (scope.kind === 'terms') return [];
@@ -87,7 +87,8 @@ export function collectExportNotes(library, scope) {
       for (const lesson of library.listLessons(module.id)) {
         if (scope.kind === 'lesson' && lesson.id !== scope.id) continue;
         const note = library.getNote(lesson.id);
-        if (note) notes.push({ domain, module, lesson, note });
+        // Załączniki nie trafiają do arkusza – notatka z samymi załącznikami nie ma tam czego pokazać.
+        if (note && (note.html !== '' || (note.htmlEN ?? '') !== '' || note.images.length > 0)) notes.push({ domain, module, lesson, note });
       }
     }
   }
@@ -154,10 +155,10 @@ export async function buildExportFile(library, scope, format, date = new Date(),
   const entries = [];
   if (format === 'xlsx' && withNotes) {
     for (const { domain, module, lesson, note } of collectExportNotes(library, scope)) {
-      entries.push({
-        domain: domain.name, module: module.name, lesson: lesson.name,
-        html: note.html, htmlEN: note.htmlEN ?? '', images: await library.noteImages(lesson.id)
-      });
+      const images = await library.noteImages(lesson.id);
+      // Notatka z samymi obrazami, których plików nie ma na urządzeniu, nie ma czego pokazać w arkuszu.
+      if (note.html === '' && (note.htmlEN ?? '') === '' && images.length === 0) continue;
+      entries.push({ domain: domain.name, module: module.name, lesson: lesson.name, html: note.html, htmlEN: note.htmlEN ?? '', images });
     }
   }
   return {

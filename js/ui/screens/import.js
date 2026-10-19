@@ -12,7 +12,7 @@ import {
 import { noteText } from '../../core/note-format.js';
 import { analyzeNotesHeader, buildNoteRows, classifyTable } from '../../core/note-import.js';
 import { openTableFile } from '../../core/tablefile.js';
-import { joinList, plural, pluralForm, pluralImages, pluralNotes, pluralTerms } from '../../core/text.js';
+import { formatSize, joinList, plural, pluralForm, pluralImages, pluralNotes, pluralTerms } from '../../core/text.js';
 import {
   actionRow, checkRow, field, formGroup, group, message, primaryButton, radioRow, selectInput, textInput, toggle, valueRow
 } from '../components.js';
@@ -89,12 +89,6 @@ const pluralRows = (count) => plural(count, 'wiersz', 'wiersze', 'wierszy');
 const pluralColumns = (count) => plural(count, 'kolumna', 'kolumny', 'kolumn');
 /** Biernik: „Dodano 1 notatkę”. */
 const notesAccusative = (count) => plural(count, 'notatkę', 'notatki', 'notatek');
-
-function formatSize(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
-}
 
 /** Oddaje sterowanie przeglądarce, żeby zdążyła narysować komunikat „trwa…”. */
 function nextFrame() {

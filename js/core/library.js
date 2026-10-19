@@ -8,10 +8,11 @@
 // kaskadowe: dziedzina → moduły → lekcje → pojęcia → dane nauki pojęć.
 
 import {
-  ALL_STORES, DIFFICULTY_MAX, DIFFICULTY_MIN, HISTORY_STORES, MEMORY_STORES, NOTE_IMAGE_LIMIT, NOTE_IMAGE_MAX_BYTES,
-  SETTINGS_ID, defaultSettings, makeDomain, makeLesson, makeModule, makeNoteImage, makeTerm, newID, noteImageMeta, nowISO,
-  termFieldsFromDraft, termToDraft
+  ALL_STORES, DIFFICULTY_MAX, DIFFICULTY_MIN, HISTORY_STORES, MEDIA_STORES, MEMORY_STORES, NOTE_FILE_LIMIT, NOTE_FILE_MAX_BYTES,
+  NOTE_IMAGE_LIMIT, NOTE_IMAGE_MAX_BYTES, SETTINGS_ID, defaultSettings, makeDomain, makeLesson, makeModule, makeNoteFile,
+  makeNoteImage, makeTerm, newID, noteFileMeta, noteImageMeta, nowISO, termFieldsFromDraft, termToDraft
 } from './model.js';
+import { cleanFileName, fileTypeOf } from './note-files.js';
 import { NOTE_HTML_LIMIT, normalizeNoteHtml } from './note-format.js';
 import { labelKey, withImageLabels } from './note-refs.js';
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
@@ -77,7 +78,10 @@ const errors = {
   noteTooLong: () => new LibraryError('noteTooLong', 'Notatka jest za długa. Podziel ją albo skróć.'),
   tooManyImages: () => new LibraryError('tooManyImages', `Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów.`),
   imageTooLarge: () => new LibraryError('imageTooLarge', 'Obraz jest za duży (limit to 20 MB).'),
-  invalidImage: () => new LibraryError('invalidImage', 'Nie udało się zapisać obrazu – plik jest pusty albo uszkodzony.')
+  invalidImage: () => new LibraryError('invalidImage', 'Nie udało się zapisać obrazu – plik jest pusty albo uszkodzony.'),
+  tooManyFiles: () => new LibraryError('tooManyFiles', `Notatka może mieć najwyżej ${NOTE_FILE_LIMIT} załączników.`),
+  fileTooLarge: (name) => new LibraryError('fileTooLarge', `Plik „${name}” jest za duży (limit to 50 MB).`),
+  invalidFile: (name) => new LibraryError('invalidFile', `Nie udało się zapisać pliku „${name}” – jest pusty.`)
 };
 
 /** Bajty obrazu jako Uint8Array (z ArrayBuffer albo widoku). */
@@ -94,6 +98,23 @@ function newNoteImage(lessonID, image) {
   if (!bytes || bytes.byteLength === 0 || !image.type) throw errors.invalidImage();
   if (bytes.byteLength > NOTE_IMAGE_MAX_BYTES) throw errors.imageTooLarge();
   return makeNoteImage(lessonID, { ...image, bytes }, image.crc ?? crc32(bytes));
+}
+
+/** Nowy załącznik notatki gotowy do zapisu (sprawdzony). */
+function newNoteFile(lessonID, file) {
+  const bytes = imageBytes(file);
+  const name = cleanFileName(file.name);
+  if (!bytes || bytes.byteLength === 0) throw errors.invalidFile(name);
+  if (bytes.byteLength > NOTE_FILE_MAX_BYTES) throw errors.fileTooLarge(name);
+  return makeNoteFile(lessonID, { name, type: fileTypeOf(name, file.type), bytes }, file.crc ?? crc32(bytes));
+}
+
+/** Opisy obrazów i załączników notatki (starsze notatki nie mają pola `files`). */
+function mediaOf(note) {
+  return [
+    ...(note?.images ?? []).map((meta) => ({ store: 'noteImages', meta })),
+    ...(note?.files ?? []).map((meta) => ({ store: 'noteFiles', meta }))
+  ];
 }
 
 /** Te same obrazy w tej samej kolejności (po sumie kontrolnej i rozmiarze). */
@@ -902,9 +923,12 @@ export class Library {
     };
   }
 
-  /** Kopiuje lekcję z pojęciami i notatką. Kopie nie dziedziczą postępów nauki. */
+  /**
+   * Kopiuje lekcję z pojęciami i notatką (z własnymi kopiami obrazów i załączników; tych, których
+   * plików nie ma na urządzeniu, kopia nie dostaje). Kopie nie dziedziczą postępów nauki.
+   */
   copyLesson(id, toModuleID) {
-    return this.#mutate((unit, images) => {
+    return this.#mutate((unit, { images, files }) => {
       const source = this.#require('lesson', id);
       const target = this.#require('module', toModuleID);
       const terms = this.listTerms(source.id);
@@ -916,10 +940,12 @@ export class Library {
       terms.forEach((term, index) => unit.put('terms', this.#copyOfTerm(term, copy, index)));
       const note = this.getNote(source.id);
       if (note) {
-        this.#writeNote(unit, copy.id, { html: note.html, htmlEN: note.htmlEN ?? '', images, imagesFirst: note.imagesFirst === true }, null);
+        this.#writeNote(unit, copy.id, {
+          html: note.html, htmlEN: note.htmlEN ?? '', images, imagesFirst: note.imagesFirst === true, files
+        }, null);
       }
       return copy;
-    }, () => this.noteImages(id));
+    }, async () => ({ images: await this.noteImages(id), files: await this.noteFiles(id) }));
   }
 
   // ---------------------------------------------------------------- notatki lekcji
@@ -934,22 +960,141 @@ export class Library {
     return this.maps.notes.size;
   }
 
-  /** Obrazy notatki z bajtami ({ ...opis, bytes: ArrayBuffer }) w kolejności z notatki. */
-  async noteImages(lessonID) {
-    const note = this.getNote(lessonID);
-    if (!note || note.images.length === 0) return [];
-    const records = await this.adapter.getMany('noteImages', note.images.map((meta) => meta.id));
-    return note.images
-      .map((meta, index) => (records[index] ? { ...meta, bytes: records[index].bytes } : null))
-      .filter(Boolean);
+  /**
+   * Obrazy notatki z bajtami ({ ...opis, bytes: ArrayBuffer }) w kolejności z notatki. Obrazów,
+   * których plików nie ma na urządzeniu (przywrócone same dane), nie ma na liście – chyba że
+   * `withMissing`: wtedy są z `bytes: null` i `missing: true`.
+   */
+  async noteImages(lessonID, { withMissing = false } = {}) {
+    return this.#withBytes('noteImages', this.getNote(lessonID)?.images ?? [], withMissing);
+  }
+
+  /** Załączniki notatki z bajtami, jak noteImages(). */
+  async noteFiles(lessonID, { withMissing = false } = {}) {
+    return this.#withBytes('noteFiles', this.getNote(lessonID)?.files ?? [], withMissing);
   }
 
   /**
-   * Zapisuje notatkę lekcji. draft: { html, htmlEN?, images, imagesFirst? } – images w kolejności
-   * wyświetlania: { id, label? } zostawia istniejący obraz, { bytes, type, width, height, name, label? }
-   * dodaje nowy, pominięte istniejące obrazy są usuwane; label – sygnatura (brakująca dostaje
-   * „Obraz N”). htmlEN – treść po angielsku, imagesFirst – obrazy w podglądzie przed tekstem; bez
-   * tych pól zostaje to, co jest w notatce. Notatka bez tekstu i obrazów jest usuwana.
+   * Opisy załączników notatki (bez bajtów); te, których plików nie ma na urządzeniu, mają
+   * `missing: true`.
+   */
+  async noteFileList(lessonID) {
+    const files = this.getNote(lessonID)?.files ?? [];
+    if (files.length === 0) return [];
+    const present = new Set(await this.adapter.readKeys('noteFiles'));
+    return files.map((meta) => (present.has(meta.id) ? { ...meta } : { ...meta, missing: true }));
+  }
+
+  /** Jeden załącznik notatki z bajtami; null, gdy go nie ma (albo jego pliku nie ma na urządzeniu). */
+  async noteFile(lessonID, fileID) {
+    const meta = (this.getNote(lessonID)?.files ?? []).find((item) => item.id === fileID);
+    if (!meta) return null;
+    const [record] = await this.adapter.getMany('noteFiles', [meta.id]);
+    return record ? { ...meta, bytes: record.bytes } : null;
+  }
+
+  async #withBytes(store, metas, withMissing) {
+    if (metas.length === 0) return [];
+    const records = await this.adapter.getMany(store, metas.map((meta) => meta.id));
+    return metas
+      .map((meta, index) => {
+        if (records[index]) return { ...meta, bytes: records[index].bytes };
+        return withMissing ? { ...meta, bytes: null, missing: true } : null;
+      })
+      .filter(Boolean);
+  }
+
+  /** Bajty pliku obrazu albo załącznika (store: 'noteImages' | 'noteFiles') albo null, gdy go nie ma. */
+  async mediaBytes(store, id) {
+    const [record] = await this.adapter.getMany(store, [id]);
+    return record?.bytes ?? null;
+  }
+
+  /** Obrazy i załączniki wszystkich notatek: liczba i łączny rozmiar (z opisów, bez czytania plików). */
+  mediaSummary() {
+    const summary = { images: 0, files: 0, size: 0 };
+    for (const note of this.maps.notes.values()) {
+      for (const { store, meta } of mediaOf(note)) {
+        summary[store === 'noteImages' ? 'images' : 'files'] += 1;
+        summary.size += meta.size ?? 0;
+      }
+    }
+    return summary;
+  }
+
+  /**
+   * Obrazy i załączniki notatek, których plików nie ma na urządzeniu (np. po przywróceniu samych
+   * danych): { images, files, size }.
+   */
+  async missingMedia() {
+    const present = await this.#presentMedia();
+    const missing = { images: 0, files: 0, size: 0 };
+    for (const note of this.maps.notes.values()) {
+      for (const { store, meta } of mediaOf(note)) {
+        if (present[store].has(meta.id)) continue;
+        missing[store === 'noteImages' ? 'images' : 'files'] += 1;
+        missing.size += meta.size ?? 0;
+      }
+    }
+    return missing;
+  }
+
+  async #presentMedia() {
+    const present = {};
+    for (const store of MEDIA_STORES) present[store] = new Set(await this.adapter.readKeys(store));
+    return present;
+  }
+
+  /**
+   * Opisy obrazów i załączników wszystkich notatek: Map id → { store, lessonID, meta, present }.
+   * `present` – czy plik jest już na urządzeniu.
+   */
+  async mediaIndex() {
+    const present = await this.#presentMedia();
+    const index = new Map();
+    for (const note of this.maps.notes.values()) {
+      for (const { store, meta } of mediaOf(note)) {
+        index.set(meta.id, { store, lessonID: note.lessonID, meta, present: present[store].has(meta.id) });
+      }
+    }
+    return index;
+  }
+
+  /**
+   * Dopisuje do bazy pliki obrazów i załączników notatek (przywracanie pliku obrazów
+   * i załączników). items: [{ id, bytes }]. Zapisywane są tylko te, które opisuje któraś notatka
+   * i których jeszcze nie ma; zwraca ich liczbę { images, files }.
+   */
+  addMedia(items) {
+    return this.#mutate((unit, present) => {
+      const wanted = new Map();
+      for (const note of this.maps.notes.values()) {
+        for (const entry of mediaOf(note)) wanted.set(entry.meta.id, { ...entry, lessonID: note.lessonID });
+      }
+      const added = { images: 0, files: 0 };
+      for (const item of items) {
+        const target = wanted.get(item.id);
+        if (!target || present[target.store].has(item.id)) continue;
+        present[target.store].add(item.id);
+        const bytes = imageBytes(item);
+        const { meta, lessonID } = target;
+        const make = target.store === 'noteImages' ? makeNoteImage : makeNoteFile;
+        // Rekord ma identyfikator z opisu w notatce (fabryka nadaje nowy).
+        unit.append(target.store, { ...make(lessonID, { ...meta, bytes }, meta.crc ?? crc32(bytes)), id: meta.id });
+        added[target.store === 'noteImages' ? 'images' : 'files'] += 1;
+      }
+      return added;
+    }, () => this.#presentMedia());
+  }
+
+  /**
+   * Zapisuje notatkę lekcji. draft: { html, htmlEN?, images, imagesFirst?, files? } – images
+   * w kolejności wyświetlania: { id, label? } zostawia istniejący obraz, { bytes, type, width,
+   * height, name, label? } dodaje nowy, pominięte istniejące obrazy są usuwane; label – sygnatura
+   * (brakująca dostaje „Obraz N”). files – załączniki tak samo: { id, name? } zostawia (name –
+   * nowa nazwa), { bytes, name, type } dodaje. htmlEN – treść po angielsku, imagesFirst – obrazy
+   * w podglądzie przed tekstem; bez pól htmlEN, imagesFirst i files zostaje to, co jest
+   * w notatce. Notatka bez tekstu, obrazów i załączników jest usuwana.
    * Zwraca zapisaną notatkę albo null.
    */
   saveNote(lessonID, draft) {
@@ -963,7 +1108,7 @@ export class Library {
     return this.#mutate((unit) => this.#removeNote(unit, lessonID));
   }
 
-  #writeNote(unit, lessonID, { html, htmlEN, images = [], imagesFirst }, existing) {
+  #writeNote(unit, lessonID, { html, htmlEN, images = [], imagesFirst, files }, existing) {
     const clean = normalizeNoteHtml(html ?? '');
     const cleanEN = typeof htmlEN === 'string' ? normalizeNoteHtml(htmlEN) : (existing?.htmlEN ?? '');
     if (clean.length > NOTE_HTML_LIMIT || cleanEN.length > NOTE_HTML_LIMIT) throw errors.noteTooLong();
@@ -986,7 +1131,8 @@ export class Library {
     for (const meta of existing?.images ?? []) {
       if (!kept.has(meta.id)) unit.erase('noteImages', meta.id);
     }
-    if (clean === '' && cleanEN === '' && metas.length === 0) {
+    const fileMetas = this.#writeFiles(unit, lessonID, files, existing);
+    if (clean === '' && cleanEN === '' && metas.length === 0 && fileMetas.length === 0) {
       if (existing) unit.delete('notes', lessonID);
       return null;
     }
@@ -995,16 +1141,42 @@ export class Library {
     const first = typeof imagesFirst === 'boolean' ? imagesFirst : existing?.imagesFirst === true;
     const note = {
       id: lessonID, lessonID, html: clean, htmlEN: cleanEN, images: withImageLabels(metas), imagesFirst: first,
-      createdAt: existing?.createdAt ?? now, updatedAt: now
+      files: fileMetas, createdAt: existing?.createdAt ?? now, updatedAt: now
     };
     unit.put('notes', note);
     return note;
   }
 
+  /** Załączniki zapisywanej notatki; bez listy (np. import z arkusza) zostają dotychczasowe. */
+  #writeFiles(unit, lessonID, files, existing) {
+    const current = existing?.files ?? [];
+    if (!Array.isArray(files)) return current;
+    if (files.length > NOTE_FILE_LIMIT) throw errors.tooManyFiles();
+    const metas = [];
+    const kept = new Set();
+    for (const file of files) {
+      if (imageBytes(file)) {
+        const record = newNoteFile(lessonID, file);
+        unit.append('noteFiles', record);
+        metas.push(noteFileMeta(record));
+      } else {
+        const meta = current.find((item) => item.id === file.id);
+        if (meta && !kept.has(meta.id)) {
+          kept.add(meta.id);
+          metas.push({ ...meta, name: file.name === undefined ? meta.name : cleanFileName(file.name) });
+        }
+      }
+    }
+    for (const meta of current) {
+      if (!kept.has(meta.id)) unit.erase('noteFiles', meta.id);
+    }
+    return metas;
+  }
+
   #removeNote(unit, lessonID) {
     const note = this.maps.notes.get(lessonID);
     if (!note) return;
-    for (const meta of note.images) unit.erase('noteImages', meta.id);
+    for (const { store, meta } of mediaOf(note)) unit.erase(store, meta.id);
     unit.delete('notes', lessonID);
   }
 
@@ -1251,7 +1423,7 @@ export class Library {
       await this.adapter.commit({
         ...emptyChanges(),
         puts: { settings: [settings] },
-        clear: [...stores, 'assessments', 'reviews', 'quizAnswers', 'studySessions', 'quizSessions', 'noteImages']
+        clear: [...stores, 'assessments', 'reviews', 'quizAnswers', 'studySessions', 'quizSessions', ...MEDIA_STORES]
       });
       for (const name of stores) this.maps[name] = new Map();
       this.maps.settings.set(SETTINGS_ID, settings);
@@ -1563,9 +1735,11 @@ export class Library {
   // ---------------------------------------------------------------- kopia zapasowa
 
   /** Zawartość wszystkich magazynów (pamięć + dzienniki z bazy). */
-  async exportAll() {
+  /** Wszystkie dane; `media: false` – bez magazynów z bajtami obrazów i załączników. */
+  async exportAll({ media = true } = {}) {
     const data = {};
     for (const name of ALL_STORES) {
+      if (!media && MEDIA_STORES.includes(name)) continue;
       data[name] = MEMORY_STORES.includes(name)
         ? [...this.maps[name].values()]
         : await this.adapter.readStore(name);
@@ -1573,10 +1747,15 @@ export class Library {
     return data;
   }
 
-  /** Zastępuje całą bazę podanymi danymi (po wcześniejszej walidacji kopii). */
+  /**
+   * Zastępuje całą bazę podanymi danymi (po wcześniejszej walidacji kopii). Pliki obrazów
+   * i załączników, które opisują nowe notatki i są już w bazie, zostają – przywrócenie samych
+   * danych na tym samym urządzeniu ich nie gubi.
+   */
   replaceAll(data) {
     const run = async () => {
-      await this.adapter.replaceAll(data);
+      const keep = new Set((data.notes ?? []).flatMap((note) => mediaOf(note).map(({ meta }) => meta.id)));
+      await this.adapter.replaceAll(data, { keep });
       await this.load();
     };
     const next = this.#queue.then(run, run);

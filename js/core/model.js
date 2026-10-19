@@ -21,10 +21,13 @@ export const HISTORY_STORES = ['assessments', 'reviews', 'quizAnswers', 'studySe
 /** Dzienniki powiązane z pojęciem kluczem termID – usuwane razem z pojęciem. */
 export const TERM_HISTORY_STORES = ['assessments', 'reviews', 'quizAnswers'];
 
-/** Obrazy notatek (bajty pliku) – czytane z bazy na żądanie. */
-export const IMAGE_STORES = ['noteImages'];
+/**
+ * Obrazy i załączniki notatek (bajty plików) – czytane z bazy na żądanie. W kopii zapasowej
+ * są w osobnym pliku (od 1.8), a notatka trzyma tylko ich opis.
+ */
+export const MEDIA_STORES = ['noteImages', 'noteFiles'];
 
-export const ALL_STORES = [...MEMORY_STORES, ...HISTORY_STORES, ...IMAGE_STORES];
+export const ALL_STORES = [...MEMORY_STORES, ...HISTORY_STORES, ...MEDIA_STORES];
 
 export const SETTINGS_ID = 'app';
 
@@ -132,7 +135,8 @@ export function defaultSettings() {
     noteLanguage: 'pl',            // wersja notatki w podglądzie: pl | en (gdy notatka ma obie)
     domainColorsGray: true,        // wersja 1.2: tło ikon istniejących dziedzin zmienione jednorazowo na szare
     studySelection: null,          // ostatnio wybrany materiał: { domainID, moduleID, lessonIDs }
-    lastBackupAt: null,
+    lastBackupAt: null,            // ostatni zapis pliku danych
+    lastMediaBackupAt: null,       // ostatni zapis pliku obrazów i załączników (od 1.8)
     createdAt: now,
     updatedAt: now
   };
@@ -236,6 +240,11 @@ export function makeTerm({ lesson, draft, sortOrder = 0 }) {
   };
 }
 
+/** Bajty jako osobny ArrayBuffer (z ArrayBuffer albo widoku). */
+function ownBuffer(bytes) {
+  return bytes instanceof ArrayBuffer ? bytes : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
 /** Najwięcej obrazów w jednej notatce i największy pojedynczy obraz. */
 export const NOTE_IMAGE_LIMIT = 30;
 export const NOTE_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
@@ -246,9 +255,7 @@ export const NOTE_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
  * że import przynosi ten sam obraz.
  */
 export function makeNoteImage(lessonID, image, crc) {
-  const bytes = image.bytes instanceof ArrayBuffer
-    ? image.bytes
-    : image.bytes.buffer.slice(image.bytes.byteOffset, image.bytes.byteOffset + image.bytes.byteLength);
+  const bytes = ownBuffer(image.bytes);
   return {
     id: newID(),
     lessonID,
@@ -261,6 +268,33 @@ export function makeNoteImage(lessonID, image, crc) {
     bytes,
     createdAt: nowISO()
   };
+}
+
+/** Najwięcej załączników w jednej notatce i największy pojedynczy załącznik (od 1.8). */
+export const NOTE_FILE_LIMIT = 30;
+export const NOTE_FILE_MAX_BYTES = 50 * 1024 * 1024;
+
+/**
+ * Załącznik notatki do zapisania w bazie (PDF, Word, Excel, PowerPoint i inne pliki):
+ * { id, lessonID, name, type, size, crc, bytes, createdAt }.
+ */
+export function makeNoteFile(lessonID, file, crc) {
+  const bytes = ownBuffer(file.bytes);
+  return {
+    id: newID(),
+    lessonID,
+    name: file.name,
+    type: file.type,
+    size: bytes.byteLength,
+    crc,
+    bytes,
+    createdAt: nowISO()
+  };
+}
+
+/** Opis załącznika przechowywany w notatce (bez bajtów). */
+export function noteFileMeta(record, name = null) {
+  return { id: record.id, name: name ?? record.name, type: record.type, size: record.size ?? 0, crc: record.crc ?? null };
 }
 
 /** Opis obrazu przechowywany w notatce (bez bajtów); `label` – sygnatura obrazu w notatce (od 1.6). */

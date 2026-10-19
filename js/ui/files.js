@@ -52,18 +52,26 @@ export async function deliverFile(file, { title, message }) {
 }
 
 /** Otwiera systemowy wybór pliku. Zwraca obietnicę z plikiem albo null po anulowaniu. */
-export function pickFile(accept) {
+export async function pickFile(accept) {
+  return (await pickFiles(accept))[0] ?? null;
+}
+
+/**
+ * Systemowy wybór plików; `multiple` – można zaznaczyć kilka. Zwraca obietnicę z listą plików
+ * (pustą po anulowaniu).
+ */
+export function pickFiles(accept, { multiple = false } = {}) {
   return new Promise((resolve) => {
-    const input = h('input', { type: 'file', accept: accept || null, hidden: true, dataset: { testid: 'file-input' } });
+    const input = h('input', { type: 'file', accept: accept || null, multiple, hidden: true, dataset: { testid: 'file-input' } });
     let settled = false;
-    const finish = (file) => {
+    const finish = (files) => {
       if (settled) return;
       settled = true;
       input.remove();
-      resolve(file);
+      resolve(files);
     };
-    input.addEventListener('change', () => finish(input.files?.[0] ?? null));
-    input.addEventListener('cancel', () => finish(null));
+    input.addEventListener('change', () => finish([...(input.files ?? [])]));
+    input.addEventListener('cancel', () => finish([]));
     document.body.appendChild(input);
     input.click();
   });

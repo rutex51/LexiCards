@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { createBackup, validateBackup } from '../../js/core/backup.js';
+import { bytesToBase64 } from '../../js/core/base64.js';
 import { buildExportFile, buildTemplateFile } from '../../js/core/exporter.js';
 import { imageInfo } from '../../js/core/images.js';
 import { deletionMessage } from '../../js/core/messages.js';
@@ -228,14 +229,16 @@ test('obrazy przed tekstem: wybór zostaje przy zapisie bez wyboru i imporcie, w
   assert.equal(library.getNote(lesson.id).imagesFirst, false);
 });
 
-test('kopia zapasowa przenosi notatki z obrazami (Base64 w JSON) i odrzuca osierocone obrazy', async () => {
-  const { library } = await makeLibrary();
+test('kopia z wersji 1.1–1.7 (obrazy w Base64 w JSON) nadal się przywraca i odrzuca osierocone obrazy', async () => {
+  const { library, adapter } = await makeLibrary();
   const { lesson } = await makeBranch(library);
   await library.saveNote(lesson.id, { html: '<p>z kopii</p>', images: [image(7)] });
+  // Kopia w postaci z wersji 1.7: formatVersion 2, obrazy z bajtami w Base64.
   const backup = JSON.parse(JSON.stringify(await createBackup(library, 'test')));
-  assert.equal(backup.formatVersion, 2);
-  assert.equal(typeof backup.data.noteImages[0].data, 'string');
-  assert.equal(backup.data.noteImages[0].bytes, undefined);
+  backup.formatVersion = 2;
+  delete backup.media;
+  backup.data.noteImages = (await adapter.readStore('noteImages')).map(({ bytes, ...record }) => ({ ...record, data: bytesToBase64(bytes) }));
+  for (const note of backup.data.notes) delete note.files;
 
   backup.data.noteImages.push({ id: 'sierota', lessonID: 'x', type: 'image/png', data: backup.data.noteImages[0].data });
   backup.data.notes[0].html += '<script>zły()</script>';

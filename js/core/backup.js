@@ -1,30 +1,50 @@
-// Kopia zapasowa: pełny, wersjonowany zapis bazy w jednym pliku JSON.
-// Przywracanie najpierw sprawdza cały plik, a dopiero potem zastępuje bazę –
-// uszkodzony plik nigdy nie nadpisze danych.
+// Kopia zapasowa i przeniesienie na inne urządzenie – dwa pliki (od 1.8):
+//   dane                – materiały, notatki (tekst i opisy obrazów i załączników), postępy,
+//                         historia i ustawienia w jednym pliku JSON (mały, szybki);
+//   obrazy i załączniki – bajty wszystkich obrazów i załączników notatek w jednym pliku ZIP.
+// Przywracanie danych najpierw sprawdza cały plik, a dopiero potem zastępuje bazę – uszkodzony
+// plik nigdy nie nadpisze danych. Pliki obrazów i załączników, które są już na urządzeniu,
+// zostają; brakujące dochodzą z drugiego pliku. Kopie z wersji 1.1–1.7 (jeden plik JSON
+// z obrazami w Base64) nadal można przywrócić.
 
 import {
-  ALL_STORES, SCHEMA_VERSION, SETTINGS_ID, TERM_HISTORY_STORES, defaultSettings, nowISO, termFieldsFromDraft
+  ALL_STORES, MEDIA_STORES, SCHEMA_VERSION, SETTINGS_ID, TERM_HISTORY_STORES, defaultSettings, nowISO, termFieldsFromDraft
 } from './model.js';
-import { base64ToBytes, bytesToBase64 } from './base64.js';
+import { base64ToBytes } from './base64.js';
 import { LibraryError } from './library.js';
-import { imageInfo } from './images.js';
+import { IMAGE_EXTENSIONS, imageInfo } from './images.js';
+import { cleanFileName, fileTypeOf } from './note-files.js';
 import { normalizeNoteHtml } from './note-format.js';
 import { withImageLabels } from './note-refs.js';
 import { blankToNull, collapseWhitespace, normalizeKey } from './text.js';
+import { ZipError, ZipWriter, openZipBlob } from './zip.js';
 
 export const BACKUP_FORMAT = 'lexicards-backup';
-/** 2 – notatki lekcji z obrazami (wersja 1.1). Kopie w wersji 1 nadal można przywrócić. */
-export const BACKUP_FORMAT_VERSION = 2;
+/**
+ * 2 – notatki lekcji z obrazami (wersja 1.1), 3 – same dane, obrazy i załączniki w osobnym
+ * pliku (wersja 1.8). Kopie w wersji 1 i 2 nadal można przywrócić.
+ */
+export const BACKUP_FORMAT_VERSION = 3;
+/** Plik obrazów i załączników: archiwum ZIP ze spisem treści MEDIA_MANIFEST. */
+export const MEDIA_FORMAT = 'lexicards-media';
+export const MEDIA_FORMAT_VERSION = 1;
+export const MEDIA_MANIFEST = 'lexicards-pliki.json';
+/** Ile bajtów obrazów i załączników zapisywać do bazy jedną transakcją przy przywracaniu. */
+const MEDIA_BATCH_BYTES = 16 * 1024 * 1024;
 
 function invalid(message) {
   return new LibraryError('invalidBackup', message);
 }
 
-/** Tworzy obiekt kopii zapasowej ze wszystkich magazynów. Obrazy notatek są zapisane w Base64. */
+const DATA_STORES = ALL_STORES.filter((name) => !MEDIA_STORES.includes(name));
+
+/**
+ * Tworzy obiekt kopii danych (bez bajtów obrazów i załączników – te są w osobnym pliku,
+ * createMediaArchive). `media` – ile obrazów i załączników opisują notatki.
+ */
 export async function createBackup(library, appVersion = '') {
-  const data = await library.exportAll();
-  data.noteImages = data.noteImages.map(({ bytes, ...record }) => ({ ...record, data: bytesToBase64(bytes) }));
-  const counts = Object.fromEntries(ALL_STORES.map((name) => [name, data[name].length]));
+  const data = await library.exportAll({ media: false });
+  const counts = Object.fromEntries(DATA_STORES.map((name) => [name, data[name].length]));
   return {
     format: BACKUP_FORMAT,
     formatVersion: BACKUP_FORMAT_VERSION,
@@ -32,14 +52,24 @@ export async function createBackup(library, appVersion = '') {
     appVersion,
     exportedAt: nowISO(),
     counts,
+    media: library.mediaSummary(),
     data
   };
 }
 
-/** Nazwa pliku kopii, np. „LexiCards-kopia-2026-10-11.json”. */
-export function backupFileName(date = new Date()) {
+function dateStamp(date) {
   const pad = (value) => String(value).padStart(2, '0');
-  return `LexiCards-kopia-${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}.json`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** Nazwa pliku danych, np. „LexiCards-dane-2026-10-19.json”. */
+export function backupFileName(date = new Date()) {
+  return `LexiCards-dane-${dateStamp(date)}.json`;
+}
+
+/** Nazwa pliku obrazów i załączników, np. „LexiCards-obrazy-i-zalaczniki-2026-10-19.zip”. */
+export function mediaFileName(date = new Date()) {
+  return `LexiCards-obrazy-i-zalaczniki-${dateStamp(date)}.zip`;
 }
 
 function requireRecords(data, name) {
@@ -151,8 +181,10 @@ export function validateBackup(raw) {
     }
   }
 
-  // Notatki: tylko do istniejących lekcji, z obrazami, które są w kopii.
-  const images = new Map();
+  // Notatki: tylko do istniejących lekcji. Kopie z wersji 1.1–1.7 mają obrazy w samym pliku
+  // (Base64) – opis obrazu bez pliku w kopii jest pomijany. Od wersji 3 notatki mają tylko opisy
+  // obrazów i załączników, a pliki są w osobnym pliku (albo już na urządzeniu).
+  const embedded = new Map();
   for (const record of requireRecords(source, 'noteImages')) {
     const bytes = base64ToBytes(record.data);
     if (!bytes || bytes.byteLength === 0) {
@@ -161,21 +193,28 @@ export function validateBackup(raw) {
     }
     const rest = { ...record };
     delete rest.data;
-    images.set(record.id, { ...rest, type: record.type || imageInfo(bytes).type, size: bytes.byteLength, bytes });
+    embedded.set(record.id, { ...rest, type: record.type || imageInfo(bytes).type, size: bytes.byteLength, bytes });
   }
+  const separate = raw.formatVersion >= 3;
+  const usedMedia = new Set();
+  /** Opisy obrazów albo załączników notatki: poprawne, bez powtórzeń (także między notatkami). */
+  const mediaList = (list, accept) => (Array.isArray(list) ? list : []).filter((meta) => {
+    if (!meta || typeof meta.id !== 'string' || meta.id === '' || usedMedia.has(meta.id) || !accept(meta)) return false;
+    usedMedia.add(meta.id);
+    return true;
+  });
   data.notes = [];
-  const usedImages = new Set();
   for (const record of requireRecords(source, 'notes')) {
     const lessonID = record.lessonID ?? record.id;
     if (!lessonsByID.has(lessonID) || data.notes.some((note) => note.id === lessonID)) {
       dropped += 1;
       continue;
     }
-    const metas = (Array.isArray(record.images) ? record.images : []).filter((meta) => meta && images.has(meta.id) && !usedImages.has(meta.id));
-    for (const meta of metas) usedImages.add(meta.id);
     const html = normalizeNoteHtml(typeof record.html === 'string' ? record.html : '');
     const htmlEN = normalizeNoteHtml(typeof record.htmlEN === 'string' ? record.htmlEN : '');
-    if (html === '' && htmlEN === '' && metas.length === 0) continue;
+    const metas = mediaList(record.images, (meta) => embedded.has(meta.id) || separate);
+    const files = separate ? mediaList(record.files, () => true) : [];
+    if (html === '' && htmlEN === '' && metas.length === 0 && files.length === 0) continue;
     data.notes.push({
       ...record,
       id: lessonID,
@@ -183,22 +222,24 @@ export function validateBackup(raw) {
       html,
       htmlEN,
       imagesFirst: record.imagesFirst === true,
-      images: withImageLabels(metas.map((meta) => {
-        const image = images.get(meta.id);
-        return {
-          id: meta.id, type: image.type, width: image.width ?? null, height: image.height ?? null, size: image.size,
-          crc: image.crc ?? null, name: image.name ?? null, label: typeof meta.label === 'string' ? meta.label : null
-        };
-      })),
+      images: withImageLabels(metas.map((meta) => imageMeta(meta, embedded.get(meta.id)))),
+      files: files.map(fileMeta),
       createdAt: record.createdAt ?? nowISO(),
       updatedAt: record.updatedAt ?? record.createdAt ?? nowISO()
     });
   }
-  data.noteImages = [...images.values()].filter((image) => usedImages.has(image.id)).map((image) => {
+  data.noteImages = [...embedded.values()].filter((image) => usedMedia.has(image.id)).map((image) => {
     const note = data.notes.find((item) => item.images.some((meta) => meta.id === image.id));
     return { ...image, lessonID: note.lessonID };
   });
-  dropped += images.size - data.noteImages.length;
+  data.noteFiles = [];
+  dropped += embedded.size - data.noteImages.length;
+  const media = { images: 0, files: 0, size: 0, included: data.noteImages.length };
+  for (const note of data.notes) {
+    media.images += note.images.length;
+    media.files += note.files.length;
+    media.size += [...note.images, ...note.files].reduce((sum, meta) => sum + meta.size, 0);
+  }
 
   const settings = requireRecords(source, 'settings').find((record) => record.id === SETTINGS_ID);
   // Kopia sprzed wersji 1.2 nie ma znacznika szarych ikon: po przywróceniu jej dziedziny też
@@ -206,14 +247,181 @@ export function validateBackup(raw) {
   data.settings = settings ? [{ ...defaultSettings(), domainColorsGray: false, ...settings, id: SETTINGS_ID }] : [];
 
   const counts = Object.fromEntries(ALL_STORES.map((name) => [name, data[name].length]));
-  return { data, counts, dropped, exportedAt: raw.exportedAt ?? null };
+  return { data, counts, media, dropped, exportedAt: raw.exportedAt ?? null };
 }
 
-/** Sprawdza kopię i zastępuje nią całą bazę. Zwraca raport z liczbą rekordów. */
+const finiteOr = (value, fallback) => (Number.isFinite(value) ? value : fallback);
+
+/** Opis obrazu w notatce – z pliku obrazu w kopii (wersje 1.1–1.7) albo z samego opisu. */
+function imageMeta(meta, image = null) {
+  const source = image ?? meta;
+  return {
+    id: meta.id,
+    type: typeof source.type === 'string' && source.type !== '' ? source.type : 'image/png',
+    width: finiteOr(source.width, null),
+    height: finiteOr(source.height, null),
+    size: finiteOr(source.size, 0),
+    crc: Number.isInteger(source.crc) ? source.crc : null,
+    name: typeof source.name === 'string' ? source.name : null,
+    label: typeof meta.label === 'string' ? meta.label : null
+  };
+}
+
+/** Opis załącznika w notatce. */
+function fileMeta(meta) {
+  const name = cleanFileName(meta.name);
+  return {
+    id: meta.id,
+    name,
+    type: fileTypeOf(name, meta.type),
+    size: finiteOr(meta.size, 0),
+    crc: Number.isInteger(meta.crc) ? meta.crc : null
+  };
+}
+
+/**
+ * Sprawdza kopię danych i zastępuje nią całą bazę. Pliki obrazów i załączników, które są już
+ * na urządzeniu, zostają. Zwraca raport z liczbą rekordów.
+ */
 export async function restoreBackup(library, raw) {
   const result = validateBackup(raw);
   await library.replaceAll(result.data);
   return result;
+}
+
+// ---------------------------------------------------------------- obrazy i załączniki
+
+/** Ścieżka pliku w archiwum: obrazy/<id>.png, zalaczniki/<id>/<nazwa pliku>. */
+function mediaPath(store, meta) {
+  return store === 'noteImages'
+    ? `obrazy/${meta.id}.${IMAGE_EXTENSIONS[meta.type] ?? 'bin'}`
+    : `zalaczniki/${meta.id}/${cleanFileName(meta.name)}`;
+}
+
+/**
+ * Plik obrazów i załączników wszystkich notatek (ZIP bez kompresji – obrazy, PDF i pliki Office
+ * są już skompresowane). Pliki są czytane z bazy po jednym. Spis treści (MEDIA_MANIFEST) wiąże
+ * każdy plik z jego opisem w notatce. Zwraca { blob, images, files, size, missing } – missing:
+ * opisane w notatkach, a nieobecne na urządzeniu (nie trafiają do pliku).
+ */
+export async function createMediaArchive(library, appVersion = '', { onProgress = null } = {}) {
+  const index = await library.mediaIndex();
+  const writer = new ZipWriter();
+  const items = [];
+  const report = { images: 0, files: 0, size: 0, missing: 0 };
+  let done = 0;
+  for (const [id, entry] of index) {
+    onProgress?.(done, index.size);
+    done += 1;
+    const bytes = entry.present ? await library.mediaBytes(entry.store, id) : null;
+    if (!bytes) {
+      report.missing += 1;
+      continue;
+    }
+    const data = new Uint8Array(bytes);
+    const path = mediaPath(entry.store, entry.meta);
+    await writer.add({ name: path, data, stored: true });
+    const kind = entry.store === 'noteImages' ? 'image' : 'file';
+    items.push({
+      id, kind, lessonID: entry.lessonID, path, name: entry.meta.name ?? null, type: entry.meta.type, size: data.byteLength,
+      crc: entry.meta.crc ?? null
+    });
+    report[kind === 'image' ? 'images' : 'files'] += 1;
+    report.size += data.byteLength;
+  }
+  const manifest = {
+    format: MEDIA_FORMAT, formatVersion: MEDIA_FORMAT_VERSION, appVersion, exportedAt: nowISO(),
+    counts: { images: report.images, files: report.files, size: report.size }, items
+  };
+  await writer.add({ name: MEDIA_MANIFEST, data: new TextEncoder().encode(JSON.stringify(manifest)) });
+  return { blob: writer.finish(), ...report };
+}
+
+const notMediaFile = () => invalid('To nie jest plik obrazów i załączników LexiCards.');
+
+/** Otwiera plik obrazów i załączników: { manifest, archive } (archiwum czytane kawałkami). */
+export async function openMediaArchive(blob) {
+  let archive;
+  let manifest;
+  try {
+    archive = await openZipBlob(blob);
+    const entry = archive.entries.get(MEDIA_MANIFEST);
+    if (!entry) throw notMediaFile();
+    manifest = JSON.parse(new TextDecoder().decode(await archive.read(entry)));
+  } catch (error) {
+    if (error instanceof ZipError || error instanceof SyntaxError) throw notMediaFile();
+    throw error;
+  }
+  if (!manifest || manifest.format !== MEDIA_FORMAT || !Array.isArray(manifest.items)) throw notMediaFile();
+  if (!Number.isInteger(manifest.formatVersion) || manifest.formatVersion > MEDIA_FORMAT_VERSION) {
+    throw invalid('Plik obrazów i załączników pochodzi z nowszej wersji aplikacji. Zaktualizuj aplikację i spróbuj ponownie.');
+  }
+  return { manifest, archive };
+}
+
+/**
+ * Dopisuje do bazy obrazy i załączniki z pliku – tylko te, które opisują notatki w bibliotece
+ * i których jeszcze nie ma na urządzeniu. Niczego nie usuwa i nie zmienia notatek, więc
+ * przerwanie w połowie niczego nie psuje. Zapis porcjami (do 16 MB na transakcję).
+ * Zwraca { images, files, present, unmatched, damaged, missing }: dodane obrazy i załączniki,
+ * już obecne, niepasujące do żadnej notatki, uszkodzone oraz wciąż brakujące po przywróceniu.
+ */
+export async function restoreMedia(library, blob, { onProgress = null } = {}) {
+  const { manifest, archive } = await openMediaArchive(blob);
+  const index = await library.mediaIndex();
+  const report = { images: 0, files: 0, present: 0, unmatched: 0, damaged: 0, missing: 0 };
+  let batch = [];
+  let batchBytes = 0;
+  const flush = async () => {
+    if (batch.length === 0) return;
+    const added = await library.addMedia(batch);
+    report.images += added.images;
+    report.files += added.files;
+    batch = [];
+    batchBytes = 0;
+  };
+  let done = 0;
+  for (const item of manifest.items) {
+    onProgress?.(done, manifest.items.length);
+    done += 1;
+    const target = index.get(item?.id);
+    if (!target || target.store !== (item.kind === 'file' ? 'noteFiles' : 'noteImages')) {
+      report.unmatched += 1;
+      continue;
+    }
+    if (target.present) {
+      report.present += 1;
+      continue;
+    }
+    const entry = typeof item.path === 'string' ? archive.entries.get(item.path) : null;
+    let bytes = null;
+    try {
+      // Suma kontrolna musi się zgadzać z opisem w notatce – to ten sam plik.
+      if (entry && (target.meta.crc === null || target.meta.crc === undefined || entry.crc === target.meta.crc)) {
+        bytes = await archive.read(entry);
+      }
+    } catch (error) {
+      if (!(error instanceof ZipError)) throw error;
+    }
+    if (!bytes || bytes.byteLength === 0) {
+      report.damaged += 1;
+      continue;
+    }
+    target.present = true;
+    batch.push({ id: item.id, bytes });
+    batchBytes += bytes.byteLength;
+    if (batchBytes >= MEDIA_BATCH_BYTES) await flush();
+  }
+  await flush();
+  onProgress?.(manifest.items.length, manifest.items.length);
+  report.missing = [...index.values()].filter((entry) => !entry.present).length;
+  return report;
+}
+
+/** Czy plik to archiwum ZIP (plik obrazów i załączników), a nie plik danych JSON. */
+export async function isZipFile(blob) {
+  const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+  return head.length === 4 && head[0] === 0x50 && head[1] === 0x4b && (head[2] === 3 || head[2] === 5);
 }
 
 /** Wczytuje kopię z tekstu JSON (np. zawartości wybranego pliku). */

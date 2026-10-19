@@ -6,7 +6,8 @@ Dokument opisuje stan wersji 1.1. Zgodność ze specyfikacją i wyniki sprawdzen
 ## Założenia
 
 - **Jeden użytkownik, dane na urządzeniu.** Nie ma serwera ani kont. Baza to IndexedDB
-  w przeglądarce; między urządzeniami dane przenosi plik kopii zapasowej.
+  w przeglądarce; między urządzeniami dane przenoszą dwa pliki kopii zapasowej (od 1.8): dane
+  oraz obrazy z załącznikami.
 - **Pliki statyczne bez kompilacji.** Moduły ES ładowane wprost przez przeglądarkę, zero
   zależności zewnętrznych. Hosting: GitHub Pages.
 - **Logika oddzielona od przeglądarki.** Katalog `js/core/` nie dotyka DOM ani IndexedDB
@@ -26,13 +27,15 @@ js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
 js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspólny dla nauki i quizu
 js/ui/charts.js            wykresy SVG (w czasie, pasek udziałów, miernik) z podpowiedzią i tabelą danych
 js/ui/listen-player.js     odtwarzacz słuchania: kolejne kroki czytane syntezatorem mowy, pauza, dalej, powtórz
-js/ui/notes.js             okno notatki lekcji: podgląd, edytor z paskiem formatowania, obrazy, powiększanie
+js/ui/notes.js             okno notatki lekcji: podgląd, edytor z paskiem formatowania, obrazy, załączniki, powiększanie
+js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie)
 js/ui/images.js            obrazy w przeglądarce: odczyt, zmniejszanie dużych zdjęć, adresy do wyświetlenia
 js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
 js/core/model.js           kształt rekordów, wartości domyślne, stałe
-js/core/backup.js          kopia zapasowa: tworzenie, walidacja, przywracanie
-js/core/zip.js             odczyt i zapis archiwów ZIP
+js/core/backup.js          kopia zapasowa: plik danych i plik obrazów i załączników – tworzenie, walidacja, przywracanie
+js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (PDF, Word, Excel, PowerPoint…)
+js/core/zip.js             odczyt i zapis archiwów ZIP (także kawałkami przez Blob – duże pliki)
 js/core/xlsx.js            odczyt i zapis skoroszytów XLSX
 js/core/csv.js             kodowanie, separator, odczyt i zapis CSV
 js/core/tablefile.js       rozpoznanie formatu pliku, wspólna postać tabeli
@@ -70,8 +73,9 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | `studySessions` | dziennik zakończonych sesji nauki | – |
 | `quizSessions` | historia wyników quizów: rodzaj, kierunek, liczby odpowiedzi, procent, próg, zaliczenie, czas, limit, błędne pojęcia | – |
 | `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki i quizu (od 1.2 okres powtórek lekcji utrwalonych `consolidatedReviewDays` i znacznik `domainColorsGray`), trwająca sesja nauki i trwający quiz | – |
-| `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML (`html` po polsku, od 1.6 `htmlEN` po angielsku), opis obrazów (typ, wymiary, rozmiar, CRC-32, od 1.6 `label` – sygnatura) i `imagesFirst` – obrazy bez odwołania w podglądzie przed tekstem (od 1.5) – w pamięci | identyfikator = `lessonID` |
+| `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML (`html` po polsku, od 1.6 `htmlEN` po angielsku), opis obrazów (typ, wymiary, rozmiar, CRC-32, od 1.6 `label` – sygnatura), `imagesFirst` – obrazy bez odwołania w podglądzie przed tekstem (od 1.5) i od 1.8 `files` – opis załączników (nazwa, typ, rozmiar, CRC-32) – w pamięci | identyfikator = `lessonID` |
 | `noteImages` | bajty obrazów notatek (`ArrayBuffer`) – czytane z bazy dopiero przy otwarciu notatki | `lessonID` |
+| `noteFiles` | bajty załączników notatek (od 1.8, `ArrayBuffer`, do 50 MB) – czytane dopiero przy otwarciu pliku | `lessonID` |
 
 Decyzje:
 
@@ -86,11 +90,20 @@ Decyzje:
 - **Schemat ma numer wersji** (`SCHEMA_VERSION`, `DB_VERSION`), a kopia zapasowa własny
   numer formatu – zmiany w kolejnych etapach będą migracjami, nie przebudową. Wersja 1.1
   podniosła `DB_VERSION` do 2: przy otwarciu powstają magazyny `notes` i `noteImages`,
-  istniejące dane zostają bez zmian.
+  istniejące dane zostają bez zmian; wersja 1.8 – do 3: dochodzi magazyn `noteFiles`.
 - **Obrazy poza pamięcią.** Notatka w pamięci ma tylko tekst i opis obrazów; bajty są w osobnym
   magazynie, czytane przy otwarciu notatki. Obrazy są zapisane jako `ArrayBuffer`, nie `Blob`
   (Safari miewał kłopoty z `Blob` w IndexedDB). Notatka znika razem z lekcją, modułem
-  i dziedziną; kopia lekcji ma kopię notatki z własnymi obrazami.
+  i dziedziną; kopia lekcji ma kopię notatki z własnymi obrazami i załącznikami.
+- **Załączniki jak obrazy** (od 1.8): opis w notatce (`files`), bajty w `noteFiles`. Zapis notatki
+  bez pola `files` (import z arkusza) ich nie rusza. Opis może istnieć bez pliku (przywrócone same
+  dane): `noteImages(…, { withMissing: true })` i `noteFileList()` zaznaczają takie pozycje jako
+  `missing`, podgląd pokazuje ramkę „Brak pliku obrazu” i przekreślony załącznik, a zapis notatki
+  zostawia ich opisy – plik może dojść później z pliku obrazów i załączników (`addMedia`).
+  Otwieranie (`js/ui/attachments.js`): na telefonie z arkuszem udostępniania – `navigator.share`
+  z plikiem (bajty są czytane już przy otwarciu menu, żeby udostępnianie zaczęło się w obsłudze
+  dotknięcia, czego wymaga Safari); na komputerze PDF, obrazy i tekst – nowa karta z adresem
+  `blob:`, pozostałe – pobranie.
 - **Utrwalenie tylko w lekcji** (od 1.2). Moduł nie ma własnego pola: jest utrwalony, gdy ma
   lekcje i wszystkie są utrwalone (`isModuleConsolidated()`), a „Oznacz jako utrwalony” oznacza
   wszystkie jego lekcje. Dzięki temu nie ma dwóch źródeł prawdy: nowa lekcja (nieoznaczona)
@@ -595,11 +608,33 @@ wykresy w `js/ui/charts.js`.
 
 ## Kopia zapasowa
 
-Jeden plik JSON: nagłówek (format, wersje, data, liczniki) i zawartość wszystkich magazynów.
-Przywracanie najpierw sprawdza cały plik (format, wersję, unikalność identyfikatorów,
+Od wersji 1.8 dwa pliki (przeniesienie dwustopniowe):
+
+1. **Plik danych** (`LexiCards-dane-RRRR-MM-DD.json`, format kopii 3): nagłówek (format, wersje,
+   data, liczniki, `media` – ile obrazów i załączników opisują notatki i ile zajmują) i zawartość
+   wszystkich magazynów oprócz `noteImages` i `noteFiles`. Notatki mają opisy obrazów
+   i załączników, bez bajtów – plik jest mały.
+2. **Plik obrazów i załączników** (`LexiCards-obrazy-i-zalaczniki-RRRR-MM-DD.zip`): jedno archiwum
+   ZIP bez kompresji (obrazy, PDF i pliki Office są już skompresowane, więc bez Base64 i bez
+   narzutu 33%) – `obrazy/<id>.png`, `zalaczniki/<id>/<nazwa pliku>` i spis treści
+   `lexicards-pliki.json` (identyfikator, rodzaj, lekcja, ścieżka, typ, rozmiar, CRC-32). Archiwum
+   powstaje plik po pliku (`ZipWriter` → `Blob`, bajty czytane z bazy po jednym) i jest czytane
+   kawałkami (`openZipBlob` – `Blob.slice`), więc nawet kilkaset MB nie trafia naraz do pamięci.
+   Granica formatu ZIP bez ZIP64: 4 GB i 65 535 plików.
+
+Przywracanie pliku danych najpierw sprawdza cały plik (format, wersję, unikalność identyfikatorów,
 powiązania hierarchii), przelicza klucze wyszukiwania i dopiero wtedy zastępuje bazę
 jedną transakcją. Uszkodzony plik niczego nie zmienia. Dane nauki wskazujące na
-nieistniejące pojęcia są pomijane.
+nieistniejące pojęcia są pomijane. Pliki obrazów i załączników, które opisują przywracane notatki
+i już są w bazie, zostają (`replaceAll(data, { keep })` usuwa z `noteImages` i `noteFiles` tylko
+pozostałe) – przywrócenie samych danych na tym samym urządzeniu niczego nie gubi.
+
+Przywracanie pliku obrazów i załączników (`restoreMedia`) tylko dopisuje: plik trafia do bazy, gdy
+opisuje go któraś notatka, jeszcze go nie ma, a jego CRC-32 zgadza się z opisem w notatce. Zapis
+idzie porcjami do 16 MB na transakcję; przerwanie w połowie niczego nie psuje. Raport mówi, ile
+dodano, ile już było, ile nie pasuje do notatek (np. plik obrazów przywrócony przed plikiem danych)
+i ile wciąż brakuje. W Ustawieniach można wybrać oba pliki naraz – rodzaj pliku rozpoznaje
+zawartość (`PK` na początku – ZIP), najpierw idą dane.
 
 Od wersji 1.1 (format kopii 2) kopia zawiera notatki i obrazy (bajty w Base64). Przy
 przywracaniu treść notatek przechodzi przez filtr HTML, a notatki bez lekcji i obrazy bez
@@ -609,11 +644,16 @@ Wersja 1.2 nie zmienia formatu kopii: data utrwalenia jest polem lekcji, okres p
 ustawień. Kopia sprzed 1.2 nie ma znacznika szarych ikon, więc po jej przywróceniu dziedziny
 dostają szare tło tak samo jak przy aktualizacji.
 
+Kopie w formacie 2 (wersje 1.1–1.7, obrazy w Base64 w tym samym pliku) nadal się przywracają:
+obrazy z pliku trafiają do bazy, a opis obrazu bez bajtów w takiej kopii jest pomijany. W formacie 3
+opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
+
 ## Testy
 
 - `tests/unit/` – Node.js (`node --test`), bez przeglądarki: reguły biblioteki, wycofywanie
   nieudanych zmian, glosariusz, odczyt i zapis plików, import i eksport, nauka z fiszkami,
-  FSRS (zgodność z py-fsrs i zapis powtórek), quizy, statystyki, kopia zapasowa, spójność plików wydania.
+  FSRS (zgodność z py-fsrs i zapis powtórek), quizy, statystyki, kopia zapasowa (oba pliki),
+  załączniki, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.
   Notatki: skoroszyt z openpyxl (fragmenty z formatowaniem, obrazy przy komórkach), ten sam

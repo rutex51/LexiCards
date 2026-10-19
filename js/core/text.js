@@ -88,6 +88,16 @@ export const pluralTerms = (count) => plural(count, 'pojęcie', 'pojęcia', 'poj
 export const pluralCards = (count) => plural(count, 'fiszka', 'fiszki', 'fiszek');
 export const pluralNotes = (count) => plural(count, 'notatka', 'notatki', 'notatek');
 export const pluralImages = (count) => plural(count, 'obraz', 'obrazy', 'obrazów');
+export const pluralAttachments = (count) => plural(count, 'załącznik', 'załączniki', 'załączników');
+export const pluralFiles = (count) => plural(count, 'plik', 'pliki', 'plików');
+
+/** Rozmiar pliku: „830 B”, „12 KB”, „1,5 MB”, „1,2 GB”. */
+export function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1).replace('.', ',')} GB`;
+}
 
 /** Łączy elementy w wyliczenie: „a, b i c”. */
 export function joinList(parts) {

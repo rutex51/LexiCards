@@ -164,6 +164,17 @@ function paginate(units, images, content, available, language = 'pl') {
     const meta = images[unit.index] ?? {};
     const ratio = ratioOf(unit);
     const height = imageHeight(unit, unit.limit ?? available);
+    if (!meta.url) {
+      // Obraz bez pliku na urządzeniu (przywrócone same dane) – ramka z wyjaśnieniem.
+      return h('button', {
+        type: 'button',
+        class: 'note-page__figure note-page__figure--missing',
+        style: { height: `${Math.min(height, 140)}px` },
+        dataset: { index: String(unit.index), testid: 'note-missing-image' }
+      },
+        h('strong', null, meta.label ? `Brak pliku obrazu „${meta.label}”` : 'Brak pliku obrazu'),
+        h('span', null, 'Przywróć plik obrazów i załączników w Ustawieniach.'));
+    }
     return h('button', {
       type: 'button',
       class: 'note-page__figure',
