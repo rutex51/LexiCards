@@ -288,14 +288,19 @@ export function makeNoteFile(lessonID, file, crc) {
     type: file.type,
     size: bytes.byteLength,
     crc,
+    // Nagranie (notatka głosowa, od 1.10): czas trwania w sekundach.
+    ...(Number.isFinite(file.duration) && file.duration > 0 ? { duration: file.duration } : {}),
     bytes,
     createdAt: nowISO()
   };
 }
 
-/** Opis załącznika przechowywany w notatce (bez bajtów). */
+/** Opis załącznika przechowywany w notatce (bez bajtów); `duration` – czas nagrania w sekundach. */
 export function noteFileMeta(record, name = null) {
-  return { id: record.id, name: name ?? record.name, type: record.type, size: record.size ?? 0, crc: record.crc ?? null };
+  return {
+    id: record.id, name: name ?? record.name, type: record.type, size: record.size ?? 0, crc: record.crc ?? null,
+    ...(Number.isFinite(record.duration) && record.duration > 0 ? { duration: record.duration } : {})
+  };
 }
 
 /** Opis obrazu przechowywany w notatce (bez bajtów); `label` – sygnatura obrazu w notatce (od 1.6). */

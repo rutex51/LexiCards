@@ -1791,6 +1791,88 @@ test('załączniki w edytorze: dodanie, zmiana nazwy z zachowaniem rozszerzenia,
   await page.screenshot({ path: path.join(OUTPUT, 'zalaczniki-lista-lekcji.png') });
 });
 
+test('notatka głosowa: nagrywanie w trakcie pisania, pauza, zakończenie i zapis; nagranie w załącznikach, odtwarzanie, kopia', async ({ open, context }) => {
+  await context.grantPermissions(['microphone']);
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await page.click('[data-testid=lesson-note-add]');
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-editor]').waitFor();
+
+  // Start: pasek nagrywania u góry edytora, czas biegnie; w tym czasie piszemy notatkę.
+  await dialog.locator('[data-testid=note-record]').click();
+  const bar = dialog.locator('[data-testid=note-recording]');
+  await bar.waitFor();
+  await waitUntil(async () => (await bar.locator('[data-testid=note-recording-time]').textContent()) === '0:01', 'Czas nagrania biegnie', 4000);
+  await dialog.locator('[data-testid=note-editor]').click();
+  await page.keyboard.type('Pisane w trakcie nagrywania.');
+  await dialog.locator('.sheet__body').evaluate((body) => { body.scrollTop = body.scrollHeight; });
+  const pinned = await bar.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const body = element.closest('.sheet__body').getBoundingClientRect();
+    return box.top >= body.top - 1 && box.bottom <= body.bottom;
+  });
+  assert.ok(pinned, 'pasek nagrywania widać po przewinięciu edytora');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-glosowa-nagrywanie-telefon.png') });
+  assert.equal(await dialog.locator('[data-testid=note-record]').isDisabled(), true, 'jedno nagranie naraz');
+
+  // Pauza zatrzymuje czas, wznowienie – dalej.
+  await bar.locator('[data-testid=note-recording-pause]').click();
+  await expectText(bar, 'Pauza');
+  const paused = await bar.locator('[data-testid=note-recording-time]').textContent();
+  await page.waitForTimeout(1300);
+  assert.equal(await bar.locator('[data-testid=note-recording-time]').textContent(), paused, 'w pauzie czas stoi');
+  await bar.locator('[data-testid=note-recording-pause]').click();
+  await expectText(bar, 'Nagrywanie');
+  await page.waitForTimeout(900);
+
+  // Zakończ – nagranie w załącznikach, pasek znika.
+  await bar.locator('[data-testid=note-recording-stop]').click();
+  await page.locator('.toast', { hasText: 'Dodano notatkę głosową' }).waitFor();
+  assert.equal(await bar.isVisible(), false);
+  await expectText(dialog.locator('[data-testid=note-attachment-name]'), 'Notatka głosowa');
+  await expectText(dialog.locator('.note-attachments__meta'), 'Nagranie, 0:0');
+
+  // Drugie nagranie zakończone samym zapisem notatki.
+  await dialog.locator('[data-testid=note-record]').click();
+  await bar.waitFor();
+  await page.waitForTimeout(1200);
+  await dialog.locator('[data-testid=note-right]').click();
+  await page.locator('.toast', { hasText: 'Zapisano notatkę.' }).waitFor();
+  const note = await storedNote(page, ids.statements);
+  assert.equal(note.html, '<p>Pisane w trakcie nagrywania.</p>');
+  assert.equal(note.files.length, 2, 'oba nagrania zapisane');
+  for (const file of note.files) {
+    // Format zależy od przeglądarki: AAC (.m4a), gdy system ma koder, inaczej Opus (.webm).
+    const extension = /^Notatka głosowa \d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.(m4a|webm)$/.exec(file.name)?.[1];
+    assert.ok(extension, `nazwa nagrania: ${file.name}`);
+    assert.equal(file.type, extension === 'm4a' ? 'audio/mp4' : 'audio/webm');
+    assert.ok(file.size > 1000, `nagranie ma treść (${file.size} B)`);
+    assert.ok(file.duration >= 1 && file.duration <= 6, `czas nagrania ${file.duration} s`);
+  }
+  const recordedBytes = await storedFileBytes(page, ids.statements, note.files[0].name);
+  assert.ok(recordedBytes.length === note.files[0].size);
+
+  // Podgląd: nagranie z mikrofonem na liście, „Odtwórz” – odtwarzacz w aplikacji.
+  await dialog.locator('[data-testid=note-files]').waitFor();
+  assert.equal(await dialog.locator('.note-files__item .file-badge--audio').count(), 2);
+  await dialog.locator('[data-testid=note-file]').first().click();
+  await menuItem(page, 'Odtwórz');
+  const player = page.locator('[data-testid=audio-player]');
+  await player.waitFor();
+  await waitUntil(() => player.evaluate((audio) => audio.readyState >= 1 && audio.duration > 0.5), 'Odtwarzacz wczytał nagranie');
+  await page.locator('dialog.alert[open]').evaluate((alert) => Promise.all(alert.getAnimations({ subtree: true }).map((animation) => animation.finished)));
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-glosowa-odtwarzanie-telefon.png') });
+  await page.locator('dialog.alert[open]').getByRole('button', { name: 'Zamknij' }).click();
+
+  // Nagranie jest zwykłym załącznikiem: trafia do pliku obrazów i załączników kopii.
+  await dialog.locator('[data-testid=note-left]').click();
+  await page.goto(`${page.url().split('#')[0]}#/settings`);
+  await expectText(page.locator('[data-testid=backup-media-export]'), '2 załączniki');
+});
+
 test('załączniki na komputerze: PDF w nowej karcie, dokument Word pobierany; upuszczenie pliku na edytor dodaje załącznik', async ({ open, context }) => {
   const page = await open();
   const ids = await seedNoteWithFiles(page);
@@ -6000,7 +6082,8 @@ async function main() {
 
   const filter = process.argv[2] ?? '';
   const server = await startServer({ port: 0, base: '/LexiCards/' });
-  const browser = await chromium.launch();
+  // Udawany mikrofon (sygnał testowy) do nagrywania notatek głosowych.
+  const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
   let failed = 0;
   let passed = 0;
 

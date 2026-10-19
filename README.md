@@ -1,4 +1,4 @@
-# LexiCards 1.9
+# LexiCards 1.10
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -18,8 +18,9 @@ Sygnatury obrazów w treści notatki, notatka po angielsku, czytanie notatki na 
 Notatka lekcji w słuchaniu, przyciski wstecz / dalej, czytelne „Anuluj” (wersja 1.7): [docs/RELEASE-1.7.md](docs/RELEASE-1.7.md).
 Załączniki notatek, przeniesienie dwoma plikami – dane oraz obrazy z załącznikami (wersja 1.8): [docs/RELEASE-1.8.md](docs/RELEASE-1.8.md).
 Przesuwanie wierszy lekcji i modułów, data utworzenia i filtr daty, kolejność utrwalonych do wyboru (wersja 1.9): [docs/RELEASE-1.9.md](docs/RELEASE-1.9.md).
+Notatka głosowa nagrywana w trakcie pisania notatki (wersja 1.10): [docs/RELEASE-1.10.md](docs/RELEASE-1.10.md).
 
-## Co potrafi wersja 1.9
+## Co potrafi wersja 1.10
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -54,6 +55,9 @@ Przesuwanie wierszy lekcji i modułów, data utworzenia i filtr daty, kolejnoś�
 - Załączniki notatek: PDF, Word, Excel, PowerPoint i inne pliki do 50 MB. Na iPhonie otwierasz je
   przez systemowy arkusz udostępniania (Word, Excel, Książki, „Zachowaj w Plikach”…), na komputerze
   PDF otwiera się w nowej karcie, a pozostałe pliki są pobierane i otwierają się w swoich programach.
+- Notatka głosowa: w edytorze notatki **Nagraj notatkę głosową** nagrywa w tle, a Ty w tym czasie
+  piszesz i poprawiasz notatkę (pauza, wznowienie, „Zakończ”). Nagranie trafia do załączników
+  („Notatka głosowa 2026-10-19 15.01.m4a”, z czasem trwania) i odtwarzasz je w aplikacji.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
   Notatki do lekcji przychodzą z osobnego arkusza tego samego pliku – razem z pojęciami albo osobno.
@@ -97,7 +101,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.6 – sygnatury obrazów, notatka po angielsku, czytanie na głos](docs/RELEASE-1.6.md),
 [wersja 1.7 – notatka w słuchaniu, wstecz / dalej](docs/RELEASE-1.7.md),
 [wersja 1.8 – załączniki, przeniesienie dwoma plikami](docs/RELEASE-1.8.md),
-[wersja 1.9 – przesuwanie wierszy, data utworzenia, kolejność utrwalonych](docs/RELEASE-1.9.md).
+[wersja 1.9 – przesuwanie wierszy, data utworzenia, kolejność utrwalonych](docs/RELEASE-1.9.md),
+[wersja 1.10 – notatka głosowa](docs/RELEASE-1.10.md).
 
 ## Jak korzystać
 
@@ -235,6 +240,20 @@ systemowy arkusz udostępniania: wybierasz aplikację (Word, Excel, PowerPoint, 
 przeglądarki na urządzeniu, tak jak obrazy; nie trafiają do eksportu XLSX, a przenosi je plik obrazów
 i załączników kopii zapasowej. Po dodaniu załącznika aplikacja prosi przeglądarkę o ochronę danych
 przed usunięciem przy braku miejsca.
+
+**Notatka głosowa:** w sekcji **Załączniki** edytora przycisk **Nagraj notatkę głosową** zaczyna
+nagrywanie (za pierwszym razem przeglądarka pyta o dostęp do mikrofonu). U góry edytora pojawia się
+czerwony pasek z czasem nagrania – widać go także po przewinięciu – a reszta edytora działa jak
+zwykle: piszesz, formatujesz, dodajesz obrazy i załączniki. Na pasku: pauza / wznowienie (czas
+w pauzie stoi) i **Zakończ** – nagranie trafia do załączników jako „Notatka głosowa RRRR-MM-DD GG.MM”
+z fioletową plakietką mikrofonu i czasem trwania. **Zapisz** w trakcie nagrywania najpierw kończy
+nagranie, a potem zapisuje notatkę razem z nim; **Anuluj** (po potwierdzeniu odrzucenia zmian) –
+nagranie przepada. W podglądzie dotknięcie nagrania – **Odtwórz** otwiera odtwarzacz w aplikacji;
+plik można też otworzyć lub zapisać jak każdy załącznik i zmienić mu nazwę. Nagranie trwa najwyżej
+90 minut (ok. 0,5 MB na minutę). W trakcie nagrywania ekran nie gaśnie sam. Na iPhonie zgaszenie
+ekranu przyciskiem, przejście do innej aplikacji albo połączenie telefoniczne kończy nagrywanie –
+to, co się nagrało, zostaje w załącznikach (komunikat to mówi). Format zależy od przeglądarki: Safari
+nagrywa AAC (`.m4a`), Chrome i Edge – AAC (`.m4a`), gdy system ma koder, inaczej Opus (`.webm`).
 
 ### Postęp i lekcje utrwalone
 
@@ -446,6 +465,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 14. **Wersja 1.7: notatka lekcji w słuchaniu, przyciski wstecz / dalej, czytelne „Anuluj” w menu** – gotowe.
 15. **Wersja 1.8: załączniki notatek (PDF, Word, Excel, PowerPoint), przeniesienie dwoma plikami – dane oraz obrazy z załącznikami** – gotowe.
 16. **Wersja 1.9: przesuwanie wierszy lekcji i modułów (utrwal / usuń), data utworzenia i filtr daty, kolejność utrwalonych do wyboru** – gotowe.
+17. **Wersja 1.10: notatka głosowa – nagrywanie w trakcie pisania notatki, nagranie w załącznikach, odtwarzanie** – gotowe.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

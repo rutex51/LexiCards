@@ -275,7 +275,8 @@ function fileMeta(meta) {
     name,
     type: fileTypeOf(name, meta.type),
     size: finiteOr(meta.size, 0),
-    crc: Number.isInteger(meta.crc) ? meta.crc : null
+    crc: Number.isInteger(meta.crc) ? meta.crc : null,
+    ...(Number.isFinite(meta.duration) && meta.duration > 0 ? { duration: meta.duration } : {})
   };
 }
 

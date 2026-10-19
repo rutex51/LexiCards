@@ -1,6 +1,6 @@
 // Załączniki notatek i przeniesienie dwustopniowe (wersja 1.8): nazwy i rodzaje plików,
 // zapis w bibliotece, plik danych bez bajtów, jeden plik obrazów i załączników (ZIP), przywracanie
-// obu plików, zachowanie plików już obecnych na urządzeniu.
+// obu plików, zachowanie plików już obecnych na urządzeniu. Notatki głosowe (1.10): nazwa i czas nagrania.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -11,7 +11,7 @@ import {
 } from '../../js/core/backup.js';
 import { buildExportFile, collectExportNotes } from '../../js/core/exporter.js';
 import { NOTE_FILE_LIMIT, NOTE_FILE_MAX_BYTES } from '../../js/core/model.js';
-import { cleanFileName, fileKind, fileTypeOf, opensInBrowser, renamedFile } from '../../js/core/note-files.js';
+import { cleanFileName, fileKind, fileTypeOf, formatDuration, opensInBrowser, recordingName, renamedFile } from '../../js/core/note-files.js';
 import { ZipWriter, createZip, crc32, openZipBlob } from '../../js/core/zip.js';
 import { makeBranch, makeLibrary } from './helpers.js';
 
@@ -345,4 +345,45 @@ test('cofnięcie usunięcia: pojęcia wracają do lekcji; nie da się, gdy znikn
   await library.delete({ kind: 'module', id: module.id });
   await assert.rejects(library.restoreDeleted(lessonCopy), /został w międzyczasie usunięty/);
   assert.equal(library.getLesson(lesson.id), null);
+});
+
+// ---------------------------------------------------------------- notatki głosowe
+
+test('notatka głosowa: nazwa z datą i godziną, czas nagrania w opisie zostaje przy zmianie nazwy, kopii lekcji i kopii zapasowej', async () => {
+  assert.equal(recordingName(new Date(2026, 9, 9, 7, 5), 'm4a'), 'Notatka głosowa 2026-10-09 07.05.m4a');
+  assert.deepEqual([0, 5, 42.4, 62, 3600, 3725, -3, Number.NaN].map((seconds) => formatDuration(seconds)),
+    ['0:00', '0:05', '0:42', '1:02', '1:00:00', '1:02:05', '0:00', '0:00']);
+  assert.deepEqual(['a.m4a', 'a.webm', 'a.ogg', 'a.wav'].map((name) => [fileTypeOf(name, ''), fileKind(name)]),
+    [['audio/mp4', 'audio'], ['audio/webm', 'audio'], ['audio/ogg', 'audio'], ['audio/wav', 'audio']]);
+  assert.equal(fileKind('nagranie', 'audio/webm;codecs=opus'), 'audio');
+  assert.equal(opensInBrowser('a.m4a'), true);
+
+  const { library, lesson, module } = await libraryWithMedia();
+  const note = library.getNote(lesson.id);
+  const voice = { ...attachment(recordingName(new Date(2026, 9, 19, 15, 1), 'm4a'), 4, 700), type: 'audio/mp4', duration: 42 };
+  await library.saveNote(lesson.id, {
+    html: note.html, images: note.images.map((meta) => ({ id: meta.id })),
+    files: [...note.files.map((meta) => ({ id: meta.id })), voice, { ...attachment('Bez czasu.webm', 5), duration: -1 }]
+  });
+  const saved = library.getNote(lesson.id).files;
+  assert.deepEqual(saved.map((file) => [file.type, file.duration]),
+    [['application/pdf', undefined], [saved[1].type, undefined], ['audio/mp4', 42], ['audio/webm', undefined]]);
+
+  // Zmiana nazwy nagrania – czas zostaje.
+  await library.saveNote(lesson.id, {
+    html: note.html, images: note.images.map((meta) => ({ id: meta.id })),
+    files: saved.map((meta, index) => (index === 2 ? { id: meta.id, name: 'Dyktowane uwagi' } : { id: meta.id }))
+  });
+  const renamed = library.getNote(lesson.id).files[2];
+  assert.deepEqual([renamed.name, renamed.duration], ['Dyktowane uwagi', 42]);
+
+  // Kopia lekcji i kopia zapasowa (plik danych) mają czas nagrania; zły czas jest pomijany.
+  const copy = await library.copyLesson(lesson.id, module.id);
+  assert.equal(library.getNote(copy.id).files[2].duration, 42);
+  const backup = JSON.parse(JSON.stringify(await createBackup(library, 'test')));
+  const stored = backup.data.notes.find((item) => item.lessonID === lesson.id);
+  assert.equal(stored.files[2].duration, 42);
+  stored.files[3].duration = 'długo';
+  const restored = validateBackup(backup).data.notes.find((item) => item.lessonID === lesson.id).files;
+  assert.deepEqual(restored.map((file) => file.duration), [undefined, undefined, 42, undefined]);
 });

@@ -13,7 +13,7 @@ import { NOTE_COLORS, PAGE_BREAK_LINE, isEmptyNoteHtml, noteText, normalizeNoteH
 import {
   IMAGE_LABEL_MAX, cleanImageLabel, findImageByLabel, labelKey, referenceLabel, referenceToken, renameReferences, withImageLabels
 } from '../core/note-refs.js';
-import { FILE_NAME_MAX, cleanFileName, fileExtension, fileTypeOf, renamedFile } from '../core/note-files.js';
+import { FILE_NAME_MAX, cleanFileName, fileExtension, fileTypeOf, formatDuration, recordingName, renamedFile } from '../core/note-files.js';
 import { joinList, pluralAttachments, pluralImages } from '../core/text.js';
 import { attachmentList, fileBadge, fileDescription, openAttachment } from './attachments.js';
 import { field, iconButton, segmented, textInput } from './components.js';
@@ -21,6 +21,7 @@ import { confirmDialog, mountDialog, openFormSheet, openMenu, showError, toast }
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
 import { prepareImage, urlPool } from './images.js';
+import { recordingSupported, startRecording } from './recorder.js';
 import { noteBook } from './note-book.js';
 import { speakThen, speechAvailable, stopSpeaking } from './speech.js';
 
@@ -657,6 +658,8 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       }
       rightButton.disabled = true;
       try {
+        // Trwające nagranie kończy się i trafia do załączników razem z zapisem.
+        await editor.finishRecording();
         const draft = editor.draft();
         const saved = await library.saveNote(lessonID, draft);
         // Załączniki bywają duże – prosimy przeglądarkę, żeby nie usuwała danych przy braku miejsca.
@@ -1157,17 +1160,25 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     for (let index = 0; index < state.filesPending; index += 1) {
       rows.push(h('li', { class: 'note-attachments__item note-attachments__item--pending', 'aria-hidden': 'true' }, h('span', { class: 'note-images__spinner' })));
     }
-    const full = state.files.length + state.filesPending >= NOTE_FILE_LIMIT;
-    rows.push(h('li', null, h('button', {
-      type: 'button', class: 'note-attachments__add', disabled: full, dataset: { testid: 'note-attachment-add' },
-      onClick: () => attachInput.click()
-    }, icon('paperclip', { size: 20 }), h('span', null, 'Dodaj załącznik'))));
+    // Trwające nagranie zajmuje już jedno miejsce.
+    const full = state.files.length + state.filesPending + (recording ? 1 : 0) >= NOTE_FILE_LIMIT;
+    rows.push(h('li', { class: 'note-attachments__adds' },
+      h('button', {
+        type: 'button', class: 'note-attachments__add', disabled: full, dataset: { testid: 'note-attachment-add' },
+        onClick: () => attachInput.click()
+      }, icon('paperclip', { size: 20 }), h('span', null, 'Dodaj załącznik')),
+      recordingSupported()
+        ? h('button', {
+            type: 'button', class: 'note-attachments__add', disabled: full || Boolean(recording), dataset: { testid: 'note-record' },
+            onClick: () => startVoice()
+          }, icon('mic', { size: 20 }), h('span', null, 'Nagraj notatkę głosową'))
+        : null));
     replaceChildren(fileList, rows);
     fileStatus.textContent = state.filesPending > 0 ? 'Wczytywanie pliku…' : (full ? `Notatka może mieć najwyżej ${NOTE_FILE_LIMIT} załączników.` : '');
   }
 
   async function addAttachments(list) {
-    const room = NOTE_FILE_LIMIT - state.files.length - state.filesPending;
+    const room = NOTE_FILE_LIMIT - state.files.length - state.filesPending - (recording ? 1 : 0);
     const accepted = list.slice(0, Math.max(0, room));
     if (accepted.length < list.length) toast(`Notatka może mieć najwyżej ${NOTE_FILE_LIMIT} załączników.`);
     for (const file of accepted) {
@@ -1195,12 +1206,98 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     }
   }
 
+  // ---- notatka głosowa: nagrywanie w tle, w trakcie pisania (od 1.10)
+  let recording = null;
+  const recordTime = h('span', { class: 'note-recording__time', dataset: { testid: 'note-recording-time' } }, '0:00');
+  const recordState = h('span', { class: 'note-recording__state' }, 'Nagrywanie');
+  const pauseButton = h('button', {
+    type: 'button', class: 'icon-button note-recording__button', 'aria-label': 'Wstrzymaj nagrywanie', dataset: { testid: 'note-recording-pause' },
+    onClick: () => togglePause()
+  }, icon('pause', { size: 20 }));
+  const stopButton = h('button', {
+    type: 'button', class: 'button button--secondary note-recording__stop', dataset: { testid: 'note-recording-stop' },
+    onClick: () => finishRecording()
+  }, icon('stop', { size: 16 }), h('span', null, 'Zakończ'));
+  const recordingBar = h('div', { class: 'note-recording', hidden: true, role: 'status', dataset: { testid: 'note-recording' } },
+    h('span', { class: 'note-recording__dot', 'aria-hidden': 'true' }), recordState, recordTime, pauseButton, stopButton);
+
+  const showRecording = () => {
+    recordingBar.hidden = !recording;
+    recordingBar.classList.toggle('note-recording--paused', Boolean(recording?.paused));
+    recordState.textContent = recording?.paused ? 'Pauza' : 'Nagrywanie';
+    pauseButton.setAttribute('aria-label', recording?.paused ? 'Wznów nagrywanie' : 'Wstrzymaj nagrywanie');
+    replaceChildren(pauseButton, icon(recording?.paused ? 'mic' : 'pause', { size: 20 }));
+  };
+
+  async function startVoice() {
+    if (recording) return;
+    try {
+      recording = await startRecording({
+        onTick: (seconds) => { recordTime.textContent = formatDuration(seconds); },
+        onEnd: (reason) => {
+          finishRecording();
+          toast(reason === 'limit'
+            ? 'Nagranie osiągnęło 90 minut – zostało zakończone i dodane do załączników.'
+            : 'Nagrywanie zostało przerwane (np. zgaszony ekran albo inna aplikacja) – nagrany fragment jest w załącznikach.');
+        }
+      });
+    } catch (error) {
+      recording = null;
+      await showError(error);
+      return;
+    }
+    recordTime.textContent = '0:00';
+    showRecording();
+    renderFiles();
+  }
+
+  function togglePause() {
+    if (!recording) return;
+    if (recording.paused) recording.resume();
+    else recording.pause();
+    showRecording();
+  }
+
+  /**
+   * Kończy nagrywanie i dodaje nagranie do załączników (przyciskiem, przy zapisie notatki, po
+   * limicie albo przerwaniu – zawsze raz). Obietnica – gotowe po dodaniu.
+   */
+  function finishRecording() {
+    if (!recording) return Promise.resolve();
+    const current = recording;
+    current.finishing ??= current.stop().then(addRecording).finally(() => {
+      if (recording === current) recording = null;
+      showRecording();
+      renderFiles();
+    });
+    return current.finishing;
+  }
+
+  async function addRecording({ blob, type, extension, duration }) {
+    if (!blob || blob.size === 0) {
+      toast('Nagranie jest puste – nic nie dodano.', { kind: 'error' });
+      return;
+    }
+    if (blob.size > NOTE_FILE_MAX_BYTES) {
+      toast('Nagranie jest za duże (limit to 50 MB).', { kind: 'error' });
+      return;
+    }
+    const bytes = await blob.arrayBuffer();
+    added += 1;
+    state.files.push({
+      key: `new-${added}`, stored: false, name: recordingName(new Date(), extension), type, size: bytes.byteLength, bytes,
+      duration: Math.max(1, Math.round(duration))
+    });
+    toast(`Dodano notatkę głosową (${formatDuration(duration)}).`);
+  }
+
   const filesSection = h('section', { class: 'note-editor__files' },
     h('h3', { class: 'form-group__title' }, 'Załączniki'),
     fileList,
     fileStatus,
     h('p', { class: 'field__hint' },
       'PDF, Word, Excel, PowerPoint i inne pliki do 50 MB. Dotknij pliku, żeby zmienić nazwę, otworzyć, przesunąć albo usunąć. '
+      + (recordingSupported() ? 'Notatka głosowa nagrywa się w tle – w tym czasie piszesz dalej; trafia do załączników po „Zakończ” albo przy zapisie. ' : '')
       + 'Załączniki przenosi plik obrazów i załączników kopii zapasowej; eksport do arkusza ich nie obejmuje.'),
     attachInput
   );
@@ -1208,6 +1305,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
   // Obrazy na górze, pod nimi załączniki, na końcu tekst. Upuszczenie plików na edytor
   // (komputer) dodaje obrazy albo załączniki.
   const element = h('div', { class: 'note-editor' },
+    recordingBar,
     imagesSection,
     filesSection,
     h('section', { class: 'note-editor__text' },
@@ -1274,7 +1372,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
           : { bytes: image.bytes, type: image.type, width: image.width, height: image.height, name: image.name ?? null, label: image.label })),
         files: state.files.map((file) => (file.stored
           ? { id: file.id, name: file.name }
-          : { bytes: file.bytes, name: file.name, type: file.type }))
+          : { bytes: file.bytes, name: file.name, type: file.type, duration: file.duration }))
       };
     },
     dirty() {
@@ -1283,9 +1381,11 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
         || imagesKey() !== initialImages
         || filesKey() !== initialFiles
         || state.imagesFirst !== imagesFirst
-        || state.pending > 0 || state.filesPending > 0;
+        || state.pending > 0 || state.filesPending > 0 || Boolean(recording);
     },
     busy: () => state.pending > 0 || state.filesPending > 0,
+    /** Kończy trwające nagranie i dodaje je do załączników – przed zapisem notatki. */
+    finishRecording,
     isEmpty: () => {
       const current = texts();
       return isEmptyNoteHtml(current.pl) && isEmptyNoteHtml(current.en) && state.images.length === 0 && state.files.length === 0;
@@ -1300,6 +1400,9 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     },
     destroy() {
       document.removeEventListener('selectionchange', onSelectionChange);
+      // Zamknięte bez zapisu – nagranie przepada, mikrofon zostaje zwolniony.
+      recording?.cancel();
+      recording = null;
     }
   };
 }

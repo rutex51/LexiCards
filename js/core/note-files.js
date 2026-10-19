@@ -35,6 +35,9 @@ const TYPE_BY_EXTENSION = Object.freeze({
   heic: 'image/heic',
   mp3: 'audio/mpeg',
   m4a: 'audio/mp4',
+  webm: 'audio/webm',
+  ogg: 'audio/ogg',
+  wav: 'audio/wav',
   mp4: 'video/mp4',
   mov: 'video/quicktime'
 });
@@ -111,6 +114,22 @@ export function renamedFile(original, wanted) {
   let name = cleanFileName(wanted);
   if (extension && fileExtension(name) !== extension) name = cleanFileName(`${name}.${extension}`);
   return name;
+}
+
+/** Czas nagrania: „0:42”, „12:05”, „1:02:05”. */
+export function formatDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const pad = (value) => String(value).padStart(2, '0');
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(total % 60)}` : `${minutes}:${pad(total % 60)}`;
+}
+
+/** Nazwa nagrania z datą i godziną: „Notatka głosowa 2026-10-19 14.39.m4a”. */
+export function recordingName(date, extension) {
+  const pad = (value) => String(value).padStart(2, '0');
+  const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return `Notatka głosowa ${day} ${pad(date.getHours())}.${pad(date.getMinutes())}.${extension}`;
 }
 
 /** Przeglądarka na komputerze pokaże plik sama (w nowej karcie): PDF, obrazy, tekst, nagrania. */

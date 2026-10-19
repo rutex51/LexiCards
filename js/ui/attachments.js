@@ -3,9 +3,9 @@
 // PowerPoint, Książki, „Zachowaj w Plikach”…); na komputerze PDF, obrazy i tekst otwierają się
 // w nowej karcie przeglądarki, a pozostałe pliki są pobierane i otwierają się w swoich programach.
 
-import { FILE_KIND_NAMES, fileExtension, fileKind, opensInBrowser } from '../core/note-files.js';
+import { FILE_KIND_NAMES, fileExtension, fileKind, formatDuration, opensInBrowser } from '../core/note-files.js';
 import { formatSize } from '../core/text.js';
-import { confirmDialog, openMenu, showError, toast } from './dialogs.js';
+import { confirmDialog, mountDialog, openMenu, showError, toast } from './dialogs.js';
 import { h } from './dom.js';
 import { downloadFile, prefersShareSheet } from './files.js';
 import { icon } from './icons.js';
@@ -16,6 +16,8 @@ const TAB_URL_LIFETIME = 5 * 60 * 1000;
 /** Plakietka z rozszerzeniem pliku w kolorze rodzaju (PDF – czerwona, Word – niebieska…). */
 export function fileBadge(meta) {
   const kind = fileKind(meta.name, meta.type);
+  // Nagranie (notatka głosowa) – mikrofon zamiast rozszerzenia.
+  if (kind === 'audio') return h('span', { class: 'file-badge file-badge--audio', 'aria-hidden': 'true' }, icon('mic', { size: 16 }));
   const label = (fileExtension(meta.name) || 'plik').slice(0, 4).toUpperCase();
   return h('span', { class: `file-badge file-badge--${kind}`, 'aria-hidden': 'true' }, label);
 }
@@ -23,7 +25,28 @@ export function fileBadge(meta) {
 /** Opis pliku: „PDF, 2,1 MB”; brakujący plik – „brak pliku na tym urządzeniu”. */
 export function fileDescription(meta) {
   if (meta.missing) return 'brak pliku na tym urządzeniu';
-  return `${FILE_KIND_NAMES[fileKind(meta.name, meta.type)]}, ${formatSize(meta.size)}`;
+  const length = meta.duration ? `${formatDuration(meta.duration)}, ` : '';
+  return `${FILE_KIND_NAMES[fileKind(meta.name, meta.type)]}, ${length}${formatSize(meta.size)}`;
+}
+
+/** Odtwarzacz nagrania (notatka głosowa) w okienku aplikacji – bez wychodzenia z notatki. */
+function openPlayer(file) {
+  const url = URL.createObjectURL(file);
+  let dialog;
+  const audio = h('audio', { class: 'audio-player__audio', controls: true, preload: 'metadata', src: url, dataset: { testid: 'audio-player' } });
+  const panel = h('div', { class: 'alert__panel audio-player', role: 'dialog', 'aria-label': `Odtwarzanie: ${file.name}` },
+    h('h2', { class: 'alert__title' }, file.name),
+    audio,
+    h('div', { class: 'alert__actions' },
+      h('button', { type: 'button', class: 'button button--secondary', onClick: () => dialog.close('done') }, 'Zamknij')));
+  dialog = mountDialog('alert', panel, {
+    onClose: () => {
+      audio.pause();
+      URL.revokeObjectURL(url);
+    }
+  });
+  audio.play().catch(() => {});
+  return dialog;
 }
 
 const missingMessage = (meta) => `Pliku „${meta.name}” nie ma na tym urządzeniu. Przywróć plik obrazów i załączników w Ustawieniach (Kopia zapasowa).`;
@@ -98,6 +121,17 @@ export function openAttachment(meta, load) {
   };
   const probe = new File([], meta.name, { type: meta.type || 'application/octet-stream' });
   const items = [];
+  // Nagranie można odsłuchać w aplikacji (start w obsłudze dotknięcia – gdy plik już wczytany).
+  if (fileKind(meta.name, meta.type) === 'audio') {
+    items.push({
+      label: 'Odtwórz',
+      icon: 'play',
+      onSelect: async () => {
+        const loaded = file ?? await ready();
+        if (loaded) openPlayer(loaded);
+      }
+    });
+  }
   if (prefersShareSheet(probe)) {
     items.push({
       label: 'Otwórz lub zapisz…',

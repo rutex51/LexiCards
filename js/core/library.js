@@ -108,7 +108,7 @@ function newNoteFile(lessonID, file) {
   const name = cleanFileName(file.name);
   if (!bytes || bytes.byteLength === 0) throw errors.invalidFile(name);
   if (bytes.byteLength > NOTE_FILE_MAX_BYTES) throw errors.fileTooLarge(name);
-  return makeNoteFile(lessonID, { name, type: fileTypeOf(name, file.type), bytes }, file.crc ?? crc32(bytes));
+  return makeNoteFile(lessonID, { name, type: fileTypeOf(name, file.type), bytes, duration: file.duration }, file.crc ?? crc32(bytes));
 }
 
 /** Opisy obrazów i załączników notatki (starsze notatki nie mają pola `files`). */

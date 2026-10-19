@@ -28,7 +28,8 @@ js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspóln
 js/ui/charts.js            wykresy SVG (w czasie, pasek udziałów, miernik) z podpowiedzią i tabelą danych
 js/ui/listen-player.js     odtwarzacz słuchania: kolejne kroki czytane syntezatorem mowy, pauza, dalej, powtórz
 js/ui/notes.js             okno notatki lekcji: podgląd, edytor z paskiem formatowania, obrazy, załączniki, powiększanie
-js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie)
+js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
+js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/images.js            obrazy w przeglądarce: odczyt, zmniejszanie dużych zdjęć, adresy do wyświetlenia
 js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
@@ -73,7 +74,7 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | `studySessions` | dziennik zakończonych sesji nauki | – |
 | `quizSessions` | historia wyników quizów: rodzaj, kierunek, liczby odpowiedzi, procent, próg, zaliczenie, czas, limit, błędne pojęcia | – |
 | `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki i quizu (od 1.2 okres powtórek lekcji utrwalonych `consolidatedReviewDays` i znacznik `domainColorsGray`), trwająca sesja nauki i trwający quiz | – |
-| `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML (`html` po polsku, od 1.6 `htmlEN` po angielsku), opis obrazów (typ, wymiary, rozmiar, CRC-32, od 1.6 `label` – sygnatura), `imagesFirst` – obrazy bez odwołania w podglądzie przed tekstem (od 1.5) i od 1.8 `files` – opis załączników (nazwa, typ, rozmiar, CRC-32) – w pamięci | identyfikator = `lessonID` |
+| `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML (`html` po polsku, od 1.6 `htmlEN` po angielsku), opis obrazów (typ, wymiary, rozmiar, CRC-32, od 1.6 `label` – sygnatura), `imagesFirst` – obrazy bez odwołania w podglądzie przed tekstem (od 1.5) i od 1.8 `files` – opis załączników (nazwa, typ, rozmiar, CRC-32, od 1.10 `duration` – czas nagrania w sekundach) – w pamięci | identyfikator = `lessonID` |
 | `noteImages` | bajty obrazów notatek (`ArrayBuffer`) – czytane z bazy dopiero przy otwarciu notatki | `lessonID` |
 | `noteFiles` | bajty załączników notatek (od 1.8, `ArrayBuffer`, do 50 MB) – czytane dopiero przy otwarciu pliku | `lessonID` |
 
@@ -104,6 +105,17 @@ Decyzje:
   z plikiem (bajty są czytane już przy otwarciu menu, żeby udostępnianie zaczęło się w obsłudze
   dotknięcia, czego wymaga Safari); na komputerze PDF, obrazy i tekst – nowa karta z adresem
   `blob:`, pozostałe – pobranie.
+- **Notatka głosowa** (od 1.10, `js/ui/recorder.js`): `getUserMedia` + `MediaRecorder` (64 kb/s,
+  kawałki co sekundę, więc przerwane nagranie nie przepada w całości). Format: AAC w `.m4a`, gdy
+  przeglądarka go nagrywa (Safari; Chrome i Edge z systemowym koderem), inaczej Opus w `.webm`
+  (Opus w `.m4a` odtwarza mniej programów). Czas liczony bez pauz, limit 90 minut (ok. 43 MB – poniżej
+  limitu załącznika). W trakcie nagrywania `navigator.wakeLock` trzyma ekran włączony (prośba ponawiana
+  po powrocie do aplikacji); koniec ścieżki mikrofonu (system go odebrał) kończy nagranie z tym, co
+  jest. Edytor notatki (`js/ui/notes.js`) pokazuje przyklejony pasek nagrywania i nie blokuje niczego
+  innego; nagranie dochodzi do `state.files` jak zwykły nowy załącznik (z polem `duration`), a
+  `save()` najpierw czeka na `finishRecording()`. Trwające nagranie zajmuje miejsce w limicie 30
+  załączników, a edytor jest „zmieniony” (pytanie przy zamknięciu). Odtwarzanie – `<audio>` w okienku
+  (`openPlayer`), adres `blob:` zwalniany po zamknięciu.
 - **Utrwalenie tylko w lekcji** (od 1.2). Moduł nie ma własnego pola: jest utrwalony, gdy ma
   lekcje i wszystkie są utrwalone (`isModuleConsolidated()`), a „Oznacz jako utrwalony” oznacza
   wszystkie jego lekcje. Dzięki temu nie ma dwóch źródeł prawdy: nowa lekcja (nieoznaczona)
@@ -694,6 +706,7 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
   trwałość po przeładowaniu, praca offline, aktualizacja wydania, klawiatura. Gesty na fiszce
   są wykonywane zdarzeniami dotyku przeglądarki, a syntezator mowy zastępuje atrapa.
   Upływ czasu przy powtórkach i limit czasu quizu symuluje zegar Playwright (`context.clock`).
+  Mikrofon (notatka głosowa) to udawane urządzenie Chromium (`--use-fake-device-for-media-stream`).
 
 ## Możliwy dalszy rozwój
 
