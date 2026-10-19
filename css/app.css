@@ -5592,6 +5592,181 @@ svg.icon--note { color: var(--note-icon); }
 
 .drawing__pill[hidden] { display: none; }
 .drawing__pill--info { pointer-events: none; }
+button.drawing__pill { color: var(--text); font-weight: 500; }
+button.drawing__pill .icon { color: var(--text-2); }
+.drawing__pill--symbol { justify-content: center; min-width: 36px; padding: 0 10px; font-size: 1.15rem; font-weight: 600; }
+.drawing__pill--notice { background: var(--toast-bg); color: var(--toast-text); }
+
+/* Od 1.14: kształt zaznaczania (prostokąt, lasso), własne kolory na pasku, „+” – panel koloru. */
+.drawing__tool[aria-checked="true"] { background: var(--fill); }
+
+.drawing__swatch::before,
+.drawing__swatch > .icon { grid-area: 1 / 1; }
+
+.drawing__swatch:not(.drawing__swatch--custom) + .drawing__swatch--custom { margin-left: 6px; }
+
+.drawing__swatch--add::before {
+  background: conic-gradient(#ff3b30, #ffcc00, #34c759, #32ade6, #5856d6, #ff2d92, #ff3b30);
+}
+
+.drawing__swatch--add > .icon {
+  z-index: 1;
+  color: #ffffff;
+  stroke-width: 2.6;
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.55));
+}
+
+.drawing__swatch--add[aria-expanded="true"]::before {
+  box-shadow: 0 0 0 2px var(--elevated), 0 0 0 4px var(--text);
+}
+
+.drawing__chip--accent { background: var(--accent-fill); color: var(--on-accent); }
+.drawing__chip--block { display: block; width: 100%; margin: 10px 0 0; }
+
+/* Polecenia zaznaczenia na telefonie – same ikony (napis czyta czytnik ekranu), krótsze napisy na pasku. */
+.drawing__narrow-label { display: none; }
+
+@media (max-width: 599px) {
+  .drawing__selection-label { display: none; }
+  .drawing__selection-button { padding: 0 9px; }
+  .drawing__wide-label { display: none; }
+  .drawing__narrow-label { display: inline; }
+}
+
+/* Panele pod paskiem: przewijane, gdy ekran jest niski (telefon w poziomie). */
+.drawing__settings {
+  max-height: calc(100dvh - 190px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Własny kolor: siatka (12 odcieni × 6 jasności i szarości), suwaki RGB z kodem HEX, pipetka. */
+.drawing__color-body { margin-top: 12px; }
+
+.drawing__color-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  overflow: hidden;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--separator);
+}
+
+.drawing__grid-color {
+  aspect-ratio: 1;
+  background: var(--swatch);
+}
+
+.drawing__grid-color[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 2px #ffffff, inset 0 0 0 4px rgba(0, 0, 0, 0.72);
+}
+
+.drawing__channels {
+  display: grid;
+  gap: 4px;
+}
+
+.drawing__channel-row {
+  display: grid;
+  grid-template-columns: 38px 1fr 34px;
+  align-items: center;
+  gap: 10px;
+}
+
+.drawing__channel-name {
+  color: var(--text-2);
+  font-size: var(--size-sub);
+  font-weight: 600;
+}
+
+.drawing__channel-value {
+  color: var(--text-2);
+  font-size: var(--size-sub);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.drawing__channel::-webkit-slider-runnable-track {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--track, var(--fill));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.drawing__channel::-moz-range-track {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--track, var(--fill));
+}
+
+.drawing__channel::-moz-range-progress { background: transparent; }
+.drawing__channel::-webkit-slider-thumb { margin-top: -7px; }
+
+.drawing__hex,
+.drawing__scale-value,
+.drawing__scale-unit {
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background-color: var(--fill);
+}
+
+.drawing__hex {
+  grid-column: 2 / 4;
+  margin-top: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: uppercase;
+}
+
+.drawing__hex[aria-invalid="true"],
+.drawing__scale-value[aria-invalid="true"] { box-shadow: inset 0 0 0 1.5px var(--danger); }
+
+.drawing__picker-hint {
+  color: var(--text-2);
+  font-size: var(--size-sub);
+  line-height: 1.4;
+}
+
+.drawing__color-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.drawing__color-footer .drawing__chip { margin-left: 0; }
+
+.drawing__color-preview {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 28%, transparent);
+}
+
+.drawing__color-code {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--size-sub);
+}
+
+/* Linijka i skala: „1 kratka = [liczba] [jednostka]”, szacunek skali na ekranie, przyciąganie. */
+.drawing__scale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawing__scale > span { font-weight: 500; white-space: nowrap; }
+.drawing__scale-value { flex: none; width: 6.5em; }
+.drawing__scale-unit { flex: 1; min-width: 0; height: 36px; padding-right: 28px; background-position: right 4px center; white-space: nowrap; }
+
+.drawing__settings-switch .switch {
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 6px 0;
+  box-shadow: none;
+}
 
 /* ------------------------------------------------------------------ 13. postęp i utrwalenie */
 

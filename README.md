@@ -1,4 +1,4 @@
-# LexiCards 1.13
+# LexiCards 1.14
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -22,8 +22,9 @@ Notatka głosowa nagrywana w trakcie pisania notatki (wersja 1.10): [docs/RELEAS
 Równania w notatkach – zapis tekstem, wzory w podglądzie, ściągawka (wersja 1.11): [docs/RELEASE-1.11.md](docs/RELEASE-1.11.md).
 Rysunki odręczne w notatce – rysik z naciskiem, zakreślacz, gumka, rysowanie na zdjęciu (wersja 1.12): [docs/RELEASE-1.12.md](docs/RELEASE-1.12.md).
 Pola tekstowe i wzory na rysunku (wersja 1.13): [docs/RELEASE-1.13.md](docs/RELEASE-1.13.md).
+Skala na linijce, własne kolory, zaznaczanie fragmentów i lasso, kopiuj i wklej na rysunku (wersja 1.14): [docs/RELEASE-1.14.md](docs/RELEASE-1.14.md).
 
-## Co potrafi wersja 1.13
+## Co potrafi wersja 1.14
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -69,7 +70,11 @@ Pola tekstowe i wzory na rysunku (wersja 1.13): [docs/RELEASE-1.13.md](docs/RELE
   z naciskiem rysika (Apple Pencil, rysik w laptopie), zakreślacz, gumka całych kresek albo
   fragmentów (cztery wielkości), zaznaczanie prostokątem (przesuń, powiel, usuń), linijka z kątem,
   kolory, grubości, cofnij i ponów, tło gładkie, w linie albo w kratkę, a od 1.13 pola tekstowe
-  i wzory (zapis jak w notatce). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
+  i wzory (zapis jak w notatce). Od 1.14 linijka ma podziałkę w skali rysunku (1 kratka = mm, cm,
+  m, km albo cale, stopy, jardy, mile; szacunek skali na ekranie, skala 1:1), zero przyciągane do
+  przecięć i linii (prostopadle), pióro – własne kolory (siatka, suwaki RGB, pipetka; trzy ostatnie
+  zapamiętane), zaznaczanie – fragmenty (prostokąt od prawej, lasso zgodnie ze wskazówkami zegara)
+  i lasso, a zaznaczenie – kopiuj i wklej, także między rysunkami. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
@@ -118,7 +123,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.10 – notatka głosowa](docs/RELEASE-1.10.md),
 [wersja 1.11 – równania w notatkach](docs/RELEASE-1.11.md),
 [wersja 1.12 – rysunki odręczne](docs/RELEASE-1.12.md),
-[wersja 1.13 – pola tekstowe i wzory na rysunku](docs/RELEASE-1.13.md).
+[wersja 1.13 – pola tekstowe i wzory na rysunku](docs/RELEASE-1.13.md),
+[wersja 1.14 – skala na linijce, własne kolory, fragmenty i lasso, kopiuj i wklej](docs/RELEASE-1.14.md).
 
 ## Jak korzystać
 
@@ -305,6 +311,29 @@ jest rysik). Esc zdejmuje zaznaczenie. **Linijka** (przycisk na pasku) pokazuje 
 w pigułce w rogu: przesuwasz ją palcem albo myszą, obracasz dwoma palcami albo uchwytem obrotu
 (okrągłe przyciski na linijce); przy 0°, 45°, 90° i 135° lekko przyskakuje. Kreska zaczęta na
 linijce albo przy niej biegnie prosto wzdłuż jej krawędzi.
+**Skala i przyciąganie** (od 1.14): na linijce są liczby w skali rysunku – od zera na środku w obie
+strony, z jednostką obok zera, a między liczbami kreski jak na zwykłej linijce. Dotknięcie pigułki
+„Linijka …°” otwiera panel **Linijka i skala**: **1 kratka =** liczba i jednostka (mm, cm, m, km,
+in – cale, ft – stopy, yd – jardy, mi – mile), szacunek „kratka ma na tym ekranie ok. … mm – skala
+ok. 1:…” (przybliżony – przeglądarka nie podaje wielkości ekranu), **Skala 1:1 – kratka jak na
+ekranie** i przełącznik przyciągania. Skala zapisuje się z rysunkiem. Kreska wzdłuż linijki pokazuje
+długość w skali (przy rysiku i w pigułce „Kreska: …”). Zero przy krawędzi linijki przyskakuje do
+przecięcia kresek albo do linii (kółko w tym miejscu, w pigułce „na przecięciu” albo „na linii”);
+linijka prawie prostopadła do tej linii (do 8°) ustawia się dokładnie prostopadle, a przycisk **⊥**
+obok pigułki – z dowolnego kąta. Uchwyt obraca linijkę wokół zera przyciągniętego do linii.
+**Własne kolory** (od 1.14): **+** za kolorami palety otwiera panel z kartami **Siatka**, **Suwaki**
+(R, G, B i kod HEX) i **Pipetka** (dotknięcie albo przeciągnięcie po rysunku, z lupą; pobiera kolor
+także ze zdjęcia); **Użyj koloru** ustawia kolor pióra albo zakreślacza. Trzy ostatnie własne kolory
+zostają na palecie (też w oknie pola tekstowego i wzoru).
+**Fragmenty i lasso** (od 1.14): przy zaznaczaniu wybierasz **prostokąt** albo **lasso** oraz tryb
+**Auto**, **Całe** albo **Fragmenty**. W trybie Auto prostokąt od lewej do prawej i lasso przeciwnie
+do ruchu wskazówek zegara zaznaczają kreski leżące w całości w środku (niebiesko), a prostokąt od
+prawej do lewej i lasso zgodnie ze wskazówkami – tylko to, co w środku („Fragment”, zielono): **Usuń**
+wycina wnętrze, przeciągnięcie przesuwa wycięty kawałek, **Powiel** i **Kopiuj** biorą samo wnętrze.
+Zdjęcie pod kreskami nie jest cięte, pole tekstowe i wzór – tylko w całości. Zaznaczenie fragmentu
+zdjęte bez zmian nie zostawia śladu (kreski są całe, bez kroku cofania). **Kopiuj** nad zaznaczeniem
+(i Ctrl+C), **Wklej** na pasku zaznaczania (i Ctrl+V), Ctrl+X – wytnij; schowek działa między
+rysunkami i po ponownym otwarciu aplikacji (na tym urządzeniu).
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno
 **Nowe pole tekstowe** – tekst (Enter zaczyna nowy wiersz, długi wiersz łamie się sam), wielkość
 (Mała, Średnia, Duża) i kolor; przycisk **Σ** – okno **Nowy wzór**: zapis jak we wzorze w notatce,
@@ -546,7 +575,8 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 18. **Wersja 1.11: równania w notatkach – zapis tekstem, wzory w podglądzie, ściągawka, czytanie słowami** – gotowe.
 19. **Wersja 1.12: rysunki odręczne w notatce – rysik z naciskiem, zakreślacz, gumka całych kresek i fragmentów, zaznaczanie prostokątem, linijka z kątem, rysowanie na zdjęciu (etap 1)** – gotowe.
 20. **Wersja 1.13: pola tekstowe i wzory na rysunku** – gotowe.
-21. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
+21. **Wersja 1.14: skala na linijce (SI i imperialne, szacunek ekranu, 1:1), zero linijki na przecięciach i liniach (prostopadle), własne kolory (siatka, suwaki RGB, pipetka), zaznaczanie fragmentów prostokątem i lassem, kopiuj i wklej** – gotowe.
+22. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

@@ -3,12 +3,16 @@
 // rysunek w notatce (zapis, kopia lekcji, kopia zapasowa w obu plikach). Od 1.12.1: gumka
 // fragmentów, zaznaczanie prostokątem i przesuwanie, linijka, historia jako stany przed i po zmianie.
 // Od 1.13: pola tekstowe i wzory na rysunku (dane, gumka, zaznaczanie, zapis i kopia zapasowa).
+// Od 1.14: skala i jej szacunek na ekranie, przyciąganie linijki, obszar zaznaczania (prostokąt,
+// lasso, kierunek obrysu, cięcie kresek na brzegu), własne kolory.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  DrawingHistory, PAGE_HEIGHT, PAGE_WIDTH, PEN_WIDTHS, addPoint, cleanDrawing, cleanToolSettings, defaultToolSettings,
+  DrawingHistory, PAGE_HEIGHT, PAGE_WIDTH, PEN_WIDTHS, addPoint, cleanDrawing, cleanScale, cleanToolSettings, defaultToolSettings,
+  formatLength, formatNumber, formatRatio, hexToRgb, hslToHex, isClockwise, lineAngleDifference, perpendicularAngle, pointInPolygon,
+  rectPolygon, rememberColor, rgbToHex, screenScale, screenScaleValue, snapToStrokes, splitByPolygon, strokesInPolygon,
   drawingWithoutPhotoBytes, emptyDrawing, eraseAt, eraseFromStroke, hasContent, isElement, nextDrawingLabel, penWidth, rulerDegrees,
   rulerOffset, rulerPoint, selectionBounds, smoothPoint, snapRulerAngle, strokeBounds, strokesAt, strokesInRect, touchesStroke,
   translateStroke
@@ -295,6 +299,110 @@ test('pola tekstowe i wzory: sprawdzanie danych (puste, złe liczby i kolory odr
   await restoreMedia(fresh, archive.blob);
   const [restored] = await fresh.noteImages(lesson.id);
   assert.deepEqual(restored.drawing.strokes.slice(1), [textBox(), formula()], 'pole tekstowe i wzór po przywróceniu kopii');
+});
+
+test('skala rysunku (1.14): 1 kratka = X jednostek SI albo imperialnych, długość kreski, szacunek skali ekranu, 1:1', () => {
+  assert.deepEqual(cleanScale(null), { value: 1, unit: 'cm' });
+  assert.deepEqual(cleanScale({ value: 2.5, unit: 'ft' }), { value: 2.5, unit: 'ft' });
+  assert.deepEqual(cleanScale({ value: -1, unit: 'm' }), { value: 1, unit: 'cm' });
+  assert.deepEqual(cleanScale({ value: 1, unit: 'łokieć' }), { value: 1, unit: 'cm' });
+  assert.equal(formatNumber(0.5), '0,5');
+  assert.equal(formatNumber(12.345), '12,3');
+  assert.equal(formatNumber(1250), '1250');
+  assert.equal(formatLength(88, { value: 0.5, unit: 'm' }), '1 m', 'dwie kratki po 0,5 m');
+  assert.equal(formatLength(154, { value: 1, unit: 'in' }), '3,5 in');
+  // Kratka 26,4 px na ekranie o 132 px na cal (iPad) – 5,08 mm; kratka = 1 m – skala ok. 1:200.
+  const estimate = screenScale({ value: 1, unit: 'm' }, 26.4, 132);
+  assert.ok(Math.abs(estimate.millimeters - 5.08) < 0.01);
+  assert.equal(formatRatio(estimate.ratio), '1:200');
+  assert.equal(formatRatio(2540), '1:2 500');
+  assert.equal(formatRatio(0.5), '2:1', 'powiększenie');
+  assert.equal(formatRatio(1.587), '1:1,6', 'mała skala – też dwie cyfry');
+  assert.equal(formatRatio(1.003), '1:1');
+  assert.equal(formatRatio(0.4), '2,5:1');
+  assert.equal(formatRatio(12345), '1:12 000');
+  assert.equal(screenScaleValue(5.08, 'cm'), 0.508, '1:1 – kratka tyle, ile na ekranie');
+  assert.equal(screenScaleValue(25.4, 'in'), 1);
+  const drawing = cleanDrawing({ ...emptyDrawing(), scale: { value: 3, unit: 'yd' } });
+  assert.deepEqual(drawing.scale, { value: 3, unit: 'yd' });
+  assert.deepEqual(cleanDrawing({ width: 100, height: 100 }).scale, { value: 1, unit: 'cm' }, 'rysunek sprzed 1.14');
+});
+
+test('przyciąganie linijki (1.14): przecięcie dwóch kresek przed linią, punkt na linii z kierunkiem, prostopadle', () => {
+  const crossA = { tool: 'pen', color: '#000000', points: [0, 0, 4, 100, 100, 4] };
+  const crossB = { tool: 'pen', color: '#000000', points: [0, 100, 4, 100, 0, 4] };
+  assert.deepEqual(snapToStrokes([crossA, crossB], 54, 50, 10), { x: 50, y: 50, kind: 'crossing' });
+  const flat = line(0, 50, 100, 50);
+  assert.deepEqual(snapToStrokes([flat], 40, 56, 10), { x: 40, y: 50, kind: 'line', angle: 0 });
+  assert.equal(snapToStrokes([flat], 40, 70, 10), null, 'za daleko');
+  assert.equal(snapToStrokes([{ tool: 'text', color: '#000000', x: 0, y: 0, size: 40, text: 'a', width: 100, height: 100 }], 50, 50, 10), null);
+  assert.ok(Math.abs(perpendicularAngle(0, 1.4) - Math.PI / 2) < 1e-9);
+  assert.ok(Math.abs(perpendicularAngle(0, -1.4) + Math.PI / 2) < 1e-9, 'bliższy z dwóch kierunków');
+  assert.ok(Math.abs(lineAngleDifference(0.1, Math.PI + 0.05) - 0.05) < 1e-9, 'prosta bez zwrotu');
+});
+
+test('obszar zaznaczania (1.14): kierunek lassa, punkt w wielokącie, całe kreski w lassie, kreski cięte na brzegu', () => {
+  assert.equal(isClockwise([0, 0, 10, 0, 10, 10, 0, 10]), true, 'w prawo, w dół, w lewo – zgodnie ze wskazówkami (ekran)');
+  assert.equal(isClockwise([0, 0, 0, 10, 10, 10, 10, 0]), false);
+  const triangle = [0, 0, 100, 0, 0, 100];
+  assert.equal(pointInPolygon(20, 20, triangle), true);
+  assert.equal(pointInPolygon(80, 80, triangle), false);
+  const strokes = [line(10, 10, 30, 10), line(10, 10, 90, 90), { tool: 'math', color: '#000000', x: 5, y: 20, size: 40, source: 'x', width: 20, height: 20 }];
+  assert.deepEqual(strokesInPolygon(strokes, triangle), [0, 2]);
+
+  const square = rectPolygon({ x0: 20, y0: -10, x1: 60, y1: 10 });
+  const cut = splitByPolygon({ tool: 'pen', color: '#000000', points: [0, 0, 2, 100, 0, 6] }, square);
+  assert.deepEqual(cut.inside.map((piece) => piece.points), [[20, 0, 2.8, 60, 0, 4.4]]);
+  assert.deepEqual(cut.outside.map((piece) => piece.points), [[0, 0, 2, 20, 0, 2.8], [60, 0, 4.4, 100, 0, 6]]);
+  const whole = line(25, 0, 55, 0);
+  assert.deepEqual(splitByPolygon(whole, square), { inside: [whole], outside: [] }, 'w całości w środku – ta sama kreska');
+  assert.equal(splitByPolygon(line(0, 50, 100, 50), square), null);
+  // Kreska wchodząca i wychodząca kilka razy (zygzak przez pas).
+  const zigzag = { tool: 'pen', color: '#000000', points: [10, 0, 2, 30, 0, 2, 30, 20, 2, 50, 20, 2, 50, 0, 2, 70, 0, 2] };
+  const band = rectPolygon({ x0: 0, y0: -5, x1: 100, y1: 5 });
+  const parts = splitByPolygon(zigzag, band);
+  assert.deepEqual(parts.inside.map((piece) => piece.points.filter((_, index) => index % 3 !== 2)), [[10, 0, 30, 0, 30, 5], [50, 5, 50, 0, 70, 0]]);
+  assert.deepEqual(parts.outside.map((piece) => piece.points.filter((_, index) => index % 3 !== 2)), [[30, 5, 30, 20, 50, 20, 50, 5]]);
+  const text = { tool: 'text', color: '#000000', x: 30, y: -5, size: 20, text: 'a', maxWidth: 100, width: 20, height: 10 };
+  assert.deepEqual(splitByPolygon(text, square), { inside: [text], outside: [] });
+  assert.equal(splitByPolygon({ ...text, x: 55 }, square), null, 'pole wystające poza obszar – bez cięcia, poza zaznaczeniem');
+
+  // Zaznaczenie fragmentu w edytorze: kreski przecięte po begin(); bez przesunięcia i usunięcia –
+  // rollback() przywraca kreski bez kroku cofania, z przesunięciem – jeden krok (cięcie i ruch).
+  const drawn = [line(0, 0, 100, 0)];
+  const history = new DrawingHistory(drawn);
+  history.add(line(0, 30, 100, 30));
+  const original = [...drawn];
+  history.begin();
+  const pieces = splitByPolygon(drawn[0], square);
+  drawn.splice(0, 1, ...pieces.outside, ...pieces.inside);
+  assert.equal(drawn.length, 4);
+  assert.equal(history.rollback(), true);
+  assert.deepEqual(drawn, original, 'kreski jak przed zaznaczeniem');
+  assert.equal(history.rollback(), false, 'bez begin() – nic do odrzucenia');
+  assert.equal(history.done.length, 1, 'bez nowego kroku');
+  history.begin();
+  drawn.splice(0, 1, ...pieces.outside, ...pieces.inside.map((piece) => translateStroke(piece, 0, 20)));
+  assert.equal(history.commit(), true);
+  assert.equal(history.undo(), true);
+  assert.deepEqual(drawn, original, 'cofnięcie przesunięcia fragmentu przywraca całą kreskę');
+});
+
+test('własne kolory (1.14): siatka HSL, RGB ↔ #rrggbb, trzy zapamiętane, kolor pióra własny w ustawieniach', () => {
+  assert.equal(hslToHex(0, 100, 50), '#ff0000');
+  assert.equal(hslToHex(120, 100, 25), '#008000');
+  assert.equal(hslToHex(0, 0, 100), '#ffffff');
+  assert.deepEqual(hexToRgb('#1a2b3c'), [26, 43, 60]);
+  assert.equal(rgbToHex([26, 43, 300]), '#1a2bff');
+  let colors = [];
+  for (const color of ['#111111', '#222222', '#333333', '#222222', '#AABBCC']) colors = rememberColor(colors, color);
+  assert.deepEqual(colors, ['#aabbcc', '#222222', '#333333']);
+  const tools = cleanToolSettings({ penColor: '#12ab34', highlighterColor: '#ffeeaa', customColors: ['#12AB34', 'zły', '#12ab34', '#000001', '#000002', '#000003'], selectShape: 'lasso', selectMode: 'region', rulerSnap: false });
+  assert.deepEqual([tools.penColor, tools.highlighterColor], ['#12ab34', '#ffeeaa']);
+  assert.deepEqual(tools.customColors, ['#12ab34', '#000001', '#000002']);
+  assert.deepEqual([tools.selectShape, tools.selectMode, tools.rulerSnap], ['lasso', 'region', false]);
+  const fallback = cleanToolSettings({ penColor: 'tęcza', selectShape: 'koło', selectMode: 'x' });
+  assert.deepEqual([fallback.penColor, fallback.selectShape, fallback.selectMode, fallback.rulerSnap], ['black', 'rect', 'auto', true]);
 });
 
 test('sygnatura nowego rysunku: kolejna wolna „Rysunek N”', () => {

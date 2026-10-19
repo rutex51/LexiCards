@@ -2,7 +2,10 @@
 // gumka całych kresek albo fragmentów (od 1.12.1), kolory, grubości, cofnij i ponów, tło gładkie /
 // w linie / w kratkę, rysowanie na zdjęciu, powiększanie i przesuwanie. Od 1.12.1 także
 // zaznaczanie prostokątem (przesuwanie, powielanie, usuwanie) i linijka z kątem, od 1.13 – pola
-// tekstowe i wzory (zapis jak w notatce, składany na płótnie przez core/math-layout.js).
+// tekstowe i wzory (zapis jak w notatce, składany na płótnie przez core/math-layout.js). Od 1.14:
+// skala rysunku i liczby na linijce, zero linijki przyciągane do przecięć i linii (prostopadle),
+// własne kolory (siatka, suwaki RGB, pipetka), zaznaczanie fragmentów prostokątem i lassem
+// (kierunek obrysu decyduje: całe kreski albo tylko wnętrze), kopiuj i wklej (też między rysunkami).
 //
 // Rysik i palec: gdy aplikacja raz zobaczy rysik (pointerType 'pen'), rysuje tylko rysik, a palec
 // przesuwa stronę (dłoń oparta o ekran nie zostawia śladów); bez rysika (iPhone) rysuje palec.
@@ -18,13 +21,16 @@
 
 import {
   DrawingHistory, ELEMENT_TEXT_MAX, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA,
-  HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, INK_COLORS, PAPERS, PAPER_LABELS, PAPER_STEP, SENSITIVITY_LABELS, TEXT_SIZES,
-  TEXT_SIZE_LABELS, addPoint, cleanToolSettings, defaultToolSettings, emptyDrawing, eraseAt, isElement, penWidth, rulerDegrees,
-  rulerOffset, rulerPoint, selectionBounds, smoothPoint, snapRulerAngle, strokesAt, strokesInRect, touchesStroke, translateStroke
+  HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, INK_COLORS, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
+  SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings,
+  defaultToolSettings, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, hexToRgb, hslToHex, isClockwise, isElement,
+  isHexColor, lineAngleDifference, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex, rulerDegrees, rulerOffset,
+  rulerPoint, screenScale, screenScaleValue, selectionBounds, smoothPoint, snapRulerAngle, snapToStrokes, splitByPolygon, strokeBounds,
+  strokesAt, strokesInPolygon, strokesInRect, touchesStroke, translateStroke
 } from '../core/drawing.js';
 import { layoutMath } from '../core/math-layout.js';
 import { plural } from '../core/text.js';
-import { field, segmented, textArea } from './components.js';
+import { field, segmented, textArea, toggle } from './components.js';
 import { confirmDialog, mountDialog, openFormSheet, showError } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
@@ -49,6 +55,30 @@ const TAP_SLOP = 5;
 const DUPLICATE_OFFSET = PAPER_STEP / 2;
 /** Zakres suwaków grubości pióra (jednostki rysunku). */
 const WIDTH_RANGE = { min: 0.5, max: 20 };
+/** Od 1.14: jak blisko zero linijki przyskakuje do przecięcia albo linii (px ekranu) i do kąta prostego. */
+const ZERO_SNAP = 20;
+const PERPENDICULAR_SNAP = (8 * Math.PI) / 180;
+const ZERO_COLOR = '#0058be';
+/** Lasso: najmniejszy odstęp kolejnych punktów obrysu (px ekranu). */
+const LASSO_STEP = 4;
+/** Zaznaczanie: całe kreski – niebieskie, fragmenty (tylko wnętrze obszaru) – zielone, kreskowane. */
+const SELECT_COLORS = { whole: '#0058be', region: '#1d8a3a' };
+const SELECT_FILLS = { whole: 'rgba(0, 88, 190, 0.07)', region: 'rgba(29, 138, 58, 0.09)' };
+const SHAPE_LABELS = { rect: 'Prostokąt', lasso: 'Lasso' };
+const SELECT_MODE_TITLES = {
+  auto: 'Według kierunku: prostokąt od lewej i lasso przeciwnie do wskazówek zegara – całe kreski; od prawej i zgodnie ze wskazówkami – fragmenty',
+  whole: 'Zawsze całe kreski (leżące w całości w środku)',
+  region: 'Zawsze fragmenty – tylko to, co w środku obszaru'
+};
+const SELECT_HINTS = {
+  rect: 'Od lewej do prawej – całe kreski, od prawej do lewej – fragmenty',
+  lasso: 'Przeciwnie do wskazówek zegara – całe kreski, zgodnie – fragmenty',
+  whole: 'Zaznaczasz całe kreski (w całości w środku)',
+  region: 'Zaznaczasz fragmenty – tylko to, co w środku'
+};
+/** Schowek rysunku (od 1.14) – też między rysunkami i po ponownym otwarciu aplikacji (na tym urządzeniu). */
+const CLIPBOARD_KEY = 'lexicards-drawing-clipboard';
+const CLIPBOARD_LIMIT = 1500000;
 
 function loadTools() {
   try {
@@ -82,8 +112,9 @@ function rememberPen() {
   }
 }
 
-const inkHex = (id) => (INK_COLORS.find((color) => color.id === id) ?? INK_COLORS[0]).hex;
-const highlighterHex = (id) => (HIGHLIGHTER_COLORS.find((color) => color.id === id) ?? HIGHLIGHTER_COLORS[0]).hex;
+// Kolor narzędzia: nazwa koloru z palety albo (od 1.14) własny kolor #rrggbb.
+const inkHex = (id) => (isHexColor(id) ? id : (INK_COLORS.find((color) => color.id === id) ?? INK_COLORS[0]).hex);
+const highlighterHex = (id) => (isHexColor(id) ? id : (HIGHLIGHTER_COLORS.find((color) => color.id === id) ?? HIGHLIGHTER_COLORS[0]).hex);
 
 /** Obraz (zdjęcie pod kreskami) z bajtów – do rysowania na płótnie. */
 async function loadPicture(photo) {
@@ -313,6 +344,92 @@ function previewStroke(tools) {
 }
 
 /**
+ * Ile pikseli CSS ma cal na tym ekranie (od 1.14 – szacunek skali). Przeglądarka nie podaje
+ * fizycznej wielkości ekranu, więc liczba wynika z rodzaju urządzenia: iPhone, iPad (mini),
+ * Mac, telefon i tablet z Androidem, inny komputer (Windows: zwykle 96, z powiększeniem ekranu – więcej).
+ */
+function screenPixelsPerInch() {
+  const agent = navigator.userAgent;
+  const ratio = window.devicePixelRatio || 1;
+  const shorter = Math.min(window.screen?.width ?? 0, window.screen?.height ?? 0);
+  if (/iPhone|iPod/.test(agent)) return ratio >= 3 ? 153 : 163;
+  // iPad z iPadOS przedstawia się jak Mac – odróżnia go ekran dotykowy.
+  if (/iPad/.test(agent) || (/Macintosh/.test(agent) && navigator.maxTouchPoints > 1)) return shorter > 0 && shorter <= 744 ? 163 : 132;
+  if (/Android/.test(agent)) return /Mobile/.test(agent) ? 160 : 135;
+  if (/Macintosh/.test(agent)) return 127;
+  return ratio > 1 ? 110 : 96;
+}
+
+/** Siatka kolorów (od 1.14): 12 odcieni w sześciu jasnościach i wiersz szarości od bieli do czerni. */
+const COLOR_GRID = (() => {
+  const hues = [0, 22, 40, 55, 85, 135, 170, 195, 215, 250, 280, 320];
+  const rows = [[90, 86], [85, 72], [80, 58], [78, 46], [72, 35], [65, 24]];
+  const colors = rows.flatMap(([saturation, lightness]) => hues.map((hue) => hslToHex(hue, saturation, lightness)));
+  for (let step = 0; step < 12; step += 1) colors.push(hslToHex(0, 0, 100 - (step * 100) / 11));
+  return colors;
+})();
+const COLOR_TABS = [['grid', 'Siatka'], ['sliders', 'Suwaki'], ['picker', 'Pipetka']];
+const CHANNEL_LABELS = ['Czerwony', 'Zielony', 'Niebieski'];
+
+/** Kolor #rrggbb z wpisanego kodu („#12ab34”, „12AB34”, „#1a3”) albo null. */
+function parseHex(text) {
+  const value = `#${text.trim().replace(/^#/, '').toLowerCase()}`;
+  if (/^#[0-9a-f]{3}$/.test(value)) return `#${[...value.slice(1)].map((digit) => digit + digit).join('')}`;
+  return isHexColor(value) ? value : null;
+}
+
+// ---- schowek rysunku (od 1.14): kreski, pola tekstowe i wzory – w pamięci i na urządzeniu
+
+let clipboard = null;
+
+function readClipboard() {
+  if (clipboard) return clipboard;
+  try {
+    const raw = JSON.parse(localStorage.getItem(CLIPBOARD_KEY) ?? 'null');
+    // Sprawdzone jak rysunek (zapis mógł pochodzić ze starszej wersji albo być uszkodzony).
+    const clean = raw && cleanDrawing({ width: 8192, height: 8192, strokes: raw.strokes });
+    if (clean?.strokes.length > 0) clipboard = { strokes: clean.strokes };
+  } catch {
+    // Pamięć urządzenia niedostępna – schowek tylko w tym oknie.
+  }
+  return clipboard;
+}
+
+function writeClipboard(strokes) {
+  clipboard = { strokes };
+  try {
+    const text = JSON.stringify(clipboard);
+    if (text.length <= CLIPBOARD_LIMIT) localStorage.setItem(CLIPBOARD_KEY, text);
+    else localStorage.removeItem(CLIPBOARD_KEY);
+  } catch {
+    // jak wyżej
+  }
+}
+
+/** Skopiowane kreski także jako obraz PNG w schowku systemu – do wklejenia w innej aplikacji (gdy przeglądarka pozwala). */
+function copyImage(strokes) {
+  try {
+    if (!navigator.clipboard?.write || typeof window.ClipboardItem !== 'function') return;
+    const bounds = selectionBounds(strokes);
+    const pad = 16;
+    const png = new Promise((resolve, reject) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.min(4096, Math.ceil(bounds.maxX - bounds.minX + pad * 2));
+      canvas.height = Math.min(4096, Math.ceil(bounds.maxY - bounds.minY + pad * 2));
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.translate(pad - bounds.minX, pad - bounds.minY);
+      for (const stroke of strokes) paintStroke(ctx, stroke);
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Brak obrazu'))), 'image/png');
+    });
+    navigator.clipboard.write([new window.ClipboardItem({ 'image/png': png })]).catch(() => {});
+  } catch {
+    // Schowek systemu niedostępny – zostaje schowek rysunku.
+  }
+}
+
+/**
  * Otwiera edytor rysunku. drawing – istniejący rysunek (edycja) albo null; photo – zdjęcie pod
  * kreskami dla nowego rysunku ({ bytes, type, width, height }); title – sygnatura w nagłówku.
  * Zwraca obietnicę: { drawing, image } po „Gotowe” albo null po „Anuluj” (i po „Gotowe” bez
@@ -322,23 +439,42 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
   return new Promise((resolve) => {
     // Pola tekstowe i wzory mierzone od nowa – czcionki tego urządzenia mogą być trochę inne.
     const drawing = source
-      ? { ...source, strokes: source.strokes.map((stroke) => (isElement(stroke) ? { ...stroke, ...measureElement(stroke) } : { ...stroke, points: [...stroke.points] })) }
+      ? {
+        ...source,
+        scale: cleanScale(source.scale),
+        strokes: source.strokes.map((stroke) => (isElement(stroke) ? { ...stroke, ...measureElement(stroke) } : { ...stroke, points: [...stroke.points] }))
+      }
       : emptyDrawing({ photo });
     const history = new DrawingHistory(drawing.strokes);
     const tools = loadTools();
-    /** Narzędzie: 'pen', 'highlighter', 'eraser' albo 'select' (zaznaczanie prostokątem). */
+    /** Narzędzie: 'pen', 'highlighter', 'eraser' albo 'select' (zaznaczanie prostokątem albo lassem). */
     let tool = 'pen';
     let picture = null;
     let penSeen = penSeenBefore();
     let changed = false;
     let dialog;
     let result = null;
-    /** Linijka { x, y, angle } w jednostkach strony albo null (schowana). Nie jest częścią rysunku. */
+    /**
+     * Linijka { x, y, angle, snap } w jednostkach strony albo null (schowana). Nie jest częścią
+     * rysunku. snap (od 1.14) – punkt, do którego przyskoczyło zero przy krawędzi, albo null.
+     */
     let ruler = null;
     /** Zaznaczone kreski (te same obiekty co w rysunku). */
     let selection = new Set();
+    /** Od 1.14: 'whole' – całe kreski, 'region' – fragmenty (kreski przecięte na brzegu obszaru). */
+    let selectionKind = 'whole';
+    /** Kreski przecięte przy zaznaczaniu fragmentu, jeszcze bez kroku cofania (begin() bez commit()). */
+    let regionPending = false;
     /** Kółko gumki pod myszą albo zawieszonym rysikiem (jednostki strony) albo null. */
     let hover = null;
+    /** Pipetka (od 1.14): dotknięcie płótna pobiera kolor; lupa pod palcem, rysikiem albo kursorem. */
+    let picking = false;
+    let pickHover = null;
+    /** Długość ostatniej kreski wzdłuż linijki (jednostki strony) albo null. */
+    let measured = null;
+    /** Kolejne wklejenia tego samego schowka – każde trochę niżej i w prawo. */
+    let pasteCount = 0;
+    const pixelsPerInch = screenPixelsPerInch();
 
     // Widok: skala (px ekranu na jednostkę rysunku) i przesunięcie strony; zoom – względem „cała strona”;
     // top – miejsce u góry płótna zajęte przez pasek narzędzi (pasek leży nad płótnem).
@@ -347,24 +483,22 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const base = h('canvas', { class: 'drawing__canvas', 'aria-hidden': 'true' });
     const live = h('canvas', { class: 'drawing__canvas drawing__canvas--live', role: 'img', 'aria-label': `Płótno rysunku: ${title}`, dataset: { testid: 'drawing-canvas' } });
     const selectionCount = h('span', { class: 'drawing__selection-count', dataset: { testid: 'drawing-selection-count' } });
-    const editButton = h('button', {
-      type: 'button', class: 'drawing__selection-button', hidden: true, dataset: { testid: 'drawing-selection-edit' },
-      onClick: () => {
-        const [only] = selection;
-        if (isElement(only)) editElement(only.tool, only);
-      }
-    }, icon('edit', { size: 18 }), 'Edytuj');
+    // Na wąskim ekranie przyciski zaznaczenia mają same ikony (napis zostaje dla czytnika ekranu).
+    const selectionButton = (testID, iconName, label, hint, onClick, danger = false) => h('button', {
+      type: 'button', class: danger ? 'drawing__selection-button drawing__selection-button--danger' : 'drawing__selection-button',
+      'aria-label': label, title: hint, dataset: { testid: testID }, onClick
+    }, icon(iconName, { size: 18 }), h('span', { class: 'drawing__selection-label' }, label));
+    const editButton = selectionButton('drawing-selection-edit', 'edit', 'Edytuj', 'Edytuj', () => {
+      const [only] = selection;
+      if (isElement(only)) editElement(only.tool, only);
+    });
+    editButton.hidden = true;
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
       selectionCount,
       editButton,
-      h('button', {
-        type: 'button', class: 'drawing__selection-button', dataset: { testid: 'drawing-selection-duplicate' },
-        onClick: () => duplicateSelection()
-      }, icon('copy', { size: 18 }), 'Powiel'),
-      h('button', {
-        type: 'button', class: 'drawing__selection-button drawing__selection-button--danger', dataset: { testid: 'drawing-selection-delete' },
-        onClick: () => deleteSelection()
-      }, icon('trash', { size: 18 }), 'Usuń'));
+      selectionButton('drawing-selection-copy', 'copy', 'Kopiuj', 'Kopiuj (Ctrl+C) – wklejasz przyciskiem „Wklej” albo Ctrl+V, także w innym rysunku', () => copySelection()),
+      selectionButton('drawing-selection-duplicate', 'duplicate', 'Powiel', 'Powiel – kopia obok', () => duplicateSelection()),
+      selectionButton('drawing-selection-delete', 'trash', 'Usuń', 'Usuń (Delete)', () => deleteSelection(), true));
     stage.append(base, live, selectionBar);
 
     const fitScale = () => Math.min((view.width - STAGE_MARGIN * 2) / drawing.width, (view.height - view.top - STAGE_MARGIN) / drawing.height);
@@ -388,6 +522,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       view.y = anchorY - unitY * view.scale;
       clampView();
       zoomButton.textContent = `${Math.round(next * 100)}%`;
+      refreshRulerPanel?.();
       requestRender();
     };
     /** Punkt zdarzenia (albo { clientX, clientY }) w jednostkach strony. */
@@ -425,6 +560,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     };
 
     // ---- linijka (na ekranie stałej szerokości, położenie i kąt w jednostkach strony)
+    const rulerHalf = () => RULER_WIDTH / 2 / view.scale;
     const rulerHandles = () => {
       const distance = Math.min(170, Math.max(70, Math.min(view.width, view.height) * 0.3)) / view.scale;
       return [rulerPoint(ruler, -distance, 0), rulerPoint(ruler, distance, 0)];
@@ -433,12 +569,52 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const rulerHit = (point) => {
       if (!ruler) return null;
       if (rulerHandles().some((handle) => Math.hypot(handle.x - point.x, handle.y - point.y) <= (RULER_HANDLE_RADIUS + 6) / view.scale)) return 'handle';
-      return Math.abs(rulerOffset(ruler, point.x, point.y).across) <= RULER_WIDTH / 2 / view.scale ? 'body' : null;
+      return Math.abs(rulerOffset(ruler, point.x, point.y).across) <= rulerHalf() ? 'body' : null;
     };
+    /** Linijka pod kątem `angle` z zerem krawędzi `snap.side` w punkcie `snap`. */
+    const zeroAt = (snap, angle, perpendicular) => {
+      const offset = rulerPoint({ x: 0, y: 0, angle }, 0, snap.side * rulerHalf());
+      return {
+        x: snap.x - offset.x, y: snap.y - offset.y, angle,
+        snap: { x: snap.x, y: snap.y, kind: snap.kind, side: snap.side, angle: snap.angle ?? null, perpendicular }
+      };
+    };
+    /**
+     * Linijka po przesunięciu albo obrocie: kąty co 45°, a od 1.14 zero przy jednej z krawędzi
+     * przyskakuje do przecięcia kresek (pierwszeństwo) albo do linii; linijka prawie prostopadła do
+     * tej linii (do 8°) ustawia się dokładnie prostopadle, zerem na linii.
+     */
+    function settleRuler(next) {
+      const half = rulerHalf();
+      const rank = (found) => (found.kind === 'crossing' ? 0 : 1);
+      let snap = null;
+      if (tools.rulerSnap) {
+        for (const side of [-1, 1]) {
+          const zero = rulerPoint(next, 0, side * half);
+          const found = snapToStrokes(drawing.strokes, zero.x, zero.y, ZERO_SNAP / view.scale);
+          if (!found) continue;
+          const distance = Math.hypot(found.x - zero.x, found.y - zero.y);
+          if (!snap || rank(found) < rank(snap) || (rank(found) === rank(snap) && distance < snap.distance)) snap = { ...found, side, distance };
+        }
+      }
+      const perpendicular = snap?.kind === 'line' && lineAngleDifference(next.angle, snap.angle + Math.PI / 2) <= PERPENDICULAR_SNAP;
+      const angle = perpendicular ? perpendicularAngle(snap.angle, next.angle) : snapRulerAngle(next.angle);
+      return snap ? zeroAt(snap, angle, perpendicular) : { x: next.x, y: next.y, angle, snap: null };
+    }
     const paintRuler = (ctx) => {
       const center = toScreen(ruler);
       const length = Math.hypot(view.width, view.height) * 2;
       const half = RULER_WIDTH / 2;
+      // Napisy zawsze czytelne – nie leżą do góry nogami.
+      const flip = Math.cos(ruler.angle) < -1e-9 || (Math.abs(Math.cos(ruler.angle)) < 1e-9 && Math.sin(ruler.angle) > 0);
+      const label = (text, x, y, align = 'center') => {
+        ctx.save();
+        ctx.translate(x, y);
+        if (flip) ctx.rotate(Math.PI);
+        ctx.textAlign = align;
+        ctx.fillText(text, 0, 0);
+        ctx.restore();
+      };
       ctx.save();
       ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
       ctx.translate(center.x, center.y);
@@ -456,29 +632,68 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       ctx.moveTo(-length / 2, half - 0.5);
       ctx.lineTo(length / 2, half - 0.5);
       ctx.stroke();
-      // Podziałka co ćwierć kratki (dłuższa kreska co kratkę), od środka linijki.
-      const step = (PAPER_STEP / 4) * view.scale;
-      const every = step < 4 ? 4 : 1;
-      ctx.beginPath();
-      for (let index = -Math.ceil(length / 2 / step); index * step <= length / 2; index += every) {
-        const x = index * step;
-        const tick = index % 4 === 0 ? 14 : 7;
-        ctx.moveTo(x, -half);
-        ctx.lineTo(x, -half + tick);
-        ctx.moveTo(x, half);
-        ctx.lineTo(x, half - tick);
-      }
-      ctx.stroke();
-      // Kąt na środku linijki – zawsze czytelny (tekst nie leży do góry nogami).
-      ctx.save();
-      const flip = Math.cos(ruler.angle) < -1e-9 || (Math.abs(Math.cos(ruler.angle)) < 1e-9 && Math.sin(ruler.angle) > 0);
-      if (flip) ctx.rotate(Math.PI);
-      ctx.fillStyle = 'rgba(29, 29, 31, 0.9)';
-      ctx.font = '600 15px -apple-system, system-ui, sans-serif';
-      ctx.textAlign = 'center';
+      // Podziałka i liczby (od 1.14) w jednostkach skali rysunku, od zera na środku w obie strony:
+      // liczby co 1, 2 albo 5 × 10ⁿ jednostek (tak gęsto, żeby się nie stykały), a między nimi
+      // kreski co dziesiątą, piątą albo połowę odstępu – jak na zwykłej linijce; obok zera jednostka.
+      const { value, unit } = drawing.scale;
+      const unitPx = (PAPER_STEP * view.scale) / value;
+      const reach = length / 2;
+      ctx.font = '500 11px -apple-system, system-ui, sans-serif';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`${rulerDegrees(ruler.angle)}°`, 0, 0);
-      ctx.restore();
+      const textWidth = (number) => ctx.measureText(formatNumber(number)).width;
+      const unitWidth = ctx.measureText(unit).width;
+      let labelStep = 0;
+      for (let power = -6; labelStep === 0 && power <= 12; power += 1) {
+        labelStep = [1, 2, 5].map((digit) => digit * 10 ** power).find((candidate) => {
+          const spacing = candidate * unitPx;
+          if (spacing < 16) return false;
+          const last = Math.floor(reach / spacing) * candidate;
+          const widest = Math.max(textWidth(candidate), textWidth(last), textWidth(last / 2));
+          return spacing >= Math.max(widest + 12, 10 + unitWidth + textWidth(candidate) / 2);
+        }) ?? 0;
+      }
+      const labelPx = labelStep * unitPx;
+      if (labelPx > 0) {
+        const parts = [10, 5, 2].find((count) => labelPx / count >= 4) ?? 1;
+        const tickPx = labelPx / parts;
+        const count = Math.ceil(reach / tickPx);
+        ctx.beginPath();
+        for (let index = -count; index <= count; index += 1) {
+          const x = index * tickPx;
+          const tick = index % parts === 0 ? 14 : parts === 10 && index % 5 === 0 ? 10 : 6;
+          ctx.moveTo(x, -half);
+          ctx.lineTo(x, -half + tick);
+          ctx.moveTo(x, half);
+          ctx.lineTo(x, half - tick);
+        }
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(29, 29, 31, 0.82)';
+        for (let index = 1; index * labelPx <= reach; index += 1) {
+          const text = formatNumber(index * labelStep);
+          label(text, index * labelPx, -half + 23);
+          label(text, -index * labelPx, -half + 23);
+        }
+      }
+      // Zero: znaczniki przy obu krawędziach (do nich przyskakuje), „0” i jednostka.
+      ctx.fillStyle = ZERO_COLOR;
+      ctx.beginPath();
+      ctx.moveTo(-5, -half);
+      ctx.lineTo(5, -half);
+      ctx.lineTo(0, -half + 8);
+      ctx.closePath();
+      ctx.moveTo(-5, half);
+      ctx.lineTo(5, half);
+      ctx.lineTo(0, half - 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.font = '700 11px -apple-system, system-ui, sans-serif';
+      label('0', 0, -half + 23);
+      ctx.font = '500 10px -apple-system, system-ui, sans-serif';
+      label(unit, (flip ? -1 : 1) * 7, -half + 23, 'left');
+      // Kąt – pod liczbami.
+      ctx.fillStyle = 'rgba(29, 29, 31, 0.9)';
+      ctx.font = '600 13px -apple-system, system-ui, sans-serif';
+      label(`${rulerDegrees(ruler.angle)}°`, 0, 9);
       // Uchwyty obrotu.
       const distance = Math.min(170, Math.max(70, Math.min(view.width, view.height) * 0.3));
       for (const side of [-1, 1]) {
@@ -502,6 +717,103 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         ctx.lineWidth = 1;
       }
       ctx.restore();
+      // Zero przyciągnięte do linii albo przecięcia – kółko w tym miejscu.
+      if (ruler.snap) {
+        const point = toScreen(ruler.snap);
+        ctx.save();
+        ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.stroke();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = ZERO_COLOR;
+        ctx.stroke();
+        if (ruler.snap.kind === 'crossing') {
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = ZERO_COLOR;
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+    };
+    /** Długość kreski wzdłuż linijki (w skali rysunku) obok rysika, po zewnętrznej stronie krawędzi. */
+    const paintLength = (ctx, edge) => {
+      const side = edge.across < 0 ? -1 : 1;
+      const point = toScreen(rulerPoint(edge.ruler, edge.along, edge.across + (side * 24) / view.scale));
+      const text = formatLength(edge.to - edge.from, drawing.scale);
+      ctx.save();
+      ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+      ctx.font = '600 13px -apple-system, system-ui, sans-serif';
+      const width = ctx.measureText(text).width + 18;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(point.x - width / 2, point.y - 12, width, 24, 12);
+      else ctx.rect(point.x - width / 2, point.y - 12, width, 24);
+      ctx.fillStyle = 'rgba(29, 29, 31, 0.86)';
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, point.x, point.y + 0.5);
+      ctx.restore();
+    };
+
+    // ---- pipetka: kolor spod punktu (warstwa zapisanych kresek, zdjęcie, tło strony) i lupa
+    function pickAt(point) {
+      const box = base.getBoundingClientRect();
+      const x = Math.floor((point.clientX - box.left) * view.dpr);
+      const y = Math.floor((point.clientY - box.top) * view.dpr);
+      if (x < 0 || y < 0 || x >= base.width || y >= base.height) return;
+      const [red, green, blue, alpha] = base.getContext('2d').getImageData(x, y, 1, 1).data;
+      // Poza stroną (cień, tło okna) – bez zmiany.
+      if (alpha === 255) setDraft(rgbToHex([red, green, blue]));
+    }
+    /** Lupa nad punktem (pod nim, gdy u góry brakuje miejsca): powiększone piksele, środek w ramce, obwódka w wybranym kolorze. */
+    const paintLoupe = (ctx, point) => {
+      const box = live.getBoundingClientRect();
+      const x = point.clientX - box.left;
+      const y = point.clientY - box.top;
+      const radius = 44;
+      const cells = 15;
+      const centerY = y - radius - 34 >= 8 ? y - radius - 34 : y + radius + 34;
+      const size = (radius * 2) / cells;
+      ctx.save();
+      ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+      ctx.beginPath();
+      ctx.arc(x, centerY, radius, 0, Math.PI * 2);
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x - radius, centerY - radius, radius * 2, radius * 2);
+      ctx.imageSmoothingEnabled = false;
+      const sx = Math.floor(x * view.dpr) - (cells - 1) / 2;
+      const sy = Math.floor(y * view.dpr) - (cells - 1) / 2;
+      ctx.drawImage(base, sx, sy, cells, cells, x - radius, centerY - radius, radius * 2, radius * 2);
+      ctx.restore();
+      ctx.lineWidth = 7;
+      ctx.strokeStyle = colorDraft;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, centerY, radius + 3.5, 0, Math.PI * 2);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+      ctx.stroke();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - size / 2, centerY - size / 2, size, size);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - size / 2 - 1.5, centerY - size / 2 - 1.5, size + 3, size + 3);
+      ctx.restore();
+    };
+
+    /** Czy zaznaczanie w toku daje całe kreski, czy fragmenty: tryb albo kierunek (prostokąt – w lewo, lasso – zgodnie ze wskazówkami). */
+    const selectModeOf = (gesture) => {
+      if (tools.selectMode !== 'auto') return tools.selectMode;
+      if (gesture.kind === 'lasso') return isClockwise(gesture.polygon) ? 'region' : 'whole';
+      return gesture.rect.x1 < gesture.rect.x0 ? 'region' : 'whole';
     };
 
     const eraserRadius = () => (tools.eraserMode === 'pixel' ? ERASER_SIZES[tools.eraserSize] / 2 : ERASER_RADIUS) / view.scale;
@@ -523,24 +835,36 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         ctx.save();
         ctx.setLineDash([6 / view.scale, 4 / view.scale]);
         ctx.lineWidth = 1.5 / view.scale;
-        ctx.strokeStyle = '#0058be';
-        ctx.fillStyle = 'rgba(0, 88, 190, 0.06)';
+        ctx.strokeStyle = SELECT_COLORS[selectionKind];
+        ctx.fillStyle = SELECT_FILLS[selectionKind];
         ctx.fillRect(bounds.minX - pad + dx, bounds.minY - pad + dy, bounds.maxX - bounds.minX + pad * 2, bounds.maxY - bounds.minY + pad * 2);
         ctx.strokeRect(bounds.minX - pad + dx, bounds.minY - pad + dy, bounds.maxX - bounds.minX + pad * 2, bounds.maxY - bounds.minY + pad * 2);
         ctx.restore();
       }
-      if (active?.kind === 'marquee') {
-        const { x0, y0, x1, y1 } = active.rect;
+      if (active?.kind === 'marquee' || active?.kind === 'lasso') {
+        // Całe kreski – linia ciągła, fragmenty – kreskowana (i inny kolor).
+        const mode = selectModeOf(active);
         ctx.save();
-        ctx.setLineDash([5 / view.scale, 4 / view.scale]);
-        ctx.lineWidth = 1.2 / view.scale;
-        ctx.strokeStyle = '#0058be';
-        ctx.fillStyle = 'rgba(0, 88, 190, 0.08)';
-        ctx.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
-        ctx.strokeRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+        if (mode === 'region') ctx.setLineDash([5 / view.scale, 4 / view.scale]);
+        ctx.lineWidth = 1.4 / view.scale;
+        ctx.strokeStyle = SELECT_COLORS[mode];
+        ctx.fillStyle = SELECT_FILLS[mode];
+        ctx.beginPath();
+        if (active.kind === 'marquee') {
+          const { x0, y0, x1, y1 } = active.rect;
+          ctx.rect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+        } else {
+          const { polygon } = active;
+          ctx.moveTo(polygon[0], polygon[1]);
+          for (let index = 2; index < polygon.length; index += 2) ctx.lineTo(polygon[index], polygon[index + 1]);
+          ctx.closePath();
+        }
+        ctx.fill();
+        ctx.stroke();
         ctx.restore();
       }
       if (ruler) paintRuler(ctx);
+      if (active?.kind === 'stroke' && active.edge && active.edge.to >= active.edge.from) paintLength(ctx, active.edge);
       const cursor = active?.kind === 'erase' ? active.last : (tool === 'eraser' ? hover : null);
       if (cursor) {
         ctx.save();
@@ -553,16 +877,19 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         ctx.stroke();
         ctx.restore();
       }
+      const loupe = active?.kind === 'pick' ? active.client : pickHover;
+      if (picking && loupe) paintLoupe(ctx, loupe);
       placeSelectionBar(bounds);
+      updateSelectHint();
     };
     /** Polecenia zaznaczenia nad ramką (albo pod nią, gdy u góry brakuje miejsca). */
     function placeSelectionBar(bounds) {
-      const show = Boolean(bounds) && active?.kind !== 'move' && active?.kind !== 'marquee';
+      const show = Boolean(bounds) && !['move', 'marquee', 'lasso', 'pick'].includes(active?.kind);
       selectionBar.hidden = !show;
       if (!show) return;
       const items = [...selection];
       const only = items.length === 1 ? items[0] : null;
-      selectionCount.textContent = only?.tool === 'text' ? 'Pole tekstowe' : only?.tool === 'math' ? 'Wzór'
+      selectionCount.textContent = selectionKind === 'region' ? 'Fragment' : only?.tool === 'text' ? 'Pole tekstowe' : only?.tool === 'math' ? 'Wzór'
         : items.some(isElement) ? plural(items.length, 'element', 'elementy', 'elementów') : plural(items.length, 'kreska', 'kreski', 'kresek');
       editButton.hidden = !isElement(only);
       const top = toScreen({ x: 0, y: bounds.minY }).y - SELECTION_PAD;
@@ -574,6 +901,16 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const above = top - height - 8;
       selectionBar.style.left = `${left}px`;
       selectionBar.style.top = `${above >= 8 ? above : Math.min(bottom + 8, view.height - height - 8)}px`;
+    }
+    /** Podpowiedź przy zaznaczaniu: co zaznaczy kierunek obrysu, a w trakcie – co właśnie zaznaczasz. */
+    function updateSelectHint() {
+      const outlining = active?.kind === 'marquee' || active?.kind === 'lasso';
+      const show = tool === 'select' && (outlining || (selection.size === 0 && !active));
+      selectHint.hidden = !show;
+      if (!show) return;
+      selectHint.textContent = outlining
+        ? (selectModeOf(active) === 'region' ? 'Zaznaczasz fragmenty – tylko wnętrze' : 'Zaznaczasz całe kreski')
+        : SELECT_HINTS[tools.selectMode === 'auto' ? tools.selectShape : tools.selectMode];
     }
     let frame = 0;
     function requestRender() {
@@ -615,6 +952,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         view.scale = fitScale() * view.zoom;
       }
       clampView();
+      refreshRulerPanel?.();
       requestRender();
     };
     const observer = new ResizeObserver(resize);
@@ -643,7 +981,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const penButton = toolButton('pen', 'Pióro', 'pen');
     const highlighterButton = toolButton('highlighter', 'Zakreślacz', 'highlighter');
     const eraserButton = toolButton('eraser', 'Gumka', 'eraser');
-    const selectButton = toolButton('select', 'Zaznaczanie – prostokąt albo dotknięcie kreski', 'marquee');
+    const selectButton = toolButton('select', 'Zaznaczanie – prostokąt', 'marquee');
+    selectButton.dataset.shape = 'rect';
     const textButton = h('button', {
       type: 'button', class: 'drawing__tool', 'aria-label': 'Pole tekstowe', title: 'Pole tekstowe', dataset: { testid: 'drawing-insert-text' },
       onClick: () => editElement('text')
@@ -669,17 +1008,33 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         title: ERASER_SIZE_LABELS[index], dataset: { size: String(index), testid: `drawing-eraser-size-${index}` },
         onClick: () => { tools.eraserSize = index; saveTools(tools); updateToolbar(); requestLive(); }
       }, h('span', { style: { width: `${Math.round(6 + index * 4)}px`, height: `${Math.round(6 + index * 4)}px` } }))));
+    // Zaznaczanie (od 1.14): kształt – prostokąt albo lasso – i tryb (kierunek, całe kreski, fragmenty).
+    const selectShapes = h('div', { class: 'drawing__group', role: 'radiogroup', 'aria-label': 'Kształt zaznaczenia' },
+      SELECT_SHAPES.map((shape) => h('button', {
+        type: 'button', class: 'drawing__tool', role: 'radio', 'aria-label': SHAPE_LABELS[shape], title: SHAPE_LABELS[shape],
+        dataset: { shape, testid: `drawing-select-${shape}` },
+        onClick: () => { tools.selectShape = shape; saveTools(tools); updateToolbar(); requestLive(); }
+      }, icon(shape === 'lasso' ? 'lasso' : 'marquee', { size: 24 }))));
+    const selectModes = h('div', { class: 'drawing__group drawing__modes', role: 'radiogroup', 'aria-label': 'Co zaznaczać' },
+      SELECT_MODES.map((mode) => h('button', {
+        type: 'button', class: 'drawing__mode', role: 'radio', title: SELECT_MODE_TITLES[mode], dataset: { mode, testid: `drawing-select-mode-${mode}` },
+        onClick: () => { tools.selectMode = mode; saveTools(tools); updateToolbar(); requestLive(); }
+      }, SELECT_MODE_LABELS[mode])));
+    const pasteButton = h('button', {
+      type: 'button', class: 'drawing__chip', hidden: true, title: 'Wklej (Ctrl+V)', dataset: { testid: 'drawing-paste' }, onClick: () => paste()
+    }, 'Wklej');
     // Zaznacz wszystko – na iPadzie bez klawiatury nie ma Ctrl+A.
-    const selectGroup = h('div', { class: 'drawing__group' }, h('button', {
-      type: 'button', class: 'drawing__chip', dataset: { testid: 'drawing-select-all' }, onClick: () => selectAll()
-    }, 'Zaznacz wszystko'));
+    // Na telefonie krócej („Wszystko”) – pasek zaznaczania mieści się w trzech wierszach.
+    const selectGroup = h('div', { class: 'drawing__group' }, pasteButton, h('button', {
+      type: 'button', class: 'drawing__chip', 'aria-label': 'Zaznacz wszystko', dataset: { testid: 'drawing-select-all' }, onClick: () => selectAll()
+    }, h('span', { class: 'drawing__wide-label' }, 'Zaznacz wszystko'), h('span', { class: 'drawing__narrow-label' }, 'Wszystko')));
     const undoButton = h('button', {
       type: 'button', class: 'drawing__tool', 'aria-label': 'Cofnij', title: 'Cofnij (Ctrl+Z)', dataset: { testid: 'drawing-undo' },
-      onClick: () => { if (history.undo()) afterHistory(); }
+      onClick: () => stepHistory(false)
     }, icon('undo', { size: 24 }));
     const redoButton = h('button', {
       type: 'button', class: 'drawing__tool', 'aria-label': 'Ponów', title: 'Ponów (Ctrl+Shift+Z)', dataset: { testid: 'drawing-redo' },
-      onClick: () => { if (history.redo()) afterHistory(); }
+      onClick: () => stepHistory(true)
     }, icon('redo', { size: 24 }));
     const paperButton = h('button', {
       type: 'button', class: 'drawing__chip', dataset: { testid: 'drawing-paper' }, hidden: Boolean(drawing.photo),
@@ -690,10 +1045,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         requestRender();
       }
     });
-    // Grupy narzędzi zawijają się w całości (na telefonie – dwa wiersze).
+    // Grupy narzędzi zawijają się w całości (na telefonie – w kilku wierszach).
     const toolbar = h('div', { class: 'drawing__toolbar', role: 'toolbar', 'aria-label': 'Narzędzia rysunku' },
       h('div', { class: 'drawing__group' }, penButton, highlighterButton, eraserButton, selectButton, textButton, mathButton),
-      swatches, widths, eraserModes, eraserSizes, selectGroup,
+      swatches, widths, eraserModes, eraserSizes, selectShapes, selectModes, selectGroup,
       h('div', { class: 'drawing__group' }, rulerButton, undoButton, redoButton, paperButton));
 
     const zoomButton = h('button', {
@@ -702,9 +1057,33 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     }, '100%');
     const penPill = h('span', { class: 'drawing__pill drawing__pill--info', hidden: !penSeen, dataset: { testid: 'drawing-pen-only' } },
       icon('pen', { size: 14 }), 'Rysuje tylko rysik · palec przesuwa');
-    const rulerPill = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, dataset: { testid: 'drawing-ruler-angle' } });
-    const status = h('div', { class: 'drawing__status' }, penPill, rulerPill, zoomButton);
+    const selectHint = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, dataset: { testid: 'drawing-select-hint' } });
+    const notice = h('span', { class: 'drawing__pill drawing__pill--info drawing__pill--notice', hidden: true, role: 'status', dataset: { testid: 'drawing-notice' } });
+    const lengthPill = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, dataset: { testid: 'drawing-ruler-length' } });
+    // Kąt linijki; dotknięcie – skala rysunku i przyciąganie (od 1.14).
+    const rulerText = h('span');
+    const rulerPill = h('button', {
+      type: 'button', class: 'drawing__pill', hidden: true, 'aria-haspopup': 'dialog', title: 'Linijka i skala rysunku',
+      dataset: { testid: 'drawing-ruler-angle' }, onClick: () => toggleRulerPanel()
+    }, rulerText, icon('chevronDown', { size: 14 }));
+    const perpendicularButton = h('button', {
+      type: 'button', class: 'drawing__pill drawing__pill--symbol', hidden: true, 'aria-label': 'Linijka prostopadle do linii pod zerem',
+      title: 'Prostopadle do linii pod zerem', dataset: { testid: 'drawing-ruler-perpendicular' }, onClick: () => perpendicularRuler()
+    }, '⊥');
+    const status = h('div', { class: 'drawing__status' }, notice, penPill, selectHint, lengthPill, rulerPill, perpendicularButton, zoomButton);
+    let noticeTimer = 0;
+    /** Krótki komunikat w edytorze (komunikaty aplikacji są pod oknem rysunku). */
+    function flash(message) {
+      notice.textContent = message;
+      notice.hidden = false;
+      clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(() => { notice.hidden = true; }, 3500);
+    }
 
+    const swatchButton = (hex, label, testID, pressed, onClick, custom = false) => h('button', {
+      type: 'button', class: custom ? 'drawing__swatch drawing__swatch--custom' : 'drawing__swatch', style: { '--swatch': hex }, 'aria-label': label, title: label,
+      'aria-pressed': String(pressed), dataset: { testid: testID }, onClick
+    });
     function updateToolbar() {
       for (const button of [penButton, highlighterButton, eraserButton, selectButton]) {
         button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
@@ -713,16 +1092,22 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const highlighter = tool === 'highlighter';
       const palette = highlighter ? HIGHLIGHTER_COLORS : INK_COLORS;
       const chosen = highlighter ? tools.highlighterColor : tools.penColor;
-      replaceChildren(swatches, palette.map((color) => h('button', {
-        type: 'button', class: 'drawing__swatch', style: { '--swatch': color.hex }, 'aria-label': color.label, title: color.label,
-        'aria-pressed': String(color.id === chosen), dataset: { testid: `drawing-color-${color.id}` },
-        onClick: () => {
-          if (highlighter) tools.highlighterColor = color.id;
-          else tools.penColor = color.id;
-          saveTools(tools);
-          updateToolbar();
-        }
-      })));
+      const choose = (value) => {
+        if (highlighter) tools.highlighterColor = value;
+        else tools.penColor = value;
+        saveTools(tools);
+        closeSettings();
+        updateToolbar();
+        requestLive();
+      };
+      // Kolory palety, do trzech własnych (od 1.14) i „+” – panel własnego koloru.
+      replaceChildren(swatches,
+        palette.map((color) => swatchButton(color.hex, color.label, `drawing-color-${color.id}`, color.id === chosen, () => choose(color.id))),
+        tools.customColors.map((hex, index) => swatchButton(hex, `Własny kolor ${hex.toUpperCase()}`, `drawing-color-custom-${index}`, hex === chosen, () => choose(hex), true)),
+        h('button', {
+          type: 'button', class: 'drawing__swatch drawing__swatch--add', 'aria-label': 'Inny kolor – siatka, suwaki albo pipetka', title: 'Inny kolor',
+          'aria-expanded': String(!colorPanel.hidden), dataset: { testid: 'drawing-color-custom' }, onClick: () => toggleColorPanel()
+        }, icon('plus', { size: 16 })));
       swatches.hidden = !inking;
       // Pasek pod ikoną zakreślacza w kolorze wybranego zakreślacza.
       highlighterButton.style.setProperty('--highlighter-ink', highlighterHex(tools.highlighterColor));
@@ -741,18 +1126,39 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       }, h('span', { style: { width: `${Math.max(3, Math.min(14, size))}px`, height: `${Math.max(3, Math.min(14, size))}px` } }))));
       widths.hidden = !inking;
       eraserModes.hidden = tool !== 'eraser';
-      selectGroup.hidden = tool !== 'select';
       for (const button of eraserModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.eraserMode));
       eraserSizes.hidden = tool !== 'eraser' || tools.eraserMode !== 'pixel';
       for (const button of eraserSizes.children) button.setAttribute('aria-checked', String(Number(button.dataset.size) === tools.eraserSize));
       eraserButton.setAttribute('aria-label', `Gumka – ${ERASER_MODE_LABELS[tools.eraserMode].toLowerCase()}`);
+      for (const group of [selectShapes, selectModes, selectGroup]) group.hidden = tool !== 'select';
+      for (const button of selectShapes.children) button.setAttribute('aria-checked', String(button.dataset.shape === tools.selectShape));
+      for (const button of selectModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.selectMode));
+      pasteButton.hidden = !readClipboard();
+      // Ikona zaznaczania – wybrany kształt.
+      if (selectButton.dataset.shape !== tools.selectShape) {
+        selectButton.dataset.shape = tools.selectShape;
+        replaceChildren(selectButton, icon(tools.selectShape === 'lasso' ? 'lasso' : 'marquee', { size: 24 }));
+        const label = `Zaznaczanie – ${SHAPE_LABELS[tools.selectShape].toLowerCase()}`;
+        selectButton.setAttribute('aria-label', label);
+        selectButton.title = label;
+      }
       rulerButton.setAttribute('aria-pressed', String(Boolean(ruler)));
-      rulerPill.hidden = !ruler;
-      if (ruler) rulerPill.textContent = `Linijka ${rulerDegrees(ruler.angle)}°`;
-      undoButton.disabled = !history.canUndo;
+      updateRulerPill();
+      // Fragment zaznaczony (kreski przecięte na chwilę) nie jest jeszcze krokiem do cofnięcia.
+      undoButton.disabled = !(regionPending ? history.done.length > 0 : history.canUndo);
       redoButton.disabled = !history.canRedo;
       paperButton.textContent = `Tło: ${PAPER_LABELS[drawing.paper].toLowerCase()}`;
       paperButton.setAttribute('aria-label', `Tło strony: ${PAPER_LABELS[drawing.paper].toLowerCase()} – zmień`);
+    }
+    function updateRulerPill() {
+      rulerPill.hidden = !ruler;
+      perpendicularButton.hidden = !ruler;
+      lengthPill.hidden = !ruler || !(measured > 0);
+      if (!ruler) return;
+      const { snap } = ruler;
+      const where = !snap ? '' : snap.kind === 'crossing' ? ' · na przecięciu' : snap.perpendicular ? ' · prostopadle' : ' · na linii';
+      rulerText.textContent = `Linijka ${rulerDegrees(ruler.angle)}°${where}`;
+      if (measured > 0) lengthPill.textContent = `Kreska: ${formatLength(measured, drawing.scale)}`;
     }
 
     // ---- ustawienia pióra (drugie dotknięcie aktywnego pióra albo zakreślacza)
@@ -823,84 +1229,418 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       refreshSettings = refresh;
       refresh();
     }
-    const topBar = h('div', { class: 'drawing__top' }, toolbar, settings);
+
+    // ---- własny kolor (od 1.14): siatka, suwaki RGB z kodem HEX, pipetka; pamiętane trzy ostatnie
+    const colorPanel = h('div', { class: 'drawing__settings drawing__color-panel', hidden: true, role: 'dialog', 'aria-label': 'Inny kolor', dataset: { testid: 'drawing-color-panel' } });
+    /** Kolor wybierany w panelu (jeszcze nie użyty) i karta panelu. */
+    let colorDraft = '#000000';
+    let colorTab = 'grid';
+    let syncColor = null;
+    const setDraft = (hex, source = null) => {
+      colorDraft = hex;
+      syncColor?.(source);
+    };
+    function toggleColorPanel() {
+      const open = colorPanel.hidden;
+      closeSettings();
+      if (open) {
+        colorDraft = tool === 'highlighter' ? highlighterHex(tools.highlighterColor) : inkHex(tools.penColor);
+        colorPanel.hidden = false;
+        renderColorPanel();
+      }
+      updateToolbar();
+      requestLive();
+    }
+    function renderColorPanel() {
+      picking = colorTab === 'picker';
+      pickHover = null;
+      const tabs = COLOR_TABS.map(([id, label]) => h('button', {
+        type: 'button', role: 'radio', 'aria-checked': String(id === colorTab), dataset: { testid: `drawing-color-tab-${id}` },
+        onClick: () => { colorTab = id; renderColorPanel(); requestLive(); }
+      }, label));
+      let body;
+      let sync = () => {};
+      if (colorTab === 'grid') {
+        const cells = COLOR_GRID.map((hex, index) => h('button', {
+          type: 'button', class: 'drawing__grid-color', style: { '--swatch': hex }, 'aria-label': hex.toUpperCase(),
+          dataset: { color: hex, testid: `drawing-grid-color-${index}` }, onClick: () => setDraft(hex)
+        }));
+        body = h('div', { class: 'drawing__color-grid', role: 'group', 'aria-label': 'Siatka kolorów' }, cells);
+        sync = () => {
+          for (const cell of cells) cell.setAttribute('aria-pressed', String(cell.dataset.color === colorDraft));
+        };
+      } else if (colorTab === 'sliders') {
+        const channels = ['r', 'g', 'b'].map((name, channel) => ({
+          channel,
+          output: h('span', { class: 'drawing__channel-value' }),
+          range: h('input', {
+            type: 'range', class: 'drawing__range drawing__channel', min: 0, max: 255, step: 1, 'aria-label': CHANNEL_LABELS[channel],
+            dataset: { testid: `drawing-channel-${name}` },
+            onInput: (event) => {
+              const rgb = hexToRgb(colorDraft);
+              rgb[channel] = Number(event.target.value);
+              setDraft(rgbToHex(rgb), 'range');
+            }
+          })
+        }));
+        const hexInput = h('input', {
+          class: 'input drawing__hex', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', maxlength: 7,
+          'aria-label': 'Kod koloru (HEX)', dataset: { testid: 'drawing-color-hex' },
+          onInput: (event) => {
+            const hex = parseHex(event.target.value);
+            event.target.setAttribute('aria-invalid', String(!hex));
+            if (hex) setDraft(hex, 'hex');
+          }
+        });
+        body = h('div', { class: 'drawing__channels' },
+          channels.map(({ channel, output, range }) => h('label', { class: 'drawing__channel-row' },
+            h('span', { class: 'drawing__channel-name' }, 'RGB'[channel]), range, output)),
+          h('label', { class: 'drawing__channel-row' }, h('span', { class: 'drawing__channel-name' }, 'HEX'), hexInput));
+        sync = (source) => {
+          const rgb = hexToRgb(colorDraft);
+          for (const { channel, output, range } of channels) {
+            range.value = String(rgb[channel]);
+            output.textContent = String(rgb[channel]);
+            // Tor suwaka: od zera do pełnej składowej przy dwóch pozostałych bez zmian.
+            const low = [...rgb];
+            const high = [...rgb];
+            low[channel] = 0;
+            high[channel] = 255;
+            range.style.setProperty('--track', `linear-gradient(to right, ${rgbToHex(low)}, ${rgbToHex(high)})`);
+          }
+          if (source !== 'hex') {
+            hexInput.value = colorDraft.toUpperCase();
+            hexInput.removeAttribute('aria-invalid');
+          }
+        };
+      } else {
+        body = h('p', { class: 'drawing__picker-hint' },
+          'Dotknij rysunku albo przeciągnij po nim – pipetka pobierze kolor spod palca, rysika albo kursora (także ze zdjęcia pod kreskami). Lupa pokazuje powiększone miejsce.');
+      }
+      const preview = h('span', { class: 'drawing__color-preview', 'aria-hidden': 'true' });
+      const code = h('span', { class: 'drawing__color-code', dataset: { testid: 'drawing-color-value' } });
+      syncColor = (source) => {
+        preview.style.setProperty('--swatch', colorDraft);
+        code.textContent = colorDraft.toUpperCase();
+        sync(source);
+      };
+      replaceChildren(colorPanel,
+        h('h3', { class: 'drawing__settings-title' }, tool === 'highlighter' ? 'Kolor zakreślacza' : 'Kolor pióra'),
+        h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Sposób wyboru koloru' }, tabs),
+        h('div', { class: 'drawing__color-body' }, body),
+        h('div', { class: 'drawing__color-footer' }, preview, code,
+          h('button', {
+            type: 'button', class: 'drawing__chip', dataset: { testid: 'drawing-color-cancel' },
+            onClick: () => { closeSettings(); updateToolbar(); requestLive(); }
+          }, 'Anuluj'),
+          h('button', { type: 'button', class: 'drawing__chip drawing__chip--accent', dataset: { testid: 'drawing-color-use' }, onClick: () => useColor() }, 'Użyj koloru')));
+      syncColor();
+    }
+    function useColor() {
+      const highlighter = tool === 'highlighter';
+      // Kolor z palety – zwykłe kółko palety; inny – wśród własnych (najnowszy pierwszy, najwyżej trzy).
+      const known = (highlighter ? HIGHLIGHTER_COLORS : INK_COLORS).find((color) => color.hex === colorDraft);
+      if (!known) tools.customColors = rememberColor(tools.customColors, colorDraft);
+      if (highlighter) tools.highlighterColor = known ? known.id : colorDraft;
+      else tools.penColor = known ? known.id : colorDraft;
+      saveTools(tools);
+      closeSettings();
+      updateToolbar();
+      requestLive();
+    }
+
+    // ---- linijka i skala rysunku (od 1.14): ile ma kratka, szacunek skali na ekranie, przyciąganie
+    const rulerPanel = h('div', { class: 'drawing__settings', hidden: true, role: 'dialog', 'aria-label': 'Linijka i skala', dataset: { testid: 'drawing-ruler-panel' } });
+    let refreshRulerPanel = null;
+    function toggleRulerPanel() {
+      const open = rulerPanel.hidden;
+      closeSettings();
+      if (!open) return;
+      rulerPanel.hidden = false;
+      renderRulerPanel();
+    }
+    /** Skala rysunku – zapisywana z rysunkiem (liczby na linijce i długość kreski). */
+    function setScale(next) {
+      const scale = cleanScale(next);
+      if (scale.value === drawing.scale.value && scale.unit === drawing.scale.unit) return;
+      drawing.scale = scale;
+      changed = true;
+      updateRulerPill();
+      requestLive();
+    }
+    function renderRulerPanel() {
+      const valueInput = h('input', {
+        class: 'input drawing__scale-value', type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': 'Ile ma jedna kratka',
+        dataset: { testid: 'drawing-scale-value' },
+        onInput: (event) => {
+          const value = Number(event.target.value.replace(/\s/g, '').replace(',', '.'));
+          const valid = Number.isFinite(value) && value > 0;
+          event.target.setAttribute('aria-invalid', String(!valid));
+          if (!valid) return;
+          setScale({ value, unit: drawing.scale.unit });
+          refresh(false);
+        }
+      });
+      const units = (system, label) => h('optgroup', { label },
+        // Skróty SI są znane; przy imperialnych – także nazwa („ft – stopy”).
+        SCALE_UNITS.filter((unit) => unit.system === system).map((unit) => h('option', { value: unit.id }, system === 'si' ? unit.label : `${unit.label} – ${unit.name}`)));
+      const unitSelect = h('select', {
+        class: 'input input--select drawing__scale-unit', 'aria-label': 'Jednostka', dataset: { testid: 'drawing-scale-unit' },
+        onChange: (event) => {
+          setScale({ value: drawing.scale.value, unit: event.target.value });
+          refresh();
+        }
+      }, units('si', 'Jednostki SI'), units('imperial', 'Jednostki imperialne'));
+      const screenText = h('p', { class: 'field__hint', dataset: { testid: 'drawing-scale-screen' } });
+      const snapToggle = toggle({
+        checked: tools.rulerSnap, label: 'Przyciąganie zera do przecięć i linii',
+        onChange: (checked) => {
+          tools.rulerSnap = checked;
+          saveTools(tools);
+          if (ruler) setRuler(ruler);
+        }
+      });
+      snapToggle.querySelector('input').dataset.testid = 'drawing-ruler-snap';
+      const estimate = () => screenScale(drawing.scale, PAPER_STEP * view.scale, pixelsPerInch);
+      function refresh(updateInput = true) {
+        if (updateInput) {
+          valueInput.value = String(drawing.scale.value).replace('.', ',');
+          valueInput.removeAttribute('aria-invalid');
+        }
+        unitSelect.value = drawing.scale.unit;
+        const { millimeters, ratio } = estimate();
+        screenText.textContent = `Przy powiększeniu ${Math.round(view.zoom * 100)}% kratka ma na tym ekranie ok. ${formatNumber(millimeters)} mm – `
+          + `rysunek widać w skali ok. ${formatRatio(ratio)}. To szacunek: przeglądarka nie podaje wielkości ekranu.`;
+      }
+      replaceChildren(rulerPanel,
+        h('h3', { class: 'drawing__settings-title' }, 'Linijka i skala'),
+        h('p', { class: 'drawing__settings-label' }, 'Skala rysunku'),
+        h('div', { class: 'drawing__scale' }, h('span', null, '1 kratka ='), valueInput, unitSelect),
+        screenText,
+        h('button', {
+          type: 'button', class: 'drawing__chip drawing__chip--block', dataset: { testid: 'drawing-scale-actual' },
+          onClick: () => {
+            const imperial = SCALE_UNITS.find((unit) => unit.id === drawing.scale.unit)?.system === 'imperial';
+            const unit = imperial ? 'in' : 'mm';
+            setScale({ value: screenScaleValue(estimate().millimeters, unit), unit });
+            refresh();
+          }
+        }, 'Skala 1:1 – kratka jak na ekranie'),
+        h('div', { class: 'drawing__settings-switch' }, snapToggle),
+        h('p', { class: 'field__hint' }, 'Liczby na linijce są w tej skali, od zera na środku w obie strony. Zero przy krawędzi linijki '
+          + 'przyskakuje do przecięcia kresek albo do linii, a linijka prawie prostopadła do tej linii ustawia się prostopadle. '
+          + 'Przycisk ⊥ obok kąta – prostopadle do linii pod zerem. Skala zapisuje się razem z rysunkiem.'));
+      refreshRulerPanel = () => refresh(document.activeElement !== valueInput);
+      refresh();
+    }
+
+    const topBar = h('div', { class: 'drawing__top' }, toolbar, settings, colorPanel, rulerPanel);
     function toggleSettings() {
-      settings.hidden = !settings.hidden;
+      const open = settings.hidden;
+      closeSettings();
+      settings.hidden = !open;
       renderSettings();
     }
+    /** Zamyka panele pod paskiem: ustawienia pióra, własny kolor (i pipetkę), linijkę i skalę. */
     function closeSettings() {
       settings.hidden = true;
       refreshSettings = null;
+      colorPanel.hidden = true;
+      syncColor = null;
+      picking = false;
+      pickHover = null;
+      rulerPanel.hidden = true;
+      refreshRulerPanel = null;
     }
+    const panelOpen = () => !settings.hidden || !colorPanel.hidden || !rulerPanel.hidden;
 
     function afterHistory() {
       changed = true;
       // Po cofnięciu zaznaczone kreski mogło zastąpić co innego – zaznaczenie znika.
       selection = new Set();
+      selectionKind = 'whole';
       updateToolbar();
       requestRender();
+    }
+    /** Cofnij albo ponów; zaznaczony fragment najpierw wraca w całości (bez kroku cofania). */
+    function stepHistory(redo) {
+      clearSelection();
+      if (redo ? history.redo() : history.undo()) afterHistory();
+      else updateToolbar();
     }
 
     // ---- linijka
     function toggleRuler() {
       if (ruler) {
         ruler = null;
+        rulerPanel.hidden = true;
+        refreshRulerPanel = null;
       } else {
         // Na środku widocznej części strony, poziomo.
         const center = { x: (view.width / 2 - view.x) / view.scale, y: (view.height / 2 - view.y) / view.scale };
-        ruler = { x: Math.min(drawing.width, Math.max(0, center.x)), y: Math.min(drawing.height, Math.max(0, center.y)), angle: 0 };
+        ruler = { x: Math.min(drawing.width, Math.max(0, center.x)), y: Math.min(drawing.height, Math.max(0, center.y)), angle: 0, snap: null };
       }
+      measured = null;
       updateToolbar();
       requestLive();
     }
     const setRuler = (next) => {
-      ruler = { x: next.x, y: next.y, angle: snapRulerAngle(next.angle) };
-      rulerPill.textContent = `Linijka ${rulerDegrees(ruler.angle)}°`;
+      ruler = settleRuler(next);
+      measured = null;
+      updateRulerPill();
       requestLive();
     };
+    /** ⊥: linijka prostopadle do linii pod zerem (przy jednej z krawędzi), zerem na tej linii. */
+    function perpendicularRuler() {
+      if (!ruler) return;
+      const half = rulerHalf();
+      const radius = (ZERO_SNAP * 1.5) / view.scale;
+      let best = null;
+      for (const side of [-1, 1]) {
+        const zero = rulerPoint(ruler, 0, side * half);
+        // Każda kreska osobno – na przecięciu liczy się najbliższa linia, nie punkt przecięcia.
+        for (const stroke of drawing.strokes) {
+          const found = snapToStrokes([stroke], zero.x, zero.y, radius);
+          if (found?.kind !== 'line') continue;
+          const distance = Math.hypot(found.x - zero.x, found.y - zero.y);
+          if (!best || distance < best.distance) best = { ...found, side, distance };
+        }
+      }
+      if (!best) {
+        flash('Pod zerem linijki nie ma linii – przesuń linijkę, aż zero przy krawędzi trafi na linię.');
+        return;
+      }
+      ruler = zeroAt(best, perpendicularAngle(best.angle, ruler.angle), true);
+      measured = null;
+      updateRulerPill();
+      requestLive();
+    }
 
     // ---- zaznaczenie
+    const orderedSelection = () => drawing.strokes.filter((stroke) => selection.has(stroke));
+    /** Kreski przecięte przy zaznaczaniu fragmentu wracają w całości – zaznaczenie bez skutku nie zostawia śladu. */
+    function dropRegion() {
+      if (!regionPending) return;
+      regionPending = false;
+      history.rollback();
+      requestRender();
+    }
     function clearSelection() {
+      dropRegion();
+      selectionKind = 'whole';
       if (selection.size === 0) return;
       selection = new Set();
       requestLive();
+    }
+    /** Koniec zmiany: krok cofania (razem z przecięciem kresek zaznaczonego fragmentu). */
+    function commitStep() {
+      regionPending = false;
+      if (history.commit()) changed = true;
     }
     const selectionHit = (point) => {
       const bounds = selectionBounds([...selection]);
       const pad = SELECTION_PAD / view.scale;
       return Boolean(bounds) && point.x >= bounds.minX - pad && point.x <= bounds.maxX + pad && point.y >= bounds.minY - pad && point.y <= bounds.maxY + pad;
     };
-    /** Zastępuje zaznaczone kreski nowymi (przesunięte) albo dokłada kopie – jeden krok cofania. */
-    function moveSelection(dx, dy, { copy = false } = {}) {
+    /**
+     * Zaznaczenie fragmentów (od 1.14): kreski przecięte brzegiem obszaru zastępują kawałki – w środku
+     * (zaznaczone) i poza nim. Zmiana trafia do historii dopiero z przesunięciem albo usunięciem;
+     * zaznaczenie zdjęte bez skutku przywraca całe kreski. Pola tekstowe i wzory – tylko w całości.
+     */
+    function selectRegion(polygon) {
+      const xs = polygon.filter((_, index) => index % 2 === 0);
+      const ys = polygon.filter((_, index) => index % 2 === 1);
+      const area = { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+      history.begin();
+      const inside = [];
+      let cut = false;
+      for (let index = drawing.strokes.length - 1; index >= 0; index -= 1) {
+        const stroke = drawing.strokes[index];
+        const bounds = strokeBounds(stroke);
+        if (bounds.maxX < area.minX || bounds.minX > area.maxX || bounds.maxY < area.minY || bounds.minY > area.maxY) continue;
+        const parts = splitByPolygon(stroke, polygon);
+        if (!parts) continue;
+        if (parts.inside.length !== 1 || parts.inside[0] !== stroke) {
+          drawing.strokes.splice(index, 1, ...parts.outside, ...parts.inside);
+          cut = true;
+        }
+        inside.push(...parts.inside);
+      }
+      if (cut && inside.length > 0) regionPending = true;
+      else if (cut) history.rollback();
+      else history.commit();
+      selection = new Set(inside);
+      selectionKind = 'region';
+    }
+    /** Zastępuje zaznaczone kreski przesuniętymi – jeden krok cofania. */
+    function moveSelection(dx, dy) {
       const moved = new Set();
       history.begin();
-      if (copy) {
-        for (const stroke of drawing.strokes.filter((item) => selection.has(item))) {
-          const duplicate = translateStroke(stroke, dx, dy);
-          drawing.strokes.push(duplicate);
-          moved.add(duplicate);
-        }
-      } else {
-        drawing.strokes.forEach((stroke, index) => {
-          if (!selection.has(stroke)) return;
-          drawing.strokes[index] = translateStroke(stroke, dx, dy);
-          moved.add(drawing.strokes[index]);
-        });
-      }
-      if (history.commit()) changed = true;
+      drawing.strokes.forEach((stroke, index) => {
+        if (!selection.has(stroke)) return;
+        drawing.strokes[index] = translateStroke(stroke, dx, dy);
+        moved.add(drawing.strokes[index]);
+      });
+      commitStep();
       selection = moved;
       updateToolbar();
       requestRender();
     }
-    const duplicateSelection = () => moveSelection(DUPLICATE_OFFSET, DUPLICATE_OFFSET, { copy: true });
+    /** Kopie zaznaczonych kresek obok, zaznaczone. Fragment – kopia samego wnętrza (oryginał zostaje w całości). */
+    function duplicateSelection() {
+      const items = orderedSelection();
+      if (items.length === 0) return;
+      dropRegion();
+      history.begin();
+      const copies = items.map((stroke) => translateStroke(stroke, DUPLICATE_OFFSET, DUPLICATE_OFFSET));
+      drawing.strokes.push(...copies);
+      commitStep();
+      selection = new Set(copies);
+      updateToolbar();
+      requestRender();
+    }
     function deleteSelection() {
       if (selection.size === 0) return;
       history.begin();
       for (let index = drawing.strokes.length - 1; index >= 0; index -= 1) {
         if (selection.has(drawing.strokes[index])) drawing.strokes.splice(index, 1);
       }
-      if (history.commit()) changed = true;
+      commitStep();
       selection = new Set();
+      selectionKind = 'whole';
+      updateToolbar();
+      requestRender();
+    }
+    /** Kopiuj (od 1.14): do schowka rysunku – też do innego rysunku – i jako obraz do schowka systemu. */
+    function copySelection(done = 'Skopiowano') {
+      const items = orderedSelection();
+      if (items.length === 0) return false;
+      writeClipboard(items);
+      copyImage(items);
+      pasteCount = 0;
+      updateToolbar();
+      flash(`${done} – „Wklej” na pasku zaznaczania albo Ctrl+V, także w innym rysunku.`);
+      return true;
+    }
+    /** Wklej: na środku widocznej części strony (kolejne wklejenia – trochę niżej), zaznaczone. */
+    function paste() {
+      const content = readClipboard();
+      if (!content) return;
+      clearSelection();
+      const bounds = selectionBounds(content.strokes);
+      const center = visibleCenter();
+      const shift = pasteCount * DUPLICATE_OFFSET;
+      pasteCount += 1;
+      const dx = Math.min(drawing.width, Math.max(0, center.x)) - (bounds.minX + bounds.maxX) / 2 + shift;
+      const dy = Math.min(drawing.height, Math.max(0, center.y)) - (bounds.minY + bounds.maxY) / 2 + shift;
+      // Pola tekstowe i wzory mierzone od nowa (czcionki tego urządzenia).
+      const pasted = content.strokes.map((stroke) => translateStroke(isElement(stroke) ? { ...stroke, ...measureElement(stroke) } : stroke, dx, dy));
+      history.begin();
+      drawing.strokes.push(...pasted);
+      commitStep();
+      if (tool !== 'select') setTool('select');
+      selection = new Set(pasted);
+      selectionKind = 'whole';
       updateToolbar();
       requestRender();
     }
@@ -908,16 +1648,24 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     /** Środek widocznej części strony (pod paskiem narzędzi) – tam trafia nowe pole albo wzór. */
     const visibleCenter = () => ({ x: (view.width / 2 - view.x) / view.scale, y: ((view.top + view.height) / 2 - view.y) / view.scale });
     const sizeIndex = (size) => TEXT_SIZES.reduce((best, value, index) => (Math.abs(value - size) < Math.abs(TEXT_SIZES[best] - size) ? index : best), 0);
-    const inkID = (hex) => (INK_COLORS.find((color) => color.hex === hex) ?? INK_COLORS.find((color) => color.id === tools.penColor) ?? INK_COLORS[0]).id;
+    /** Kolor elementu: nazwa z palety tuszu albo własny #rrggbb (od 1.14). */
+    const inkChoice = (hex) => INK_COLORS.find((color) => color.hex === hex)?.id ?? (isHexColor(hex) ? hex : tools.penColor);
 
     /** Wielkość i kolor pola tekstowego albo wzoru (w oknie wstawiania i poprawiania). */
     function elementOptions(choice) {
-      const swatchButtons = INK_COLORS.map((color) => h('button', {
+      const colors = [
+        ...INK_COLORS.map((color) => ({ value: color.id, hex: color.hex, label: color.label, testID: `drawing-element-color-${color.id}` })),
+        ...tools.customColors.map((hex, index) => ({ value: hex, hex, label: `Własny kolor ${hex.toUpperCase()}`, testID: `drawing-element-color-custom-${index}` }))
+      ];
+      if (isHexColor(choice.color) && !colors.some((color) => color.value === choice.color)) {
+        colors.push({ value: choice.color, hex: choice.color, label: `Kolor ${choice.color.toUpperCase()}`, testID: 'drawing-element-color-own' });
+      }
+      const swatchButtons = colors.map((color) => h('button', {
         type: 'button', class: 'drawing__swatch', style: { '--swatch': color.hex }, 'aria-label': color.label, title: color.label,
-        'aria-pressed': String(color.id === choice.color), dataset: { color: color.id, testid: `drawing-element-color-${color.id}` },
+        'aria-pressed': String(color.value === choice.color), dataset: { color: color.value, testid: color.testID },
         onClick: () => {
-          choice.color = color.id;
-          for (const button of swatchButtons) button.setAttribute('aria-pressed', String(button.dataset.color === color.id));
+          choice.color = color.value;
+          for (const button of swatchButtons) button.setAttribute('aria-pressed', String(button.dataset.color === color.value));
         }
       }));
       return h('div', { class: 'drawing__element-options' },
@@ -931,7 +1679,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
 
     /** Nowe pole tekstowe albo wzór (element = null) albo poprawka istniejącego; pusta treść usuwa element. */
     function editElement(kind, element = null) {
-      const choice = { size: element ? sizeIndex(element.size) : tools.textSize, color: element ? inkID(element.color) : tools.penColor };
+      // Nowy element zastępuje zaznaczenie (zaznaczony fragment wraca w całości).
+      if (!element) clearSelection();
+      const choice = { size: element ? sizeIndex(element.size) : tools.textSize, color: element ? inkChoice(element.color) : tools.penColor };
       const options = elementOptions(choice);
       const apply = (content) => {
         const value = content.slice(0, ELEMENT_TEXT_MAX);
@@ -958,6 +1708,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         // Nowe albo poprawione pole jest zaznaczone – od razu można je przesunąć.
         setTool('select');
         selection = new Set([next]);
+        selectionKind = 'whole';
         updateToolbar();
         requestRender();
       };
@@ -1030,21 +1781,23 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       history.begin();
       if (next) drawing.strokes[index] = next;
       else drawing.strokes.splice(index, 1);
-      if (history.commit()) changed = true;
+      commitStep();
       selection = new Set();
+      selectionKind = 'whole';
       updateToolbar();
       requestRender();
     }
 
     function selectAll() {
       if (tool !== 'select') setTool('select');
+      clearSelection();
       selection = new Set(drawing.strokes);
       requestLive();
     }
 
-    // ---- wskaźniki: rysowanie, gumka, zaznaczanie, linijka, przesuwanie i powiększanie
-    // `active` – jedna czynność jednym wskaźnikiem (kreska, gumka, prostokąt zaznaczania,
-    // przesuwanie zaznaczenia, linijka); `touches` i `gesture` – palce przesuwające stronę albo linijkę.
+    // ---- wskaźniki: rysowanie, gumka, zaznaczanie, linijka, pipetka, przesuwanie i powiększanie
+    // `active` – jedna czynność jednym wskaźnikiem (kreska, gumka, prostokąt albo lasso zaznaczania,
+    // przesuwanie zaznaczenia, linijka, pipetka); `touches` i `gesture` – palce przesuwające stronę albo linijkę.
     const touches = new Map();
     let gesture = null;
     const local = (event) => ({ clientX: event.clientX, clientY: event.clientY });
@@ -1054,11 +1807,16 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       if (active.stroke.tool === 'highlighter') return HIGHLIGHTER_WIDTHS[tools.highlighterWidth];
       return penWidth(active.pressure ? event.pressure : 0.5, tools.penWidths[tools.penWidth], active.pressure ? tools.sensitivity : 'off');
     };
-    /** Punkt kreski: przy linijce – rzut na prostą wzdłuż jej krawędzi. */
+    /** Punkt kreski: przy linijce – rzut na prostą wzdłuż jej krawędzi (i zasięg kreski wzdłuż linijki – długość). */
     const strokePoint = (event) => {
       const point = toDrawing(event);
-      if (!active.edge) return point;
-      return rulerPoint(active.edge.ruler, rulerOffset(active.edge.ruler, point.x, point.y).along, active.edge.across);
+      const { edge } = active;
+      if (!edge) return point;
+      const { along } = rulerOffset(edge.ruler, point.x, point.y);
+      edge.along = along;
+      edge.from = Math.min(edge.from, along);
+      edge.to = Math.max(edge.to, along);
+      return rulerPoint(edge.ruler, along, edge.across);
     };
     function startStroke(event) {
       const highlighter = tool === 'highlighter';
@@ -1068,8 +1826,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         // Kreska zaczęta na linijce albo przy niej biegnie wzdłuż bliższej krawędzi.
         const point = toDrawing(event);
         const { across } = rulerOffset(ruler, point.x, point.y);
-        const half = RULER_WIDTH / 2 / view.scale;
-        if (Math.abs(across) <= half + RULER_SNAP / view.scale) active.edge = { ruler: { ...ruler }, across: (across < 0 ? -1 : 1) * half };
+        const half = rulerHalf();
+        if (Math.abs(across) <= half + RULER_SNAP / view.scale) {
+          active.edge = { ruler: { ...ruler }, across: (across < 0 ? -1 : 1) * half, along: 0, from: Infinity, to: -Infinity };
+        }
       }
       extendStroke(event);
     }
@@ -1080,6 +1840,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         const point = smoothPoint(active.last, raw, active.stroke.tool === 'pen' && !active.edge ? tools.smoothing : 0);
         addPoint(active.stroke, point);
         active.last = point;
+      }
+      if (active.edge) {
+        measured = active.edge.to - active.edge.from;
+        updateRulerPill();
       }
       renderLive();
     }
@@ -1116,14 +1880,30 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         requestRender();
         return;
       }
-      selection = new Set();
-      active = { kind: 'marquee', id: event.pointerId, touch: event.pointerType === 'touch', rect: { x0: point.x, y0: point.y, x1: point.x, y1: point.y }, client: local(event) };
+      clearSelection();
+      const common = { id: event.pointerId, touch: event.pointerType === 'touch', start: point, client: local(event) };
+      active = tools.selectShape === 'lasso'
+        ? { kind: 'lasso', ...common, polygon: [point.x, point.y] }
+        : { kind: 'marquee', ...common, rect: { x0: point.x, y0: point.y, x1: point.x, y1: point.y } };
       requestLive();
     }
     function startRuler(event, kind) {
       const point = toDrawing(event);
-      const grab = Math.atan2(point.y - ruler.y, point.x - ruler.x) - ruler.angle;
-      active = { kind, id: event.pointerId, touch: event.pointerType === 'touch', start: point, ruler: { ...ruler }, grab };
+      // Linijka z zerem na linii albo przecięciu obraca się wokół tego punktu (zero zostaje na miejscu).
+      const pivot = kind === 'ruler-rotate' && ruler.snap ? { x: ruler.snap.x, y: ruler.snap.y, side: ruler.snap.side } : null;
+      const origin = pivot ?? ruler;
+      const grab = Math.atan2(point.y - origin.y, point.x - origin.x) - ruler.angle;
+      active = { kind, id: event.pointerId, touch: event.pointerType === 'touch', start: point, ruler: { ...ruler }, grab, pivot };
+    }
+    function startPick(event) {
+      try {
+        live.setPointerCapture(event.pointerId);
+      } catch {
+        // przechwycenie nie jest konieczne
+      }
+      active = { kind: 'pick', id: event.pointerId, touch: event.pointerType === 'touch', client: local(event) };
+      pickAt(event);
+      requestLive();
     }
     function moveActive(event) {
       const point = toDrawing(event);
@@ -1139,6 +1919,14 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           active.rect.y1 = point.y;
           requestLive();
           break;
+        case 'lasso': {
+          const { polygon } = active;
+          if (Math.hypot(point.x - polygon.at(-2), point.y - polygon.at(-1)) * view.scale >= LASSO_STEP) {
+            polygon.push(point.x, point.y);
+            requestLive();
+          }
+          break;
+        }
         case 'move':
           active.dx = point.x - active.start.x;
           active.dy = point.y - active.start.y;
@@ -1147,33 +1935,63 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         case 'ruler-move':
           setRuler({ x: active.ruler.x + point.x - active.start.x, y: active.ruler.y + point.y - active.start.y, angle: active.ruler.angle });
           break;
-        case 'ruler-rotate':
-          setRuler({ ...active.ruler, angle: Math.atan2(point.y - active.ruler.y, point.x - active.ruler.x) - active.grab });
+        case 'ruler-rotate': {
+          const origin = active.pivot ?? active.ruler;
+          const angle = Math.atan2(point.y - origin.y, point.x - origin.x) - active.grab;
+          if (!active.pivot) {
+            setRuler({ x: origin.x, y: origin.y, angle });
+            break;
+          }
+          const offset = rulerPoint({ x: 0, y: 0, angle }, 0, active.pivot.side * rulerHalf());
+          setRuler({ x: origin.x - offset.x, y: origin.y - offset.y, angle });
+          break;
+        }
+        case 'pick':
+          active.client = local(event);
+          pickAt(event);
+          requestLive();
           break;
         default:
           break;
       }
     }
+    /** Koniec prostokąta albo lassa: dotknięcie – kreska w tym miejscu; obrys – całe kreski albo fragmenty. */
+    function finishOutline(done) {
+      const polygon = done.kind === 'lasso' ? done.polygon : rectPolygon(done.rect);
+      const xs = polygon.filter((_, index) => index % 2 === 0);
+      const ys = polygon.filter((_, index) => index % 2 === 1);
+      if ((Math.max(...xs) - Math.min(...xs)) * view.scale < TAP_SLOP && (Math.max(...ys) - Math.min(...ys)) * view.scale < TAP_SLOP) {
+        // Dotknięcie kreski zaznacza ją (najwyższą w tym miejscu).
+        const [top] = strokesAt(drawing.strokes, done.start.x, done.start.y, SELECTION_PAD / view.scale);
+        selection = new Set(top === undefined ? [] : [drawing.strokes[top]]);
+        selectionKind = 'whole';
+        return;
+      }
+      if (selectModeOf(done) === 'region') {
+        selectRegion(polygon);
+        return;
+      }
+      const found = done.kind === 'lasso' ? strokesInPolygon(drawing.strokes, polygon) : strokesInRect(drawing.strokes, done.rect);
+      selection = new Set(found.map((index) => drawing.strokes[index]));
+      selectionKind = 'whole';
+    }
     function finishActive(cancelled = false) {
       if (!active) return;
       const done = active;
       active = null;
-      if (done.kind === 'stroke' && !cancelled && done.stroke.points.length >= 3) {
-        history.add(done.stroke);
-        changed = true;
+      if (done.kind === 'stroke') {
+        if (!cancelled && done.stroke.points.length >= 3) {
+          history.add(done.stroke);
+          changed = true;
+        } else if (done.edge) {
+          measured = null;
+        }
       } else if (done.kind === 'erase') {
-        history.commit();
+        commitStep();
         // Rysikiem z gumką przy zaznaczaniu: starte kreski wypadają z zaznaczenia.
         if (selection.size > 0) selection = new Set(drawing.strokes.filter((stroke) => selection.has(stroke)));
-      } else if (done.kind === 'marquee') {
-        const { x0, y0, x1, y1 } = done.rect;
-        if (Math.abs(x1 - x0) * view.scale < TAP_SLOP && Math.abs(y1 - y0) * view.scale < TAP_SLOP) {
-          // Dotknięcie kreski zaznacza ją (najwyższą w tym miejscu).
-          const [top] = strokesAt(drawing.strokes, x0, y0, SELECTION_PAD / view.scale);
-          selection = new Set(top === undefined ? [] : [drawing.strokes[top]]);
-        } else {
-          selection = new Set(strokesInRect(drawing.strokes, done.rect).map((index) => drawing.strokes[index]));
-        }
+      } else if ((done.kind === 'marquee' || done.kind === 'lasso') && !cancelled) {
+        finishOutline(done);
       } else if (done.kind === 'move' && !cancelled) {
         const tap = Math.abs(done.dx) * view.scale < TAP_SLOP && Math.abs(done.dy) * view.scale < TAP_SLOP;
         const [only] = selection;
@@ -1239,12 +2057,17 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     live.addEventListener('pointerdown', (event) => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
       event.preventDefault();
-      closeSettings();
       if (event.pointerType === 'pen' && !penSeen) {
         penSeen = true;
         penPill.hidden = false;
         rememberPen();
       }
+      // Pipetka: każdy wskaźnik pobiera kolor (panel koloru zostaje otwarty).
+      if (picking) {
+        if (!active && touches.size === 0) startPick(event);
+        return;
+      }
+      closeSettings();
       const point = toDrawing(event);
       if (event.pointerType === 'touch') {
         // Kolejny palec dołącza do trwającego gestu.
@@ -1307,8 +2130,12 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         return;
       }
       if (!active || active.id !== event.pointerId) {
-        // Kółko gumki pod myszą albo zawieszonym nad ekranem rysikiem.
-        if (tool === 'eraser' && event.pointerType !== 'touch' && !active) {
+        if (active || event.pointerType === 'touch') return;
+        // Lupa pipetki albo kółko gumki pod myszą lub zawieszonym nad ekranem rysikiem.
+        if (picking) {
+          pickHover = local(event);
+          requestLive();
+        } else if (tool === 'eraser') {
           hover = toDrawing(event);
           requestLive();
         }
@@ -1332,8 +2159,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     live.addEventListener('pointerup', (event) => release(event, false));
     live.addEventListener('pointercancel', (event) => release(event, true));
     live.addEventListener('pointerleave', () => {
-      if (!hover) return;
+      if (!hover && !pickHover) return;
       hover = null;
+      pickHover = null;
       requestLive();
     });
     live.addEventListener('wheel', (event) => {
@@ -1353,6 +2181,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     let saving = false;
     const close = async (save) => {
       if (saving) return;
+      // Zaznaczony fragment wraca w całości – w zapisie kreski nie są pocięte bez potrzeby.
+      clearSelection();
       if (save && changed) {
         saving = true;
         doneButton.disabled = true;
@@ -1380,28 +2210,46 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       h('header', { class: 'sheet__header' }, cancelButton, h('h2', { class: 'sheet__title' }, title), doneButton),
       h('div', { class: 'drawing__body' }, stage, topBar, status));
 
+    /** Pole do pisania (skala, kod koloru) – skróty i Delete działają w nim jak zwykle. */
+    const typing = (target) => target instanceof window.HTMLElement && (target.isContentEditable || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
+      || (target.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button'].includes(target.type)));
     // Skróty działają w całym oknie – także gdy fokus zniknął (np. „Ponów” stał się nieaktywny),
     // ale nie w oknie pytania nad edytorem.
     const onKey = (event) => {
       if (event.target !== document.body && !dialog.contains(event.target)) return;
+      if (event.key === 'Escape' && panelOpen()) {
+        // Esc najpierw zamyka panel pod paskiem, potem zdejmuje zaznaczenie, dopiero następny zamyka edytor.
+        event.preventDefault();
+        closeSettings();
+        updateToolbar();
+        requestLive();
+        return;
+      }
+      if (typing(event.target)) return;
       const key = event.key.toLowerCase();
       const command = event.ctrlKey || event.metaKey;
       if (command && key === 'z') {
         event.preventDefault();
-        if (event.shiftKey ? history.redo() : history.undo()) afterHistory();
+        stepHistory(event.shiftKey);
       } else if (command && key === 'y') {
         event.preventDefault();
-        if (history.redo()) afterHistory();
+        stepHistory(true);
       } else if (command && key === 'a') {
         event.preventDefault();
         selectAll();
+      } else if (command && (key === 'c' || key === 'x') && selection.size > 0) {
+        event.preventDefault();
+        if (copySelection(key === 'x' ? 'Wycięto' : 'Skopiowano') && key === 'x') deleteSelection();
+      } else if (command && key === 'v' && readClipboard()) {
+        event.preventDefault();
+        paste();
       } else if ((event.key === 'Delete' || event.key === 'Backspace') && selection.size > 0) {
         event.preventDefault();
         deleteSelection();
       } else if (event.key === 'Escape' && selection.size > 0) {
-        // Esc najpierw zdejmuje zaznaczenie, dopiero następny zamyka edytor.
         event.preventDefault();
         clearSelection();
+        updateToolbar();
       }
     };
 
@@ -1410,6 +2258,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       onClose: () => {
         document.removeEventListener('keydown', onKey, true);
         observer.disconnect();
+        clearTimeout(noticeTimer);
         window.cancelAnimationFrame(frame);
         window.cancelAnimationFrame(liveFrame);
         resolve(result);

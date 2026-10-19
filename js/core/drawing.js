@@ -1,7 +1,9 @@
 // Rysunki odręczne w notatce (od 1.12): kreski pióra i zakreślacza zapisane jako punkty, żeby
 // rysunek dało się później poprawiać. Tu – bez przeglądarki: grubość kreski z nacisku rysika,
 // wygładzanie, gumka całych kresek i fragmentów (od 1.12.1), zaznaczanie i przesuwanie kresek,
-// linijka, historia cofania, sprawdzanie danych (zapis, kopia zapasowa).
+// linijka, historia cofania, sprawdzanie danych (zapis, kopia zapasowa). Od 1.14: skala rysunku
+// i liczby na linijce, przyciąganie zera linijki do przecięć i linii, zaznaczanie fragmentów
+// prostokątem albo lassem (kreski cięte na brzegu obszaru), własne kolory.
 //
 // Rysunek: { version: 2, width, height, paper: 'plain' | 'lines' | 'grid', strokes, photo? }
 //   width, height – wielkość strony w jednostkach rysunku (strona bez zdjęcia: 1600 × 1100);
@@ -10,7 +12,8 @@
 //   od 1.13 także pola tekstowe { tool: 'text', color, x, y, size, text, maxWidth, width, height }
 //   i wzory { tool: 'math', color, x, y, size, source, width, height } – (x, y) to lewy górny róg,
 //   width i height – zmierzone przy wstawieniu (zaznaczanie, gumka), size – wysokość czcionki;
-//   photo – { type, width, height, bytes } – zdjęcie pod kreskami („Rysuj na zdjęciu”).
+//   photo – { type, width, height, bytes } – zdjęcie pod kreskami („Rysuj na zdjęciu”);
+//   od 1.14 scale – { value, unit } – ile w rzeczywistości ma jedna kratka (linijka, długość kreski).
 
 /** 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13). */
 export const DRAWING_VERSION = 2;
@@ -56,6 +59,94 @@ export const WIDTH_LIMITS = Object.freeze({ min: 0.5, max: 40 });
 export const SENSITIVITY = Object.freeze({ off: 0, low: 0.5, medium: 1, high: 1.6 });
 export const SENSITIVITY_LABELS = Object.freeze({ off: 'Wył.', low: 'Mała', medium: 'Średnia', high: 'Duża' });
 
+/** Skala rysunku (od 1.14): jedna kratka = value jednostek – SI albo imperialnych; meters – długość jednostki. */
+export const SCALE_UNITS = Object.freeze([
+  { id: 'mm', label: 'mm', name: 'milimetry', system: 'si', meters: 0.001 },
+  { id: 'cm', label: 'cm', name: 'centymetry', system: 'si', meters: 0.01 },
+  { id: 'm', label: 'm', name: 'metry', system: 'si', meters: 1 },
+  { id: 'km', label: 'km', name: 'kilometry', system: 'si', meters: 1000 },
+  { id: 'in', label: 'in', name: 'cale', system: 'imperial', meters: 0.0254 },
+  { id: 'ft', label: 'ft', name: 'stopy', system: 'imperial', meters: 0.3048 },
+  { id: 'yd', label: 'yd', name: 'jardy', system: 'imperial', meters: 0.9144 },
+  { id: 'mi', label: 'mi', name: 'mile', system: 'imperial', meters: 1609.344 }
+]);
+export const defaultScale = () => ({ value: 1, unit: 'cm' });
+const unitOf = (id) => SCALE_UNITS.find((unit) => unit.id === id) ?? SCALE_UNITS[1];
+
+/** Sprawdzona skala rysunku (zła albo brak – 1 kratka = 1 cm). */
+export function cleanScale(raw) {
+  if (!raw || typeof raw !== 'object' || !finite(raw.value) || raw.value <= 0 || !SCALE_UNITS.some((unit) => unit.id === raw.unit)) return defaultScale();
+  return { value: clamp(raw.value, 1e-6, 1e9), unit: raw.unit };
+}
+
+/** Liczba po polsku: przecinek dziesiętny, kilka cyfr znaczących, bez zbędnych zer. */
+export function formatNumber(value) {
+  const size = Math.abs(value);
+  const digits = size >= 100 ? 0 : size >= 10 ? 1 : size >= 1 ? 2 : 3;
+  return String(Number(value.toFixed(digits))).replace('.', ',');
+}
+
+/** Długość w jednostkach strony jako długość rzeczywista w skali rysunku, np. „3,5 m”. */
+export function formatLength(units, scale) {
+  const { value, unit } = cleanScale(scale);
+  return `${formatNumber((units / PAPER_STEP) * value)} ${unitOf(unit).label}`;
+}
+
+/**
+ * Szacunek skali na ekranie: kratka ma na ekranie `squarePx` pikseli CSS, a ekran ma ok.
+ * `pxPerInch` pikseli CSS na cal. Zwraca { millimeters – kratka na ekranie, ratio – N w skali 1:N }.
+ */
+export function screenScale(scale, squarePx, pxPerInch) {
+  const { value, unit } = cleanScale(scale);
+  const millimeters = (squarePx / pxPerInch) * 25.4;
+  return { millimeters, ratio: (value * unitOf(unit).meters * 1000) / millimeters };
+}
+
+/** Skala 1:N zaokrąglona do dwóch cyfr znaczących („1:170”, „1:2 500”, „1:1,6”; powiększenie – „2:1”, „2,5:1”). */
+export function formatRatio(ratio) {
+  if (!finite(ratio) || ratio <= 0) return '–';
+  const nice = (value) => {
+    const power = 10 ** (Math.floor(Math.log10(value)) - 1);
+    return Math.round(value / power) * power;
+  };
+  const text = (value) => (value >= 100 ? String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') : formatNumber(value));
+  return ratio >= 1 ? `1:${text(nice(ratio))}` : `${text(nice(1 / ratio))}:1`;
+}
+
+/** Skala, w której kratka ma tyle, ile widać na ekranie (1:1) – w jednostce `unit`. */
+export function screenScaleValue(squareMillimeters, unit) {
+  return Number(((squareMillimeters / 1000) / unitOf(unit).meters).toPrecision(3));
+}
+
+/** Własne kolory (od 1.14): zapamiętane najwyżej trzy, najnowszy pierwszy. */
+export const CUSTOM_COLOR_LIMIT = 3;
+export const isHexColor = (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+
+/** Kolor z HSL (odcień 0–360, nasycenie i jasność 0–100) jako #rrggbb – siatka kolorów. */
+export function hslToHex(hue, saturation, lightness) {
+  const s = saturation / 100;
+  const l = lightness / 100;
+  const k = (n) => (n + hue / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const channel = (n) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))));
+  return `#${[channel(0), channel(8), channel(4)].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Składowe #rrggbb → [r, g, b] (0–255). */
+export const hexToRgb = (hex) => [1, 3, 5].map((start) => parseInt(hex.slice(start, start + 2), 16));
+export const rgbToHex = (rgb) => `#${rgb.map((value) => clamp(Math.round(value), 0, 255).toString(16).padStart(2, '0')).join('')}`;
+
+/** Lista własnych kolorów po dodaniu `hex` (bez powtórzeń, najnowszy pierwszy, najwyżej trzy). */
+export function rememberColor(colors, hex) {
+  const value = hex.toLowerCase();
+  return [value, ...colors.filter((color) => color !== value)].slice(0, CUSTOM_COLOR_LIMIT);
+}
+
+/** Zaznaczanie (od 1.14): prostokąt albo lasso; tryb – według kierunku, całe kreski albo fragmenty. */
+export const SELECT_SHAPES = Object.freeze(['rect', 'lasso']);
+export const SELECT_MODES = Object.freeze(['auto', 'whole', 'region']);
+export const SELECT_MODE_LABELS = Object.freeze({ auto: 'Auto', whole: 'Całe', region: 'Fragmenty' });
+
 /** Pola tekstowe i wzory (od 1.13): wielkość czcionki w jednostkach strony (kratka ma 44). */
 export const TEXT_SIZES = Object.freeze([28, 40, 56]);
 export const TEXT_SIZE_LABELS = Object.freeze(['Mała', 'Średnia', 'Duża']);
@@ -83,7 +174,11 @@ export function defaultToolSettings() {
     highlighterColor: 'yellow',
     eraserMode: 'stroke',
     eraserSize: 1,
-    textSize: 1
+    textSize: 1,
+    customColors: [],
+    selectShape: 'rect',
+    selectMode: 'auto',
+    rulerSnap: true
   };
 }
 
@@ -106,13 +201,20 @@ export function cleanToolSettings(raw) {
     smoothing: finite(raw.smoothing) ? clamp(raw.smoothing, 0, 1) : base.smoothing,
     penWidths: widths,
     penWidth: Number.isInteger(raw.penWidth) && raw.penWidth >= 0 && raw.penWidth < PEN_WIDTHS.length ? raw.penWidth : base.penWidth,
-    penColor: INK_COLORS.some((color) => color.id === raw.penColor) ? raw.penColor : base.penColor,
+    // Od 1.14 kolor może być też własny (#rrggbb).
+    penColor: INK_COLORS.some((color) => color.id === raw.penColor) || isHexColor(raw.penColor) ? raw.penColor : base.penColor,
     highlighterWidth: Number.isInteger(raw.highlighterWidth) && raw.highlighterWidth >= 0 && raw.highlighterWidth < HIGHLIGHTER_WIDTHS.length
       ? raw.highlighterWidth : base.highlighterWidth,
-    highlighterColor: HIGHLIGHTER_COLORS.some((color) => color.id === raw.highlighterColor) ? raw.highlighterColor : base.highlighterColor,
+    highlighterColor: HIGHLIGHTER_COLORS.some((color) => color.id === raw.highlighterColor) || isHexColor(raw.highlighterColor)
+      ? raw.highlighterColor : base.highlighterColor,
     eraserMode: ERASER_MODES.includes(raw.eraserMode) ? raw.eraserMode : base.eraserMode,
     eraserSize: Number.isInteger(raw.eraserSize) && raw.eraserSize >= 0 && raw.eraserSize < ERASER_SIZES.length ? raw.eraserSize : base.eraserSize,
-    textSize: Number.isInteger(raw.textSize) && raw.textSize >= 0 && raw.textSize < TEXT_SIZES.length ? raw.textSize : base.textSize
+    textSize: Number.isInteger(raw.textSize) && raw.textSize >= 0 && raw.textSize < TEXT_SIZES.length ? raw.textSize : base.textSize,
+    customColors: Array.isArray(raw.customColors)
+      ? [...new Set(raw.customColors.filter(isHexColor).map((color) => color.toLowerCase()))].slice(0, CUSTOM_COLOR_LIMIT) : base.customColors,
+    selectShape: SELECT_SHAPES.includes(raw.selectShape) ? raw.selectShape : base.selectShape,
+    selectMode: SELECT_MODES.includes(raw.selectMode) ? raw.selectMode : base.selectMode,
+    rulerSnap: typeof raw.rulerSnap === 'boolean' ? raw.rulerSnap : base.rulerSnap
   };
 }
 
@@ -366,6 +468,183 @@ export function rulerPoint(ruler, along, across) {
   return { x: ruler.x + along * cos - across * sin, y: ruler.y + along * sin + across * cos };
 }
 
+// ---------------------------------------------------------------- przyciąganie linijki (od 1.14)
+
+/** Przecięcie odcinków A–B i C–D: { x, y, t } (t – położenie na A–B) albo null. */
+function crossing(ax, ay, bx, by, cx, cy, dx, dy) {
+  const [rx, ry, sx, sy] = [bx - ax, by - ay, dx - cx, dy - cy];
+  const denominator = rx * sy - ry * sx;
+  if (Math.abs(denominator) < 1e-12) return null;
+  const t = ((cx - ax) * sy - (cy - ay) * sx) / denominator;
+  const u = ((cx - ax) * ry - (cy - ay) * rx) / denominator;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+  return { x: ax + t * rx, y: ay + t * ry, t };
+}
+
+/** Odcinki kreski [ax, ay, bx, by] przechodzące nie dalej niż `radius` od punktu. */
+function segmentsNear(stroke, x, y, radius) {
+  const { points } = stroke;
+  const found = [];
+  for (let index = 3; index < points.length; index += 3) {
+    const segment = [points[index - 3], points[index - 2], points[index], points[index + 1]];
+    if (segmentDistance(x, y, ...segment) <= radius) found.push(segment);
+  }
+  return found;
+}
+
+/**
+ * Punkt, do którego przyskakuje zero linijki: najbliższe przecięcie dwóch kresek w promieniu,
+ * a gdy go nie ma – najbliższy punkt kreski, z kierunkiem kreski w tym miejscu (radiany).
+ * Zwraca { x, y, kind: 'crossing' | 'line', angle? } albo null. Pola tekstowe i wzory się nie liczą.
+ */
+export function snapToStrokes(strokes, x, y, radius) {
+  const near = strokes
+    .filter((stroke) => {
+      if (isElement(stroke) || stroke.points.length < 6) return false;
+      const bounds = strokeBounds(stroke);
+      return x >= bounds.minX - radius && x <= bounds.maxX + radius && y >= bounds.minY - radius && y <= bounds.maxY + radius;
+    })
+    .map((stroke) => segmentsNear(stroke, x, y, radius))
+    .filter((segments) => segments.length > 0);
+  let best = null;
+  for (let first = 0; first < near.length; first += 1) {
+    for (let second = first + 1; second < near.length; second += 1) {
+      for (const a of near[first]) {
+        for (const b of near[second]) {
+          const point = crossing(...a, ...b);
+          if (!point) continue;
+          const distance = Math.hypot(point.x - x, point.y - y);
+          if (distance <= radius && (!best || distance < best.distance)) best = { x: point.x, y: point.y, kind: 'crossing', distance };
+        }
+      }
+    }
+  }
+  if (!best) {
+    for (const segments of near) {
+      for (const [ax, ay, bx, by] of segments) {
+        const length = (bx - ax) ** 2 + (by - ay) ** 2;
+        const t = length === 0 ? 0 : clamp(((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / length, 0, 1);
+        const point = { x: ax + (bx - ax) * t, y: ay + (by - ay) * t };
+        const distance = Math.hypot(point.x - x, point.y - y);
+        if (length > 0 && (!best || distance < best.distance)) best = { ...point, kind: 'line', angle: Math.atan2(by - ay, bx - ax), distance };
+      }
+    }
+  }
+  if (!best) return null;
+  const snap = { ...best };
+  delete snap.distance;
+  return snap;
+}
+
+/** Różnica kierunków prostych (bez zwrotu, 0 – π/2). */
+export function lineAngleDifference(first, second) {
+  const difference = (((first - second) % Math.PI) + Math.PI) % Math.PI;
+  return Math.min(difference, Math.PI - difference);
+}
+
+/** Kąt linijki prostopadłej do kierunku `lineAngle`, najbliższy obecnemu kątowi `current`. */
+export function perpendicularAngle(lineAngle, current) {
+  const candidates = [lineAngle + Math.PI / 2, lineAngle - Math.PI / 2];
+  const turn = (angle) => Math.abs(Math.atan2(Math.sin(angle - current), Math.cos(angle - current)));
+  return turn(candidates[0]) <= turn(candidates[1]) ? candidates[0] : candidates[1];
+}
+
+// ---------------------------------------------------------------- obszar zaznaczania (od 1.14)
+
+/** Prostokąt { x0, y0, x1, y1 } jako wielokąt [x, y, x, y, …]. */
+export const rectPolygon = ({ x0, y0, x1, y1 }) => [x0, y0, x1, y0, x1, y1, x0, y1];
+
+/** Czy punkt leży wewnątrz wielokąta [x, y, x, y, …] (reguła parzystości). */
+export function pointInPolygon(x, y, polygon) {
+  let inside = false;
+  for (let index = 0, previous = polygon.length - 2; index < polygon.length; previous = index, index += 2) {
+    const [xi, yi, xj, yj] = [polygon[index], polygon[index + 1], polygon[previous], polygon[previous + 1]];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Czy obrys biegnie zgodnie z ruchem wskazówek zegara – tak, jak go widać na ekranie (oś y w dół):
+ * lasso zgodnie ze wskazówkami zaznacza wnętrze (fragmenty), przeciwnie – całe kreski.
+ */
+export function isClockwise(polygon) {
+  let area = 0;
+  for (let index = 0; index < polygon.length; index += 2) {
+    const next = (index + 2) % polygon.length;
+    area += polygon[index] * polygon[next + 1] - polygon[next] * polygon[index + 1];
+  }
+  return area > 0;
+}
+
+/** Czy pole tekstowe albo wzór leży w całości w wielokącie. */
+const elementInPolygon = (element, polygon) => [[element.x, element.y], [element.x + element.width, element.y],
+  [element.x + element.width, element.y + element.height], [element.x, element.y + element.height]].every(([x, y]) => pointInPolygon(x, y, polygon));
+
+/** Numery kresek, pól i wzorów leżących w całości w wielokącie (lasso – całe kreski). */
+export function strokesInPolygon(strokes, polygon) {
+  const found = [];
+  strokes.forEach((stroke, index) => {
+    if (isElement(stroke)) {
+      if (elementInPolygon(stroke, polygon)) found.push(index);
+      return;
+    }
+    const { points } = stroke;
+    for (let point = 0; point < points.length; point += 3) {
+      if (!pointInPolygon(points[point], points[point + 1], polygon)) return;
+    }
+    if (points.length > 0) found.push(index);
+  });
+  return found;
+}
+
+/**
+ * Kreska podzielona brzegiem obszaru (zaznaczanie fragmentów): { inside, outside } – kawałki
+ * w środku i poza nim, cięte dokładnie na brzegu (grubość przeliczona w miejscu cięcia). Kreska
+ * w całości w środku zostaje tym samym obiektem; null – kreska nie sięga obszaru. Pola tekstowego
+ * i wzoru nie da się przeciąć – są w środku tylko w całości.
+ */
+export function splitByPolygon(stroke, polygon) {
+  if (isElement(stroke)) return elementInPolygon(stroke, polygon) ? { inside: [stroke], outside: [] } : null;
+  const { points } = stroke;
+  const count = points.length / 3;
+  if (count === 0) return null;
+  if (count === 1) return pointInPolygon(points[0], points[1], polygon) ? { inside: [stroke], outside: [] } : null;
+  const runs = [];
+  let current = null;
+  const push = (inside, x, y, w) => {
+    if (!current || current.inside !== inside) {
+      // Nowy kawałek zaczyna się w punkcie, w którym skończył się poprzedni (na brzegu obszaru).
+      const start = current ? current.points.slice(-3) : [];
+      current = { inside, points: [...start] };
+      runs.push(current);
+    }
+    current.points.push(x, y, w);
+  };
+  for (let point = 1; point < count; point += 1) {
+    const [ax, ay, aw] = [points[point * 3 - 3], points[point * 3 - 2], points[point * 3 - 1]];
+    const [bx, by, bw] = [points[point * 3], points[point * 3 + 1], points[point * 3 + 2]];
+    const cuts = [0];
+    for (let index = 0, previous = polygon.length - 2; index < polygon.length; previous = index, index += 2) {
+      const hit = crossing(ax, ay, bx, by, polygon[previous], polygon[previous + 1], polygon[index], polygon[index + 1]);
+      if (hit && hit.t > 0 && hit.t < 1) cuts.push(hit.t);
+    }
+    cuts.push(1);
+    cuts.sort((a, b) => a - b);
+    const at = (t) => [ax + (bx - ax) * t, ay + (by - ay) * t, aw + (bw - aw) * t];
+    if (point === 1) push(pointInPolygon(...at(Math.min(cuts[1], 1) / 2).slice(0, 2), polygon), ax, ay, aw);
+    for (let index = 1; index < cuts.length; index += 1) {
+      if (cuts[index] - cuts[index - 1] < 1e-9) continue;
+      const middle = at((cuts[index - 1] + cuts[index]) / 2);
+      push(pointInPolygon(middle[0], middle[1], polygon), ...at(cuts[index]));
+    }
+  }
+  if (!runs.some((run) => run.inside)) return null;
+  if (runs.every((run) => run.inside)) return { inside: [stroke], outside: [] };
+  const pieces = (inside) => runs.filter((run) => run.inside === inside).map((run) => strokeFrom(stroke, run.points)).filter((piece) => piece.points.length >= 6);
+  return { inside: pieces(true), outside: pieces(false) };
+}
+
 // ---------------------------------------------------------------- historia
 
 /** Te same kreski w tej samej kolejności. */
@@ -424,6 +703,17 @@ export class DrawingHistory {
     return true;
   }
 
+  /**
+   * Odrzuca zmianę zaczętą begin() – kreski wracają do stanu sprzed niej, bez kroku cofania
+   * (od 1.14: kreski przecięte przy zaznaczaniu fragmentu, gdy zaznaczenie zniknęło bez skutku).
+   */
+  rollback() {
+    if (!this.before) return false;
+    replaceStrokes(this.strokes, this.before);
+    this.before = null;
+    return true;
+  }
+
   /** Koniec pociągnięcia gumką – następne usunięcie to nowy krok cofania. */
   closeStep() {
     return this.commit();
@@ -465,6 +755,7 @@ export function emptyDrawing({ photo = null, paper = 'grid' } = {}) {
     height: photo ? Math.max(16, Math.round(photo.height * scale)) : PAGE_HEIGHT,
     paper: photo ? 'plain' : paper,
     strokes: [],
+    scale: defaultScale(),
     ...(photo ? { photo } : {})
   };
 }
@@ -513,6 +804,7 @@ export function cleanDrawing(raw) {
     height,
     paper: PAPERS.includes(raw.paper) ? raw.paper : 'plain',
     strokes,
+    scale: cleanScale(raw.scale),
     ...(photo ? { photo } : {})
   };
 }

@@ -111,6 +111,15 @@ const ICONS = {
   // Zaznaczanie prostokątem i linijka w edytorze rysunku (od 1.12.1).
   marquee: [{ d: 'M4 4.5h12v7.5M4 4.5v12h7.5', 'stroke-dasharray': '2.4 2.4' }, filled('M13.5 13.5l7 2.4-3 1.3-1.3 3z')],
   textBox: [{ d: 'M3.5 5h17v14h-17z', 'stroke-dasharray': '2.4 2.2' }, p('M8 9h8'), p('M12 9v7')],
+  // Lasso i powielanie (od 1.14) – „Kopiuj” ma ikonę copy, „Powiel” – kopię z plusem.
+  lasso: [
+    { d: 'M12 4c4.7 0 8.5 2.5 8.5 5.6s-3.8 5.6-8.5 5.6-8.5-2.5-8.5-5.6S7.3 4 12 4z', 'stroke-dasharray': '2.4 2.3' },
+    p('M7.4 14.2c-1.3 1.2-1.4 2.6-.3 3.5 1.2 1 1.1 2.3-.2 3.3')
+  ],
+  duplicate: [
+    p('M9.5 9h9a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 8 19.5v-9A1.5 1.5 0 0 1 9.5 9z'),
+    p('M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5'), p('M14 12.3v5.4'), p('M11.3 15h5.4')
+  ],
   ruler: [p('M3.5 15.8L15.8 3.5l4.7 4.7L8.2 20.5z'), p('M7.3 12l1.9 1.9'), p('M10 9.3l1.3 1.3'), p('M12.7 6.6l1.9 1.9')],
   // Sygnatura obrazu (etykieta) – od 1.12, odróżnia się od ołówka „Edytuj rysunek”.
   tag: [p('M3.5 12.5V4h8.5l8.5 8.5-8.5 8.5z'), { tag: 'circle', cx: 8, cy: 8.5, r: 1.4 }],

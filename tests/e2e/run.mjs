@@ -1981,6 +1981,8 @@ test('ekran lekcji i listy: żółty wiersz notatki, piktogramy bez tła, utrwal
     // Utrwalone na końcu (domyślnie): zielona linia tylko nad ostatnim wierszem, przy krawędzi karty – nic.
     await page.evaluate(() => window.lexicards.library.updateSettings({ consolidatedLast: true }));
     await page.reload();
+    // Po przeładowaniu lista powstaje chwilę później – evaluateAll nie czeka na wiersze.
+    await waitUntil(async () => (await rows.count()) === flags.length, 'Lista lekcji po przeładowaniu');
     const lastFlags = await rows.evaluateAll((items) => items.map((item) => item.classList.contains('row--consolidated')));
     assert.equal(lastFlags.at(-1), true, 'utrwalona na końcu listy');
     assert.deepEqual(await line(rows.last()).then((style) => [style.left, style.width]), ['0px', '1px'], `${theme}: linia nad ostatnim`);
@@ -2882,18 +2884,23 @@ const drawingDialog = (page) => page.locator('dialog[data-testid=drawing-dialog]
  * Kreska syntetycznymi zdarzeniami wskaźnika (rysik z naciskiem albo palec): punkty
  * [x, y, nacisk], x i y – ułamki płótna edytora.
  */
-async function drawStroke(page, points, { type = 'pen', id = 11 } = {}) {
-  await page.locator('[data-testid=drawing-canvas]').evaluate((canvas, [list, pointerType, pointerId]) => {
+async function drawStroke(page, points, { type = 'pen', id = 11, up = true, only = null } = {}) {
+  await page.locator('[data-testid=drawing-canvas]').evaluate((canvas, [list, pointerType, pointerId, lift, single]) => {
     const box = canvas.getBoundingClientRect();
     const fire = (kind, [x, y, pressure]) => canvas.dispatchEvent(new window.PointerEvent(kind, {
       bubbles: true, cancelable: true, pointerId, pointerType, isPrimary: true,
       clientX: box.left + box.width * x, clientY: box.top + box.height * y,
       pressure: kind === 'pointerup' ? 0 : pressure, buttons: kind === 'pointerup' ? 0 : 1, button: kind === 'pointermove' ? -1 : 0
     }));
+    // only: 'up' – samo puszczenie gestu zaczętego z up: false (zrzut ekranu w trakcie).
+    if (single === 'up') {
+      fire('pointerup', list.at(-1));
+      return;
+    }
     fire('pointerdown', list[0]);
     for (const point of list.slice(1)) fire('pointermove', point);
-    fire('pointerup', list.at(-1));
-  }, [points, type, id]);
+    if (lift) fire('pointerup', list.at(-1));
+  }, [points, type, id, up, only]);
 }
 
 /** Punkty odcinka z naciskiem zależnym od położenia (0…1). */
@@ -3385,6 +3392,334 @@ test('rysunek 1.13: pole tekstowe i wzór – wstawienie (wielkość, kolor), je
   await expectText(selectionCount, 'Pole tekstowe');
 }, { device: IPAD });
 
+/** Ułamki płótna dla punktu ekranu i punkt na okręgu (stopnie – zgodnie ze wskazówkami zegara na ekranie). */
+const canvasPoint = (box, x, y) => [(x - box.x) / box.width, (y - box.y) / box.height];
+const onCircle = (center, degrees, radius) => [center.x + radius * Math.cos((degrees * Math.PI) / 180), center.y + radius * Math.sin((degrees * Math.PI) / 180)];
+/** Punkt `point` obrócony wokół `pivot` o `degrees` (na ekranie). */
+const turnAround = (pivot, point, degrees) => {
+  const turn = (degrees * Math.PI) / 180;
+  const [vx, vy] = [point.x - pivot.x, point.y - pivot.y];
+  return [pivot.x + vx * Math.cos(turn) - vy * Math.sin(turn), pivot.y + vx * Math.sin(turn) + vy * Math.cos(turn)];
+};
+const plainText = async (locator) => ((await locator.textContent()) ?? '').trim();
+
+test('rysunek 1.14: linijka – zero na linii, przyskok do prostopadłej przy obrocie, ⊥, długość kreski, zero na przecięciu; skala – szacunek ekranu, 1:1, 1 kratka = 2,5 m (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Skala</p>');
+  const box = await editor.locator('[data-testid=drawing-canvas]').boundingBox();
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const at = (x, y) => canvasPoint(box, x, y);
+  const pill = editor.locator('[data-testid=drawing-ruler-angle]');
+  const lengthPill = editor.locator('[data-testid=drawing-ruler-length]');
+
+  // Pozioma linia H (120 px nad środkiem) i pionowa V (100 px w prawo) – przecięcie P.
+  await drawStroke(page, segment(at(center.x - 250, center.y - 120), at(center.x + 250, center.y - 120), 25));
+  await drawStroke(page, segment(at(center.x + 100, center.y - 260), at(center.x + 100, center.y + 40), 15));
+  await editor.locator('[data-testid=drawing-ruler]').click();
+  await expectText(pill, 'Linijka 0°');
+  assert.equal(await editor.locator('[data-testid=drawing-ruler-perpendicular]').isVisible(), true, 'przycisk ⊥ przy linijce');
+
+  // Uchwyt myszą: 30°; zero daleko od linii – bez przyciągania.
+  await page.mouse.move(...onCircle(center, 0, 170));
+  await page.mouse.down();
+  for (let step = 1; step <= 6; step += 1) await page.mouse.move(...onCircle(center, -5 * step, 170));
+  await page.mouse.up();
+  await expectText(pill, 'Linijka 30°');
+  assert.equal(await plainText(pill), 'Linijka 30°');
+
+  // Linijka przeciągnięta w górę: zero przy górnej krawędzi (16 px w lewo, 28 px w górę od środka) trafia na H.
+  const grab = [center.x + 52, center.y - 30];
+  await page.mouse.move(...grab);
+  await page.mouse.down();
+  for (let step = 1; step <= 10; step += 1) await page.mouse.move(grab[0], grab[1] - 9.2 * step);
+  await page.mouse.up();
+  await expectText(pill, 'Linijka 30° · na linii');
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-linijka-liczby-ipad.png') });
+
+  // Obrót uchwytem wokół zera na linii: przy 84° linijka przyskakuje do 90° (prostopadle do H), przy 60° – już nie.
+  const pivot = { x: center.x - 16, y: center.y - 120 };
+  const handle = { x: center.x + 147.2, y: center.y - 177.3 };
+  await page.mouse.move(...turnAround(pivot, handle, 0));
+  await page.mouse.down();
+  for (let step = 1; step <= 9; step += 1) await page.mouse.move(...turnAround(pivot, handle, -6 * step));
+  await expectText(pill, 'Linijka 90° · prostopadle');
+  for (let step = 8; step >= 5; step -= 1) await page.mouse.move(...turnAround(pivot, handle, -6 * step));
+  await page.mouse.up();
+  await expectText(pill, 'Linijka 60° · na linii');
+  // ⊥ – prostopadle do linii pod zerem.
+  await editor.locator('[data-testid=drawing-ruler-perpendicular]').click();
+  await expectText(pill, 'Linijka 90° · prostopadle');
+
+  // Kreska rysikiem wzdłuż krawędzi (od H w górę, 132 px, z drżeniem ręki) – prosto, z długością w skali.
+  const along = Array.from({ length: 12 }, (_, index) => [...at(center.x - 24 + (index % 2) * 4, center.y - 120 - index * 12), 0.5]);
+  await drawStroke(page, along);
+  await expectText(lengthPill, 'Kreska: ');
+  assert.match(await plainText(lengthPill), /^Kreska: [\d,]+ cm$/, 'domyślnie 1 kratka = 1 cm');
+
+  // Skala: szacunek na ekranie, 1:1 (kratka jak na ekranie), potem 1 kratka = 2,5 m.
+  await pill.click();
+  const panel = editor.locator('[data-testid=drawing-ruler-panel]');
+  await panel.waitFor();
+  await expectText(panel.locator('[data-testid=drawing-scale-screen]'), 'kratka ma na tym ekranie ok.');
+  assert.equal(await panel.locator('[data-testid=drawing-scale-value]').inputValue(), '1');
+  assert.equal(await panel.locator('[data-testid=drawing-scale-unit]').inputValue(), 'cm');
+  assert.equal(await panel.locator('[data-testid=drawing-ruler-snap]').isChecked(), true, 'przyciąganie domyślnie włączone');
+  await panel.locator('[data-testid=drawing-scale-actual]').click();
+  assert.equal(await panel.locator('[data-testid=drawing-scale-unit]').inputValue(), 'mm');
+  await expectText(panel.locator('[data-testid=drawing-scale-screen]'), 'w skali ok. 1:1.');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-linijka-skala-ipad.png') });
+  await panel.locator('[data-testid=drawing-scale-value]').fill('2,5');
+  await panel.locator('[data-testid=drawing-scale-unit]').selectOption('m');
+  await expectText(lengthPill, ' m');
+  const length = Number((await plainText(lengthPill)).match(/([\d,]+) m$/)[1].replace(',', '.'));
+  assert.equal(await panel.locator('[data-testid=drawing-scale-unit] optgroup').count(), 2, 'jednostki SI i imperialne');
+  assert.equal(await panel.locator('[data-testid=drawing-scale-unit] option[value=ft]').count(), 1);
+  await page.keyboard.press('Escape');
+  await waitUntil(() => panel.isHidden(), 'Esc zamyka panel linijki');
+  assert.equal(await editor.isVisible(), true, 'Esc przy panelu nie zamyka edytora');
+
+  // Linijka (pionowa) przesunięta w prawo wzdłuż H: zero przyskakuje do przecięcia z V.
+  const body = [center.x + 16, center.y - 60];
+  await page.mouse.move(...body);
+  await page.mouse.down();
+  for (let step = 1; step <= 12; step += 1) await page.mouse.move(body[0] + (116 / 12) * step, body[1]);
+  await page.mouse.up();
+  await expectText(pill, 'Linijka 90° · na przecięciu');
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-linijka-przeciecie-ipad.png') });
+
+  // Zapis: skala w danych rysunku; kreska przy linijce pionowa, od linii H, długość zgodna z pigułką.
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const saved = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  assert.deepEqual(saved.scale, { value: 2.5, unit: 'm' });
+  assert.equal(saved.strokes.length, 3);
+  const ruled = saved.strokes[2].points;
+  assert.equal(new Set(ruled.filter((_, index) => index % 3 === 0)).size, 1, 'kreska wzdłuż linijki prostopadłej do H – pionowa');
+  const ys = ruled.filter((_, index) => index % 3 === 1);
+  const units = Math.max(...ys) - Math.min(...ys);
+  assert.ok(Math.abs((units / 44) * 2.5 - length) <= length * 0.02, `długość: ${units} jednostek = ${(units / 44) * 2.5} m, pigułka ${length} m`);
+  assert.ok(Math.abs(Math.max(...ys) - saved.strokes[0].points[1]) < 1.5, 'kreska zaczyna się na H (zero linijki na linii)');
+}, { device: IPAD });
+
+test('rysunek 1.14: własne kolory – siatka, suwaki RGB i HEX, pipetka z lupą; trzy zapamiętane, także dla zakreślacza i pola tekstowego (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Kolory</p>');
+  const panel = editor.locator('[data-testid=drawing-color-panel]');
+  const value = panel.locator('[data-testid=drawing-color-value]');
+  const customs = editor.locator('[data-testid^=drawing-color-custom-]');
+
+  // Siatka: dotknięty kolor w podglądzie; „Użyj koloru” – kolor pióra i pierwszy własny.
+  await editor.locator('[data-testid=drawing-color-custom]').click();
+  await panel.waitFor();
+  await expectText(panel.locator('.drawing__settings-title'), 'Kolor pióra');
+  assert.equal(await panel.locator('[data-testid=drawing-color-tab-grid]').getAttribute('aria-checked'), 'true');
+  assert.equal(await panel.locator('.drawing__grid-color').count(), 84, '12 odcieni × 6 jasności i szarości');
+  const cell = panel.locator('[data-testid=drawing-grid-color-37]');
+  const gridHex = (await cell.getAttribute('aria-label')).toLowerCase();
+  await cell.click();
+  await expectText(value, gridHex.toUpperCase());
+  assert.equal(await cell.getAttribute('aria-pressed'), 'true');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-kolor-siatka-ipad.png') });
+  await panel.locator('[data-testid=drawing-color-use]').click();
+  await waitUntil(() => panel.isHidden(), 'Panel zamknięty po „Użyj koloru”');
+  assert.equal(await customs.count(), 1);
+  assert.equal(await editor.locator('[data-testid=drawing-color-custom-0]').getAttribute('aria-pressed'), 'true', 'własny kolor wybrany');
+  await drawStroke(page, segment([0.25, 0.3], [0.6, 0.3]));
+
+  // Suwaki: kod HEX ustawia R, G, B; suwak R zmienia kod.
+  await editor.locator('[data-testid=drawing-color-custom]').click();
+  await panel.locator('[data-testid=drawing-color-tab-sliders]').click();
+  await panel.locator('[data-testid=drawing-color-hex]').fill('#12AB34');
+  assert.deepEqual(await Promise.all(['r', 'g', 'b'].map((name) => panel.locator(`[data-testid=drawing-channel-${name}]`).inputValue())), ['18', '171', '52']);
+  await panel.locator('[data-testid=drawing-channel-r]').fill('200');
+  await expectText(value, '#C8AB34');
+  assert.equal(await panel.locator('[data-testid=drawing-color-hex]').inputValue(), '#C8AB34');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-kolor-suwaki-ipad.png') });
+  await panel.locator('[data-testid=drawing-color-use]').click();
+  assert.equal(await customs.count(), 2);
+
+  // Pipetka: kolor spod rysika z grubej czerwonej kreski (lupa w trakcie); kolor z palety – bez nowego własnego.
+  await editor.locator('[data-testid=drawing-color-red]').click();
+  await editor.locator('[data-testid=drawing-width-2]').click();
+  await drawStroke(page, segment([0.25, 0.55], [0.7, 0.55], 16, () => 1));
+  await editor.locator('[data-testid=drawing-color-custom-1]').click();
+  await editor.locator('[data-testid=drawing-color-custom]').click();
+  await panel.locator('[data-testid=drawing-color-tab-picker]').click();
+  await drawStroke(page, segment([0.4, 0.5], [0.45, 0.55], 4), { up: false });
+  await expectText(value, '#D70015');
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-kolor-pipetka-ipad.png') });
+  await drawStroke(page, [[0.45, 0.55, 0]], { only: 'up' });
+  assert.equal(await panel.isVisible(), true, 'pipetka nie zamyka panelu');
+  assert.equal(await darkAt(page, 0.43, 0.53), false, 'pipetka nie rysuje');
+  await panel.locator('[data-testid=drawing-color-use]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-color-red]').getAttribute('aria-pressed'), 'true', 'kolor z palety – czerwony');
+  assert.equal(await customs.count(), 2);
+
+  // Dwa kolejne kody – zostają trzy ostatnie (kolor z siatki wypada).
+  for (const hex of ['#112233', '#445566']) {
+    await editor.locator('[data-testid=drawing-color-custom]').click();
+    await panel.locator('[data-testid=drawing-color-tab-sliders]').click();
+    await panel.locator('[data-testid=drawing-color-hex]').fill(hex);
+    await panel.locator('[data-testid=drawing-color-use]').click();
+  }
+  assert.equal(await customs.count(), 3);
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('lexicards-drawing-tools')).customColors), ['#445566', '#112233', '#c8ab34']);
+  // Esc zamyka panel koloru, edytor zostaje.
+  await editor.locator('[data-testid=drawing-color-custom]').click();
+  await panel.waitFor();
+  await page.keyboard.press('Escape');
+  await waitUntil(() => panel.isHidden(), 'Esc zamyka panel koloru');
+  assert.equal(await editor.isVisible(), true);
+  // Zakreślacz – te same własne kolory; pole tekstowe w pierwszym własnym kolorze.
+  await editor.locator('[data-testid=drawing-tool-highlighter]').click();
+  assert.equal(await customs.count(), 3, 'własne kolory przy zakreślaczu');
+  await editor.locator('[data-testid=drawing-insert-text]').click();
+  await page.locator('[data-testid=drawing-text-input]').fill('Kolor własny');
+  await page.locator('[data-testid=drawing-element-color-custom-0]').click();
+  await sheetSubmit(page).click();
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Pole tekstowe');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const strokes = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing.strokes, ids.statements);
+  assert.deepEqual(strokes.map((stroke) => stroke.color), [gridHex, '#d70015', '#445566']);
+}, { device: IPAD });
+
+test('rysunek 1.14: zaznaczanie fragmentów – prostokąt od prawej, lasso zgodnie ze wskazówkami (usunięcie, przesunięcie wnętrza, cofnij), lasso przeciwnie – całe kreski; kopiuj i wklej (przyciski, Ctrl+C/V/X, fragment, w innym rysunku) (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Zaznaczanie</p>');
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+  const hint = editor.locator('[data-testid=drawing-select-hint]');
+  const barHidden = () => editor.locator('.drawing__selection').isHidden();
+  /** Obrys elipsy (ułamki płótna): zgodnie ze wskazówkami zegara albo przeciwnie. */
+  const loop = (cx, cy, rx, ry, clockwise, steps = 28) => Array.from({ length: steps + 1 }, (_, index) => {
+    const t = (clockwise ? 1 : -1) * (index / steps) * Math.PI * 2;
+    return [cx + rx * Math.cos(t), cy + ry * Math.sin(t), 0.5];
+  });
+
+  // Długa kreska L i krótka S nad nią.
+  await drawStroke(page, segment([0.2, 0.5], [0.8, 0.5], 30));
+  await drawStroke(page, segment([0.45, 0.3], [0.55, 0.3], 10));
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await expectText(hint, 'Od lewej do prawej – całe kreski, od prawej do lewej – fragmenty');
+  assert.equal(await editor.locator('[data-testid=drawing-select-mode-auto]').getAttribute('aria-checked'), 'true');
+
+  // Prostokąt od prawej do lewej – fragment L (zielony, kreskowany); kreska jeszcze w całości widoczna.
+  await drawStroke(page, segment([0.6, 0.44], [0.4, 0.56], 8), { up: false });
+  await expectText(hint, 'Zaznaczasz fragmenty');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-prostokat-fragmenty-ipad.png') });
+  await drawStroke(page, [[0.4, 0.56, 0]], { only: 'up' });
+  await expectText(selectionCount, 'Fragment');
+  assert.equal(await darkAt(page, 0.5, 0.5), true);
+  // Usuń – znika tylko środek; cofnij – cała kreska.
+  await editor.locator('[data-testid=drawing-selection-delete]').click();
+  await waitUntil(async () => !(await darkAt(page, 0.5, 0.5)), 'Środek kreski usunięty');
+  assert.equal(await darkAt(page, 0.37, 0.5), true, 'lewa część zostaje');
+  assert.equal(await darkAt(page, 0.63, 0.5), true, 'prawa część zostaje');
+  assert.equal(await darkAt(page, 0.43, 0.5), false, 'cięcie na brzegu prostokąta');
+  await editor.locator('[data-testid=drawing-undo]').click();
+  await waitUntil(() => darkAt(page, 0.5, 0.5), 'Cofnij – cała kreska');
+  assert.equal(await editor.locator('[data-testid=drawing-redo]').isDisabled(), false);
+
+  // Fragment zaznaczony i zdjęty (Esc) bez zmian – bez kroku cofania („Ponów” nadal dostępne).
+  await drawStroke(page, segment([0.6, 0.44], [0.4, 0.56], 8));
+  await expectText(selectionCount, 'Fragment');
+  await page.keyboard.press('Escape');
+  await waitUntil(barHidden, 'Esc zdejmuje zaznaczenie fragmentu');
+  assert.equal(await editor.locator('[data-testid=drawing-redo]').isDisabled(), false, 'zaznaczenie bez skutku nie zmienia historii');
+
+  // Przesunięcie wnętrza: wycięty środek w dół, reszta na miejscu; cofnij – jedna kreska.
+  await drawStroke(page, segment([0.6, 0.44], [0.4, 0.56], 8));
+  await expectText(selectionCount, 'Fragment');
+  await drawStroke(page, segment([0.5, 0.5], [0.5, 0.62], 8));
+  await waitUntil(async () => (await darkAt(page, 0.5, 0.62)) && !(await darkAt(page, 0.5, 0.5)), 'Wycięty fragment przesunięty');
+  assert.equal(await darkAt(page, 0.3, 0.5), true, 'reszta kreski na miejscu');
+  await editor.locator('[data-testid=drawing-undo]').click();
+  await waitUntil(async () => (await darkAt(page, 0.5, 0.5)) && !(await darkAt(page, 0.5, 0.62)), 'Cofnij przesunięcie fragmentu');
+  // Prostokąt od lewej – tylko kreski w całości w środku (tu żadnej).
+  await drawStroke(page, segment([0.4, 0.44], [0.6, 0.56], 8));
+  await nextFrames(page);
+  assert.equal(await barHidden(), true, 'od lewej – całe kreski: L wystaje, nic nie zaznaczone');
+
+  // Lasso: przeciwnie do wskazówek zegara – całe kreski (S), zgodnie – wnętrze (środek L).
+  await editor.locator('[data-testid=drawing-select-lasso]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-select-lasso]').getAttribute('aria-checked'), 'true');
+  assert.equal(await editor.locator('[data-testid=drawing-tool-select]').getAttribute('aria-label'), 'Zaznaczanie – lasso');
+  await expectText(hint, 'Przeciwnie do wskazówek zegara – całe kreski, zgodnie – fragmenty');
+  await drawStroke(page, loop(0.5, 0.3, 0.09, 0.07, false));
+  await expectText(selectionCount, '1 kreska');
+  await page.keyboard.press('Escape');
+  await drawStroke(page, loop(0.5, 0.5, 0.06, 0.09, true), { up: false });
+  await expectText(hint, 'Zaznaczasz fragmenty');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-lasso-fragmenty-ipad.png') });
+  await drawStroke(page, [loop(0.5, 0.5, 0.06, 0.09, true).at(-1)], { only: 'up' });
+  await expectText(selectionCount, 'Fragment');
+  await page.keyboard.press('Delete');
+  await waitUntil(async () => !(await darkAt(page, 0.5, 0.5)), 'Lasso zgodnie ze wskazówkami – usunięte wnętrze');
+  assert.equal(await darkAt(page, 0.3, 0.5), true);
+  assert.equal(await darkAt(page, 0.5, 0.3), true, 'S poza lassem bez zmian');
+  await page.keyboard.press('Control+z');
+  await waitUntil(() => darkAt(page, 0.5, 0.5), 'Ctrl+Z – cała kreska');
+
+  // Kopiuj i wklej: przyciskami (S), Ctrl+V – druga kopia, Ctrl+X – wycięta.
+  await drawStroke(page, loop(0.5, 0.3, 0.09, 0.07, false));
+  await expectText(selectionCount, '1 kreska');
+  assert.equal(await editor.locator('[data-testid=drawing-paste]').isHidden(), true, 'schowek pusty – bez „Wklej”');
+  await editor.locator('[data-testid=drawing-selection-copy]').click();
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Skopiowano');
+  await editor.locator('[data-testid=drawing-paste]').click();
+  await expectText(selectionCount, '1 kreska');
+  await page.keyboard.press('Control+v');
+  await expectText(selectionCount, '1 kreska');
+  await page.keyboard.press('Control+x');
+  await waitUntil(barHidden, 'Ctrl+X – wycięta kopia');
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Wycięto');
+  // Fragment: Ctrl+C, Esc (L zostaje w całości), Ctrl+V – sam środek L (lasso nad wklejoną kopią S).
+  await drawStroke(page, loop(0.5, 0.5, 0.06, 0.03, true));
+  await expectText(selectionCount, 'Fragment');
+  await page.keyboard.press('Control+c');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+v');
+  await expectText(selectionCount, '1 kreska');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-wklejony-fragment-ipad.png') });
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  // Schowek w innym rysunku tej notatki.
+  await dialog.locator('[data-testid=note-image-draw]').click();
+  await editor.waitFor();
+  await waitUntil(() => editor.locator('[data-testid=drawing-canvas]').evaluate((canvas) => canvas.width > 0), 'Płótno gotowe');
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await editor.locator('[data-testid=drawing-paste]').click();
+  await expectText(selectionCount, '1 kreska');
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const drawings = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id)).map((image) => image.drawing.strokes), ids.statements);
+  assert.equal(drawings.length, 2);
+  const [first, second] = drawings;
+  const extent = (stroke) => { const xs = stroke.points.filter((_, index) => index % 3 === 0); return Math.max(...xs) - Math.min(...xs); };
+  assert.equal(first.length, 4, 'L, S, kopia S, wklejony fragment L');
+  assert.ok(extent(first[0]) > extent(first[3]) * 4, `L w całości (${extent(first[0])}), wklejony tylko środek (${extent(first[3])})`);
+  assert.ok(Math.abs(extent(first[2]) - extent(first[1])) < 1, 'kopia S tej samej długości');
+  assert.equal(second.length, 1, 'wklejone w drugim rysunku');
+  assert.ok(Math.abs(extent(second[0]) - extent(first[3])) < 1);
+}, { device: IPAD });
+
 test('rysunek 1.12.1 na telefonie (bez rysika): palec przesuwa linijkę i rysuje prosto przy jej krawędzi, zaznacza i przesuwa kreskę; pasek narzędzi mieści się', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
@@ -3399,11 +3734,20 @@ test('rysunek 1.12.1 na telefonie (bez rysika): palec przesuwa linijkę i rysuje
     assert.equal(await overflowX(page), 0, `pasek narzędzi (${name}) bez przewijania w bok`);
     const toolbar = await editor.locator('.drawing__toolbar').boundingBox();
     assert.ok(toolbar.x >= 0 && toolbar.x + toolbar.width <= 390, `pasek w szerokości ekranu (${name})`);
-    // Od 1.13 (pole tekstowe i wzór na pasku) – najwyżej trzy wiersze.
-    if (name === 'pen') assert.ok(toolbar.height < 150, `pióro: pasek najwyżej w trzech wierszach (${toolbar.height} px)`);
+    // Od 1.13 (pole tekstowe i wzór na pasku) – najwyżej trzy wiersze; od 1.14 także przy zaznaczaniu
+    // (kształt, tryb, „Wszystko”) i przy piórze z „+” własnego koloru.
+    if (name !== 'eraser') assert.ok(toolbar.height < 150, `${name}: pasek najwyżej w trzech wierszach (${toolbar.height} px)`);
     // Pasek o inną liczbę wierszy nie zmienia płótna – strona nie skacze przy zmianie narzędzia.
     assert.deepEqual(await editor.locator('[data-testid=drawing-canvas]').boundingBox(), box, `płótno bez zmian (${name})`);
   }
+
+  // Od 1.14: panel własnego koloru w szerokości ekranu.
+  await editor.locator('[data-testid=drawing-color-custom]').click();
+  const colorPanel = await editor.locator('[data-testid=drawing-color-panel]').boundingBox();
+  assert.ok(colorPanel.x >= 0 && colorPanel.x + colorPanel.width <= 390, `panel koloru w szerokości ekranu (${colorPanel.x}, ${colorPanel.width})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-kolor-telefon.png') });
+  await page.keyboard.press('Escape');
+  await waitUntil(() => editor.locator('[data-testid=drawing-color-panel]').isHidden(), 'Esc zamyka panel koloru');
 
   // Linijka: palec na linijce przesuwa ją o 60 px w górę; kreska palcem tuż pod nią – wzdłuż dolnej krawędzi.
   await editor.locator('[data-testid=drawing-ruler]').click();

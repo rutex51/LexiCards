@@ -31,7 +31,7 @@ js/ui/notes.js             okno notatki lekcji: podgląd, edytor z paskiem forma
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
-js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, obraz PNG / JPEG
+js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, obraz PNG / JPEG
 js/ui/images.js            obrazy w przeglądarce: odczyt, zmniejszanie dużych zdjęć, adresy do wyświetlenia
 js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
@@ -39,7 +39,7 @@ js/core/model.js           kształt rekordów, wartości domyślne, stałe
 js/core/backup.js          kopia zapasowa: plik danych i plik obrazów i załączników – tworzenie, walidacja, przywracanie
 js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (PDF, Word, Excel, PowerPoint…)
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
-js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, sprawdzanie danych rysunku
+js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, skala, przyciąganie linijki, obszar zaznaczania, sprawdzanie danych rysunku
 js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
 js/core/zip.js             odczyt i zapis archiwów ZIP (także kawałkami przez Blob – duże pliki)
 js/core/xlsx.js            odczyt i zapis skoroszytów XLSX
@@ -364,7 +364,7 @@ z linią środkową w całości w prostokącie (`strokesInRect`) albo dotknięta
 rysuje zaznaczone kreski na warstwie bieżącej z przesunięciem (warstwa zapisanych je pomija) i na
 końcu zastępuje je przesuniętymi (`translateStroke`) jednym krokiem. **Linijka** `{ x, y, angle }`
 w jednostkach strony, szerokość stała na ekranie (64 px), rysowana na warstwie bieżącej z podziałką
-co ćwierć kratki i kątem (`rulerDegrees`: 0–179°, przeciwnie do ruchu wskazówek zegara); kąt
+(do 1.13 co ćwierć kratki, od 1.14 w skali rysunku – niżej) i kątem (`rulerDegrees`: 0–179°, przeciwnie do ruchu wskazówek zegara); kąt
 przyskakuje co 45° (±2,5°, `snapRulerAngle`). Kreska zaczęta do 26 px od krawędzi jest rzutowana na
 prostą krawędzi (`rulerOffset`, `rulerPoint`). Linijkę przesuwa jeden palec albo mysz, obracają dwa
 palce (wokół środka palców) albo uchwyt. Pasek narzędzi leży nad płótnem: płótno ma stałą wielkość,
@@ -385,6 +385,38 @@ wyśrodkowane na osi, akcenty i nawiasy rysowane kreską w wysokości treści; s
 widocznej części strony, pod już leżące tam pola i wzory, i jest od razu zaznaczony. Edytor notatki: „Narysuj”
 dodaje obraz „Rysunek N”, „Edytuj rysunek” i „Rysuj na zdjęciu” zastępują obraz nowym w tym samym
 miejscu, z tą samą sygnaturą (stary rekord znika przy zapisie notatki, jak usunięty obraz).
+Od 1.14 rysunek ma **skalę** `scale: { value, unit }` – ile w rzeczywistości ma jedna kratka (44
+jednostki strony); `SCALE_UNITS` – mm, cm, m, km i in, ft, yd, mi z długością w metrach, `cleanScale()`
+(brak albo zła – 1 cm). Linijka rysuje podziałkę w jednostkach skali: liczby co 1, 2 albo 5 × 10ⁿ
+jednostek (najgęściej tak, żeby napisy się nie stykały), kreski co 1/10, 1/5 albo 1/2 odstępu (co
+najmniej 4 px), od zera na środku. Szacunek ekranu (`screenScale`, `formatRatio`, `screenScaleValue`)
+liczy wielkość kratki z pikseli CSS i przybliżonej gęstości ekranu według urządzenia (iPhone 153/163,
+iPad 132, iPad mini 163, Mac 127, inny komputer 96, z powiększeniem ekranu 110 pikseli na cal).
+Długość kreski przy linijce to zasięg rzutów punktów na krawędź (`formatLength`). **Przyciąganie zera**
+(`snapToStrokes`): punkty zera przy obu krawędziach; w promieniu 20 px ekranu najpierw przecięcie
+odcinków dwóch kresek, potem najbliższy punkt kreski z jej kierunkiem (kreski poza granicami pomijane
+od razu); przy linii i różnicy do kąta prostego do 8° (`lineAngleDifference`) – kąt prostopadły
+najbliższy obecnemu (`perpendicularAngle`), a linijka jest ustawiana tak, żeby zero tej krawędzi leżało
+w punkcie przyciągnięcia (obrót uchwytem – wokół tego punktu). Linijka `{ x, y, angle, snap }` – `snap`
+tylko na ekranie (pigułka, kółko). **Zaznaczanie** ma kształt (`rect`, `lasso`) i tryb (`auto`, `whole`,
+`region`): w Auto kierunek prostokąta (`x1 < x0`) i obrysu lassa (`isClockwise` – pole wielokąta przy
+osi y w dół) decyduje o fragmentach. Całe kreski w lassie – `strokesInPolygon` (wszystkie punkty
+w wielokącie, reguła parzystości); fragmenty – `splitByPolygon`: każdy odcinek kreski przecinany
+z bokami wielokąta, kawałki w środku i poza nim (grubość przeliczona w miejscu cięcia), pole tekstowe
+i wzór tylko w całości. Zaznaczenie fragmentu zastępuje kreski kawałkami po `history.begin()` bez
+`commit()`: przesunięcie, usunięcie albo gumka kończą krok (cięcie razem ze zmianą), a zdjęcie
+zaznaczenia, cofnij, inne narzędzie i „Gotowe” wołają `history.rollback()` – kreski wracają w całości
+bez kroku historii; „Powiel” i „Kopiuj” biorą kawałki z wnętrza bez cięcia oryginału. **Schowek**:
+kreski w pamięci modułu i w `localStorage` (`lexicards-drawing-clipboard`, do 1,5 mln znaków JSON,
+przy odczycie przez `cleanDrawing`), wklejenie – na środek widocznej części strony (kolejne przesunięte),
+pola i wzory mierzone od nowa; do schowka systemu idzie też obraz PNG zaznaczenia (`navigator.clipboard.write`,
+błąd pomijany). **Własne kolory**: kolor narzędzia to nazwa z palety albo `#rrggbb` (`isHexColor`);
+panel ma siatkę (`hslToHex`: 12 odcieni × 6 jasności i szarości), suwaki RGB z kodem HEX
+(`hexToRgb`, `rgbToHex`) i pipetkę – piksel warstwy zapisanych kresek pod wskaźnikiem (`getImageData`,
+poza stroną bez zmiany) i lupa 15 × 15 pikseli na warstwie bieżącej; `rememberColor` trzyma trzy
+ostatnie. Ustawienia narzędzi mają też `customColors`, `selectShape`, `selectMode`, `rulerSnap`.
+Komunikaty edytora (np. „Skopiowano”) są w pigułce w rogu – zwykłe komunikaty aplikacji leżą pod
+oknem rysunku.
 
 Od 1.6 **wersja angielska**: `htmlEN` obok `html`; w edytorze przełącznik Polski / Angielski zamienia
 treść jednego pola `contenteditable` (stan drugiej wersji jest w pamięci edytora; zmiana języka
@@ -775,7 +807,8 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
 - `tests/unit/` – Node.js (`node --test`), bez przeglądarki: reguły biblioteki, wycofywanie
   nieudanych zmian, glosariusz, odczyt i zapis plików, import i eksport, nauka z fiszkami,
   FSRS (zgodność z py-fsrs i zapis powtórek), quizy, statystyki, kopia zapasowa (oba pliki),
-  załączniki, rysunki (nacisk, wygładzanie, gumka, historia, dane, zapis i kopia, pola tekstowe i wzory),
+  załączniki, rysunki (nacisk, wygładzanie, gumka, historia, dane, zapis i kopia, pola tekstowe i wzory,
+  skala, przyciąganie linijki, obszar zaznaczania, własne kolory),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.
