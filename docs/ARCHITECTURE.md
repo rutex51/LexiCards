@@ -40,6 +40,7 @@ js/core/importer.js        nagłówki → pola, wiersze pliku → wiersze import
 js/core/exporter.js        zakres eksportu → plik XLSX (z arkuszem notatek) lub CSV; wzór importu
 js/core/note-format.js     treść notatki: bezpieczny HTML ↔ dokument ↔ tekst sformatowany komórki arkusza
 js/core/note-import.js     arkusz notatek: rozpoznanie, wiersze → notatki lekcji z obrazami
+js/core/page-curl.js       zaginana kartka notatki: chwyt, zgięcie, odbicie płata, ograniczenia papieru
 js/core/images.js          format i wymiary obrazu z nagłówka pliku
 js/core/study.js           fiszki: dobór do sesji, treść stron, ocena, postęp, podsumowanie
 js/core/fsrs.js            algorytm powtórek FSRS-6 (przeniesiony z py-fsrs 6.3.2)
@@ -261,13 +262,48 @@ przewija:
   szerokim ekranie okno dostaje stałą wysokość tylko wtedy, gdy stron jest kilka.
 - **Ponowny podział** po zmianie wielkości okna (np. obrót telefonu) zachowuje miejsce w treści:
   pokazuje stronę z tą samą pierwszą jednostką.
-- **Przewracanie:** strona obraca się wokół lewej krawędzi (`rotateY` do −100°,
-  `backface-visibility: hidden`, perspektywa książki), z cieniem na obracanej kartce i na stronie
-  pod nią. Palcem (zdarzenia wskaźnika typu dotyk/pióro – mysz zostaje do zaznaczania tekstu)
-  kartka idzie za palcem i po puszczeniu kończy obrót albo wraca (30% szerokości albo szybki
-  ruch). Przyciski ‹ › i klawisze ←/→, Page Up/Down, Home/End. Ograniczony ruch – strony zmieniają
-  się od razu. Fokus z usuwanej strony (np. z obrazu) przechodzi na okno, żeby klawisze działały
-  dalej; po otwarciu okna fokus jest na panelu, a nie na „Zamknij” (bez ramki fokusu w Safari).
+- **Przewracanie (od 1.4 – kartka zaginana od rogu):** geometria jest w `js/core/page-curl.js`
+  (bez przeglądarki, z testami logiki), rysowanie w `note-book.js`. Układ kartki: grzbiet na x = 0,
+  kartka W × H po prawej. Chwyt zależy od wysokości dotknięcia: górne 30% – górny róg, dolne 30% –
+  dolny róg, środek – krawędź (róg porusza się tylko w poziomie, więc zgięcie jest pionowe). Róg
+  przesunięty do punktu P: zgięcie to symetralna odcinka róg–P; płaska część strony to przycięcie
+  prostokąta półpłaszczyzną (Sutherland–Hodgman, `clip-path: polygon()`), a zagięty płat – część
+  po stronie rogu odbita względem zgięcia (macierz odbicia w `transform: matrix()`, wyznacznik −1,
+  więc tekst jest w lustrze). Papier się nie rozciąga: róg nie może być dalej od końców grzbietu
+  niż na płaskiej kartce (rzut na okręgi), dolny róg nie schodzi poniżej strony, górny nad nią –
+  kartka nie odrywa się od grzbietu. Płaskie zgięcie zamiast prawdziwego wygięcia (walca):
+  zaokrąglenie udaje jasny pas na płacie, bez zamiany strony na obraz.
+- **Warstwy w trakcie przewracania** (w kolejności): strona pod spodem, cień rzucany na nią
+  (pas gradientu wzdłuż zgięcia, przycięty do odsłoniętej części; szerokość i siła rosną z
+  „uniesieniem” sin(π·postęp)), przewracana strona przycięta do płaskiej części, cień przy zgięciu
+  na płaskiej części, płat (odwrót kartki z jasnym pasem przy zgięciu i miękkim cieniem
+  `drop-shadow` pod sobą). Płat jest przycięty do obrysu książki – nie zachodzi na nagłówek okna,
+  a w jednej stronie znika za lewą krawędzią. Klatki rysuje `requestAnimationFrame`; po skończeniu
+  warstwy znikają, a strony wracają bez stylów.
+- **Odwrót kartki:** w jednej stronie to kopia tej samej strony (`inert`, `aria-hidden`), wyblakła
+  (przezroczystość treści 0,2) i odbita – prześwitujący tekst. W dwóch stronach to prawdziwa
+  strona, która po przewróceniu leży po drugiej stronie grzbietu (w przód – nowa lewa), złożona
+  z lustrem strony, więc po odbiciu jest czytelna; na końcu ruchu jest dokładnie na swoim miejscu.
+- **Gest:** kartka leżąca płasko – róg idzie za palcem (z naturalnym uniesieniem dolnego rogu
+  w górę, górnego w dół, które znika pod koniec ruchu); jedna strona wstecz – poprzednia kartka
+  wraca spoza lewej krawędzi, a zgięcie idzie za palcem. Po puszczeniu kartka kończy ruch albo
+  wraca (28% szerokości albo szybki ruch). Przyciski ‹ › i klawisze ←/→, Page Up/Down przewracają
+  od dolnego rogu łukiem (`cornerPath`), Home/End – bez animacji. Mysz: kartkę chwyta się za
+  narożnik strony (48 px; kursor `grab`), kliknięcie narożnika przewraca; w pozostałym miejscu
+  mysz zaznacza tekst. Ograniczony ruch – strony zmieniają się od razu. Fokus z usuwanej strony
+  (np. z obrazu) przechodzi na okno, żeby klawisze działały dalej; po otwarciu okna fokus jest na
+  panelu, a nie na „Zamknij” (bez ramki fokusu w Safari).
+- **Dwie strony obok siebie** (od 1.4): gdy okno ma co najmniej 960 × 520 px, notatka ma kilka
+  stron, a wybór jest włączony (`noteSpread` w ustawieniach, domyślnie tak; przycisk z otwartą
+  książką obok numeru strony). Okno jest szersze (do 1280 px), strony liczone są dla połowy
+  szerokości, widać parę (lewa – nieparzysta), wskaźnik „3–4 z 7”, przy nieparzystej liczbie stron
+  na końcu pusta kartka. Wstecz przewraca się lewa strona – ten sam rachunek w układzie odbitym.
+- **Pomiar w otwierającym się oknie:** na komputerze okno pojawia się z animacją powiększenia
+  (od 96%); podział na strony przelicza wysokości z `getBoundingClientRect` przez to powiększenie
+  (stosunek do `offsetWidth`), więc strony nie wychodzą za długie (błąd z 1.3, poprawiony w 1.4).
+  Po ponownym podziale pokazywana jest pierwsza strona zaczynająca się od zapamiętanej jednostki –
+  notatka zaczynająca się długim akapitem otwiera się na pierwszej stronie, a nie na ostatniej
+  części akapitu (też poprawione w 1.4).
 
 ## Nauka z fiszkami
 
@@ -300,7 +336,7 @@ Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany 
   w wyniku fiszki. Działa także z ekranu podsumowania.
 - **Stos** (od 1.3): pod fiszką leżą najwyżej dwie następne z kolejki – pierwsza ze stroną
   pytania (bez przycisków, `inert`, `aria-hidden`), druga pusta – przesunięte o 6 i 11 px w dół
-  i zwężone. Przy obrocie i przeciąganiu widać następną; przy wyrzuceniu stos podnosi się o jedno
+  i zwężone (od 1.4 o 4 i 7 px – fiszki leżą bliżej siebie). Przy obrocie i przeciąganiu widać następną; przy wyrzuceniu stos podnosi się o jedno
   miejsce (te same 220 ms co lot fiszki), a nowa fiszka pojawia się w tym samym położeniu bez
   animacji wejścia (`data-enter="stack"`, także przy kolejnych odświeżeniach ekranu). Ostatnia
   fiszka nie ma nic pod spodem; miejsce pod stosem jest zarezerwowane zawsze, więc fiszka nie

@@ -1621,14 +1621,14 @@ test('notatka w stronach: długi tekst bez przewijania, podział akapitu i listy
   await touchDrag(context, page, book, -14);
   await notePageShown(page, 1);
 
-  // W trakcie przeciągania kartka obraca się wokół lewej krawędzi, a pod nią jest już następna strona.
+  // W trakcie przeciągania kartka zagina się (strona przycięta wzdłuż zgięcia), a pod nią jest już następna strona.
   const { end } = await touchDrag(context, page, book, -150, { release: false });
   const turning = await dialog.locator('[data-testid=note-page]').evaluateAll((elements) => elements.map((element) => ({
-    page: element.dataset.page, transform: element.style.transform
+    page: element.dataset.page, clip: element.style.clipPath
   })));
-  assert.equal(turning.length, 2, 'dwie strony w trakcie obrotu');
+  assert.equal(turning.length, 2, 'dwie strony w trakcie przewracania');
   assert.equal(turning[0].page, '2', 'pod spodem następna strona');
-  assert.match(turning[1].transform, /rotateY\(-\d/);
+  assert.match(turning[1].clip, /^polygon\(/);
   await end();
   await notePageShown(page, 2);
 
@@ -1646,6 +1646,265 @@ test('notatka w stronach: długi tekst bez przewijania, podział akapitu i listy
   await waitUntil(async () => Number(await book.getAttribute('data-pages')) > total, 'Na niższym ekranie powinno być więcej stron');
   for (const [index, item] of (await walkNotePages(page)).entries()) assert.ok(item.overflow <= 1, `po zmianie: strona ${index + 1} wystaje o ${item.overflow} px`);
 });
+
+/** Długa notatka (kilka stron) w lekcji „Financial Statements”, otwarta w podglądzie. */
+async function openLongNote(page, { paragraphs = 16 } = {}) {
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const items = Array.from({ length: 14 }, (_, index) => `<li>Punkt numer ${index + 1} listy</li>`).join('');
+  const html = `<h3>Hierarchia źródeł</h3><p>${LONG_SENTENCE.repeat(4)}</p><ol>${items}</ol>`
+    + `<h3>Zasady kolizyjne</h3><p>${LONG_SENTENCE.repeat(paragraphs).trim()}</p><p>Ostatni akapit tekstu.</p>`;
+  await page.evaluate(([id, noteHtml]) => window.lexicards.library.saveNote(id, { html: noteHtml, images: [] }), [ids.statements, html]);
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await page.click('[data-testid=lesson-note]');
+  const book = noteDialog(page).locator('[data-testid=note-book]');
+  await book.waitFor();
+  // Okno już się nie wysuwa – położenie stron jest stałe.
+  await waitUntil(() => noteDialog(page).locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'Okno notatki otwarte');
+  return { ids, book };
+}
+
+/** Punkty wielokąta z clip-path: polygon(…) w pikselach strony; [] – strona bez przycięcia. */
+function polygonPoints(clip) {
+  const match = /polygon\((.*)\)/.exec(clip ?? '');
+  if (!match) return [];
+  return match[1].split(',').map((pair) => {
+    const [x, y] = pair.trim().split(/\s+/).map((value) => parseFloat(value));
+    return { x, y };
+  });
+}
+
+const hasPoint = (points, x, y) => points.some((point) => Math.abs(point.x - x) < 1 && Math.abs(point.y - y) < 1);
+
+/**
+ * Przewracana kartka w otwartej notatce: widoczne strony (w kolejności warstw), która jest
+ * przewracana (przycięta wzdłuż zgięcia), zagięty płat (strona, lustro – ujemny wyznacznik)
+ * i przezroczystość cieni.
+ */
+function curlState(page) {
+  return noteDialog(page).locator('[data-testid=note-book]').evaluate((book) => {
+    const pages = [...book.querySelectorAll(':scope > [data-testid=note-page]')];
+    const turning = pages.find((element) => element.style.clipPath);
+    const flap = book.querySelector('.note-page--flap');
+    const matrix = flap ? new window.DOMMatrix(getComputedStyle(flap).transform) : null;
+    const band = (name) => Number(book.querySelector(`.note-curl__band--${name}`)?.style.opacity || 0);
+    return {
+      pages: pages.map((element) => element.dataset.page),
+      turning: turning?.dataset.page ?? null,
+      clip: turning?.style.clipPath ?? '',
+      width: turning?.offsetWidth ?? 0,
+      height: turning?.offsetHeight ?? 0,
+      flap: flap ? {
+        page: flap.dataset.page ?? null,
+        back: flap.classList.contains('note-page--back'),
+        determinant: matrix.a * matrix.d - matrix.b * matrix.c,
+        text: flap.textContent
+      } : null,
+      cast: band('cast'),
+      fold: band('fold'),
+      light: band('light')
+    };
+  });
+}
+
+/** Dotyk przytrzymany: start w punkcie (x, y), ruchy palca, puszczenie osobno. */
+async function touchAt(context, page, x, y) {
+  const client = await context.newCDPSession(page);
+  let last = { x, y };
+  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
+  return {
+    async move(toX, toY, steps = 8) {
+      for (let step = 1; step <= steps; step += 1) {
+        await client.send('Input.dispatchTouchEvent', {
+          type: 'touchMove', touchPoints: [{ x: last.x + ((toX - last.x) * step) / steps, y: last.y + ((toY - last.y) * step) / steps, id: 1 }]
+        });
+      }
+      last = { x: toX, y: toY };
+    },
+    end: () => client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  };
+}
+
+test('notatka: kartka zagina się od chwyconego rogu (dół, góra, krawędź), odwrót z lustrzanym tekstem, cienie, grzbiet', async ({ open, context }) => {
+  const page = await open();
+  const { ids, book } = await openLongNote(page);
+  const dialog = noteDialog(page);
+  // Bez stosu pod stroną; na telefonie nie ma przełącznika dwóch stron.
+  assert.equal(await book.evaluate((element) => getComputedStyle(element, '::before').content), 'none');
+  assert.equal(await book.getAttribute('data-spread'), 'false');
+  assert.equal(await dialog.locator('[data-testid=note-spread]').isVisible(), false);
+  const box = await book.boundingBox();
+  const right = box.x + box.width - 12;
+  const bottom = box.y + box.height - 16;
+
+  // Dolny róg: zagina się dół, górny róg i grzbiet leżą płasko; pod spodem następna strona.
+  let touch = await touchAt(context, page, right, bottom);
+  await touch.move(right - 110, bottom - 40);
+  let state = await curlState(page);
+  assert.deepEqual(state.pages, ['2', '1'], 'pod spodem następna strona');
+  assert.equal(state.turning, '1');
+  let flat = polygonPoints(state.clip);
+  assert.ok(hasPoint(flat, state.width, 0), `górny róg płasko: ${state.clip}`);
+  assert.ok(!hasPoint(flat, state.width, state.height), 'dolny róg zagięty');
+  assert.ok(hasPoint(flat, 0, 0) && hasPoint(flat, 0, state.height), 'grzbiet płasko');
+  // Odwrót kartki: ta sama strona w lustrze (ujemny wyznacznik przekształcenia), wyblakła.
+  assert.equal(state.flap.back, true);
+  assert.ok(state.flap.determinant < -0.99, 'odwrót jest lustrzany');
+  assert.ok(state.flap.text.includes('Hierarchia źródeł'), 'na odwrocie prześwituje tekst tej samej strony');
+  const faded = await dialog.locator('.note-page--back .note-page__content').evaluate((element) => Number(getComputedStyle(element).opacity));
+  assert.ok(faded > 0 && faded < 0.5, `tekst odwrotu wyblakły (${faded})`);
+  // Cienie: rzucany na stronę pod spodem, przy zgięciu na płaskiej części i jasny pas na płacie.
+  assert.ok(state.cast > 0 && state.fold > 0 && state.light > 0, `cienie: ${JSON.stringify(state)}`);
+  const firstCast = state.cast;
+  await touch.move(right - 170, bottom - 90);
+  state = await curlState(page);
+  assert.ok(state.cast > firstCast, 'cień rzucany rośnie, gdy kartka się unosi');
+  // Palec ucieka daleko w górę i w lewo – kartka nie odrywa się od grzbietu.
+  await touch.move(box.x - 300, box.y - 400);
+  state = await curlState(page);
+  flat = polygonPoints(state.clip);
+  assert.ok(hasPoint(flat, 0, 0) && hasPoint(flat, 0, state.height), `grzbiet nadal płasko: ${state.clip}`);
+  // Palec wraca – kartka wraca na miejsce.
+  await touch.move(right, bottom);
+  await touch.end();
+  await notePageShown(page, 1);
+
+  // Górny róg: zagina się góra.
+  touch = await touchAt(context, page, right, box.y + 16);
+  await touch.move(right - 110, box.y + 60);
+  state = await curlState(page);
+  flat = polygonPoints(state.clip);
+  assert.ok(hasPoint(flat, state.width, state.height) && !hasPoint(flat, state.width, 0), `zagięta góra: ${state.clip}`);
+  await touch.move(right, box.y + 16);
+  await touch.end();
+  await notePageShown(page, 1);
+
+  // Środek krawędzi: kartka zgina się prosto, pionowo – także gdy palec idzie ukosem.
+  touch = await touchAt(context, page, right, box.y + box.height / 2);
+  await touch.move(right - 160, box.y + box.height / 2 - 50);
+  state = await curlState(page);
+  const columns = [...new Set(polygonPoints(state.clip).map((point) => Math.round(point.x)))].sort((a, b) => a - b);
+  assert.equal(columns.length, 2, `zgięcie pionowe: ${state.clip}`);
+  assert.equal(columns[0], 0);
+  await touch.end();
+  await notePageShown(page, 2);
+
+  // Wstecz od lewej krawędzi: poprzednia strona wraca nad bieżącą i zagina się tak samo.
+  touch = await touchAt(context, page, box.x + 12, bottom);
+  await touch.move(box.x + 170, bottom - 30);
+  state = await curlState(page);
+  assert.deepEqual(state.pages, ['2', '1'], 'poprzednia strona nad bieżącą');
+  assert.equal(state.turning, '1');
+  assert.ok(state.flap.determinant < -0.99);
+  assert.ok(!hasPoint(polygonPoints(state.clip), state.width, state.height), 'dolny róg zagięty');
+  await touch.end();
+  await notePageShown(page, 1);
+
+  // Przycisk: kartka przewraca się od dolnego rogu.
+  await dialog.locator('[data-testid=note-page-next]').click();
+  await page.waitForTimeout(250);
+  state = await curlState(page);
+  flat = polygonPoints(state.clip);
+  assert.ok(flat.length >= 3 && !hasPoint(flat, state.width, state.height), `przycisk zagina dolny róg: ${state.clip}`);
+  await notePageShown(page, 2);
+  assert.equal(await dialog.locator('.note-curl__flap, .note-page--back').count(), 0, 'po przewróceniu nie zostają warstwy kartki');
+
+  // Notatka zaczynająca się długim akapitem (na kilka stron) otwiera się na pierwszej stronie.
+  await page.evaluate(([id, noteHtml]) => window.lexicards.library.saveNote(id, { html: noteHtml, images: [] }),
+    [ids.statements, `<p>${LONG_SENTENCE.repeat(30).trim()}</p>`]);
+  await dialog.locator('[data-testid=note-left]').click();
+  await noteDialog(page).waitFor({ state: 'detached' });
+  await page.click('[data-testid=lesson-note]');
+  await book.waitFor();
+  assert.ok(Number(await book.getAttribute('data-pages')) > 2);
+  assert.equal(await book.getAttribute('data-page'), '1');
+});
+
+test('notatka: dwie strony obok siebie na dużym ekranie – przewracanie jak w książce, myszą za narożnik, wybór zapamiętany', async ({ open }) => {
+  const page = await open();
+  const { book } = await openLongNote(page, { paragraphs: 34 });
+  const dialog = noteDialog(page);
+  const shown = () => dialog.locator('[data-testid=note-book] > .note-page');
+  const showing = (first) => waitUntil(async () => (await book.getAttribute('data-page')) === String(first)
+    && (await shown().count()) === 2, `Powinny być widoczne strony od ${first}`);
+  assert.equal(await book.getAttribute('data-spread'), 'true');
+  const total = Number(await book.getAttribute('data-pages'));
+  assert.ok(total >= 6, `notatka powinna mieć kilka stron (jest ${total})`);
+  await showing(1);
+  const bookBox = await book.boundingBox();
+  const [left, right] = [await shown().nth(0).boundingBox(), await shown().nth(1).boundingBox()];
+  assert.ok(Math.abs(left.y - right.y) < 1 && Math.abs(left.width - right.width) < 1, 'strony tej samej wielkości');
+  assert.ok(right.x >= left.x + left.width - 1 && left.width + right.width >= bookBox.width - 2, 'obok siebie, na całą szerokość');
+  assert.ok(bookBox.width > 900, 'okno notatki jest szersze');
+  await expectText(dialog.locator('[data-testid=note-page-indicator]'), `1–2 z ${total}`);
+  assert.equal(await dialog.locator('[data-testid=note-spread]').getAttribute('aria-pressed'), 'true');
+  for (const index of [0, 1]) assert.ok(await pageOverflow(shown().nth(index)) <= 1, `strona ${index + 1} mieści się`);
+
+  // Przycisk: prawa strona przewraca się przez grzbiet; na jej odwrocie jest strona 3 – czytelna.
+  await dialog.locator('[data-testid=note-page-next]').click();
+  await page.waitForTimeout(300);
+  let state = await curlState(page);
+  assert.equal(state.turning, '2');
+  assert.equal(state.flap.page, '3');
+  assert.ok(state.flap.determinant > 0.99, 'odwrót to następna strona, nie lustro');
+  await showing(3);
+  assert.deepEqual(await shown().evaluateAll((elements) => elements.map((element) => element.dataset.page)), ['3', '4']);
+  await expectText(dialog.locator('[data-testid=note-page-indicator]'), `3–4 z ${total}`);
+
+  // Myszą: chwyt za prawy dolny narożnik (kursor „chwyć”) i przeciągnięcie w lewo.
+  await page.mouse.move(bookBox.x + bookBox.width - 14, bookBox.y + bookBox.height - 14);
+  assert.match(await book.getAttribute('class'), /note-book--grab/);
+  await page.mouse.down();
+  await page.mouse.move(bookBox.x + bookBox.width * 0.6, bookBox.y + bookBox.height - 80, { steps: 8 });
+  state = await curlState(page);
+  assert.equal(state.turning, '4');
+  assert.equal(state.flap.page, '5');
+  await page.mouse.move(bookBox.x + bookBox.width * 0.2, bookBox.y + bookBox.height - 30, { steps: 8 });
+  await page.mouse.up();
+  await showing(5);
+
+  // Wstecz: lewy górny narożnik w prawo – lewa strona wraca, na jej odwrocie strona 4.
+  await page.mouse.move(bookBox.x + 14, bookBox.y + 14);
+  await page.mouse.down();
+  await page.mouse.move(bookBox.x + bookBox.width * 0.45, bookBox.y + 60, { steps: 8 });
+  state = await curlState(page);
+  assert.equal(state.turning, '5');
+  assert.equal(state.flap.page, '4');
+  await page.mouse.move(bookBox.x + bookBox.width * 0.85, bookBox.y + 30, { steps: 8 });
+  await page.mouse.up();
+  await showing(3);
+
+  // Przeciąganie myszą w tekście (poza narożnikami) zaznacza tekst i nie przewraca kartki.
+  const text = await shown().nth(0).locator('.note-text').first().boundingBox();
+  await page.mouse.move(text.x + 40, text.y + text.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(text.x + 300, text.y + text.height / 2 + 4, { steps: 6 });
+  await page.mouse.up();
+  assert.equal(await book.getAttribute('data-page'), '3');
+  assert.ok((await page.evaluate(() => window.getSelection().toString())).trim().length > 0, 'tekst zaznaczony');
+
+  // Ostatnia para stron; przy nieparzystej liczbie stron po prawej jest pusta kartka.
+  await page.keyboard.press('End');
+  const lastLeft = total % 2 === 0 ? total - 1 : total;
+  await showing(lastLeft);
+  assert.equal(await shown().nth(1).evaluate((element) => element.classList.contains('note-page--blank')), total % 2 === 1);
+  assert.equal(await dialog.locator('[data-testid=note-page-next]').isDisabled(), true);
+  await page.keyboard.press('Home');
+  await showing(1);
+
+  // Przełącznik: jedna strona; wybór zapamiętany (ustawienia) i po ponownym otwarciu notatki.
+  await dialog.locator('[data-testid=note-spread]').click();
+  await waitUntil(async () => (await book.getAttribute('data-spread')) === 'false' && (await shown().count()) === 1, 'Jedna strona');
+  assert.equal(await dialog.locator('[data-testid=note-spread]').getAttribute('aria-pressed'), 'false');
+  await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().noteSpread === false), 'Wybór zapisany w ustawieniach');
+  await dialog.locator('[data-testid=note-left]').click();
+  await noteDialog(page).waitFor({ state: 'detached' });
+  await page.click('[data-testid=lesson-note]');
+  await book.waitFor();
+  assert.equal(await book.getAttribute('data-spread'), 'false');
+  await dialog.locator('[data-testid=note-spread]').click();
+  await waitUntil(async () => (await book.getAttribute('data-spread')) === 'true' && (await shown().count()) === 2, 'Znów dwie strony');
+}, { device: DESKTOP });
 
 test('notatka: „Nowa strona” w edytorze; podgląd na liście bez znacznika; ograniczony ruch – strony bez animacji', async ({ open }) => {
   const page = await open();
@@ -2974,6 +3233,7 @@ test('fiszki: stos – pod spodem następna fiszka; widać ją przy obrocie i wy
   const top = await flashcard(page).boundingBox();
   const under = await first.boundingBox();
   assert.ok(under.y + under.height > top.y + top.height + 3, 'następna fiszka wystaje spod dolnej krawędzi');
+  assert.ok(under.y + under.height <= top.y + top.height + 5, 'fiszki leżą blisko siebie (najwyżej 5 px)');
   assert.ok(under.width < top.width - 8, 'i jest nieco węższa');
 
   /** Co jest w punkcie fiszki (x – ułamek szerokości) w trakcie animacji zatrzymanej w podanej chwili. */

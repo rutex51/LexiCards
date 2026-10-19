@@ -31,6 +31,10 @@
   --stack-edge: rgba(0, 0, 0, 0.07);
   --stack-shade: rgba(60, 60, 67, 0.07);
   --page-spine: rgba(60, 60, 67, 0.05);
+  /* Notatka w stronach: grzbiet między dwiema stronami, odwrót kartki i jasny pas na zgięciu. */
+  --page-spine-strong: rgba(60, 60, 67, 0.09);
+  --page-back: #f7f7f8;
+  --curl-light: rgba(255, 255, 255, 0.9);
 
   /* Kolory aplikacji (Ustawienia → Wygląd → Kolor). Każdy: tekst i zaznaczenia, wypełnienie
      przycisków (biały tekst na nim) i tło delikatne; wszystkie z kontrastem co najmniej 4,5:1.
@@ -131,6 +135,9 @@
     --stack-edge: rgba(255, 255, 255, 0.07);
     --stack-shade: rgba(0, 0, 0, 0.42);
     --page-spine: rgba(0, 0, 0, 0.35);
+    --page-spine-strong: rgba(0, 0, 0, 0.42);
+    --page-back: #323235;
+    --curl-light: rgba(255, 255, 255, 0.1);
     --tone-blue: #78b7ff;
     --tone-blue-fill: #0a6fe0;
     --tone-blue-soft: rgba(120, 183, 255, 0.18);
@@ -200,6 +207,9 @@
   --stack-edge: rgba(255, 255, 255, 0.07);
   --stack-shade: rgba(0, 0, 0, 0.42);
   --page-spine: rgba(0, 0, 0, 0.35);
+  --page-spine-strong: rgba(0, 0, 0, 0.42);
+  --page-back: #323235;
+  --curl-light: rgba(255, 255, 255, 0.1);
   --tone-blue: #78b7ff;
   --tone-blue-fill: #0a6fe0;
   --tone-blue-soft: rgba(120, 183, 255, 0.18);
@@ -1698,7 +1708,7 @@ a.row__main:active,
   min-height: 0;
   display: flex;
   flex-direction: column;
-  margin-bottom: 7px;
+  margin-bottom: 5px;
 }
 
 .card-stack__layer {
@@ -1715,8 +1725,8 @@ a.row__main:active,
   user-select: none;
 }
 
-.card-stack__layer--1 { transform: translateY(6px) scale(0.955); }
-.card-stack__layer--2 { transform: translateY(11px) scale(0.91); }
+.card-stack__layer--1 { transform: translateY(4px) scale(0.955); }
+.card-stack__layer--2 { transform: translateY(7px) scale(0.91); }
 
 /* Przyciemnienie głębszych fiszek; znika, gdy fiszka podnosi się na wierzch. */
 .card-stack__shade {
@@ -3844,29 +3854,18 @@ a.row__main:active,
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
-  perspective: 2600px;
   touch-action: pan-y;
 }
 
 .sheet__body > .note-book--single { flex: none; }
 
-/* Kolejna strona wystaje spod bieżącej – jak w stosie fiszek. */
-.note-book:not(.note-book--single) { margin-bottom: 6px; }
-
-.note-book:not(.note-book--single)::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: 0 0 0 0.5px var(--stack-edge);
-  transform: translateY(6px) scale(0.96);
-  transform-origin: 50% 100%;
-  opacity: 0;
-  transition: opacity 0.2s ease;
+/* Myszą kartkę chwyta się za narożnik strony. */
+.note-book--grab { cursor: grab; }
+.note-book--dragging { cursor: grabbing; }
+.note-book--dragging .note-page {
+  -webkit-user-select: none;
+  user-select: none;
 }
-
-.note-book[data-more="true"]:not(.note-book--single)::before { opacity: 1; }
 
 .note-page {
   position: absolute;
@@ -3875,9 +3874,6 @@ a.row__main:active,
   border-radius: var(--radius);
   background: var(--surface);
   overflow: hidden;
-  transform-origin: 0 50%;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
   -webkit-user-select: text;
   user-select: text;
 }
@@ -3893,6 +3889,91 @@ a.row__main:active,
     linear-gradient(to right, var(--page-spine), transparent 16px),
     var(--surface);
 }
+
+/*
+ * Dwie strony obok siebie (duży ekran): lewa i prawa połowa książki, zaokrąglone tylko
+ * na zewnątrz, z cieniem grzbietu po obu stronach środka.
+ */
+.note-book--spread {
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 10px 30px rgba(0, 0, 0, 0.07);
+}
+
+.note-book--spread .note-page { width: 50%; }
+.note-book--spread .note-page--left { right: auto; border-radius: var(--radius) 0 0 var(--radius); }
+.note-book--spread .note-page--right { left: 50%; border-radius: 0 var(--radius) var(--radius) 0; }
+
+.note-book--spread .note-page--left {
+  padding-right: calc(var(--gutter) + 8px);
+  background:
+    linear-gradient(to left, var(--page-spine-strong), transparent 34px),
+    var(--surface);
+}
+
+.note-book--spread .note-page--right {
+  padding-left: calc(var(--gutter) + 8px);
+  background:
+    linear-gradient(to right, var(--page-spine-strong), transparent 34px),
+    var(--surface);
+}
+
+/*
+ * Przewracana kartka (położenie, przycięcie i przezroczystość ustawia skrypt w każdej klatce):
+ * warstwy cienia – rzucanego na stronę pod spodem i przy zgięciu na płaskiej części – oraz
+ * zagięty płat, czyli odwrót kartki z cieniem pod sobą.
+ */
+.note-curl__layer,
+.note-curl__flap {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/*
+ * Płat nie wychodzi poza książkę: w jednej stronie kartka znika za lewą krawędzią, a górna
+ * i dolna krawędź płata zostają na wysokości stron (jak kartka przytrzymana w grzbiecie).
+ */
+.note-curl__layer,
+.note-curl__flap { overflow: hidden; }
+
+.note-curl__lift {
+  position: absolute;
+  inset: 0;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.2));
+}
+
+.note-curl__band {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.note-curl__band--cast {
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.1) 30%, rgba(0, 0, 0, 0));
+}
+
+.note-curl__band--fold {
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.26), rgba(0, 0, 0, 0));
+}
+
+/* Jasny pas na płacie udaje zaokrąglenie papieru przy zgięciu; dalej płat lekko ciemnieje. */
+.note-curl__band--light {
+  background: linear-gradient(to right,
+    rgba(0, 0, 0, 0.12), var(--curl-light) 7%, rgba(255, 255, 255, 0) 30%, rgba(0, 0, 0, 0.05));
+}
+
+.note-page--flap {
+  right: auto;
+  bottom: auto;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+/* Odwrót kartki w jednej stronie: wyblakły tekst strony prześwituje przez papier (w lustrze). */
+.note-page--back { background: var(--page-back); }
+.note-page--back .note-page__content { opacity: 0.2; }
 
 .note-page--measure {
   visibility: hidden;
@@ -3929,16 +4010,6 @@ a.row__main:active,
 
 .note-page__figure:focus-visible { outline-offset: 3px; border-radius: var(--radius); }
 
-/* Cień obracanej kartki i kartki pod nią (przezroczystość ustawia skrypt w trakcie obrotu). */
-.note-page__shade {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(to left, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0.06) 70%);
-  opacity: 0;
-  pointer-events: none;
-}
-
 .note-sheet__footer {
   display: flex;
   align-items: center;
@@ -3971,6 +4042,7 @@ a.row__main:active,
 /* Na szerokim ekranie okno na czas podziału (i dla wielu stron) ma stałą wysokość. */
 @media (min-width: 700px) {
   .note-dialog .sheet__panel.note-sheet--paged { height: min(900px, calc(var(--vv-height, 100dvh) - 48px)); }
+  .dialog.sheet.note-dialog.note-dialog--spread { width: min(1280px, calc(100vw - 48px)); }
 }
 
 .note-sheet__actions:empty { display: none; }

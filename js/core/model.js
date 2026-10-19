@@ -127,6 +127,7 @@ export function defaultSettings() {
     lastStudySession: null,        // ostatnia zakończona sesja: { config, queue, finishedAt } – do powtórzenia
     desiredRetention: 0.9,         // FSRS: docelowa szansa przypomnienia w dniu powtórki
     consolidatedReviewDays: 30,    // lekcje oznaczone jako utrwalone: fiszki wracają najwcześniej po tylu dniach
+    noteSpread: true,              // notatka na dużym ekranie: dwie strony obok siebie
     domainColorsGray: true,        // wersja 1.2: tło ikon istniejących dziedzin zmienione jednorazowo na szare
     studySelection: null,          // ostatnio wybrany materiał: { domainID, moduleID, lessonIDs }
     lastBackupAt: null,

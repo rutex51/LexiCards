@@ -361,10 +361,14 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       close();
     };
 
-    /** Tryb podglądu w stronach (książka) albo zwykły układ przewijany (edycja). */
+    /**
+     * Tryb podglądu w stronach (książka) albo zwykły układ przewijany (edycja, state null).
+     * Kilka stron (i pomiar) – okno o stałej wysokości; dwie strony obok siebie – szersze okno.
+     */
     const setPaged = (state) => {
       body.classList.toggle('note-sheet__body--book', state !== null);
-      panel.classList.toggle('note-sheet--paged', state === 'measure' || state === 'paged');
+      panel.classList.toggle('note-sheet--paged', state !== null && state !== 'single');
+      dialog?.classList.toggle('note-dialog--spread', state === 'measure-spread' || state === 'spread');
     };
 
     function showView() {
@@ -385,7 +389,9 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
         html: note.html,
         images: stored,
         onOpenImage: (index) => openLightbox(stored, index),
-        onLayout: setPaged
+        onLayout: setPaged,
+        spread: library.getSettings().noteSpread !== false,
+        onSpreadChange: (spread) => library.updateSettings({ noteSpread: spread }).catch((error) => console.error(error))
       });
       replaceChildren(body,
         heading(),

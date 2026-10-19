@@ -68,7 +68,7 @@ function frontLabelOf(content) {
  * podnosi się na miejsce wyrzuconej, a po przebudowie widoku jej miejsce zajmuje prawdziwa
  * fiszka w tym samym położeniu (bez animacji wejścia). Ostatnia fiszka nie ma nic pod spodem.
  */
-const STACK_POSES = ['none', 'translateY(6px) scale(0.955)', 'translateY(11px) scale(0.91)'];
+const STACK_POSES = ['none', 'translateY(4px) scale(0.955)', 'translateY(7px) scale(0.91)'];
 const STACK_SHADES = [0, 0.5, 1];
 
 export class StudySessionScreen {
@@ -256,7 +256,7 @@ export class StudySessionScreen {
     if (!first) return;
     const amount = Math.min(1, Math.max(0, lift)) * 0.5;
     first.style.transition = '';
-    first.style.transform = lift > 0 ? `translateY(${6 * (1 - amount)}px) scale(${0.955 + 0.045 * amount})` : '';
+    first.style.transform = lift > 0 ? `translateY(${4 * (1 - amount)}px) scale(${0.955 + 0.045 * amount})` : '';
   }
 
   async #decide(decision) {

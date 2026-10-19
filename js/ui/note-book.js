@@ -11,15 +11,19 @@
 //   - blok, którego nie da się podzielić (np. bardzo długa lista zagnieżdżona), dostaje stronę
 //     przewijaną – to jedyny wyjątek od zasady „bez przewijania”.
 // Krótka notatka (jedna strona) wygląda jak dawniej: karta o wysokości treści.
+//
+// Przewracanie: kartka zagina się od chwyconego rogu (geometria w core/page-curl.js). Płaska
+// część strony jest przycięta wzdłuż zgięcia, zagięty płat to odwrót kartki odbity względem
+// zgięcia – w jednej stronie z prześwitującym, lustrzanym tekstem, w dwóch stronach (duży ekran)
+// ze stroną, która po przewróceniu leży po drugiej stronie grzbietu.
 
 import { normalizeNoteHtml } from '../core/note-format.js';
+import {
+  IDENTITY, applyMatrix, constrainCorner, cornerLift, cornerOf, cornerPath, foldGeometry, gripOf, mirror, multiply, turnedCorner
+} from '../core/page-curl.js';
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
 
-/** Czas pełnego obrotu kartki (ms) i kąt, przy którym kartka znika za krawędzią. */
-const TURN_DURATION = 560;
-const TURN_ANGLE = -100;
-const TURN_EASING = 'cubic-bezier(0.32, 0.06, 0.22, 1)';
 /** Akapit dzielimy między stronami, gdy na dole zostało co najmniej tyle wierszy. */
 const MIN_LINES_TO_SPLIT = 2.2;
 /** Obraz zmniejszamy, żeby został na stronie, jeśli zachowa co najmniej taką część wysokości (i 140 px). */
@@ -126,7 +130,10 @@ function paginate(units, images, content, available) {
     if (content.childNodes.length === 0) return;
     pages.push({ ...page, nodes: [...content.childNodes] });
   };
-  const used = () => content.getBoundingClientRect().height;
+  // Okno może się jeszcze otwierać z animacją powiększenia (na komputerze od 96%) – wysokości
+  // z getBoundingClientRect przeliczamy na wielkość bez tego powiększenia.
+  const scale = content.getBoundingClientRect().width / (content.offsetWidth || 1) || 1;
+  const used = () => content.getBoundingClientRect().height / scale;
   const fits = () => used() <= available + 0.5;
 
   const ratioOf = (unit) => {
@@ -311,17 +318,71 @@ function paginate(units, images, content, available) {
   return pages;
 }
 
+// ---------------------------------------------------------------- przewracana kartka
+
+/** Czas przewrócenia całej kartki (ms). */
+const TURN_DURATION = 720;
+/** Ruch palca (część szerokości strony), po którym puszczona kartka kończy przewracanie. */
+const TURN_THRESHOLD = 0.28;
+/** Narożnik strony, za który kartkę chwyta się myszą (px). */
+const MOUSE_CORNER = 48;
+/** Dwie strony obok siebie – od takiej wielkości okna (px). */
+const SPREAD_MIN_WIDTH = 960;
+const SPREAD_MIN_HEIGHT = 520;
+
+const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - ((2 - 2 * t) ** 3) / 2);
+const easeOut = (t) => 1 - (1 - t) ** 3;
+
+/** Czy okno jest dość duże na dwie strony obok siebie (komputer, tablet). */
+function spreadAvailable() {
+  return window.innerWidth >= SPREAD_MIN_WIDTH && window.innerHeight >= SPREAD_MIN_HEIGHT;
+}
+
+const cssPolygon = (points) => (points.length < 3
+  ? 'polygon(0px 0px, 0px 0px, 0px 0px)'
+  : `polygon(${points.map((point) => `${point.x.toFixed(2)}px ${point.y.toFixed(2)}px`).join(', ')})`);
+const cssMatrix = (matrix) => `matrix(${matrix.map((value) => value.toFixed(5)).join(', ')})`;
+
+/**
+ * Pas cienia lub światła wzdłuż zgięcia: zaczyna się na prostej zgięcia (przez `origin`)
+ * i ma `thickness` w stronę `normal`; gradient z CSS biegnie od zgięcia na zewnątrz.
+ */
+function placeBand(band, origin, normal, thickness, opacity, length) {
+  const along = { x: -normal.y, y: normal.x };
+  band.style.width = `${Math.max(1, thickness).toFixed(2)}px`;
+  band.style.height = `${length}px`;
+  band.style.transform = cssMatrix([normal.x, normal.y, along.x, along.y,
+    origin.x - (along.x * length) / 2, origin.y - (along.y * length) / 2]);
+  band.style.opacity = Math.min(1, Math.max(0, opacity)).toFixed(3);
+}
+
+/** Jak daleko od zgięcia sięga zagięta część kartki (px). */
+const foldDepth = (geometry) => Math.max(0, ...geometry.folded.map((vertex) =>
+  (vertex.x - geometry.point.x) * geometry.normal.x + (vertex.y - geometry.point.y) * geometry.normal.y));
+
 // ---------------------------------------------------------------- książka
 
 /**
  * Notatka w stronach. Zwraca { element, pager, layout(), turn(delta), handleKey(event), destroy() }.
  * element – miejsce na strony (rozciąga się na dostępną wysokość), pager – przyciski stron.
  * images: [{ url, width, height }]; onOpenImage(index) – dotknięcie obrazu.
+ * spread – dwie strony obok siebie na dużym ekranie (wybór zapamiętuje onSpreadChange).
  */
-export function noteBook({ html, images, onOpenImage, onLayout = () => {} }) {
+export function noteBook({ html, images, onOpenImage, onLayout = () => {}, spread: spreadChosen = false, onSpreadChange = () => {} }) {
   const units = contentUnits(html, images.length);
   const element = h('div', { class: 'note-book', dataset: { testid: 'note-book' } });
   const indicator = h('span', { class: 'note-pager__indicator', 'aria-live': 'polite', dataset: { testid: 'note-page-indicator' } });
+  const spreadButton = h('button', {
+    type: 'button', class: 'icon-button note-pager__button note-pager__spread', 'aria-label': 'Dwie strony obok siebie',
+    title: 'Dwie strony obok siebie', 'aria-pressed': String(spreadChosen), dataset: { testid: 'note-spread' },
+    onClick: () => {
+      if (busy || drag?.active) return;
+      spreadChosen = !spreadChosen;
+      spreadButton.setAttribute('aria-pressed', String(spreadChosen));
+      onSpreadChange(spreadChosen);
+      layout();
+    }
+  }, icon('bookOpen'));
   const previousButton = h('button', {
     type: 'button', class: 'icon-button note-pager__button', 'aria-label': 'Poprzednia strona', title: 'Poprzednia strona',
     dataset: { testid: 'note-page-previous' }, onClick: () => turn(-1)
@@ -330,31 +391,35 @@ export function noteBook({ html, images, onOpenImage, onLayout = () => {} }) {
     type: 'button', class: 'icon-button note-pager__button', 'aria-label': 'Następna strona', title: 'Następna strona',
     dataset: { testid: 'note-page-next' }, onClick: () => turn(1)
   }, icon('chevronRight'));
-  const pager = h('div', { class: 'note-pager', hidden: true }, previousButton, indicator, nextButton);
+  const pager = h('div', { class: 'note-pager', hidden: true }, spreadButton, previousButton, indicator, nextButton);
 
   let pages = [];
   let elements = [];
+  /** Pusta kartka po prawej, gdy w dwóch stronach liczba stron jest nieparzysta. */
+  let blank = null;
+  /** Numer (od 0) bieżącej strony; w dwóch stronach – lewej. */
   let index = 0;
+  let spread = false;
   let busy = false;
   let drag = null;
   let suppressClick = false;
   let lastSize = '';
   let resizeTimer = null;
 
-  const shade = (page) => page.querySelector('.note-page__shade');
-  /** Przyciemnienie obracanej kartki i kartki pod nią w zależności od kąta. */
-  const turnShade = (angle) => Math.min(1, -angle / 90) * 0.55;
-  const underShade = (angle) => (1 - Math.min(1, -angle / 90)) * 0.4;
+  /** Ile stron widać naraz. */
+  const shown = () => (spread ? 2 : 1);
+  const at = (number) => elements[number] ?? blank;
+  const canTurn = (direction) => {
+    const target = index + direction * shown();
+    return target >= 0 && target < pages.length;
+  };
 
   function pageElement(page, number, total) {
     return h('section', {
       class: `note-page${page.scroll ? ' note-page--scroll' : ''}`,
       'aria-label': `Strona ${number} z ${total}`,
       dataset: { testid: 'note-page', page: String(number) }
-    },
-      h('div', { class: 'note-page__content' }, page.nodes),
-      h('span', { class: 'note-page__shade', 'aria-hidden': 'true' })
-    );
+    }, h('div', { class: 'note-page__content' }, page.nodes));
   }
 
   /** Okno notatki (panel z fokusem) – tam wraca fokus ze znikającej strony. */
@@ -367,133 +432,277 @@ export function noteBook({ html, images, onOpenImage, onLayout = () => {} }) {
     if (inside && !element.contains(document.activeElement)) focusDialog();
   }
 
+  /** Bieżąca strona, a w dwóch stronach – para stron. */
+  function showCurrent() {
+    showPages(...(spread ? [at(index), at(index + 1)] : [elements[index]]));
+  }
+
   function update() {
     const total = pages.length;
     const active = document.activeElement;
-    indicator.textContent = `${index + 1} z ${total}`;
-    previousButton.disabled = index === 0;
-    nextButton.disabled = index >= total - 1;
+    const last = Math.min(total, index + shown());
+    indicator.textContent = last > index + 1 ? `${index + 1}–${last} z ${total}` : `${index + 1} z ${total}`;
+    previousButton.disabled = !canTurn(-1);
+    nextButton.disabled = !canTurn(1);
     // Wyłączony przycisk traci fokus i klawisze przestałyby działać – fokus wraca na okno.
     if ((active === previousButton && previousButton.disabled) || (active === nextButton && nextButton.disabled)) {
       focusDialog();
     }
     element.dataset.page = String(index + 1);
     element.dataset.pages = String(total);
-    element.dataset.more = index < total - 1 ? 'true' : 'false';
+    element.dataset.spread = String(spread);
   }
 
-  /** Dzieli treść na strony dla bieżącej wielkości okna i pokazuje stronę z tym samym miejscem treści. */
-  function layout() {
-    const keep = pages[index]?.source ?? 0;
-    element.classList.remove('note-book--single');
-    onLayout('measure');
-    const measure = h('div', { class: 'note-page note-page--measure', 'aria-hidden': 'true' },
+  /** Dzieli treść na strony w niewidocznej stronie pomiarowej o wielkości prawdziwej strony. */
+  function measurePages() {
+    const measure = h('div', { class: `note-page note-page--measure${spread ? ' note-page--left' : ''}`, 'aria-hidden': 'true' },
       h('div', { class: 'note-page__content' }));
     showPages(measure);
     const style = getComputedStyle(measure);
     const available = measure.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
-    pages = paginate(units, images, measure.firstChild, Math.max(120, available));
-    if (pages.length === 0) pages = [{ source: 0, scroll: false, nodes: [] }];
-    elements = pages.map((page, number) => pageElement(page, number + 1, pages.length));
-    index = 0;
-    for (let number = 0; number < pages.length; number += 1) if (pages[number].source <= keep) index = number;
-    showPages(elements[index]);
+    const result = paginate(units, images, measure.firstChild, Math.max(120, available));
+    return result.length > 0 ? result : [{ source: 0, scroll: false, nodes: [] }];
+  }
+
+  /**
+   * Dzieli treść na strony dla bieżącej wielkości okna i pokazuje stronę z tym samym miejscem
+   * treści. Dwie strony obok siebie – gdy są wybrane, okno jest duże, a notatka ma kilka stron.
+   */
+  function layout() {
+    const keep = pages[index]?.source ?? 0;
+    element.classList.remove('note-book--single', 'note-book--spread');
+    spread = false;
+    onLayout('measure');
+    pages = measurePages();
     const single = pages.length === 1 && !pages[0].scroll;
+    const roomy = spreadAvailable();
+    if (!single && roomy && spreadChosen) {
+      spread = true;
+      element.classList.add('note-book--spread');
+      onLayout('measure-spread');
+      pages = measurePages();
+    }
+    elements = pages.map((page, number) => pageElement(page, number + 1, pages.length));
+    if (spread) elements.forEach((node, number) => node.classList.add(number % 2 === 0 ? 'note-page--left' : 'note-page--right'));
+    blank = spread ? h('section', { class: 'note-page note-page--blank note-page--right', 'aria-hidden': 'true' }) : null;
+    // Strona z tym samym miejscem treści: pierwsza zaczynająca się od zapamiętanej jednostki
+    // (długi akapit zajmuje kilka stron o tym samym początku), a gdy takiej nie ma – ostatnia przed nią.
+    index = 0;
+    for (let number = 0; number < pages.length && pages[number].source <= keep; number += 1) {
+      index = number;
+      if (pages[number].source === keep) break;
+    }
+    if (spread) index -= index % 2;
+    showCurrent();
     element.classList.toggle('note-book--single', single);
     pager.hidden = single;
-    onLayout(single ? 'single' : 'paged');
+    spreadButton.hidden = single || !roomy;
+    onLayout(single ? 'single' : spread ? 'spread' : 'paged');
     update();
     lastSize = `${window.innerWidth}x${window.innerHeight}`;
   }
 
   // ---- przewracanie kartek
 
-  /** Obrót kartki od kąta `from` do `to`; `other` – strona pod nią (cień maleje lub rośnie). */
-  async function animateTurn(page, other, from, to) {
-    const duration = Math.max(120, TURN_DURATION * (Math.abs(to - from) / Math.abs(TURN_ANGLE)));
-    const options = { duration, easing: TURN_EASING, fill: 'forwards' };
-    const animations = [
-      page.animate([{ transform: `rotateY(${from}deg)` }, { transform: `rotateY(${to}deg)` }], options),
-      shade(page).animate([{ opacity: turnShade(from) }, { opacity: turnShade(to) }], options),
-      shade(other).animate([{ opacity: underShade(from) }, { opacity: underShade(to) }], options)
-    ];
-    try {
-      await animations[0].finished;
-    } catch {
-      // przerwane (np. zamknięcie okna) – stan i tak zostanie uporządkowany
+  /**
+   * Kartka do przewrócenia (w jej własnym układzie: grzbiet na x = 0, kartka po prawej).
+   * Jedna strona: w przód – bieżąca, wstecz – poprzednia, która leży już przewrócona; na odwrocie
+   * prześwituje tekst tej samej strony. Dwie strony: w przód – prawa, wstecz – lewa (układ
+   * odbity); na odwrocie jest strona, która po przewróceniu leży po drugiej stronie grzbietu.
+   */
+  function prepareTurn(direction) {
+    const width = spread ? element.clientWidth / 2 : element.clientWidth;
+    const height = element.clientHeight;
+    let sheet;
+    if (spread) {
+      const forward = direction > 0;
+      sheet = {
+        sign: forward ? 1 : -1, spine: width, fromRest: true, backMirror: forward,
+        still: at(forward ? index : index + 1),
+        turning: at(forward ? index + 1 : index),
+        back: at(forward ? index + 2 : index - 1),
+        under: at(forward ? index + 3 : index - 2)
+      };
+    } else {
+      const turning = elements[direction > 0 ? index : index - 1];
+      sheet = {
+        sign: 1, spine: 0, fromRest: direction > 0, backMirror: false, still: null, turning,
+        back: h('section', { class: 'note-page note-page--back', 'aria-hidden': 'true', inert: '' },
+          turning.querySelector('.note-page__content').cloneNode(true)),
+        under: elements[direction > 0 ? index + 1 : index]
+      };
     }
-    for (const animation of animations) animation.cancel();
-    for (const node of [page, other]) {
-      node.style.transform = '';
-      shade(node).style.opacity = '';
-    }
+    Object.assign(sheet, { width, height, target: index + direction * shown() });
+    sheet.cast = h('div', { class: 'note-curl__layer', 'aria-hidden': 'true' }, h('span', { class: 'note-curl__band note-curl__band--cast' }));
+    sheet.fold = h('div', { class: 'note-curl__layer', 'aria-hidden': 'true' }, h('span', { class: 'note-curl__band note-curl__band--fold' }));
+    sheet.light = h('span', { class: 'note-curl__band note-curl__band--light', 'aria-hidden': 'true' });
+    sheet.back.classList.add('note-page--flap');
+    Object.assign(sheet.back.style, { left: '0px', top: '0px', width: `${width}px`, height: `${height}px` });
+    sheet.back.append(sheet.light);
+    sheet.flap = h('div', { class: 'note-curl__flap', 'aria-hidden': 'true' }, h('div', { class: 'note-curl__lift' }, sheet.back));
+    element.classList.add('note-book--turning');
+    showPages(...[sheet.still, sheet.under, sheet.cast, sheet.turning, sheet.fold, sheet.flap].filter(Boolean));
+    return sheet;
   }
 
-  /** Strony przygotowane do obrotu: w przód – następna pod bieżącą; wstecz – poprzednia nad nią. */
-  function prepare(direction) {
-    const current = elements[index];
-    const incoming = elements[index + direction];
-    if (direction > 0) {
-      element.insertBefore(incoming, current);
-      return { turning: current, under: incoming, from: 0, to: TURN_ANGLE, target: index + 1 };
-    }
-    incoming.style.transform = `rotateY(${TURN_ANGLE}deg)`;
-    element.append(incoming);
-    return { turning: incoming, under: current, from: TURN_ANGLE, to: 0, target: index - 1 };
+  /** Ustawia chwycony punkt kartki i rysuje ją w położeniu początkowym. */
+  function grip(sheet, corner) {
+    sheet.corner = corner;
+    render(sheet, sheet.fromRest ? corner : turnedCorner(corner));
   }
 
-  function finish(turn, completed) {
-    const keepElement = completed ? elements[turn.target] : elements[index];
-    for (const node of [turn.turning, turn.under]) {
-      if (node === keepElement) continue;
-      const hadFocus = node.contains(document.activeElement);
-      node.remove();
-      if (hadFocus) focusDialog();
+  const constrained = (sheet, point) => constrainCorner({ width: sheet.width, height: sheet.height, corner: sheet.corner, point });
+
+  /**
+   * Rysuje kartkę z rogiem w punkcie `point`: płaska część strony, zagięty płat (odwrót kartki
+   * odbity względem zgięcia), cień przy zgięciu na płaskiej części, jasny pas na płacie
+   * i cień rzucany na stronę pod spodem – rośnie, gdy kartka się unosi.
+   */
+  function render(sheet, point) {
+    sheet.point = point;
+    const { width, height, sign } = sheet;
+    const geometry = foldGeometry({ width, height, corner: sheet.corner, point });
+    const layers = [sheet.cast, sheet.fold, sheet.flap];
+    if (!geometry) {
+      sheet.turning.style.clipPath = '';
+      for (const layer of layers) layer.hidden = true;
+      return;
     }
-    if (completed) index = turn.target;
+    for (const layer of layers) layer.hidden = false;
+    const toStage = [sign, 0, 0, 1, sheet.spine, 0];
+    const frontLocal = sign > 0 ? IDENTITY : mirror(width);
+    const backLocal = sheet.backMirror ? mirror(width) : IDENTITY;
+    const stage = (points) => points.map((point) => applyMatrix(toStage, point));
+
+    sheet.turning.style.clipPath = cssPolygon(geometry.flat.map((vertex) => applyMatrix(frontLocal, vertex)));
+    sheet.back.style.transform = cssMatrix(multiply(toStage, multiply(geometry.reflection, backLocal)));
+    sheet.back.style.clipPath = cssPolygon(geometry.folded.map((vertex) => applyMatrix(backLocal, vertex)));
+    sheet.cast.style.clipPath = cssPolygon(stage(geometry.folded));
+    sheet.fold.style.clipPath = cssPolygon(stage(geometry.flat));
+
+    const lift = Math.sin(Math.PI * geometry.progress);
+    const length = 2 * (width + height);
+    const origin = applyMatrix(toStage, geometry.point);
+    const normal = { x: sign * geometry.normal.x, y: geometry.normal.y };
+    placeBand(sheet.cast.firstChild, origin, normal, width * (0.04 + 0.2 * lift), lift * 1.6, length);
+    placeBand(sheet.fold.firstChild, origin, { x: -normal.x, y: -normal.y }, width * (0.03 + 0.12 * lift), lift * 2, length);
+    const backNormal = { x: (sheet.backMirror ? -1 : 1) * geometry.normal.x, y: geometry.normal.y };
+    placeBand(sheet.light, applyMatrix(backLocal, geometry.point), backNormal,
+      Math.min(foldDepth(geometry), width * 0.45), lift * 2.5, length);
+  }
+
+  /** Ruch rogu po drodze `path` (t = 0..1) w czasie `duration`. */
+  function animate(sheet, path, duration, easing) {
+    return new Promise((resolve) => {
+      const started = performance.now();
+      const frame = (now) => {
+        const t = Math.min(1, (now - started) / duration);
+        render(sheet, path(easing(t)));
+        if (t < 1 && element.isConnected) requestAnimationFrame(frame);
+        else resolve();
+      };
+      requestAnimationFrame(frame);
+    });
+  }
+
+  /** Kończy przewracanie: strony wracają na swoje miejsca bez stylów obrotu. */
+  function finishTurn(sheet, completed) {
+    sheet.light.remove();
+    for (const node of [sheet.still, sheet.turning, sheet.back, sheet.under]) {
+      if (!node) continue;
+      node.classList.remove('note-page--flap');
+      for (const property of ['clipPath', 'transform', 'left', 'top', 'width', 'height']) node.style[property] = '';
+    }
+    element.classList.remove('note-book--turning');
+    if (completed) index = sheet.target;
+    showCurrent();
     update();
   }
 
+  /** Przewraca kartkę (przyciski, klawisze): róg idzie łukiem od dolnego rogu strony. */
   async function turn(delta) {
-    const target = index + delta;
-    if (busy || drag?.active || target < 0 || target >= pages.length) return;
-    if (reducedMotion() || typeof elements[index].animate !== 'function') {
-      showPages(elements[target]);
-      index = target;
+    const direction = delta > 0 ? 1 : -1;
+    if (busy || drag?.active || !canTurn(direction)) return;
+    if (reducedMotion()) {
+      index += direction * shown();
+      showCurrent();
       update();
       return;
     }
     busy = true;
-    const step = prepare(delta > 0 ? 1 : -1);
-    await animateTurn(step.turning, step.under, step.from, step.to);
-    finish(step, true);
+    const step = prepareTurn(direction);
+    grip(step, cornerOf('bottom', step.width, step.height));
+    const { corner, width, height } = step;
+    await animate(step, (t) => constrained(step, cornerPath(corner, width, height, step.fromRest ? t : 1 - t)), TURN_DURATION, easeInOut);
+    finishTurn(step, true);
     busy = false;
   }
 
-  // ---- gest: przeciągnięcie palcem obraca kartkę razem z palcem
+  // ---- gest: róg kartki idzie za palcem (myszą – za narożnik strony)
+
+  /** Narożnik strony pod kursorem myszy, za który można chwycić kartkę: { direction } albo null. */
+  function cornerZone(event) {
+    if (busy || pages.length < 2 || element.classList.contains('note-book--single')) return null;
+    const rect = element.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    if (y > MOUSE_CORNER && y < rect.height - MOUSE_CORNER) return null;
+    if (x > rect.width - MOUSE_CORNER && canTurn(1)) return { direction: 1 };
+    if (x < MOUSE_CORNER && canTurn(-1)) return { direction: -1 };
+    return null;
+  }
+
+  /**
+   * Róg kartki dla przesunięcia palca (dx, dy). Kartka leżąca płasko: róg idzie za palcem.
+   * Jedna strona wstecz (kartka wraca spoza lewej krawędzi): zgięcie idzie za palcem.
+   */
+  function dragPoint(step, dx, dy) {
+    const { width, height, corner } = step;
+    const along = step.sign * dx;
+    const x = step.fromRest ? corner.x + Math.min(0, along) : -width + 2 * Math.max(0, along);
+    const progress = (corner.x - x) / (2 * width);
+    return constrained(step, { x, y: corner.y + dy + cornerLift(corner, width, height, progress) });
+  }
 
   element.addEventListener('pointerdown', (event) => {
-    if (event.pointerType === 'mouse' || busy || pages.length < 2) return;
-    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, time: event.timeStamp, active: false };
+    if (busy || drag || pages.length < 2 || reducedMotion()) return;
+    const zone = event.pointerType === 'mouse' ? cornerZone(event) : null;
+    if (event.pointerType === 'mouse') {
+      // Myszą zaznacza się tekst – kartkę chwyta się tylko za narożnik.
+      if (event.button !== 0 || !zone) return;
+      event.preventDefault();
+    }
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, time: event.timeStamp, active: false, zone };
   });
   element.addEventListener('pointermove', (event) => {
-    if (!drag || drag.id !== event.pointerId) return;
+    if (!drag) {
+      if (event.pointerType === 'mouse') element.classList.toggle('note-book--grab', Boolean(cornerZone(event)));
+      return;
+    }
+    if (drag.id !== event.pointerId) return;
     const dx = event.clientX - drag.x;
     const dy = event.clientY - drag.y;
     if (!drag.active) {
-      if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx)) {
-        drag = null;
-        return;
+      let direction = drag.zone?.direction;
+      if (drag.zone) {
+        if (Math.hypot(dx, dy) < 4) return;
+      } else {
+        if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx)) {
+          drag = null;
+          return;
+        }
+        if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+        direction = dx < 0 ? 1 : -1;
       }
-      if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
-      const direction = dx < 0 ? 1 : -1;
-      if (index + direction < 0 || index + direction >= pages.length || reducedMotion()) {
+      if (!canTurn(direction)) {
         drag = null;
         return;
       }
       drag.active = true;
-      drag.step = prepare(direction);
-      drag.direction = direction;
+      drag.step = prepareTurn(direction);
+      const y = drag.y - element.getBoundingClientRect().top;
+      grip(drag.step, cornerOf(gripOf(y, drag.step.height), drag.step.width, drag.step.height, y));
+      element.classList.add('note-book--dragging');
       try {
         element.setPointerCapture(event.pointerId);
       } catch {
@@ -501,34 +710,44 @@ export function noteBook({ html, images, onOpenImage, onLayout = () => {} }) {
       }
     }
     event.preventDefault();
-    const width = element.clientWidth || 1;
-    const progress = Math.min(1, Math.max(0, (drag.direction > 0 ? -dx : dx) / (width * 0.9)));
-    drag.progress = progress;
-    const angle = drag.direction > 0 ? TURN_ANGLE * progress : TURN_ANGLE * (1 - progress);
-    drag.angle = angle;
-    drag.step.turning.style.transform = `rotateY(${angle}deg)`;
-    shade(drag.step.turning).style.opacity = String(turnShade(angle));
-    shade(drag.step.under).style.opacity = String(underShade(angle));
+    render(drag.step, dragPoint(drag.step, dx, dy));
   });
   const release = async (event, cancelled) => {
     if (!drag || drag.id !== event.pointerId) return;
     const current = drag;
     drag = null;
-    if (!current.active) return;
+    if (!current.active) {
+      // Kliknięcie w narożnik bez przeciągania – kartka przewraca się sama.
+      if (current.zone && !cancelled) turn(current.zone.direction);
+      return;
+    }
+    element.classList.remove('note-book--dragging');
     suppressClick = true;
     setTimeout(() => { suppressClick = false; }, 0);
-    const dx = event.clientX - current.x;
-    const speed = Math.abs(dx) / Math.max(1, event.timeStamp - current.time);
-    const completed = !cancelled && (current.progress > 0.3 || (speed > 0.5 && current.progress > 0.08));
-    busy = true;
     const step = current.step;
-    const end = completed ? step.to : step.from;
-    await animateTurn(step.turning, step.under, current.angle ?? step.from, end);
-    finish(step, completed);
+    const dx = event.clientX - current.x;
+    const along = step.sign * dx * (step.fromRest ? -1 : 1);
+    const moved = Math.max(0, along) / step.width;
+    const speed = Math.abs(dx) / Math.max(1, event.timeStamp - current.time);
+    const completed = !cancelled && (moved > TURN_THRESHOLD || (speed > 0.5 && moved > 0.07));
+    busy = true;
+    const from = step.point;
+    const goal = completed === step.fromRest ? turnedCorner(step.corner) : step.corner;
+    const distance = Math.hypot(goal.x - from.x, goal.y - from.y);
+    const duration = Math.max(140, (TURN_DURATION * 0.8 * distance) / (2 * step.width));
+    await animate(step, (t) => constrained(step, { x: from.x + (goal.x - from.x) * t, y: from.y + (goal.y - from.y) * t }), duration, easeOut);
+    finishTurn(step, completed);
     busy = false;
   };
   element.addEventListener('pointerup', (event) => release(event, false));
   element.addEventListener('pointercancel', (event) => release(event, true));
+  element.addEventListener('pointerleave', (event) => {
+    if (event.pointerType === 'mouse' && !drag) element.classList.remove('note-book--grab');
+  });
+  // Przeciąganie narożnika myszą nie zaznacza tekstu.
+  element.addEventListener('selectstart', (event) => {
+    if (drag) event.preventDefault();
+  });
 
   element.addEventListener('click', (event) => {
     const target = event.target.closest('.note-page__figure');
@@ -561,10 +780,11 @@ export function noteBook({ html, images, onOpenImage, onLayout = () => {} }) {
         return true;
       }
       if (event.key === 'Home' || event.key === 'End') {
-        const target = event.key === 'Home' ? 0 : pages.length - 1;
+        const last = pages.length - 1;
+        const target = event.key === 'Home' ? 0 : last - (spread ? last % 2 : 0);
         if (target !== index && !busy) {
-          showPages(elements[target]);
           index = target;
+          showCurrent();
           update();
         }
         return true;
