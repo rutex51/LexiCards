@@ -155,6 +155,22 @@ Testy wersji 1.10.6:
 - **Lint: bez błędów.**
 - Zrzuty (Chromium, ekran telefonu): tryb zmiany kolejności z przełącznikiem włączonym i wyłączonym.
 
+## Poprawka w wersji 1.10.7
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Wcześniej wskazane było złe miejsce na wyłączanie „Utrwalone na końcu listy” (ekran lekcji zamiast trybu zmiany kolejności) | Wycofane polecenia **Wyłącz / Włącz „Utrwalone na końcu listy”** z menu „…” ekranu lekcji, modułu i dziedziny (dodane w 1.10.5). Ustawienie zmieniasz przełącznikiem w trybie **Zmień kolejność** (1.10.6) albo w **Ustawieniach → Listy lekcji i modułów** |
+
+Testy wersji 1.10.7:
+
+- **Testy logiki: 259 – wszystkie zaliczone** (bez zmian w logice).
+- **Testy w przeglądarce: 112 – wszystkie zaliczone w dwóch przebiegach** (113 wcześniejszych
+  − 1 usunięty razem z poleceniem w menu; test zmiany kolejności sprawdza teraz, że w menu „…” tego
+  polecenia nie ma). Uwaga: w pierwszym, wcześniejszym przebiegu raz nie przeszedł test gestów fiszek
+  (stuknięcie nie obróciło fiszki w czasie testu) – ta wersja fiszek nie zmienia; ten test osobno
+  przeszedł 5 razy na 5, a dwa kolejne pełne przebiegi – 112 z 112. Do obserwacji.
+- **Lint: bez błędów.**
+
 ## Czego nie sprawdzono
 
 - **Na iPhonie** – testy działają w Chromium z udawanym mikrofonem, nie w Safari na iOS. Do

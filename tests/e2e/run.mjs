@@ -5482,49 +5482,6 @@ test('ustawienie „Utrwalone na końcu listy”: wyłączone – utrwalone zost
   assert.equal((await page.evaluate(() => window.lexicards.library.exportAll({ media: false }))).settings[0].consolidatedLast, false);
 });
 
-test('„Utrwalone na końcu listy” z menu „…” ekranu lekcji, modułu i dziedziny – to samo ustawienie co w Ustawieniach', async ({ open }) => {
-  const page = await open();
-  await loadSamples(page);
-  const ids = await sampleLessons(page);
-  const base = page.url().split('#')[0];
-  const titles = () => page.locator('.group .row .row__title').allTextContents().then((items) => items.map((item) => item.trim()));
-  await page.evaluate((id) => window.lexicards.library.setLessonConsolidated(id, true), ids.statements);
-  const OFF = 'Wyłącz „Utrwalone na końcu listy”';
-  const ON = 'Włącz „Utrwalone na końcu listy”';
-
-  // Ekran lekcji: „…” u góry – wyłączenie bez przechodzenia do Ustawień.
-  await page.goto(`${base}#/library/lesson/${ids.statements}`);
-  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
-  const items = await page.locator('dialog.menu[open] [role=menuitem]').allTextContents();
-  assert.equal(items[items.indexOf('Cofnij utrwalenie') + 1], OFF, 'zaraz pod „Cofnij utrwalenie”');
-  await page.locator('dialog.menu[open]').evaluate((menu) => Promise.all(menu.getAnimations({ subtree: true }).map((animation) => animation.finished)));
-  await page.screenshot({ path: path.join(OUTPUT, 'utrwalone-na-koncu-menu-lekcji.png') });
-  await menuItem(page, OFF);
-  await page.locator('.toast', { hasText: 'Utrwalone lekcje i moduły zostają tam, gdzie je ustawisz.' }).waitFor();
-  assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().consolidatedLast), false);
-
-  // Lista lekcji: utrwalona na swoim miejscu; w Ustawieniach przełącznik wyłączony.
-  await page.goto(`${base}#/library/module/${ids.module}`);
-  await waitUntil(async () => (await titles()).join() === 'Financial Statements,Investments,Financial Ratios', 'Utrwalona na swoim miejscu');
-  await page.goto(`${base}#/settings`);
-  assert.equal(await page.locator('[data-testid=consolidated-last]').isChecked(), false);
-
-  // Moduł: „…” – włączenie z powrotem; utrwalona wraca na koniec od razu.
-  await page.goto(`${base}#/library/module/${ids.module}`);
-  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
-  await menuItem(page, ON);
-  await page.locator('.toast', { hasText: 'Utrwalone lekcje i moduły są teraz na końcu listy.' }).waitFor();
-  await waitUntil(async () => (await titles()).join() === 'Investments,Financial Ratios,Financial Statements', 'Utrwalona znów na końcu');
-
-  // Dziedzina: to samo polecenie, z napisem zgodnym ze stanem ustawienia.
-  const domainID = await page.evaluate((id) => window.lexicards.library.getModule(id).domainID, ids.module);
-  await page.goto(`${base}#/library/domain/${domainID}`);
-  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
-  assert.ok((await page.locator('dialog.menu[open] [role=menuitem]').allTextContents()).includes(OFF));
-  await menuItem(page, OFF);
-  await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().consolidatedLast === false), 'Wyłączone z dziedziny');
-});
-
 test('„Zmień kolejność”: przełącznik „Utrwalone na końcu listy” nad listą – wyłączony pozwala przesuwać utrwalone między innymi', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
@@ -5540,6 +5497,8 @@ test('„Zmień kolejność”: przełącznik „Utrwalone na końcu listy” na
   // Dziedzina: utrwalony moduł „Finance” na końcu; w trybie zmiany kolejności – przełącznik włączony.
   await page.goto(`${base}#/library/domain/${domainID}`);
   await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  // Od 1.10.7 ustawienia nie ma w menu „…” (tylko tutaj i w Ustawieniach).
+  assert.ok(!(await page.locator('dialog.menu[open] [role=menuitem]').allTextContents()).some((item) => item.includes('Utrwalone na końcu listy')));
   await menuItem(page, 'Zmień kolejność modułów');
   const toggle = page.locator('[data-testid=reorder-consolidated-last]');
   assert.equal(await toggle.isChecked(), true);

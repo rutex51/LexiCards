@@ -18,7 +18,7 @@ import {
 import { openMenu } from '../dialogs.js';
 import { h, replaceChildren } from '../dom.js';
 import { icon } from '../icons.js';
-import { consolidatedLastMenuItem, consolidationMenuItem, consolidationRow } from '../mastery.js';
+import { consolidationMenuItem, consolidationRow } from '../mastery.js';
 import { lessonNoteRow, noteMenuItem, openLessonNote } from '../notes.js';
 import { routes } from '../router.js';
 import { swipeRow } from '../swipe.js';
@@ -355,7 +355,6 @@ export class LessonScreen {
       items: [
         noteMenuItem(ctx, lesson),
         consolidationMenuItem(ctx, 'lesson', lesson.id),
-        consolidatedLastMenuItem(ctx),
         { label: 'Edytuj lekcję', icon: 'edit', onSelect: () => openLessonForm(ctx, { lessonID: lesson.id }) },
         { label: 'Przenieś do innego modułu', icon: 'move', onSelect: () => moveLesson(ctx, lesson.id) },
         { label: 'Kopiuj do…', icon: 'copy', onSelect: () => copyLesson(ctx, lesson.id) },

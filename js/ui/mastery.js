@@ -102,29 +102,6 @@ export function consolidationMenuItem(ctx, level, id) {
 }
 
 /**
- * Pozycja menu „…” lekcji, modułu i dziedziny (od 1.10.5): włącza albo wyłącza ustawienie
- * „Utrwalone na końcu listy” (Ustawienia → Listy lekcji i modułów) bez przechodzenia do Ustawień.
- */
-export function consolidatedLastMenuItem(ctx) {
-  const last = ctx.library.getSettings().consolidatedLast !== false;
-  return {
-    label: last ? 'Wyłącz „Utrwalone na końcu listy”' : 'Włącz „Utrwalone na końcu listy”',
-    icon: 'reorder',
-    onSelect: async () => {
-      try {
-        await ctx.library.updateSettings({ consolidatedLast: !last });
-      } catch (error) {
-        await showError(error);
-        return;
-      }
-      toast(last
-        ? 'Utrwalone lekcje i moduły zostają tam, gdzie je ustawisz. Zmienisz to też w Ustawieniach.'
-        : 'Utrwalone lekcje i moduły są teraz na końcu listy.');
-    }
-  };
-}
-
-/**
  * Przełącznik „Utrwalone na końcu listy” nad listą w trybie zmiany kolejności (od 1.10.6) – to samo
  * ustawienie co w Ustawieniach. Tylko gdy na liście są utrwalone – bez nich niczego nie zmienia.
  */
