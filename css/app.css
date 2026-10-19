@@ -5277,3 +5277,14 @@ svg.icon--note { color: var(--note-icon); }
   from { transform: translateY(8px); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
+
+/* ------------------------------------------------------------------ ramki fokusu (od 1.11.1) */
+/* Ramka fokusu tylko przy obsłudze klawiaturą: po dotknięciu, kliknięciu albo rysiku (klasa
+   input-pointer, js/ui/focus-mode.js) jej nie ma – Safari rysował ją np. na „Anuluj” w nowo
+   otwartym oknie. Pierwszy klawisz nawigacji (Tab, strzałki, Esc) przywraca ramki. */
+:root.input-pointer :focus-visible,
+:root.input-pointer :focus-visible + .switch__track,
+:root.input-pointer .segmented__input:focus-visible + span,
+:root.input-pointer .choice:has(input:focus-visible),
+:root.input-pointer :focus-visible .tabbar__bubble,
+:root.input-pointer :focus-visible .start-bubble__circle { outline: none !important; }

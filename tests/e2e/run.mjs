@@ -2123,6 +2123,53 @@ test('Start na komputerze: dużo dziedzin – dwa wiersze z przewijaniem w bok i
   await page.screenshot({ path: path.join(OUTPUT, 'start-dziedziny-przewijanie-komputer.png') });
 }, { device: DESKTOP });
 
+test('ramki fokusu: po dotknięciu bez ramki (np. „Anuluj” w nowo otwartym oknie, menu, powrót fokusu), klawiaturą – z ramką', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const focused = () => page.evaluate(() => {
+    const element = document.activeElement;
+    return { text: element?.textContent?.trim(), visible: element?.matches(':focus-visible'), outline: getComputedStyle(element).outlineStyle };
+  });
+  // Safari po dotknięciu stawia fokus na pierwszym przycisku okna jako widoczny (:focus-visible). Chromium robi
+  // tak po wciśnięciu zwykłej litery – a litera nie jest klawiszem nawigacji, więc aplikacja zostaje w trybie dotyku.
+  const focusLikeSafari = async (selector) => {
+    await page.keyboard.press('q');
+    await page.evaluate((query) => document.querySelector(query).focus(), selector);
+  };
+
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).tap();
+  await focusLikeSafari('dialog.menu[open] [role=menuitem]');
+  let state = await focused();
+  assert.equal(state.visible, true, 'fokus „widoczny” jak w Safari');
+  assert.equal(state.outline, 'none', `menu po dotknięciu bez ramki (${state.text})`);
+  await menuItem(page, 'Edytuj lekcję');
+  const sheet = page.locator('dialog.sheet[open]');
+  await sheet.waitFor();
+  await focusLikeSafari('dialog.sheet[open] .sheet__header button');
+  state = await focused();
+  assert.deepEqual([state.text, state.visible, state.outline], ['Anuluj', true, 'none'], '„Anuluj” w nowo otwartym oknie bez ramki');
+  await page.screenshot({ path: path.join(OUTPUT, 'fokus-okno-dotyk.png') });
+
+  // Klawiatura: Tab – ramka wraca.
+  await page.keyboard.press('Tab');
+  state = await focused();
+  assert.equal(state.outline, 'solid', `po Tab ramka widoczna (${state.text})`);
+  assert.equal(await page.evaluate(() => document.documentElement.classList.contains('input-pointer')), false);
+  // Pisanie w polu (litery, spacja) nie włącza ramek po ponownym dotknięciu.
+  await sheet.locator('input').first().tap();
+  assert.equal(await page.evaluate(() => document.documentElement.classList.contains('input-pointer')), true, 'dotknięcie – znów bez ramek');
+  await page.keyboard.type('Nowa nazwa lekcji');
+  assert.equal(await page.evaluate(() => document.documentElement.classList.contains('input-pointer')), true, 'pisanie nie włącza ramek');
+  await sheet.getByRole('button', { name: 'Anuluj' }).tap();
+  await sheet.waitFor({ state: 'detached' });
+  // Powrót fokusu po zamknięciu okna (Safari – z ramką): bez ramki.
+  await focusLikeSafari('[aria-label="Więcej poleceń"]');
+  state = await focused();
+  assert.equal(state.outline, 'none', 'przycisk, do którego wraca fokus, bez ramki');
+});
+
 test('załączniki na komputerze: PDF w nowej karcie, dokument Word pobierany; upuszczenie pliku na edytor dodaje załącznik', async ({ open, context }) => {
   const page = await open();
   const ids = await seedNoteWithFiles(page);

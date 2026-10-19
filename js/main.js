@@ -4,6 +4,7 @@ import { Library } from './core/library.js';
 import { DEFAULT_ACCENT, accentColor } from './core/model.js';
 import { openDefaultAdapter } from './core/storage.js';
 import { toast } from './ui/dialogs.js';
+import { trackInputMode } from './ui/focus-mode.js';
 import { consolidationMessages } from './ui/mastery.js';
 import { h, replaceChildren } from './ui/dom.js';
 import { Router, routeKey } from './ui/router.js';
@@ -133,6 +134,8 @@ function registerServiceWorker() {
 }
 
 async function boot() {
+  // Ramki fokusu tylko przy klawiaturze – od pierwszej chwili, zanim pojawi się ekran.
+  trackInputMode();
   const root = document.getElementById('app');
   const adapter = await openDefaultAdapter();
   const library = new Library(adapter);

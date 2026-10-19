@@ -165,6 +165,10 @@ działa na adapterze pamięciowym i wyświetla ostrzeżenie, że dane znikną po
   pozycja, powrót do znanego wpisu – pozycja z wpisu. ← jest aktywne od drugiego ekranu, → –
   po cofnięciu; oba ukryte, gdy nie ma dokąd przejść, i nigdy nie wychodzą poza aplikację.
 - **Okna** to natywny `<dialog>`: przeglądarka pilnuje fokusu, klawisza Esc i blokady tła.
+- **Ramki fokusu** (od 1.11.1, `js/ui/focus-mode.js`): tylko przy obsłudze klawiaturą. Safari dawał
+  `:focus-visible` także po dotknięciu (pierwszy przycisk nowego okna, przycisk po zamknięciu okna),
+  więc `pointerdown` ustawia na `<html>` klasę `input-pointer` (wtedy CSS chowa wszystkie obrysy
+  fokusu), a klawisz nawigacji (Tab, strzałki, Esc; Enter i spacja poza polem tekstowym) ją zdejmuje.
 - **Przesuwanie wierszy** (od 1.9, `js/ui/swipe.js`) – wiersze modułów i lekcji: zdarzenia wskaźnika
   tylko dla dotyku i rysika, `touch-action: pan-y` (pionowe przewijanie zostaje przeglądarce, ruch
   w pionie kończy gest), kierunek ustalany po 10 px. Przesuwa się cały wiersz z tłem, a pod nim, na

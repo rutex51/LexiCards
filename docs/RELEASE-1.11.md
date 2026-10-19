@@ -56,9 +56,26 @@ Szczegóły:
   **Równania**. W kontenerze testowym nie było czcionki matematycznej; do zrzutów doinstalowana
   została czcionka STIX (tylko w środowisku testowym – aplikacja korzysta z czcionek systemu).
 
+## Uzupełnienie w wersji 1.11.1
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Sprawdzić fokus w różnych oknach – pojawia się ramka np. na „Anuluj” | Ramka fokusu pokazuje się teraz tylko przy obsłudze klawiaturą. Po dotknięciu, kliknięciu albo rysiku nie ma jej nigdzie: ani na „Anuluj” w nowo otwartym oknie (Safari stawiał tam fokus z ramką – formularze dziedziny, modułu, lekcji, pojęcia, ściągawka, pytania), ani w menu „…”, ani na przycisku, do którego wraca fokus po zamknięciu okna, ani na przełącznikach i polach wyboru. Pierwszy klawisz nawigacji (Tab, strzałki, Esc, Enter i spacja poza polem tekstowym) przywraca ramki – dla obsługi klawiaturą na komputerze i na iPadzie z klawiaturą. Pisanie w polach nie włącza ramek. Ramka wokół wybranej ikony w „Edytuj dziedzinę” to oznaczenie wyboru (nie fokus) – zostaje |
+
+Testy wersji 1.11.1:
+
+- **Testy logiki: 264 – wszystkie zaliczone** (bez zmian w logice).
+- **Testy w przeglądarce: 117 – wszystkie zaliczone w dwóch przebiegach** (116 wcześniejszych
+  + 1 nowy): fokus ustawiony jak w Safari (widoczny) po dotknięciu – w menu „…”, na „Anuluj”
+  w oknie „Edytuj lekcję” i na przycisku po zamknięciu okna – bez ramki; Tab – ramka; dotknięcie
+  pola – znów bez ramek; pisanie w polu nie włącza ramek. Sprawdzone też w drugą stronę: bez
+  poprawki ten test nie przechodzi (ramka widoczna w menu).
+- **Lint: bez błędów.**
+
 ## Czego nie sprawdzono
 
-- **Safari na iPhonie i iPadzie** – testy działają w Chromium. Safari ma własne składanie MathML,
+- **Safari na iPhonie i iPadzie** – testy działają w Chromium (zachowanie fokusu Safari jest w teście
+  odtworzone, nie sprawdzone na urządzeniu). Safari ma własne składanie MathML,
   więc odstępy i wielkość niektórych znaków (nawiasy, pierwiastek, suma) mogą wyglądać nieco
   inaczej niż na zrzutach. Do sprawdzenia u Ciebie: wygląd wzorów w podglądzie i w oknie Równania.
 - **Windows (Chrome / Edge) z Cambria Math** – nie sprawdzano.
