@@ -935,6 +935,31 @@ a.row__main:active,
   gap: 12px;
 }
 
+/* Więcej niż cztery dziedziny (od 1.10.8): najwyżej dwa wiersze, kolejne kolumny przewijane w bok.
+   Lista sięga krawędzi ekranu, a pierwsza kolumna zaczyna się przy marginesie treści. */
+.tiles--scroll {
+  grid-template-columns: none;
+  grid-template-rows: repeat(2, auto);
+  grid-auto-flow: column;
+  /* Na telefonie widać dwie kolumny i kawałek trzeciej. */
+  grid-auto-columns: minmax(calc((100% - 24px) / 2.2), 1fr);
+  margin-inline: calc(-1 * var(--gutter));
+  padding-inline: var(--gutter);
+  scroll-padding-inline: var(--gutter);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.tiles--scroll::-webkit-scrollbar { display: none; }
+.tiles--scroll > .tile { scroll-snap-align: start; }
+
+@media (hover: hover) and (pointer: fine) {
+  /* Myszą: widoczny cienki pasek przewijania pod kafelkami. */
+  .tiles--scroll { scrollbar-width: thin; padding-bottom: 8px; scroll-snap-type: x proximity; }
+  .tiles--scroll::-webkit-scrollbar { display: initial; }
+}
+
 .tile__link {
   display: flex;
   flex-direction: column;
@@ -4047,6 +4072,7 @@ a.row__main:active,
   .app--bottombar:not(.app--focus) ~ .toasts { bottom: 124px; }
 
   .tiles { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .tiles--scroll { grid-template-columns: none; grid-auto-columns: minmax(190px, 1fr); }
 
   .study {
     height: calc(100dvh - var(--navbar-height) - 40px);

@@ -2035,6 +2035,94 @@ test('piktogram notatki wszędzie ciemnożółty – w obu motywach i przy innym
   }
 });
 
+/** Kafelki dziedzin na Starcie: liczba wierszy, przewijanie w bok, położenie listy. */
+const startTiles = (page) => page.locator('[data-testid=start-domains]').evaluate((list) => {
+  const tops = new Set([...list.children].map((tile) => Math.round(tile.getBoundingClientRect().top)));
+  const box = list.getBoundingClientRect();
+  return {
+    rows: tops.size, scroll: list.classList.contains('tiles--scroll'), overflow: list.scrollWidth - list.clientWidth,
+    scrollLeft: list.scrollLeft, left: box.left, right: box.right, firstLeft: list.children[0].getBoundingClientRect().left,
+    order: [...list.children].map((tile) => tile.querySelector('.tile__name').textContent)
+  };
+});
+
+async function seedDomains(page, count) {
+  await page.evaluate(async (total) => {
+    const { library } = window.lexicards;
+    for (let index = library.listDomains().length; index < total; index += 1) await library.createDomain({ name: `Dziedzina ${index + 1}` });
+  }, count);
+}
+
+test('Start: do czterech dziedzin zwykła siatka, więcej – najwyżej dwa wiersze z przewijaniem w bok (pozycja pamiętana)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const base = page.url().split('#')[0];
+  await seedDomains(page, 4);
+  await page.goto(`${base}#/`);
+  let tiles = await startTiles(page);
+  assert.deepEqual([tiles.scroll, tiles.rows, tiles.overflow], [false, 2, 0], 'cztery – siatka 2 × 2 bez przewijania');
+
+  await seedDomains(page, 9);
+  await page.goto(`${base}#/`);
+  tiles = await startTiles(page);
+  assert.equal(tiles.scroll, true);
+  assert.equal(tiles.rows, 2, 'dziewięć dziedzin – nadal dwa wiersze');
+  assert.ok(tiles.overflow > 300, `przewijanie w bok (${tiles.overflow} px)`);
+  // Lista sięga krawędzi ekranu, a pierwsza kolumna – marginesu treści; strona się nie poszerza.
+  assert.deepEqual([tiles.left, tiles.right], [0, 390]);
+  assert.equal(tiles.firstLeft, 16);
+  assert.ok((await overflowX(page)) <= 0, 'strona bez przewijania w bok');
+  // Kolejność kolumnami: pierwsza kolumna – 1. i 2. dziedzina, następna kolumna lekko wystaje.
+  const columns = await page.locator('[data-testid=start-domains] > .tile').evaluateAll((items) => items.map((tile) => {
+    const box = tile.getBoundingClientRect();
+    return { left: Math.round(box.left), top: Math.round(box.top), right: Math.round(box.right) };
+  }));
+  assert.equal(columns[0].left, columns[1].left);
+  assert.ok(columns[1].top > columns[0].top);
+  assert.ok(columns[4].left < 390 && columns[4].right > 390, 'trzecia kolumna wystaje za krawędź');
+  const showTiles = () => page.evaluate(() => {
+    for (const toast of document.querySelectorAll('.toast')) toast.remove();
+    document.querySelector('[data-testid=start-domains]').closest('section').scrollIntoView({ block: 'center' });
+  });
+  await showTiles();
+  await page.screenshot({ path: path.join(OUTPUT, 'start-dziedziny-przewijanie-telefon.png') });
+
+  // Przewinięcie (palcem) zostaje po wejściu w dziedzinę i powrocie.
+  // Lista dociąga do kolumny – czekamy, aż przewinięcie się ustali.
+  await page.locator('[data-testid=start-domains]').evaluate((list) => { list.scrollLeft = 260; });
+  let scrolled = -1;
+  await waitUntil(async () => {
+    const now = (await startTiles(page)).scrollLeft;
+    const stable = now === scrolled;
+    scrolled = now;
+    await page.waitForTimeout(150);
+    return stable;
+  }, 'Przewinięcie ustalone');
+  assert.ok(scrolled > 100, `przewinięte (${scrolled})`);
+  // Wejście adresem kafelka (kliknięcie kafelka za krawędzią najpierw przewinęłoby listę do niego).
+  await page.goto(`${base}${await page.locator('[data-testid=start-domains] .tile__link').nth(2).getAttribute('href')}`);
+  await page.waitForURL(/#\/library\/domain\//);
+  await page.goBack();
+  await page.locator('[data-testid=start-domains]').waitFor();
+  await waitUntil(async () => Math.abs((await startTiles(page)).scrollLeft - scrolled) <= 1, 'Przewinięcie przywrócone');
+  await showTiles();
+  await page.screenshot({ path: path.join(OUTPUT, 'start-dziedziny-przewiniete-telefon.png') });
+});
+
+test('Start na komputerze: dużo dziedzin – dwa wiersze z przewijaniem w bok i paskiem przewijania', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const base = page.url().split('#')[0];
+  await seedDomains(page, 14);
+  await page.goto(`${base}#/`);
+  const tiles = await startTiles(page);
+  assert.deepEqual([tiles.scroll, tiles.rows], [true, 2]);
+  assert.ok(tiles.overflow > 0, 'przewijanie w bok');
+  assert.ok((await overflowX(page)) <= 0, 'strona bez przewijania w bok');
+  await page.evaluate(() => { for (const toast of document.querySelectorAll('.toast')) toast.remove(); });
+  await page.screenshot({ path: path.join(OUTPUT, 'start-dziedziny-przewijanie-komputer.png') });
+}, { device: DESKTOP });
+
 test('załączniki na komputerze: PDF w nowej karcie, dokument Word pobierany; upuszczenie pliku na edytor dodaje załącznik', async ({ open, context }) => {
   const page = await open();
   const ids = await seedNoteWithFiles(page);

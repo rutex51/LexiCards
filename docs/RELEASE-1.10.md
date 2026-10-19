@@ -171,6 +171,25 @@ Testy wersji 1.10.7:
   przeszedł 5 razy na 5, a dwa kolejne pełne przebiegi – 112 z 112. Do obserwacji.
 - **Lint: bez błędów.**
 
+## Uzupełnienie w wersji 1.10.8
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Kafelki dziedzin na Starcie – najwyżej 2 wiersze, przy większej liczbie przewijanie poziome | Do czterech dziedzin – jak dotąd siatka (na telefonie 2 × 2). Od pięciu – dwa wiersze, a kolejne dziedziny są w kolumnach w prawo (1. i 2. w pierwszej kolumnie, 3. i 4. w drugiej…). Przewijasz palcem w bok, kolumny dociągają się do marginesu; na telefonie widać dwie kolumny i kawałek trzeciej (widać, że jest dalej), a lista sięga krawędzi ekranu. Na komputerze – więcej kolumn naraz i cienki pasek przewijania pod kafelkami. Przewinięcie zostaje po wejściu w dziedzinę i powrocie na Start (do zamknięcia aplikacji). Strona nie przewija się w bok |
+
+Testy wersji 1.10.8:
+
+- **Testy logiki: 259 – wszystkie zaliczone** (bez zmian w logice).
+- **Testy w przeglądarce: 114 – wszystkie zaliczone w dwóch przebiegach** (112 wcześniejszych
+  + 2 nowe): cztery dziedziny – siatka 2 × 2 bez przewijania; dziewięć – dwa wiersze, przewijanie
+  w bok, lista od krawędzi do krawędzi ekranu, pierwsza kolumna przy marginesie, kolejność kolumnami,
+  trzecia kolumna wystaje, strona bez przewijania w bok, przewinięcie wraca po wejściu w dziedzinę
+  i powrocie; komputer, czternaście dziedzin – dwa wiersze i przewijanie.
+- **Lint: bez błędów.**
+- W trakcie pracy test wyłapał, że przewinięcie nie zawsze wracało, gdy ekran był wstawiany
+  o klatkę później – poprawione (aplikacja czeka, aż lista będzie na ekranie).
+- Zrzuty (Chromium): Start z dziewięcioma dziedzinami (telefon, przed i po przewinięciu), komputer.
+
 ## Czego nie sprawdzono
 
 - **Na iPhonie** – testy działają w Chromium z udawanym mikrofonem, nie w Safari na iOS. Do

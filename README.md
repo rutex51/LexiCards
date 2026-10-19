@@ -127,6 +127,10 @@ przyciski **←** i **→** – poprzedni i następny ekran, jak „wstecz” i 
 do słuchania i **←** z powrotem do lekcji). Działają też w trybie pełnoekranowym, gdzie przycisków
 przeglądarki nie widać, i tylko w obrębie aplikacji; pojawiają się, gdy jest dokąd przejść.
 
+Na **Starcie** kafelki dziedzin zajmują najwyżej dwa wiersze: przy więcej niż czterech dziedzinach
+kolejne kolumny przesuwasz w bok (palcem, kółkiem z Shift albo paskiem przewijania na komputerze);
+następna kolumna lekko wystaje, a przewinięcie zostaje po powrocie na Start.
+
 ### Aktualizacje
 
 Na darmowym koncie GitHub strona jest publikowana tylko z repozytorium publicznego. Zainstalowana

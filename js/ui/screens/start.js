@@ -25,6 +25,36 @@ export function summarySentence(summary) {
   return `Masz ${pluralTerms(summary.terms)} w ${lessons}.`;
 }
 
+/** Od tylu dziedzin kafelki są w dwóch wierszach przewijanych w bok (od 1.10.8) – wyżej ich nie przybywa. */
+const TILES_SCROLL_FROM = 5;
+/** Przewinięcie kafelków w bok, pamiętane do zamknięcia aplikacji (np. po powrocie z dziedziny). */
+let tilesScrollLeft = 0;
+
+/**
+ * Kafelki dziedzin. Do czterech – zwykła siatka; więcej – dwa wiersze, kolejne kafelki w kolumnach
+ * w prawo (przewijanie w bok, następna kolumna lekko wystaje, żeby było widać, że jest dalej).
+ */
+function domainTiles(library, domains) {
+  const scrolling = domains.length >= TILES_SCROLL_FROM;
+  const list = h('ul', { class: `tiles${scrolling ? ' tiles--scroll' : ''}`, role: 'list', dataset: { testid: 'start-domains' } },
+    domains.map((domain) => domainTile(library, domain)));
+  if (scrolling) {
+    // Przewinięcie wraca, gdy lista jest już na ekranie (ekran bywa wstawiany o klatkę później);
+    // do tego czasu zdarzenia przewijania nie nadpisują zapamiętanego położenia.
+    let restored = tilesScrollLeft === 0;
+    list.addEventListener('scroll', () => { if (restored) tilesScrollLeft = list.scrollLeft; }, { passive: true });
+    const restore = (frames) => {
+      if (restored) return;
+      if (list.isConnected) {
+        list.scrollLeft = tilesScrollLeft;
+        restored = true;
+      } else if (frames > 0) requestAnimationFrame(() => restore(frames - 1));
+    };
+    requestAnimationFrame(() => restore(30));
+  }
+  return list;
+}
+
 function domainTile(library, domain) {
   const counts = library.counts('domain', domain.id);
   return h('li', { class: 'tile' },
@@ -176,7 +206,7 @@ export class StartScreen {
         summary.terms > 0 ? this.#progress() : null,
         h('section', { class: 'group' },
           h('h2', { class: 'group__title' }, 'Twoje dziedziny'),
-          h('ul', { class: 'tiles', role: 'list' }, domains.map((domain) => domainTile(library, domain)))
+          domainTiles(library, domains)
         ),
         group({ title: 'Dodaj materiały' },
           actionRow({ label: 'Nowe pojęcie', iconName: 'plus', onClick: () => openTermForm(ctx), testID: 'start-add-term' }),
