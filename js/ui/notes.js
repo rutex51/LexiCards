@@ -724,7 +724,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
 // ---------------------------------------------------------------- edytor
 
 /**
- * Edytor notatki: obrazy, pasek formatowania, pole tekstu i załączniki.
+ * Edytor notatki: obrazy, załączniki, pasek formatowania i pole tekstu.
  * files – opisy załączników notatki, loadFile(meta) → bajty zapisanego załącznika.
  * Zwraca { element, draft(), dirty(), busy(), focus(), destroy() }.
  */
@@ -1205,10 +1205,11 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     attachInput
   );
 
-  // Obrazy na górze, tekst pod nimi, załączniki na końcu. Upuszczenie plików na edytor
+  // Obrazy na górze, pod nimi załączniki, na końcu tekst. Upuszczenie plików na edytor
   // (komputer) dodaje obrazy albo załączniki.
   const element = h('div', { class: 'note-editor' },
     imagesSection,
+    filesSection,
     h('section', { class: 'note-editor__text' },
       h('div', { class: 'note-editor__text-head' },
         h('h3', { class: 'form-group__title' }, 'Tekst'),
@@ -1226,8 +1227,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
       ),
       h('div', { class: 'note-editor__toolbar' }, toolbar, colorPanel),
       area
-    ),
-    filesSection
+    )
   );
   element.addEventListener('dragover', (event) => {
     if ([...(event.dataTransfer?.items ?? [])].some((item) => item.kind === 'file')) {

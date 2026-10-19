@@ -442,6 +442,7 @@ export function noteBook({
   let busy = false;
   let drag = null;
   let suppressClick = false;
+  /** Wielkość książki i okna przy ostatnim podziale na strony. */
   let lastSize = '';
   let resizeTimer = null;
   /** Numer podziału na strony – rośnie przy każdym ponownym podziale (np. po obrocie telefonu). */
@@ -452,6 +453,7 @@ export function noteBook({
 
   /** Ile stron widać naraz. */
   const shown = () => (spread ? 2 : 1);
+  const sizeKey = () => `${element.clientWidth}x${element.clientHeight}/${window.innerWidth}x${window.innerHeight}`;
   const at = (number) => elements[number] ?? blank;
   const canTurn = (direction) => {
     const target = index + direction * shown();
@@ -543,7 +545,7 @@ export function noteBook({
     spreadButton.hidden = single || !roomy;
     onLayout(single ? 'single' : spread ? 'spread' : 'paged');
     update();
-    lastSize = `${window.innerWidth}x${window.innerHeight}`;
+    lastSize = sizeKey();
     version += 1;
   }
 
@@ -800,14 +802,22 @@ export function noteBook({
     onOpenImage(Number(target.dataset.index));
   });
 
+  // Nowy podział na strony, gdy zmieni się wielkość okna albo widocznej części ekranu. Na iPhonie
+  // klawiatura zmienia tylko tę drugą (visualViewport), a okno notatki rośnie i maleje razem
+  // z nią – notatka zapisana przy otwartej klawiaturze dzieli się od nowa, gdy klawiatura się schowa.
   const onResize = () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      if (busy || drag?.active || !element.isConnected) return;
-      if (`${window.innerWidth}x${window.innerHeight}` !== lastSize) layout();
+      if (!element.isConnected) return;
+      if (busy || drag?.active) {
+        onResize();
+        return;
+      }
+      if (sizeKey() !== lastSize) layout();
     }, 150);
   };
   window.addEventListener('resize', onResize);
+  window.visualViewport?.addEventListener('resize', onResize);
 
   /** Czy strona przewijana (wyjątek dla bardzo długiego bloku) może się jeszcze przewinąć w tę stronę. */
   const canScroll = (scroller, delta) => (delta > 0
@@ -911,6 +921,7 @@ export function noteBook({
       clearTimeout(resizeTimer);
       clearTimeout(wheelTimer);
       window.removeEventListener('resize', onResize);
+      window.visualViewport?.removeEventListener('resize', onResize);
     }
   };
 }

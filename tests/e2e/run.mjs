@@ -1667,6 +1667,9 @@ test('załączniki w edytorze: dodanie, zmiana nazwy z zachowaniem rozszerzenia,
   assert.equal(await dialog.locator('[data-testid=note-files]').count(), 0, 'bez załączników – bez listy');
   await dialog.locator('[data-testid=note-right]').click();
 
+  // Sekcje edytora: obrazy, pod nimi załączniki, na końcu tekst.
+  assert.deepEqual(await dialog.locator('.note-editor > section > .form-group__title, .note-editor > section > .note-editor__text-head > .form-group__title').allTextContents(),
+    ['Obrazy', 'Załączniki', 'Tekst']);
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), dialog.locator('[data-testid=note-attachment-add]').click()]);
   await chooser.setFiles([
     { name: 'Instrukcja.pdf', mimeType: 'application/pdf', buffer: Buffer.from(FAKE_PDF) },
@@ -1674,6 +1677,7 @@ test('załączniki w edytorze: dodanie, zmiana nazwy z zachowaniem rozszerzenia,
     { name: 'Zbędny.txt', mimeType: 'text/plain', buffer: Buffer.from('do usunięcia') }
   ]);
   await waitUntil(async () => (await dialog.locator('[data-testid=note-attachment-name]').allTextContents()).length === 3, 'Trzy załączniki na liście');
+  await page.screenshot({ path: path.join(OUTPUT, 'zalaczniki-edytor-telefon.png') });
   assert.deepEqual(await dialog.locator('.note-attachments__item .file-badge').allTextContents(), ['PDF', 'DOCX', 'TXT']);
   await expectText(dialog.locator('.note-attachments__meta').nth(1), 'Dokument Word, 3 KB');
 
@@ -1960,6 +1964,34 @@ async function openLongNote(page, { paragraphs = 16 } = {}) {
   await waitUntil(() => noteDialog(page).locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'Okno notatki otwarte');
   return { ids, book };
 }
+
+test('notatka po zapisie z otwartą klawiaturą (iPhone): po schowaniu klawiatury strony dzielą się od nowa', async ({ open }) => {
+  const page = await open();
+  const { book } = await openLongNote(page);
+  const pages = () => book.evaluate((element) => Number(element.dataset.pages));
+  const fresh = await pages();
+  assert.ok(fresh >= 2, 'długa notatka ma kilka stron');
+
+  // Klawiatura iPhone'a: widoczna część ekranu jest niższa, a okno notatki razem z nią
+  // (aplikacja ustawia --vv-height ze zdarzeń visualViewport). Chromium klawiatury nie ma – udajemy ją.
+  await noteDialog(page).locator('[data-testid=note-right]').click();
+  await noteDialog(page).locator('[data-testid=note-editor]').waitFor();
+  await page.evaluate(() => document.documentElement.style.setProperty('--vv-height', '380px'));
+  await noteDialog(page).locator('[data-testid=note-right]').click();
+  await page.locator('.toast', { hasText: 'Zapisano notatkę.' }).waitFor();
+  await book.waitFor();
+  const squeezed = await pages();
+  assert.ok(squeezed > fresh, `przy klawiaturze stron jest więcej (${squeezed} > ${fresh})`);
+
+  // Klawiatura się chowa: visualViewport zgłasza zmianę wielkości, okno notatki rośnie.
+  await page.evaluate(() => window.visualViewport.dispatchEvent(new window.Event('resize')));
+  await waitUntil(async () => (await pages()) === fresh, `Po schowaniu klawiatury ${fresh} stron jak po otwarciu`);
+  const fits = await book.evaluate((element) => {
+    const content = element.querySelector('[data-testid=note-page] .note-page__content');
+    return content.scrollHeight <= content.clientHeight + 1;
+  });
+  assert.ok(fits, 'strona mieści się bez przewijania');
+});
 
 /** Punkty wielokąta z clip-path: polygon(…) w pikselach strony; [] – strona bez przycięcia. */
 function polygonPoints(clip) {

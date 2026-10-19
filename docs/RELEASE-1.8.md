@@ -9,7 +9,7 @@ oraz jeden plik ze wszystkimi obrazami i załącznikami. Opis budowy: [ARCHITECT
 
 | Prośba | Jak jest zrobione |
 | --- | --- |
-| Załączniki do notatek (PDF, XLSX, DOCX, PPTX) | W edytorze notatki, pod tekstem, sekcja **Załączniki**: **Dodaj załącznik** (dowolny plik do 50 MB, najwyżej 30 w notatce; na komputerze plik można też upuścić na edytor – obrazy trafiają do obrazów, pozostałe pliki do załączników). Każdy plik ma plakietkę rodzaju (PDF – czerwona, DOCX – niebieska, XLSX – zielona, PPTX – pomarańczowa), nazwę, rodzaj i rozmiar. Dotknięcie: **Zmień nazwę** (rozszerzenie zostaje, nawet gdy zniknie z pola), **Otwórz**, **Przesuń wyżej / niżej**, **Usuń załącznik**; × usuwa od razu |
+| Załączniki do notatek (PDF, XLSX, DOCX, PPTX) | W edytorze notatki sekcja **Załączniki** (od 1.8.1 pod obrazami, nad tekstem): **Dodaj załącznik** (dowolny plik do 50 MB, najwyżej 30 w notatce; na komputerze plik można też upuścić na edytor – obrazy trafiają do obrazów, pozostałe pliki do załączników). Każdy plik ma plakietkę rodzaju (PDF – czerwona, DOCX – niebieska, XLSX – zielona, PPTX – pomarańczowa), nazwę, rodzaj i rozmiar. Dotknięcie: **Zmień nazwę** (rozszerzenie zostaje, nawet gdy zniknie z pola), **Otwórz**, **Przesuń wyżej / niżej**, **Usuń załącznik**; × usuwa od razu |
 | Gdzie są zapisane, otwieranie na iPhonie i w Windows | Jak obrazy: w bazie przeglądarki na urządzeniu (osobny magazyn `noteFiles`, notatka ma tylko opis plików). W podglądzie notatki pliki są w rzędzie pod nazwą lekcji. Na iPhonie dotknięcie pliku → **Otwórz lub zapisz…** – systemowy arkusz udostępniania: Word, Excel, PowerPoint, Książki albo „Zachowaj w Plikach”. Na komputerze: **Otwórz w nowej karcie** (PDF, obrazy, tekst) albo **Pobierz** / **Pobierz i otwórz** (Word, Excel, PowerPoint – z folderu Pobrane otworzą się w Office). Po dodaniu załącznika aplikacja prosi przeglądarkę o ochronę danych przed usunięciem przy braku miejsca. Notatka może mieć same załączniki – wtedy podgląd pokazuje tylko ich listę, a wiersz „Notatka” na ekranie lekcji – „2 załączniki”. Kopia lekcji ma własne kopie załączników, usunięcie lekcji usuwa je razem z notatką. Import z arkusza nie zmienia załączników, eksport XLSX ich nie obejmuje |
 | Zapis do przeniesienia dwustopniowy: same dane oraz osobno załączniki i obrazy – jednym plikiem | W Ustawieniach grupa **Kopia zapasowa i przeniesienie**: **Zapisz dane do pliku** – `LexiCards-dane-RRRR-MM-DD.json`: materiały, notatki (tekst i opisy obrazów i załączników), postępy, historia, ustawienia – bez bajtów obrazów i załączników, więc mały. **Zapisz obrazy i załączniki** – **jeden** plik `LexiCards-obrazy-i-zalaczniki-RRRR-MM-DD.zip` ze wszystkimi obrazami i załącznikami notatek (wiersz pokazuje, ile ich jest i ile zajmują; plik ZIP bez Base64, więc nie jest o 1/3 większy jak dotąd obrazy w kopii). **Przywróć z pliku** przyjmuje plik danych, plik obrazów i załączników albo oba zaznaczone naraz (najpierw idą dane). Przywrócenie danych zastępuje dane, ale obrazy i załączniki, które już są na urządzeniu, zostają; przywrócenie pliku obrazów i załączników tylko dopisuje brakujące pliki do notatek (sprawdza sumę kontrolną), niczego nie usuwa i po wszystkim mówi, ile dodało, ile już było, ile nie pasuje i ile wciąż brakuje. Dopóki drugi plik nie jest przywrócony, notatka pokazuje ramkę „Brak pliku obrazu „…”” i przekreślone załączniki, a Ustawienia – wiersz „Brak na tym urządzeniu: 1 obraz i 2 załączniki”. Kopie z wersji 1.1–1.7 (jeden plik z obrazami) nadal można przywrócić |
 
@@ -26,7 +26,7 @@ oraz jeden plik ze wszystkimi obrazami i załącznikami. Opis budowy: [ARCHITECT
   danych – nic nie pasuje, inna suma kontrolna – plik uszkodzony; obcy ZIP, nie-ZIP i plik z nowszej
   wersji – czytelny błąd; ZIP zapisywany i czytany kawałkami (z kompresją i bez). Sprawdzone też,
   że test „przywrócenie danych zostawia pliki” nie przechodzi, gdy przywracanie czyści pliki jak dotąd.
-- **Testy w przeglądarce (Chromium, ekran telefonu i komputera): LICZBA_E2E – wszystkie zaliczone
+- **Testy w przeglądarce (Chromium, ekran telefonu i komputera): 101 – wszystkie zaliczone
   w dwóch przebiegach** (98 wcześniejszych – z nich test „kopia zapasowa z notatkami” zastąpiony
   nowymi, 2 testy kopii dostosowane do nowych nazw i opisów – + 4 nowe):
   - przeniesienie dwustopniowe (telefon → drugi telefon): plik danych (format 3, bez obrazów,
@@ -48,6 +48,28 @@ oraz jeden plik ze wszystkimi obrazami i załącznikami. Opis budowy: [ARCHITECT
 - Zrzuty (Chromium): podgląd notatki z załącznikami i edytor z sekcją „Załączniki” (komputer),
   ustawienia z wierszem „Brak na tym urządzeniu” i notatka bez plików po przywróceniu samych danych
   (telefon).
+
+## Uzupełnienie w wersji 1.8.1
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Załączniki w trybie edycji pod zdjęciami, a przed notatką | Kolejność sekcji edytora: **Obrazy**, **Załączniki**, **Tekst** (wcześniej załączniki były na końcu, pod tekstem) |
+| Podgląd po edycji na iPhonie: najpierw „rozsypana” notatka z dużo większą liczbą stron, dopiero po przeładowaniu właściwa | Przyczyna: po **Zapisz** klawiatura jeszcze się chowała, a okno notatki na telefonie ma wysokość widocznej części ekranu (nad klawiaturą) – strony dzieliły się dla niskiego okna (mały obraz, kilka linijek na stronę). Gdy klawiatura znikała, okno rosło, ale podział nie był liczony od nowa: Safari zgłasza to jako zmianę widocznej części ekranu, a nie wielkości okna, na którą czekała notatka. Teraz notatka dzieli się od nowa także po zmianie widocznej części ekranu, jeśli zmieniła się wielkość stron – po schowaniu klawiatury (ułamek sekundy) widać właściwy podział, z tym samym miejscem treści. Błąd był od wersji 1.3 (od kiedy notatka jest w stronach) |
+
+Testy wersji 1.8.1:
+
+- **Testy logiki: 252 – wszystkie zaliczone.**
+- **Testy w przeglądarce: 102 – wszystkie zaliczone w dwóch przebiegach** (101 wcześniejszych
+  + 1 nowy; test załączników w edytorze sprawdza teraz kolejność sekcji: Obrazy, Załączniki, Tekst):
+  - nowy: notatka zapisana przy „otwartej klawiaturze” (Chromium nie ma klawiatury – okno notatki
+    zmniejszone tak, jak robi to klawiatura iPhone'a) ma więcej stron; po „schowaniu klawiatury”
+    (zdarzenie zmiany widocznej części ekranu) strony dzielą się od nowa – tyle samo co po otwarciu
+    notatki, strona mieści się bez przewijania. Ten test nie przechodzi na kodzie z 1.8.0 (zostaje
+    28 stron zamiast 6, puste strony jak na Twoich zrzutach).
+- **Lint: bez błędów.**
+- Zrzut: edytor na telefonie z sekcją „Załączniki” pod obrazami.
+- Czego nie sprawdzono: **Safari na iPhonie** – klawiatura w teście jest udawana; do sprawdzenia
+  u Ciebie, czy po zapisie z otwartą klawiaturą notatka po chwili pokazuje właściwe strony.
 
 ## Czego nie sprawdzono
 

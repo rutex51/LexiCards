@@ -321,7 +321,11 @@ przewija:
 - **Jedna strona** wygląda jak dawniej: karta o wysokości treści, bez przycisków stron. Na
   szerokim ekranie okno dostaje stałą wysokość tylko wtedy, gdy stron jest kilka.
 - **Ponowny podział** po zmianie wielkości okna (np. obrót telefonu) zachowuje miejsce w treści:
-  pokazuje stronę z tą samą pierwszą jednostką.
+  pokazuje stronę z tą samą pierwszą jednostką. Od 1.8.1 sygnałem jest też zmiana widocznej części
+  ekranu (`visualViewport`), a warunkiem – inna wielkość książki albo okna niż przy ostatnim podziale.
+  Na iPhonie klawiatura zmienia tylko widoczną część ekranu, a okno notatki ma jej wysokość
+  (`--vv-height`): notatka zapisana przy otwartej klawiaturze dzieliła się na strony okna nad
+  klawiaturą i tak zostawała po jej schowaniu (dużo stron, puste miejsce na każdej).
 - **Przewracanie (od 1.4 – kartka zaginana od rogu):** geometria jest w `js/core/page-curl.js`
   (bez przeglądarki, z testami logiki), rysowanie w `note-book.js`. Układ kartki: grzbiet na x = 0,
   kartka W × H po prawej. Chwyt zależy od wysokości dotknięcia: górne 30% – górny róg, dolne 30% –

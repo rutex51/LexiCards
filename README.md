@@ -215,7 +215,7 @@ Obrazy są po tekście albo przed nim – jak wybierzesz w edytorze. Przycisk **
 formatowania (dwie połówki kartki) zaczyna nową stronę w miejscu kursora; w komórce arkusza
 importu nową stronę oznacza wiersz `---`.
 
-**Załączniki:** w edytorze pod tekstem jest sekcja **Załączniki** – **Dodaj załącznik** wybiera plik
+**Załączniki:** w edytorze pod obrazami, nad tekstem, jest sekcja **Załączniki** – **Dodaj załącznik** wybiera plik
 (PDF, Word, Excel, PowerPoint i inne, do 50 MB każdy, najwyżej 30 w notatce); na komputerze plik
 możesz też upuścić na edytor. Dotknięcie pliku: **Zmień nazwę** (rozszerzenie, np. `.pdf`, zostaje),
 **Otwórz**, przesunięcie, usunięcie. W podglądzie pliki są w rzędzie pod nazwą lekcji, z plakietką
