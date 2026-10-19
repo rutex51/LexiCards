@@ -1,6 +1,7 @@
 // Lista pojęć (wspólna dla lekcji i glosariusza) oraz ekran lekcji.
 
-import { normalizeKey, pluralTerms, formatTags } from '../../core/text.js';
+import { createdLabel, createdRange, createdWithin } from '../../core/created.js';
+import { normalizeKey, ofTerms, pluralTerms, formatTags } from '../../core/text.js';
 import { DIFFICULTY_MAX, DIRECTIONS } from '../../core/model.js';
 import { STATES } from '../../core/fsrs.js';
 import { BOTH, STATUS_LABELS, termStatus } from '../../core/stats.js';
@@ -11,7 +12,9 @@ import {
   copyLesson, copyTerms, moveLesson, moveTerms, openAssessmentHistory, openExportSheet, openLessonForm, openTermForm,
   requestDeletion, setFavorite
 } from '../actions.js';
-import { emptyState, group, iconButton, navButton, primaryButton } from '../components.js';
+import {
+  createdFilterControl, createdFilterFor, emptyState, group, iconButton, navButton, primaryButton, rememberCreatedFilter
+} from '../components.js';
 import { openMenu } from '../dialogs.js';
 import { h, replaceChildren } from '../dom.js';
 import { icon } from '../icons.js';
@@ -112,7 +115,8 @@ function termDetails(ctx, term) {
       detailItem('Notatki', term.notes),
       detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.PL_EN]}`, learningState(ctx, term, DIRECTIONS.PL_EN)),
       detailItem(`Nauka ${DIRECTION_NAMES[DIRECTIONS.EN_PL]}`, learningState(ctx, term, DIRECTIONS.EN_PL)),
-      detailItem('Quizy', quizState(ctx, term))
+      detailItem('Quizy', quizState(ctx, term)),
+      detailItem('Utworzono', createdLabel(term.createdAt))
     ),
     h('div', { class: 'term__links' },
       forward || backward
@@ -281,8 +285,9 @@ export class LessonScreen {
   #visibleTerms() {
     const terms = this.ctx.library.listTerms(this.id);
     const key = normalizeKey(this.search);
-    if (key === '') return terms;
-    return terms.filter((term) => term.keyPL.includes(key) || term.keyEN.includes(key));
+    // Data utworzenia pojęcia (od 1.9) – filtr pamiętany dla tej lekcji.
+    const range = createdRange(createdFilterFor(`lesson:${this.id}`));
+    return terms.filter((term) => (key === '' || term.keyPL.includes(key) || term.keyEN.includes(key)) && createdWithin(term, range));
   }
 
   /** Odświeża samą listę wyników – pole wyszukiwania zostaje nietknięte podczas pisania. */
@@ -293,12 +298,12 @@ export class LessonScreen {
     // Status w kierunku ze Statystyk – tak samo jak na Starcie i w glosariuszu.
     const direction = statsDirection(ctx.library.getSettings());
     if (visible.length === 0) {
-      replaceChildren(this.results, h('p', { class: 'results__empty' }, 'Brak pojęć pasujących do wyszukiwania.'));
+      replaceChildren(this.results, h('p', { class: 'results__empty' }, 'Brak pojęć pasujących do wyszukiwania i daty utworzenia.'));
       return;
     }
     replaceChildren(this.results,
       h('section', { class: 'group' },
-        h('h2', { class: 'group__title' }, visible.length === all.length ? pluralTerms(all.length) : `${visible.length} z ${pluralTerms(all.length)}`),
+        h('h2', { class: 'group__title' }, visible.length === all.length ? pluralTerms(all.length) : `${visible.length} z ${ofTerms(all.length)}`),
         termList(ctx, this.list, visible, { statusDirection: direction }),
         h('p', { class: 'group__footer' }, STATUS_NOTE[direction])
       )
@@ -396,6 +401,16 @@ export class LessonScreen {
             else this.#renderResults();
           }
         }),
+        terms.length > 1 || createdRange(createdFilterFor(`lesson:${lesson.id}`))
+          ? createdFilterControl({
+              value: createdFilterFor(`lesson:${lesson.id}`), testID: 'terms-created',
+              onChange: (value) => {
+                rememberCreatedFilter(`lesson:${lesson.id}`, value);
+                if (this.list.selecting) ctx.refresh();
+                else this.#renderResults();
+              }
+            })
+          : null,
         this.results
       ];
     }

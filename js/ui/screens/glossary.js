@@ -2,11 +2,12 @@
 // Wąski ekran – lista z rozwijanymi szczegółami; szeroki – tabela wielokolumnowa.
 // Wyniki są dociągane porcjami podczas przewijania.
 
+import { createdFilterSummary, emptyCreatedFilter, isCreatedFilterActive } from '../../core/created.js';
 import { BOTH, STATS_DIRECTIONS, TERM_STATUS_FILTERS } from '../../core/stats.js';
-import { normalizeKey, pluralTerms } from '../../core/text.js';
+import { normalizeKey, ofTerms, pluralTerms } from '../../core/text.js';
 import { setFavorite } from '../actions.js';
 import {
-  emptyState, field, formGroup, iconButton, navButton, primaryButton, segmented, selectInput, textInput, toggle
+  createdFilterControl, emptyState, field, formGroup, iconButton, navButton, primaryButton, segmented, selectInput, textInput, toggle
 } from '../components.js';
 import { openFormSheet } from '../dialogs.js';
 import { h, replaceChildren } from '../dom.js';
@@ -29,7 +30,10 @@ const directionLabel = (id) => STATS_DIRECTIONS.find((item) => item.id === id)?.
 
 /** Filtr bez ograniczeń; status pokazywany w kierunku ze Statystyk (jak na Starcie). */
 function emptyFilter(statusDirection = BOTH) {
-  return { domainID: ALL, moduleID: ALL, lessonID: ALL, favoritesOnly: false, tag: '', status: ALL, statusDirection };
+  return {
+    domainID: ALL, moduleID: ALL, lessonID: ALL, favoritesOnly: false, tag: '', status: ALL, statusDirection,
+    created: emptyCreatedFilter()
+  };
 }
 
 export class GlossaryScreen {
@@ -52,7 +56,7 @@ export class GlossaryScreen {
   #isFilterActive() {
     const filter = this.filter;
     return Boolean(filter.domainID || filter.moduleID || filter.lessonID || filter.favoritesOnly || normalizeKey(filter.tag)
-      || filter.status || filter.statusDirection !== this.defaultDirection);
+      || filter.status || filter.statusDirection !== this.defaultDirection || isCreatedFilterActive(filter.created));
   }
 
   #query() {
@@ -63,7 +67,7 @@ export class GlossaryScreen {
     else if (filter.domainID) scope = { kind: 'domain', id: filter.domainID };
     return {
       scope, searchText: this.search, favoritesOnly: filter.favoritesOnly, tag: filter.tag, sort: this.sort,
-      status: filter.status, statusDirection: filter.statusDirection
+      status: filter.status, statusDirection: filter.statusDirection, created: filter.created
     };
   }
 
@@ -88,6 +92,7 @@ export class GlossaryScreen {
     if (this.filter.favoritesOnly) parts.push('tylko ulubione');
     if (normalizeKey(this.filter.tag)) parts.push(`tag „${this.filter.tag.trim()}”`);
     if (this.filter.status) parts.push(`status „${statusLabel(this.filter.status)}”`);
+    if (isCreatedFilterActive(this.filter.created)) parts.push(createdFilterSummary(this.filter.created));
     if (this.filter.statusDirection !== this.defaultDirection) {
       parts.push(this.filter.statusDirection === BOTH ? 'status z obu kierunków' : `status w kierunku ${directionLabel(this.filter.statusDirection)}`);
     }
@@ -149,6 +154,13 @@ export class GlossaryScreen {
         );
         renderStatus();
 
+        const createdSlot = h('div', { class: 'form-group__slot' });
+        const renderCreated = () => replaceChildren(createdSlot, createdFilterControl({
+          value: draft.created, label: 'Utworzone', testID: 'filter-created',
+          onChange: (value) => { draft.created = value; }
+        }));
+        renderCreated();
+
         const rest = h('div', { class: 'form-group__slot' });
         const renderRest = () => replaceChildren(rest,
           toggle({ checked: draft.favoritesOnly, label: 'Tylko ulubione', onChange: (value) => { draft.favoritesOnly = value; } }),
@@ -160,6 +172,7 @@ export class GlossaryScreen {
           formGroup('Sortowanie', field('Kolejność', selectInput({ value: draft.sort, options: SORT_OPTIONS, testID: 'filter-sort', onChange: (value) => { draft.sort = value; } }))),
           formGroup('Zakres', scopeSlot),
           formGroup('Status nauki', statusSlot),
+          formGroup('Data utworzenia', createdSlot),
           formGroup('Pozostałe', rest),
           h('button', {
             type: 'button', class: 'button button--secondary button--block',
@@ -167,6 +180,7 @@ export class GlossaryScreen {
               Object.assign(draft, emptyFilter(this.defaultDirection));
               renderScope();
               renderStatus();
+              renderCreated();
               renderRest();
             }
           }, 'Wyczyść filtry')
@@ -256,7 +270,7 @@ export class GlossaryScreen {
     }
 
     const shown = page.items.length;
-    const status = shown < page.total ? `Wczytano ${shown} z ${pluralTerms(page.total)}` : pluralTerms(page.total);
+    const status = shown < page.total ? `Wczytano ${shown} z ${ofTerms(page.total)}` : pluralTerms(page.total);
     const more = shown < page.total
       ? h('button', {
           type: 'button', class: 'button button--secondary button--block', dataset: { testid: 'load-more' },

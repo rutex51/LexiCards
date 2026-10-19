@@ -8,7 +8,7 @@
 import { CONSOLIDATED_REVIEW_OPTIONS, consolidatedReviewDays } from '../core/model.js';
 import { lessonMastery, moduleMastery, statsDirection } from '../core/stats.js';
 import { joinList, pluralForm } from '../core/text.js';
-import { showError, toast } from './dialogs.js';
+import { confirmDialog, showError, toast } from './dialogs.js';
 import { h } from './dom.js';
 import { icon } from './icons.js';
 
@@ -56,14 +56,15 @@ export function markConsolidated(row, progress) {
   return row;
 }
 
-async function setConsolidated(ctx, level, id, consolidated) {
+/** Oznacza lekcję albo moduł jako utrwalone (albo cofa oznaczenie). Zwraca true po zapisie. */
+export async function setConsolidated(ctx, level, id, consolidated) {
   const { library } = ctx;
   try {
     if (level === 'module') await library.setModuleConsolidated(id, consolidated);
     else await library.setLessonConsolidated(id, consolidated);
   } catch (error) {
     await showError(error);
-    return;
+    return false;
   }
   const name = (level === 'module' ? library.getModule(id) : library.getLesson(id))?.name ?? '';
   if (consolidated) {
@@ -71,6 +72,22 @@ async function setConsolidated(ctx, level, id, consolidated) {
   } else {
     toast(`Cofnięto utrwalenie: ${name}.`);
   }
+  return true;
+}
+
+/** Pytanie przed utrwaleniem albo cofnięciem (lekkie przesunięcie wiersza, od 1.9). */
+export async function confirmConsolidation(ctx, level, id, consolidated) {
+  const { library } = ctx;
+  const name = (level === 'module' ? library.getModule(id) : library.getLesson(id))?.name ?? '';
+  const subject = level === 'module' ? 'moduł' : 'lekcję';
+  const confirmed = await confirmDialog({
+    title: consolidated ? `Oznaczyć ${subject} „${name}” jako ${level === 'module' ? 'utrwalony' : 'utrwaloną'}?` : `Cofnąć utrwalenie: ${name}?`,
+    message: consolidated
+      ? `Fiszki ${level === 'module' ? 'wszystkich lekcji modułu' : 'tej lekcji'} wrócą najwcześniej ${consolidatedAfter(library.getSettings())} od ostatniej powtórki.`
+      : 'Fiszki wrócą do zwykłych powtórek.',
+    confirmLabel: consolidated ? 'Utrwal' : 'Cofnij utrwalenie'
+  });
+  return confirmed ? setConsolidated(ctx, level, id, consolidated) : false;
 }
 
 /** Pozycja menu lekcji albo modułu: oznaczenie „utrwalona” albo jego cofnięcie. */

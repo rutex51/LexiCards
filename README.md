@@ -1,4 +1,4 @@
-# LexiCards 1.8
+# LexiCards 1.9
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -17,8 +17,9 @@ Obrazy notatki przed tekstem albo po nim (wersja 1.5): [docs/RELEASE-1.5.md](doc
 Sygnatury obrazów w treści notatki, notatka po angielsku, czytanie notatki na głos (wersja 1.6): [docs/RELEASE-1.6.md](docs/RELEASE-1.6.md).
 Notatka lekcji w słuchaniu, przyciski wstecz / dalej, czytelne „Anuluj” (wersja 1.7): [docs/RELEASE-1.7.md](docs/RELEASE-1.7.md).
 Załączniki notatek, przeniesienie dwoma plikami – dane oraz obrazy z załącznikami (wersja 1.8): [docs/RELEASE-1.8.md](docs/RELEASE-1.8.md).
+Przesuwanie wierszy lekcji i modułów, data utworzenia i filtr daty, kolejność utrwalonych do wyboru (wersja 1.9): [docs/RELEASE-1.9.md](docs/RELEASE-1.9.md).
 
-## Co potrafi wersja 1.8
+## Co potrafi wersja 1.9
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -28,7 +29,13 @@ Załączniki notatek, przeniesienie dwoma plikami – dane oraz obrazy z załąc
   moduł jest utrwalony, gdy wszystkie jego lekcje są). Wiersz ma zieloną poświatę, a fiszki wracają
   rzadko – najwcześniej po okresie z Ustawień (domyślnie miesiąc). Nowe pojęcie w lekcji albo nowa
   lekcja w module zdejmuje oznaczenie samo; dodane pojęcie zaczyna jako nowe. Utrwalone są na
-  końcu listy.
+  końcu listy – albo, po wyłączeniu w Ustawieniach, tam, gdzie je ustawisz.
+- Na telefonie wiersz lekcji albo modułu przesunięty palcem w prawo utrwala (albo cofa utrwalenie),
+  w lewo – usuwa; lekkie przesunięcie pyta o potwierdzenie, zdecydowane (ponad pół wiersza)
+  wykonuje od razu.
+- Data utworzenia przy każdym module i lekcji (i w szczegółach pojęcia) oraz filtr po dacie
+  utworzenia: na liście modułów, lekcji, pojęć lekcji i w glosariuszu (dziś, 7 dni, 30 dni, ten rok
+  albo wybrany okres).
 - Pojęcie ma nazwę po polsku i po angielsku oraz opcjonalnie opis i przykład w obu językach,
   tagi, trudność, notatki i oznaczenie „ulubione”.
 - Glosariusz wszystkich pojęć: wyszukiwanie bez polskich znaków („plynnosc” znajduje
@@ -88,7 +95,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.5 – obrazy notatki przed tekstem albo po nim](docs/RELEASE-1.5.md),
 [wersja 1.6 – sygnatury obrazów, notatka po angielsku, czytanie na głos](docs/RELEASE-1.6.md),
 [wersja 1.7 – notatka w słuchaniu, wstecz / dalej](docs/RELEASE-1.7.md),
-[wersja 1.8 – załączniki, przeniesienie dwoma plikami](docs/RELEASE-1.8.md).
+[wersja 1.8 – załączniki, przeniesienie dwoma plikami](docs/RELEASE-1.8.md),
+[wersja 1.9 – przesuwanie wierszy, data utworzenia, kolejność utrwalonych](docs/RELEASE-1.9.md).
 
 ## Jak korzystać
 
@@ -242,6 +250,24 @@ według zwykłego FSRS. Nowe pojęcie w lekcji (dodane, przeniesione, skopiowane
 zdejmuje oznaczenie lekcji, a nowa lekcja – oznaczenie modułu; aplikacja mówi o tym komunikatem,
 a kreator importu uprzedza przed importem. Oznaczenie cofniesz w menu „…” albo przyciskiem
 **Cofnij** na ekranie lekcji.
+
+Utrwalone lekcje i moduły są na końcu listy. Gdy wolisz zostawić je na miejscu, wyłącz
+**Ustawienia → Listy lekcji i modułów → Utrwalone na końcu listy** – wtedy „Zmień kolejność”
+przesuwa je razem z pozostałymi.
+
+**Przesuwanie wiersza (telefon):** wiersz lekcji albo modułu przesuń palcem w prawo, żeby go
+utrwalić (na utrwalonym – cofnąć utrwalenie), albo w lewo, żeby go usunąć. Pod wierszem widać, co
+się stanie. Lekkie przesunięcie i puszczenie pokazuje pytanie z potwierdzeniem; zdecydowane – ponad
+połowę szerokości wiersza, napis zmienia się na „Puść – …” – wykonuje od razu, **bez pytania** (także
+usunięcie modułu z lekcjami i pojęciami). Krótki ruch albo przewijanie listy w pionie niczego nie
+robi. Myszą na komputerze wiersz działa jak dotąd – polecenia są w menu „…”.
+
+**Data utworzenia:** pod opisem każdego modułu i lekcji jest „Utworzono …”, a w szczegółach pojęcia
+– „Utworzono”. Nad listą modułów (w dziedzinie), lekcji (w module) i pojęć (w lekcji) jest pole
+**Utworzone**: Wszystkie, Dziś, Ostatnie 7 dni, Ostatnie 30 dni, Ten rok albo **Wybrany okres…**
+(pola od – do). Wybór jest pamiętany dla danej listy do zamknięcia aplikacji. W glosariuszu ten sam
+filtr jest w **Filtry i sortowanie → Data utworzenia**. Elementy z importu i danych przykładowych
+mają datę importu.
 
 ### Nauka z fiszkami
 
@@ -408,6 +434,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 13. **Wersja 1.6: sygnatury obrazów i odwołania w treści, notatka po angielsku, czytanie notatki na głos** – gotowe.
 14. **Wersja 1.7: notatka lekcji w słuchaniu, przyciski wstecz / dalej, czytelne „Anuluj” w menu** – gotowe.
 15. **Wersja 1.8: załączniki notatek (PDF, Word, Excel, PowerPoint), przeniesienie dwoma plikami – dane oraz obrazy z załącznikami** – gotowe.
+16. **Wersja 1.9: przesuwanie wierszy lekcji i modułów (utrwal / usuń), data utworzenia i filtr daty, kolejność utrwalonych do wyboru** – gotowe.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

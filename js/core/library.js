@@ -12,6 +12,7 @@ import {
   NOTE_IMAGE_LIMIT, NOTE_IMAGE_MAX_BYTES, SETTINGS_ID, defaultSettings, makeDomain, makeLesson, makeModule, makeNoteFile,
   makeNoteImage, makeTerm, newID, noteFileMeta, noteImageMeta, nowISO, termFieldsFromDraft, termToDraft
 } from './model.js';
+import { createdRange, createdWithin } from './created.js';
 import { cleanFileName, fileTypeOf } from './note-files.js';
 import { NOTE_HTML_LIMIT, normalizeNoteHtml } from './note-format.js';
 import { labelKey, withImageLabels } from './note-refs.js';
@@ -676,6 +677,8 @@ export class Library {
     const status = query.status || null;
     const statusDirection = query.statusDirection ?? BOTH;
     const now = query.now ?? Date.now();
+    // Data utworzenia pojęcia (od 1.9): { preset, from, to } jak w filtrze ekranu.
+    const created = query.created ? createdRange(query.created, new Date(now)) : null;
     const scopeField = { domain: 'domainID', module: 'moduleID', lesson: 'lessonID' }[scope.kind] ?? null;
 
     const matches = this.#sortedTerms(query.sort ?? 'polish').filter((term) => {
@@ -684,6 +687,7 @@ export class Library {
       if (text !== '' && !term.keyPL.includes(text) && !term.keyEN.includes(text)) return false;
       if (tagKey !== '' && !(term.tagKeys ?? []).includes(tagKey)) return false;
       if (status && !matchesTermStatus(this, term.id, status, statusDirection, now)) return false;
+      if (created && !createdWithin(term, created)) return false;
       return true;
     });
     const start = Math.max(0, offset);

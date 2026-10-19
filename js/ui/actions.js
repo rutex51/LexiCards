@@ -564,6 +564,20 @@ export function reorder(ctx, level, orderedIDs) {
   return runAction(() => ctx.library.reorder(level, orderedIDs));
 }
 
+const DELETED = { domain: 'dziedzinę', module: 'moduł', lesson: 'lekcję' };
+
+/** Usuwa od razu, bez pytania (zdecydowane przesunięcie wiersza, od 1.9). Zwraca true po usunięciu. */
+export async function deleteNow(ctx, target) {
+  let impact;
+  try {
+    impact = ctx.library.deletionImpact(target);
+  } catch (error) {
+    await showError(error);
+    return false;
+  }
+  return runAction(() => ctx.library.delete(target), `Usunięto ${DELETED[target.kind] ?? 'element'} „${impact.name}”.`);
+}
+
 /** Liczy skutki usunięcia, prosi o potwierdzenie i usuwa. Zwraca true po usunięciu. */
 export async function requestDeletion(ctx, target) {
   let impact;

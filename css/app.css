@@ -1038,6 +1038,110 @@ a.row__main:active,
   gap: 16px;
 }
 
+/* Przesuwanie wiersza modułu albo lekcji (od 1.9): w prawo – utrwal, w lewo – usuń. Przesuwa się
+   cały wiersz z tłem, a pod nim – na czas ruchu – leży warstwa działania; zdecydowane przesunięcie
+   (ponad połowę wiersza) – większa ikona i napis „Puść – …”. */
+.row--swipe { touch-action: pan-y; }
+
+.group__list--swiping { position: relative; }
+
+.group__list > .row--swiping {
+  z-index: 1;
+  background: var(--surface);
+  transform: translateX(var(--swipe-x, 0px));
+}
+
+.row--swipe-settling { transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+.swipe__layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 0;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px;
+  color: #ffffff;
+  font-size: var(--size-sub);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.swipe__layer--shown { display: flex; }
+.swipe__layer--right { justify-content: flex-start; }
+/* Działanie spod prawej krawędzi: ikona przy krawędzi, napis przed nią. */
+.swipe__layer--left { flex-direction: row-reverse; justify-content: flex-start; }
+
+.swipe__layer--green { background: var(--success-fill); }
+.swipe__layer--red { background: var(--danger-fill); }
+.swipe__layer--gray { background: var(--tone-graphite-fill); }
+
+.swipe__layer svg { flex: none; transition: transform 0.15s ease; }
+.swipe__layer--strong svg { transform: scale(1.25); }
+.swipe__label--strong { display: none; }
+.swipe__layer--strong .swipe__label--light { display: none; }
+.swipe__layer--strong .swipe__label--strong { display: inline; }
+.swipe__layer--faint .swipe__label { opacity: 0.6; }
+.swipe__layer--narrow .swipe__label { visibility: hidden; }
+
+/* Filtr po dacie utworzenia (od 1.9): nad listą modułów, lekcji i pojęć, w filtrach glosariusza. */
+.created-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.created-filter__label {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--size-sub);
+  color: var(--text-2);
+}
+
+.created-filter > .input--select { flex: 1 1 10rem; width: auto; min-width: 0; }
+
+.created-filter__range {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 4px 0 2px;
+  border-top: 1px solid var(--separator);
+}
+
+.created-filter__day {
+  flex: 1 1 9rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.created-filter__day-label { font-size: var(--size-sub); color: var(--text-2); }
+
+.created-filter__input {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+/* Data utworzenia w wierszu modułu albo lekcji – osobna, cichsza linijka pod opisem. */
+.row__created {
+  display: block;
+  margin-top: 1px;
+}
+
 .results__empty {
   padding: 36px 0;
   text-align: center;

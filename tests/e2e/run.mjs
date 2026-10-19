@@ -5000,6 +5000,199 @@ test('utrwalone na końcu list lekcji i modułów; zmiana kolejności tylko w ob
   await waitUntil(async () => (await titles()).join() === 'Finance,Negotiations,Management', 'Utrwalony moduł na końcu');
 });
 
+/** Przesuwa wiersz listy palcem w poziomie (dx) – zdarzenia dotyku przeglądarki. */
+async function swipeRowBy(context, page, row, dx, { release = true, dy = 0 } = {}) {
+  // Lista mogła się właśnie odświeżyć (np. po usunięciu) – położenie wiersza po ustaniu zmian.
+  await page.waitForTimeout(350);
+  const box = await waitUntil(() => row.boundingBox(), 'Wiersz na liście');
+  const touch = await touchAt(context, page, box.x + box.width / 2, box.y + box.height / 2);
+  await touch.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy, 10);
+  if (release) await touch.end();
+  return touch;
+}
+
+test('lekcje i moduły: przesunięcie w prawo utrwala, w lewo usuwa; lekkie pyta, zdecydowane od razu (telefon)', async ({ open, context }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const base = page.url().split('#')[0];
+  await page.goto(`${base}#/library/module/${ids.module}`);
+  await page.evaluate(() => document.querySelectorAll('.toast').forEach((toast) => toast.remove()));
+  const row = (name) => page.locator('.group .row', { has: page.locator('.row__title', { hasText: name }) });
+  const lessonID = (name) => page.evaluate((lessonName) => [...window.lexicards.library.maps.lessons.values()].find((item) => item.name === lessonName)?.id ?? null, name);
+  const consolidated = async (name) => page.evaluate((id) => window.lexicards.library.isLessonConsolidated(id), await lessonID(name));
+
+  // Lekkie przesunięcie w lewo: pytanie o usunięcie; „Anuluj” – lekcja zostaje, wiersz wraca.
+  await swipeRowBy(context, page, row('Investments'), -110);
+  await expectText(page.locator('.alert__title'), 'Usunąć lekcję „Investments”?');
+  await page.locator('dialog.alert[open]').getByRole('button', { name: 'Anuluj' }).click();
+  await waitUntil(async () => (await row('Investments').getAttribute('class')).includes('row--swiping') === false, 'Wiersz wraca na miejsce');
+  assert.ok(await lessonID('Investments'));
+
+  // Zdecydowane przesunięcie w lewo (ponad pół wiersza): napis „Puść – usuń”, po puszczeniu – usunięta bez pytania.
+  const holding = await swipeRowBy(context, page, row('Investments'), -260, { release: false });
+  assert.equal(await row('Investments').getAttribute('data-swipe'), 'strong');
+  const layer = page.locator('.swipe__layer--left.swipe__layer--shown');
+  assert.equal(await layer.locator('.swipe__label--strong').isVisible(), true);
+  await expectText(layer.locator('.swipe__label--strong'), 'Puść – usuń');
+  // Warstwa w miejscu wiersza, ikona i napis widoczne obok prawej krawędzi (wiersz odsunięty w lewo).
+  const [rowBox, layerBox, labelBox] = [await row('Investments').boundingBox(), await layer.boundingBox(), await layer.locator('.swipe__label--strong').boundingBox()];
+  assert.ok(Math.abs(layerBox.y - (rowBox.y)) < 1 && Math.abs(layerBox.height - rowBox.height) < 1, 'warstwa pod wierszem');
+  assert.ok(labelBox.x > rowBox.x + rowBox.width, 'napis po odsłoniętej stronie');
+  await page.screenshot({ path: path.join(OUTPUT, 'przesuniecie-usun-telefon.png') });
+  await holding.end();
+  await page.locator('.toast', { hasText: 'Usunięto lekcję „Investments”.' }).waitFor();
+  assert.equal(await page.locator('dialog.alert[open]').count(), 0, 'bez pytania');
+  assert.equal(await lessonID('Investments'), null);
+
+  // Lekkie przesunięcie w prawo: pytanie o utrwalenie, „Utrwal” – lekcja utrwalona.
+  const light = await swipeRowBy(context, page, row('Financial Ratios'), 150, { release: false });
+  assert.equal(await row('Financial Ratios').getAttribute('data-swipe'), 'light');
+  const rightLayer = page.locator('.swipe__layer--right.swipe__layer--shown');
+  await expectText(rightLayer.locator('.swipe__label--light'), 'Utrwal…');
+  // Napis mieści się w odsłoniętej części wiersza (nie jest ucięty pod nim).
+  const [labelRight, rowLeft] = [await rightLayer.locator('.swipe__label--light').boundingBox(), await row('Financial Ratios').boundingBox()];
+  assert.equal(await rightLayer.evaluate((layer) => layer.classList.contains('swipe__layer--narrow')), false);
+  assert.ok(labelRight.x + labelRight.width <= rowLeft.x, 'napis przed krawędzią wiersza');
+  await page.screenshot({ path: path.join(OUTPUT, 'przesuniecie-utrwal-telefon.png') });
+  await light.end();
+  await expectText(page.locator('.alert__title'), 'Oznaczyć lekcję „Financial Ratios” jako utrwaloną?');
+  await confirm(page);
+  await waitUntil(() => consolidated('Financial Ratios'), 'Lekcja utrwalona po potwierdzeniu');
+
+  // Zdecydowane w prawo na utrwalonej – cofnięcie od razu.
+  await swipeRowBy(context, page, row('Financial Ratios'), 270);
+  await waitUntil(async () => !(await consolidated('Financial Ratios')), 'Utrwalenie cofnięte bez pytania');
+  assert.equal(await page.locator('dialog.alert[open]').count(), 0);
+
+  // Za krótki ruch i ruch w pionie niczego nie robią; zwykłe dotknięcie otwiera lekcję.
+  await swipeRowBy(context, page, row('Financial Statements'), 30);
+  await swipeRowBy(context, page, row('Financial Statements'), 40, { dy: 120 });
+  assert.equal(await page.locator('dialog.alert[open]').count(), 0);
+  assert.equal(await consolidated('Financial Statements'), false);
+  await row('Financial Statements').locator('.row__main').click();
+  await page.locator('[data-testid=lesson-note-add], [data-testid=lesson-note]').first().waitFor();
+
+  // Moduł w dziedzinie: zdecydowane w prawo – utrwalony od razu.
+  const domainID = await page.evaluate((id) => window.lexicards.library.getModule(id).domainID, ids.module);
+  await page.goto(`${base}#/library/domain/${domainID}`);
+  await swipeRowBy(context, page, row('Management'), 270);
+  await waitUntil(() => page.evaluate(() => {
+    const { library } = window.lexicards;
+    const module = [...library.maps.modules.values()].find((item) => item.name === 'Management');
+    return library.isModuleConsolidated(module.id);
+  }), 'Moduł utrwalony');
+  // Pusty moduł nie ma czego utrwalić – komunikat zamiast działania.
+  await page.evaluate((id) => window.lexicards.library.createModule({ name: 'Pusty moduł' }, { existing: id }), domainID);
+  await swipeRowBy(context, page, row('Pusty moduł'), 270);
+  await page.locator('.toast', { hasText: 'Moduł nie ma pojęć – nie ma czego utrwalić.' }).waitFor();
+});
+
+test('ustawienie „Utrwalone na końcu listy”: wyłączone – utrwalone zostają na miejscu i przesuwają się z innymi', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const base = page.url().split('#')[0];
+  const titles = () => page.locator('.group .row .row__title').allTextContents().then((items) => items.map((item) => item.trim()));
+  await page.goto(`${base}#/library/module/${ids.module}`);
+  await page.getByRole('button', { name: 'Więcej poleceń: Financial Statements' }).click();
+  await menuItem(page, 'Oznacz jako utrwaloną');
+  await waitUntil(async () => (await titles()).join() === 'Investments,Financial Ratios,Financial Statements', 'Domyślnie utrwalona na końcu');
+
+  await page.goto(`${base}#/settings`);
+  const toggle = page.locator('[data-testid=consolidated-last]');
+  assert.equal(await toggle.isChecked(), true);
+  await toggle.uncheck();
+  await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().consolidatedLast === false), 'Ustawienie zapisane');
+  await page.goto(`${base}#/library/module/${ids.module}`);
+  await waitUntil(async () => (await titles()).join() === 'Financial Statements,Investments,Financial Ratios', 'Utrwalona na swoim miejscu');
+
+  // Zmiana kolejności obejmuje też utrwaloną.
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  await menuItem(page, 'Zmień kolejność lekcji');
+  assert.equal(await page.getByRole('button', { name: 'Przesuń niżej: Financial Statements' }).isDisabled(), false);
+  await page.getByRole('button', { name: 'Przesuń niżej: Financial Statements' }).click();
+  await waitUntil(async () => (await page.getByRole('button', { name: 'Przesuń niżej: Investments' }).isDisabled()) === false
+    && (await page.getByRole('button', { name: 'Przesuń wyżej: Investments' }).isDisabled()), 'Investments na początku');
+  await page.getByRole('button', { name: 'Gotowe' }).click();
+  await waitUntil(async () => (await titles()).join() === 'Investments,Financial Statements,Financial Ratios', 'Utrwalona przesunięta między nieutrwalone');
+
+  // Ustawienie wraca z kopią zapasową (jest w ustawieniach).
+  assert.equal((await page.evaluate(() => window.lexicards.library.exportAll({ media: false }))).settings[0].consolidatedLast, false);
+});
+
+test('data utworzenia przy modułach i lekcjach; filtr daty w module, w lekcji i w glosariuszu', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const base = page.url().split('#')[0];
+  // Lekcja „Investments” i jej pojęcie „dywidenda” – sprzed miesięcy.
+  const oldDay = await page.evaluate((moduleID) => {
+    const { library } = window.lexicards;
+    const old = new Date(2026, 0, 15, 10).toISOString();
+    const lesson = library.listLessons(moduleID).find((item) => item.name === 'Investments');
+    lesson.createdAt = old;
+    for (const term of library.listTerms(lesson.id)) term.createdAt = old;
+    const statements = library.listLessons(moduleID).find((item) => item.name === 'Financial Statements');
+    library.listTerms(statements.id)[0].createdAt = old;
+    return old;
+  }, ids.module);
+  const titles = () => page.locator('.group .row .row__title').allTextContents().then((items) => items.map((item) => item.trim()));
+
+  await page.goto(`${base}#/library/module/${ids.module}`);
+  await expectText(page.locator('.row', { hasText: 'Investments' }).locator('[data-testid=row-created]'), 'Utworzono 15 sty 2026');
+  assert.equal(await page.locator('[data-testid=row-created]').count(), 3);
+  await page.selectOption('[data-testid=lessons-created-preset]', '30d');
+  await waitUntil(async () => (await titles()).join() === 'Financial Statements,Financial Ratios', 'Bez starej lekcji');
+  await expectText(page.locator('.group__title', { hasText: 'Lekcje' }), 'Lekcje – 2 z 3');
+  // Własny okres: tylko styczeń.
+  await page.selectOption('[data-testid=lessons-created-preset]', 'range');
+  await page.fill('[data-testid=lessons-created-from]', '2026-01-01');
+  await page.fill('[data-testid=lessons-created-to]', '2026-01-31');
+  await page.locator('[data-testid=lessons-created-to]').dispatchEvent('change');
+  await waitUntil(async () => (await titles()).join() === 'Investments', 'Tylko lekcja ze stycznia');
+  // Filtr zostaje po powrocie z lekcji.
+  await page.locator('.row', { hasText: 'Investments' }).locator('.row__main').click();
+  await page.locator('[data-testid=search]').waitFor();
+  await page.goBack();
+  await waitUntil(async () => (await titles()).join() === 'Investments', 'Filtr pamiętany dla modułu');
+  await page.selectOption('[data-testid=lessons-created-preset]', '');
+  await waitUntil(async () => (await titles()).length === 3, 'Wszystkie lekcje');
+
+  // Moduły w dziedzinie mają datę i filtr.
+  const domainID = await page.evaluate((id) => window.lexicards.library.getModule(id).domainID, ids.module);
+  await page.goto(`${base}#/library/domain/${domainID}`);
+  assert.equal(await page.locator('[data-testid=row-created]').count(), 3);
+  await page.selectOption('[data-testid=modules-created-preset]', 'today');
+  await waitUntil(async () => (await titles()).length === 3, 'Moduły utworzone dziś');
+
+  // Pojęcia lekcji: filtr daty obok wyszukiwania, data w szczegółach pojęcia.
+  await page.goto(`${base}#/library/lesson/${ids.statements}`);
+  const termCount = () => page.locator('.terms > .term').count();
+  const all = await termCount();
+  await page.selectOption('[data-testid=terms-created-preset]', '7d');
+  await waitUntil(async () => (await termCount()) === all - 1, 'Bez starego pojęcia');
+  await expectText(page.locator('.results .group__title'), `${all - 1} z ${all} pojęć`);
+  await page.selectOption('[data-testid=terms-created-preset]', '');
+  await page.locator('.term__toggle').first().click();
+  await expectText(page.locator('.term__details-list').first(), 'Utworzono');
+
+  // Glosariusz: okres w filtrach, opis filtra.
+  await page.goto(`${base}#/library/glossary`);
+  const total = await page.evaluate(() => window.lexicards.library.summary().terms);
+  await page.getByRole('button', { name: 'Filtry i sortowanie' }).click();
+  await page.selectOption('[data-testid=filter-created-preset]', 'range');
+  await page.fill('[data-testid=filter-created-from]', '2026-01-01');
+  await page.fill('[data-testid=filter-created-to]', '2026-01-31');
+  await page.locator('[data-testid=filter-created-to]').dispatchEvent('change');
+  await saveSheet(page);
+  await expectText(page.locator('[data-testid=filter-summary]'), 'utworzone od 1 sty 2026 do 31 sty 2026');
+  const expected = await page.evaluate((day) => [...window.lexicards.library.maps.terms.values()].filter((term) => term.createdAt === day).length, oldDay);
+  assert.ok(expected >= 2 && expected < total);
+  await waitUntil(async () => (await page.locator('.terms > .term').count()) === expected, `W glosariuszu ${expected} pojęć ze stycznia`);
+  await page.screenshot({ path: path.join(OUTPUT, 'glosariusz-filtr-daty-telefon.png') });
+});
+
 // ---------------------------------------------------------------- słuchanie
 
 /** Atrapa syntezatora: zapisuje wypowiedzi (tekst, język, chwila) i kończy każdą po 200 ms. */

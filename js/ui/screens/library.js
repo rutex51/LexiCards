@@ -1,19 +1,24 @@
 // Ekrany Biblioteki: lista dziedzin, dziedzina (moduły), moduł (lekcje).
 
+import { createdRange, createdWithin } from '../../core/created.js';
 import { pluralLessons, pluralModules, pluralTerms } from '../../core/text.js';
 import {
-  copyLesson, moveLesson, moveModule, openDomainForm, openExportSheet, openLessonForm, openModuleForm, openTermForm,
+  copyLesson, deleteNow, moveLesson, moveModule, openDomainForm, openExportSheet, openLessonForm, openModuleForm, openTermForm,
   reorder, requestDeletion
 } from '../actions.js';
 import {
-  domainBadge, emptyState, group, iconButton, linkRow, navButton, primaryButton, reorderRow, settingsAction
+  createdFilterControl, createdFilterFor, createdLine, domainBadge, emptyState, group, iconButton, linkRow, navButton, primaryButton,
+  rememberCreatedFilter, reorderRow, settingsAction
 } from '../components.js';
-import { openMenu } from '../dialogs.js';
+import { openMenu, toast } from '../dialogs.js';
 import { h } from '../dom.js';
 import { icon } from '../icons.js';
-import { consolidationMenuItem, markConsolidated, masteryBar, masteryOf, masterySubtitle } from '../mastery.js';
+import {
+  confirmConsolidation, consolidationMenuItem, markConsolidated, masteryBar, masteryOf, masterySubtitle, setConsolidated
+} from '../mastery.js';
 import { noteButton, noteMenuItem } from '../notes.js';
 import { routes } from '../router.js';
+import { swipeRow } from '../swipe.js';
 
 /** Wiersze w trybie zmiany kolejności; każda zmiana jest od razu zapisywana. */
 /**
@@ -37,10 +42,70 @@ function reorderRows(ctx, level, items, leadingFor = () => null, groupOf = () =>
   }));
 }
 
-/** Utrwalone na koniec listy; w obu grupach zostaje kolejność ustalona przez użytkownika. */
-function consolidatedLast(items, isConsolidated) {
+/**
+ * Utrwalone na koniec listy; w obu grupach zostaje kolejność ustalona przez użytkownika.
+ * Od 1.9 do wyboru w Ustawieniach – wyłączone: lista w kolejności użytkownika.
+ */
+function consolidatedLast(library, items, isConsolidated) {
+  if (library.getSettings().consolidatedLast === false) return items;
   const flags = new Map(items.map((item) => [item.id, isConsolidated(item.id)]));
   return [...items.filter((item) => !flags.get(item.id)), ...items.filter((item) => flags.get(item.id))];
+}
+
+/** Grupa w trybie zmiany kolejności: utrwalone nie mijają się z resztą tylko wtedy, gdy są na końcu listy. */
+const reorderGroup = (library, isConsolidated) => (library.getSettings().consolidatedLast === false
+  ? () => 0
+  : (item) => isConsolidated(item.id));
+
+/**
+ * Lista modułów albo lekcji z filtrem daty utworzenia (od 1.9). Zwraca { shown, control, title, empty }:
+ * widoczne elementy, pole filtra (przy co najmniej dwóch elementach albo aktywnym filtrze), tytuł
+ * grupy z liczbą i komunikat, gdy filtr niczego nie zostawił. W trybie zmiany kolejności – bez filtra.
+ */
+function filteredByCreated(ctx, key, items, { title, nothing, testID, reordering }) {
+  const filter = createdFilterFor(key);
+  const range = createdRange(filter);
+  if (reordering) return { shown: items, control: null, title, empty: null };
+  const shown = range ? items.filter((item) => createdWithin(item, range)) : items;
+  const control = items.length > 1 || range
+    ? createdFilterControl({ value: filter, testID, onChange: (value) => { rememberCreatedFilter(key, value); ctx.refresh(); } })
+    : null;
+  return {
+    shown,
+    control,
+    title: range ? `${title} – ${shown.length} z ${items.length}` : title,
+    empty: range && shown.length === 0 ? h('p', { class: 'results__empty', dataset: { testid: `${testID}-empty` } }, nothing) : null
+  };
+}
+
+/**
+ * Przesuwanie wiersza modułu albo lekcji (od 1.9): w prawo – utrwalenie (albo jego cofnięcie),
+ * w lewo – usunięcie. Lekkie przesunięcie pyta, zdecydowane wykonuje od razu.
+ */
+function swipeActions(ctx, row, level, id, progress) {
+  const consolidated = progress.consolidated;
+  const target = { kind: level, id };
+  const empty = level === 'module' ? 'Moduł nie ma pojęć – nie ma czego utrwalić.' : 'Lekcja nie ma pojęć – nie ma czego utrwalić.';
+  return swipeRow(row, {
+    right: {
+      label: consolidated ? 'Cofnij utrwalenie…' : 'Utrwal…',
+      strongLabel: consolidated ? 'Puść – cofnij utrwalenie' : 'Puść – utrwal',
+      icon: consolidated ? 'undo' : 'select',
+      tone: consolidated ? 'gray' : 'green',
+      unavailable: !consolidated && progress.total === 0 ? empty : null,
+      confirm: () => confirmConsolidation(ctx, level, id, !consolidated),
+      run: () => setConsolidated(ctx, level, id, !consolidated)
+    },
+    left: {
+      label: 'Usuń…',
+      strongLabel: 'Puść – usuń',
+      icon: 'trash',
+      tone: 'red',
+      confirm: () => requestDeletion(ctx, target),
+      run: () => deleteNow(ctx, target)
+    },
+    onUnavailable: (text) => toast(text)
+  });
 }
 
 /** Ekran pokazywany, gdy element został usunięty (np. w innej karcie). */
@@ -164,7 +229,7 @@ export class DomainScreen {
     const domain = library.getDomain(this.id);
     if (!domain) return missingView('Dziedzina', routes.domains(), 'Biblioteka');
 
-    const modules = consolidatedLast(library.listModules(domain.id), (id) => library.isModuleConsolidated(id));
+    const modules = consolidatedLast(library, library.listModules(domain.id), (id) => library.isModuleConsolidated(id));
     if (modules.length < 2) this.reordering = false;
 
     const moreMenu = () => openMenu({
@@ -210,16 +275,20 @@ export class DomainScreen {
         actions: [primaryButton('Dodaj moduł', () => openModuleForm(ctx, { domainID: domain.id }), { testID: 'domain-add-module' })]
       });
     } else {
+      const list = filteredByCreated(ctx, `domain:${domain.id}`, modules, {
+        title: 'Moduły', nothing: 'Żaden moduł tej dziedziny nie został utworzony w tym okresie.', testID: 'modules-created',
+        reordering: this.reordering
+      });
       const rows = this.reordering
-        ? reorderRows(ctx, 'module', modules, () => null, (module) => library.isModuleConsolidated(module.id))
-        : modules.map((module) => {
+        ? reorderRows(ctx, 'module', modules, () => null, reorderGroup(library, (id) => library.isModuleConsolidated(id)))
+        : list.shown.map((module) => {
             const counts = library.counts('module', module.id);
             const progress = masteryOf(ctx, 'module', module.id);
-            return markConsolidated(linkRow({
+            return swipeActions(ctx, markConsolidated(linkRow({
               href: routes.module(module.id),
               leading: masteryBar(progress, 'module'),
               title: module.name,
-              subtitle: masterySubtitle(`${pluralLessons(counts.lessons)}, ${pluralTerms(counts.terms)}`, progress, 'module'),
+              subtitle: [masterySubtitle(`${pluralLessons(counts.lessons)}, ${pluralTerms(counts.terms)}`, progress, 'module'), createdLine(module)],
               onMenu: () => openMenu({
                 title: module.name,
                 items: [
@@ -235,9 +304,9 @@ export class DomainScreen {
                   { label: 'Usuń', icon: 'trash', destructive: true, onSelect: () => requestDeletion(ctx, { kind: 'module', id: module.id }) }
                 ]
               })
-            }), progress);
+            }), progress), 'module', module.id, progress);
           });
-      body = group({ title: 'Moduły' }, rows);
+      body = [list.control, group({ title: list.title }, rows), list.empty];
     }
 
     return {
@@ -267,7 +336,7 @@ export class ModuleScreen {
 
     const domain = library.getDomain(module.domainID);
     const backHref = domain ? routes.domain(domain.id) : routes.domains();
-    const lessons = consolidatedLast(library.listLessons(module.id), (id) => library.isLessonConsolidated(id));
+    const lessons = consolidatedLast(library, library.listLessons(module.id), (id) => library.isLessonConsolidated(id));
     if (lessons.length < 2) this.reordering = false;
 
     const moreMenu = () => openMenu({
@@ -307,15 +376,19 @@ export class ModuleScreen {
         actions: [primaryButton('Dodaj lekcję', () => openLessonForm(ctx, { moduleID: module.id }), { testID: 'module-add-lesson' })]
       });
     } else {
+      const list = filteredByCreated(ctx, `module:${module.id}`, lessons, {
+        title: 'Lekcje', nothing: 'Żadna lekcja tego modułu nie została utworzona w tym okresie.', testID: 'lessons-created',
+        reordering: this.reordering
+      });
       const rows = this.reordering
-        ? reorderRows(ctx, 'lesson', lessons, () => null, (lesson) => library.isLessonConsolidated(lesson.id))
-        : lessons.map((lesson) => {
+        ? reorderRows(ctx, 'lesson', lessons, () => null, reorderGroup(library, (id) => library.isLessonConsolidated(id)))
+        : list.shown.map((lesson) => {
             const progress = masteryOf(ctx, 'lesson', lesson.id);
-            return markConsolidated(linkRow({
+            return swipeActions(ctx, markConsolidated(linkRow({
               href: routes.lesson(lesson.id),
               leading: masteryBar(progress, 'lesson'),
               title: lesson.name,
-              subtitle: masterySubtitle(pluralTerms(library.counts('lesson', lesson.id).terms), progress, 'lesson'),
+              subtitle: [masterySubtitle(pluralTerms(library.counts('lesson', lesson.id).terms), progress, 'lesson'), createdLine(lesson)],
               extra: noteButton(ctx, lesson),
               onMenu: () => openMenu({
                 title: lesson.name,
@@ -335,9 +408,9 @@ export class ModuleScreen {
                   { label: 'Usuń', icon: 'trash', destructive: true, onSelect: () => requestDeletion(ctx, { kind: 'lesson', id: lesson.id }) }
                 ]
               })
-            }), progress);
+            }), progress), 'lesson', lesson.id, progress);
           });
-      body = group({ title: 'Lekcje' }, rows);
+      body = [list.control, group({ title: list.title }, rows), list.empty];
     }
 
     return {

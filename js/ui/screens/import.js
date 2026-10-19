@@ -12,7 +12,7 @@ import {
 import { noteText } from '../../core/note-format.js';
 import { analyzeNotesHeader, buildNoteRows, classifyTable } from '../../core/note-import.js';
 import { openTableFile } from '../../core/tablefile.js';
-import { formatSize, joinList, plural, pluralForm, pluralImages, pluralNotes, pluralTerms } from '../../core/text.js';
+import { formatSize, joinList, ofTerms, plural, pluralForm, pluralImages, pluralNotes, pluralTerms } from '../../core/text.js';
 import {
   actionRow, checkRow, field, formGroup, group, message, primaryButton, radioRow, selectInput, textInput, toggle, valueRow
 } from '../components.js';
@@ -946,7 +946,7 @@ export class ImportScreen {
     return [
       h('section', { class: 'group' },
         h('h3', { class: 'group__title group__title--small', dataset: { testid: 'import-preview-count' } },
-          shown.length < rows.length ? `Pierwsze ${shown.length} z ${pluralTerms(rows.length)}` : pluralTerms(rows.length)),
+          shown.length < rows.length ? `Pierwsze ${shown.length} z ${ofTerms(rows.length)}` : pluralTerms(rows.length)),
         h('ul', { class: 'group__list terms', role: 'list', dataset: { testid: 'import-preview' } },
           shown.map((row, index) => {
             const status = plan.statuses[index];

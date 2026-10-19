@@ -1,6 +1,7 @@
 // Elementy interfejsu używane na wielu ekranach.
 
-import { h } from './dom.js';
+import { CREATED_PRESETS, createdLabel, dayValue } from '../core/created.js';
+import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
 import { routes } from './router.js';
 
@@ -25,6 +26,61 @@ export function startBubble({ label, disabled = false, testID = null, onClick })
   return h('button', { type: 'button', class: 'start-bubble', disabled, title: label, dataset: { testid: testID }, onClick },
     h('span', { class: 'start-bubble__circle', 'aria-hidden': 'true' }, icon('play', { size: 30 })),
     h('span', { class: 'start-bubble__label' }, label));
+}
+
+/**
+ * Filtr po dacie utworzenia (od 1.9): okres i – dla „Wybrany okres…” – pola „od” i „do”.
+ * value: { preset, from, to }; onChange(filter) po każdej zmianie.
+ */
+export function createdFilterControl({ value, onChange, label = 'Utworzone', testID = 'created-filter' }) {
+  const state = { ...value };
+  const element = h('div', { class: 'created-filter', dataset: { testid: testID } });
+  const day = (text, key) => h('label', { class: 'created-filter__day' },
+    h('span', { class: 'created-filter__day-label' }, text),
+    h('input', {
+      type: 'date', class: 'created-filter__input', value: state[key], max: dayValue(), dataset: { testid: `${testID}-${key}` },
+      onChange: (event) => { state[key] = event.target.value; onChange({ ...state }); }
+    }));
+  const render = () => {
+    const select = selectInput({
+      value: state.preset,
+      testID: `${testID}-preset`,
+      options: CREATED_PRESETS.map((preset) => ({ value: preset.id, label: preset.label })),
+      onChange: (preset) => {
+        state.preset = preset;
+        // Własny okres zaczyna się od ostatniego tygodnia – do poprawienia w polach dat.
+        if (preset === 'range' && !state.from && !state.to) {
+          const weekAgo = new Date();
+          weekAgo.setDate(weekAgo.getDate() - 6);
+          state.from = dayValue(weekAgo);
+          state.to = dayValue();
+        }
+        render();
+        onChange({ ...state });
+      }
+    });
+    select.setAttribute('aria-label', label);
+    replaceChildren(element,
+      h('span', { class: 'created-filter__label', 'aria-hidden': 'true' }, icon('clock', { size: 16 }), label),
+      select,
+      state.preset === 'range' ? h('div', { class: 'created-filter__range' }, day('od', 'from'), day('do', 'to')) : null);
+  };
+  render();
+  return element;
+}
+
+/**
+ * Wybrany filtr daty utworzenia dla listy (np. 'module:<id>') – pamiętany do zamknięcia aplikacji,
+ * więc po powrocie z lekcji do modułu filtr zostaje.
+ */
+const createdFilters = new Map();
+export const createdFilterFor = (key) => createdFilters.get(key) ?? { preset: '', from: '', to: '' };
+export const rememberCreatedFilter = (key, filter) => createdFilters.set(key, filter);
+
+/** „Utworzono 19 paź 2026” – osobna linijka pod opisem wiersza modułu albo lekcji (od 1.9). */
+export function createdLine(record) {
+  const date = createdLabel(record?.createdAt);
+  return date ? h('span', { class: 'row__created', dataset: { testid: 'row-created' } }, `Utworzono ${date}`) : null;
 }
 
 /** Przycisk tekstowy w pasku nawigacji. */

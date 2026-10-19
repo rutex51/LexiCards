@@ -132,6 +132,7 @@ export function defaultSettings() {
     desiredRetention: 0.9,         // FSRS: docelowa szansa przypomnienia w dniu powtórki
     consolidatedReviewDays: 30,    // lekcje oznaczone jako utrwalone: fiszki wracają najwcześniej po tylu dniach
     noteSpread: true,              // notatka na dużym ekranie: dwie strony obok siebie
+    consolidatedLast: true,        // utrwalone lekcje i moduły na końcu list (od 1.9 do wyboru)
     noteLanguage: 'pl',            // wersja notatki w podglądzie: pl | en (gdy notatka ma obie)
     domainColorsGray: true,        // wersja 1.2: tło ikon istniejących dziedzin zmienione jednorazowo na szare
     studySelection: null,          // ostatnio wybrany materiał: { domainID, moduleID, lessonIDs }

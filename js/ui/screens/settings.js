@@ -9,7 +9,7 @@ import {
   pluralNotes, pluralTerms
 } from '../../core/text.js';
 import { loadSampleData, openExportSheet } from '../actions.js';
-import { actionRow, field, formGroup, group, segmented, selectInput, valueRow } from '../components.js';
+import { actionRow, checkRow, field, formGroup, group, segmented, selectInput, valueRow } from '../components.js';
 import { alertDialog, confirmDialog, showError, toast } from '../dialogs.js';
 import { h, onTap } from '../dom.js';
 import { deliverFile, pickFiles } from '../files.js';
@@ -144,6 +144,29 @@ export class SettingsScreen {
       h('p', { class: 'group__footer', dataset: { testid: 'accent-name' } },
         `${ACCENT_COLORS.find((item) => item.id === accent).label}. Kolor przycisków, zaznaczeń i linków `
         + 'w jasnym i ciemnym motywie; wykresy w Statystykach zostają w swoich kolorach.')
+    );
+  }
+
+  /** Biblioteka: kolejność utrwalonych lekcji i modułów na listach (od 1.9). */
+  #libraryGroup() {
+    const { library } = this.ctx;
+    return group({
+      title: 'Listy lekcji i modułów',
+      footer: 'Włączone: utrwalone lekcje i moduły są pod pozostałymi, a kolejność zmieniasz osobno w obu częściach listy. '
+        + 'Wyłączone: zostają tam, gdzie je ustawisz, i przesuwasz je razem z innymi.'
+    },
+      checkRow({
+        checked: library.getSettings().consolidatedLast !== false,
+        title: 'Utrwalone na końcu listy',
+        testID: 'consolidated-last',
+        onChange: async (value) => {
+          try {
+            await library.updateSettings({ consolidatedLast: value });
+          } catch (error) {
+            await showError(error);
+          }
+        }
+      })
     );
   }
 
@@ -567,6 +590,7 @@ export class SettingsScreen {
           library.isEmpty() ? null : actionRow({ label: 'Eksportuj bibliotekę do pliku', iconName: 'download', onClick: () => openExportSheet(ctx, { kind: 'all' }), testID: 'settings-export' })
         ),
         this.#reviewGroup(),
+        this.#libraryGroup(),
         this.#speechGroup(),
         this.#storageGroup(),
         this.#installGroup(),

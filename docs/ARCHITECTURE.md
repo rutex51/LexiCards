@@ -151,6 +151,19 @@ działa na adapterze pamięciowym i wyświetla ostrzeżenie, że dane znikną po
   pozycja, powrót do znanego wpisu – pozycja z wpisu. ← jest aktywne od drugiego ekranu, → –
   po cofnięciu; oba ukryte, gdy nie ma dokąd przejść, i nigdy nie wychodzą poza aplikację.
 - **Okna** to natywny `<dialog>`: przeglądarka pilnuje fokusu, klawisza Esc i blokady tła.
+- **Przesuwanie wierszy** (od 1.9, `js/ui/swipe.js`) – wiersze modułów i lekcji: zdarzenia wskaźnika
+  tylko dla dotyku i rysika, `touch-action: pan-y` (pionowe przewijanie zostaje przeglądarce, ruch
+  w pionie kończy gest), kierunek ustalany po 10 px. Przesuwa się cały wiersz z tłem, a pod nim, na
+  czas ruchu, leży warstwa działania wstawiona do listy w miejscu wiersza (lista dostaje
+  `position: relative`). Próg lekki – 56 px (po puszczeniu pytanie: `requestDeletion`,
+  `confirmConsolidation`), zdecydowany – połowa szerokości wiersza (od razu: `deleteNow`,
+  `setConsolidated`). Napis działania widać, gdy mieści się w odsłoniętej części. Kliknięcie
+  w link tuż po przesunięciu jest pomijane.
+- **Data utworzenia** (od 1.9): każdy rekord ma `createdAt`. Wiersze modułów i lekcji pokazują ją pod
+  opisem, szczegóły pojęcia – w „Utworzono”. Filtr (`js/core/created.js`: okresy dziś, 7 i 30 dni,
+  ten rok, własny zakres od – do, dni w czasie lokalnym, „do” obejmuje cały dzień) jest nad listą
+  modułów, lekcji i pojęć lekcji (wybór pamiętany w pamięci aplikacji dla danej listy) i w filtrach
+  glosariusza (`glossary({ created })`).
 - **Układ**: poniżej 900 px zakładki u dołu, powyżej panel boczny; glosariusz na szerokim
   ekranie jest tabelą. Rozmiar tekstu na iPhonie podąża za ustawieniem systemowym.
 - Stan jest zawsze nazwany tekstem lub ikoną, nie samym kolorem; brak treści to „Brak danych”.
@@ -601,7 +614,9 @@ wykresy w `js/ui/charts.js`.
   utrwalona ma pełny pasek i opis „utrwalona”, a w module jej pojęcia liczą się jako opanowane.
   Pasek, opis i pozycje menu rysuje `js/ui/mastery.js`. Od 1.3 utrwalone są na końcu listy
   modułów i lekcji (w obu grupach kolejność ustalona przez użytkownika); w trybie zmiany kolejności
-  przesuwa się tylko w obrębie grupy, a zapisana kolejność to kolejność listy.
+  przesuwa się tylko w obrębie grupy, a zapisana kolejność to kolejność listy. Od 1.9 to ustawienie
+  (`consolidatedLast`, domyślnie włączone): wyłączone – lista w kolejności użytkownika, a zmiana
+  kolejności obejmuje też utrwalone.
 - **Wykresy** są rysowane w SVG w rzeczywistej szerokości kontenera (ResizeObserver), bez
   bibliotek. Kolory to zmienne `--viz-*`, osobne dla jasnego i ciemnego motywu, sprawdzone
   walidatorem palet (kontrast z tłem, rozróżnialność przy protanopii i deuteranopii): statusy
