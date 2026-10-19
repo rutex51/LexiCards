@@ -273,7 +273,8 @@ a kreator importu uprzedza przed importem. Oznaczenie cofniesz w menu „…” 
 
 Utrwalone lekcje i moduły są na końcu listy. Gdy wolisz zostawić je na miejscu, wyłącz
 **Ustawienia → Listy lekcji i modułów → Utrwalone na końcu listy** – wtedy „Zmień kolejność”
-przesuwa je razem z pozostałymi.
+przesuwa je razem z pozostałymi. To samo ustawienie włączysz i wyłączysz w menu „…” ekranu lekcji,
+modułu i dziedziny („Wyłącz / Włącz „Utrwalone na końcu listy””).
 
 **Przesuwanie wiersza (telefon):** wiersz lekcji albo modułu przesuń palcem w prawo, żeby go
 utrwalić (na utrwalonym – cofnąć utrwalenie), albo w lewo, żeby go usunąć. Pod wierszem widać, co

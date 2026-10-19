@@ -14,7 +14,8 @@ import { openMenu, toast } from '../dialogs.js';
 import { h } from '../dom.js';
 import { icon } from '../icons.js';
 import {
-  confirmConsolidation, consolidationMenuItem, markConsolidated, masteryBar, masteryOf, masterySubtitle, setConsolidated
+  confirmConsolidation, consolidatedLastMenuItem, consolidationMenuItem, markConsolidated, masteryBar, masteryOf, masterySubtitle,
+  setConsolidated
 } from '../mastery.js';
 import { noteButton, noteMenuItem } from '../notes.js';
 import { routes } from '../router.js';
@@ -239,6 +240,7 @@ export class DomainScreen {
         { label: 'Quiz z tej dziedziny', icon: 'quiz', onSelect: () => ctx.navigate(routes.quiz({ level: 'domain', id: domain.id })) },
         { label: 'Statystyki dziedziny', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'domain', id: domain.id })) },
         { label: 'Edytuj dziedzinę', icon: 'edit', onSelect: () => openDomainForm(ctx, domain.id) },
+        consolidatedLastMenuItem(ctx),
         modules.length > 1 ? { label: 'Zmień kolejność modułów', icon: 'reorder', onSelect: () => { this.reordering = true; ctx.refresh(); } } : null,
         { label: 'Eksportuj dziedzinę…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'domain', id: domain.id }) },
         'separator',
@@ -346,6 +348,7 @@ export class ModuleScreen {
         { label: 'Quiz z tego modułu', icon: 'quiz', onSelect: () => ctx.navigate(routes.quiz({ level: 'module', id: module.id })) },
         { label: 'Statystyki modułu', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'module', id: module.id })) },
         consolidationMenuItem(ctx, 'module', module.id),
+        consolidatedLastMenuItem(ctx),
         { label: 'Edytuj moduł', icon: 'edit', onSelect: () => openModuleForm(ctx, { moduleID: module.id }) },
         { label: 'Przenieś do innej dziedziny', icon: 'move', onSelect: () => moveModule(ctx, module.id) },
         lessons.length > 1 ? { label: 'Zmień kolejność lekcji', icon: 'reorder', onSelect: () => { this.reordering = true; ctx.refresh(); } } : null,

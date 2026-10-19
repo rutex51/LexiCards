@@ -1915,7 +1915,7 @@ test('ekran lekcji i listy: żółty wiersz notatki, piktogramy bez tła, utrwal
     for (const [label, iconBox, row] of [['notatki', noteIcon, noteRow], ['utrwalenia', checkIcon, consolidated]]) {
       assert.equal((await color(iconBox)).a, 0, `${theme}: piktogram ${label} bez tła`);
       assert.equal(await iconBox.locator('svg').evaluate((svg) => svg.getBoundingClientRect().width), 22, `${theme}: piktogram ${label} 22 px`);
-      const glyph = await color(iconBox, 'color');
+      const glyph = await color(iconBox.locator('svg'), 'color');
       // Tło wiersza pod ikoną: notatka – jednolite, utrwalenie – gradient (lewy brzeg, najmocniejszy).
       const under = label === 'notatki' ? note : await row.evaluate((element) => {
         const [r, g, b] = getComputedStyle(element).backgroundImage.match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)\)/).slice(1).map((part) => Math.round(Number(part) * 255));
@@ -1924,9 +1924,9 @@ test('ekran lekcji i listy: żółty wiersz notatki, piktogramy bez tła, utrwal
       const ratio = contrast(glyph, under);
       assert.ok(ratio >= 3, `${theme}: piktogram ${label} – kontrast ${ratio.toFixed(2)}:1`);
     }
-    const yellow = await color(noteIcon, 'color');
+    const yellow = await color(noteIcon.locator('svg'), 'color');
     assert.ok(yellow.r > yellow.g && yellow.g > yellow.b + 100, `${theme}: ikona notatki żółta (${JSON.stringify(yellow)})`);
-    const green = await color(checkIcon, 'color');
+    const green = await color(checkIcon.locator('svg'), 'color');
     assert.ok(green.g > green.r && green.g > green.b, `${theme}: ikona utrwalenia zielona (${JSON.stringify(green)})`);
 
     // Utrwalenie nad notatką: bez obwódki (sama poświata), bez linii między wierszami.
@@ -1990,11 +1990,49 @@ test('ekran lekcji i listy: żółty wiersz notatki, piktogramy bez tła, utrwal
     await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.investments}`);
     const addRow = page.locator('li.row--note', { has: page.locator('[data-testid=lesson-note-add]') });
     assert.deepEqual(await color(addRow), note, `${theme}: pusty wiersz notatki w tym samym kolorze`);
-    assert.deepEqual(await color(addRow.locator('.row__leading--icon'), 'color'), yellow, `${theme}: ten sam piktogram`);
+    assert.deepEqual(await color(addRow.locator('.row__leading--icon svg'), 'color'), yellow, `${theme}: ten sam piktogram`);
   };
   await check('jasny');
   await page.emulateMedia({ colorScheme: 'dark' });
   await check('ciemny');
+});
+
+test('piktogram notatki wszędzie ciemnożółty – w obu motywach i przy innym kolorze aplikacji', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate(async (id) => {
+    const { library } = window.lexicards;
+    await library.saveNote(id, { html: '<p>Ściąga do lekcji</p>', images: [] });
+    await library.updateSettings({ accentColor: 'green' });
+  }, ids.statements);
+  const base = page.url().split('#')[0];
+  const stroke = (locator) => locator.evaluate((svg) => getComputedStyle(svg).color);
+  const DARK_YELLOW = 'rgb(185, 130, 0)';
+  for (const theme of ['jasny', 'ciemny']) {
+    if (theme === 'ciemny') await page.emulateMedia({ colorScheme: 'dark' });
+    await page.reload();
+    const seen = {};
+    // Ekran lekcji: wiersz notatki; szczegóły pojęcia: „Notatka lekcji”.
+    await page.goto(`${base}#/library/lesson/${ids.statements}`);
+    seen['ekran lekcji'] = await stroke(page.locator('[data-testid=lesson-note] .icon--note'));
+    await page.locator('.term__toggle').first().click();
+    seen['szczegóły pojęcia'] = await stroke(page.locator('[data-testid=term-lesson-note] .icon--note'));
+    // Lista lekcji w module: przycisk notatki przy lekcji i polecenie „Notatka” w menu „…”.
+    await page.goto(`${base}#/library/module/${ids.module}`);
+    seen['lista lekcji'] = await stroke(page.locator('.row__note .icon--note').first());
+    await page.getByRole('button', { name: 'Więcej poleceń: Financial Statements' }).click();
+    seen['menu „…”'] = await stroke(page.locator('dialog.menu[open]').getByRole('menuitem', { name: 'Notatka', exact: true }).locator('.icon--note'));
+    await page.keyboard.press('Escape');
+    // Nauka: przycisk notatki przy fiszce.
+    await page.goto(`${base}#/study/lesson/${ids.statements}`);
+    await page.click('[data-testid=study-start]');
+    await page.waitForSelector('[data-testid=flashcard]');
+    seen['fiszki'] = await stroke(page.getByRole('button', { name: 'Notatka lekcji' }).locator('.icon--note'));
+    for (const [place, value] of Object.entries(seen)) assert.equal(value, DARK_YELLOW, `${theme}: ${place}`);
+    await page.goto(`${base}#/library/module/${ids.module}`);
+    await page.screenshot({ path: path.join(OUTPUT, `piktogram-notatki-lista-${theme}.png`) });
+  }
 });
 
 test('załączniki na komputerze: PDF w nowej karcie, dokument Word pobierany; upuszczenie pliku na edytor dodaje załącznik', async ({ open, context }) => {
@@ -5442,6 +5480,49 @@ test('ustawienie „Utrwalone na końcu listy”: wyłączone – utrwalone zost
 
   // Ustawienie wraca z kopią zapasową (jest w ustawieniach).
   assert.equal((await page.evaluate(() => window.lexicards.library.exportAll({ media: false }))).settings[0].consolidatedLast, false);
+});
+
+test('„Utrwalone na końcu listy” z menu „…” ekranu lekcji, modułu i dziedziny – to samo ustawienie co w Ustawieniach', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const base = page.url().split('#')[0];
+  const titles = () => page.locator('.group .row .row__title').allTextContents().then((items) => items.map((item) => item.trim()));
+  await page.evaluate((id) => window.lexicards.library.setLessonConsolidated(id, true), ids.statements);
+  const OFF = 'Wyłącz „Utrwalone na końcu listy”';
+  const ON = 'Włącz „Utrwalone na końcu listy”';
+
+  // Ekran lekcji: „…” u góry – wyłączenie bez przechodzenia do Ustawień.
+  await page.goto(`${base}#/library/lesson/${ids.statements}`);
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  const items = await page.locator('dialog.menu[open] [role=menuitem]').allTextContents();
+  assert.equal(items[items.indexOf('Cofnij utrwalenie') + 1], OFF, 'zaraz pod „Cofnij utrwalenie”');
+  await page.locator('dialog.menu[open]').evaluate((menu) => Promise.all(menu.getAnimations({ subtree: true }).map((animation) => animation.finished)));
+  await page.screenshot({ path: path.join(OUTPUT, 'utrwalone-na-koncu-menu-lekcji.png') });
+  await menuItem(page, OFF);
+  await page.locator('.toast', { hasText: 'Utrwalone lekcje i moduły zostają tam, gdzie je ustawisz.' }).waitFor();
+  assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().consolidatedLast), false);
+
+  // Lista lekcji: utrwalona na swoim miejscu; w Ustawieniach przełącznik wyłączony.
+  await page.goto(`${base}#/library/module/${ids.module}`);
+  await waitUntil(async () => (await titles()).join() === 'Financial Statements,Investments,Financial Ratios', 'Utrwalona na swoim miejscu');
+  await page.goto(`${base}#/settings`);
+  assert.equal(await page.locator('[data-testid=consolidated-last]').isChecked(), false);
+
+  // Moduł: „…” – włączenie z powrotem; utrwalona wraca na koniec od razu.
+  await page.goto(`${base}#/library/module/${ids.module}`);
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  await menuItem(page, ON);
+  await page.locator('.toast', { hasText: 'Utrwalone lekcje i moduły są teraz na końcu listy.' }).waitFor();
+  await waitUntil(async () => (await titles()).join() === 'Investments,Financial Ratios,Financial Statements', 'Utrwalona znów na końcu');
+
+  // Dziedzina: to samo polecenie, z napisem zgodnym ze stanem ustawienia.
+  const domainID = await page.evaluate((id) => window.lexicards.library.getModule(id).domainID, ids.module);
+  await page.goto(`${base}#/library/domain/${domainID}`);
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  assert.ok((await page.locator('dialog.menu[open] [role=menuitem]').allTextContents()).includes(OFF));
+  await menuItem(page, OFF);
+  await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().consolidatedLast === false), 'Wyłączone z dziedziny');
 });
 
 test('data utworzenia przy modułach i lekcjach; filtr daty w module, w lekcji i w glosariuszu', async ({ open }) => {

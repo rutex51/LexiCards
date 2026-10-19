@@ -103,7 +103,8 @@ const ICONS = {
 export function icon(name, options = {}) {
   const shapes = ICONS[name];
   if (!shapes) throw new Error(`Nieznana ikona: ${name}`);
-  return svg(shapes, options);
+  // Klasa z nazwą ikony (np. „icon--note”) – styl jednej ikony wszędzie, gdzie się pojawia.
+  return svg(shapes, { ...options, className: `${options.className ?? 'icon'} icon--${name}` });
 }
 
 export const ICON_NAMES = Object.keys(ICONS);

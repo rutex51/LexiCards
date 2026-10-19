@@ -116,6 +116,28 @@ Testy wersji 1.10.4:
 - Zrzuty (Chromium, ekran telefonu): ekran lekcji i lista lekcji z utrwaloną w środku, jasny
   i ciemny motyw.
 
+## Uzupełnienie w wersji 1.10.5
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Piktogram notatki wszędzie, gdzie się pojawia, ciemnożółty – bez względu na motyw | Ikona notatki ma jeden stały ciemnożółty kolor w jasnym i ciemnym motywie i przy każdym kolorze aplikacji: na ekranie lekcji (wiersz notatki i „Dodaj notatkę do lekcji”), przy lekcji na liście w module, w menu „…” („Notatka” / „Dodaj notatkę”), w szczegółach pojęcia („Notatka lekcji” – sama ikona, napis zostaje w kolorze aplikacji), przy fiszce w trakcie nauki i w menu obrazu w edytorze („Wstaw do tekstu” ma tę samą ikonę). Kontrast do jasnych i ciemnych teł – co najmniej 3:1 |
+| Wyłączanie „Utrwalone na końcu listy” także z ekranu lekcji, nie tylko z Ustawień | W menu „…” u góry ekranu lekcji, zaraz pod „Cofnij utrwalenie” / „Oznacz jako utrwaloną”, jest **Wyłącz „Utrwalone na końcu listy”** (albo **Włącz…**, gdy ustawienie jest wyłączone). To samo polecenie jest w menu „…” modułu (lista lekcji) i dziedziny (lista modułów). Zmienia to samo ustawienie co **Ustawienia → Listy lekcji i modułów** – listy układają się od razu, a komunikat mówi, co się zmieniło |
+
+Testy wersji 1.10.5:
+
+- **Testy logiki: 259 – wszystkie zaliczone** (bez zmian w logice).
+- **Testy w przeglądarce: 112 – wszystkie zaliczone w dwóch przebiegach** (110 wcześniejszych,
+  z nich 1 dostosowany – kolor czytany z samej ikony, + 2 nowe):
+  - przy zielonym kolorze aplikacji, w jasnym i ciemnym motywie ikona notatki ma ten sam
+    ciemnożółty kolor na ekranie lekcji, w szczegółach pojęcia, na liście lekcji, w menu „…”
+    i przy fiszce;
+  - „Wyłącz „Utrwalone na końcu listy”” w menu ekranu lekcji (pod „Cofnij utrwalenie”) – komunikat,
+    utrwalona lekcja na swoim miejscu w module, przełącznik w Ustawieniach wyłączony; „Włącz…”
+    z menu modułu – utrwalona od razu na końcu; polecenie także w menu dziedziny.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium, ekran telefonu): lista lekcji (jasny i ciemny motyw, zielony kolor aplikacji),
+  ekran lekcji (jasny i ciemny), menu „…” ekranu lekcji z nowym poleceniem.
+
 ## Czego nie sprawdzono
 
 - **Na iPhonie** – testy działają w Chromium z udawanym mikrofonem, nie w Safari na iOS. Do

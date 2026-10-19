@@ -198,7 +198,9 @@ działa na adapterze pamięciowym i wyświetla ostrzeżenie, że dane znikną po
   `:root[data-accent=…]` tylko podstawia go pod `--accent`, `--accent-fill` i `--accent-soft`,
   z których korzysta reszta stylów. `js/theme-boot.js` ustawia oba atrybuty z pamięci lokalnej,
   zanim strona się narysuje. Kolory znaczące (zielone „Umiem”, czerwone usuwanie, statusy)
-  i wykresy nie zależą od wybranego koloru.
+  i wykresy nie zależą od wybranego koloru. Każda ikona ma klasę z nazwą (`icon--<nazwa>`); piktogram
+  notatki (`svg.icon--note`) ma od 1.10.5 stały ciemnożółty kolor – w obu motywach i przy każdym
+  kolorze aplikacji.
 
 ## Praca offline i aktualizacje
 
