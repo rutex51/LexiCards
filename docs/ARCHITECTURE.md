@@ -352,7 +352,22 @@ zdarzeniu rysika (`localStorage`) palec tylko przesuwa, a dotyk w trakcie kreski
 rusza strony; dwa palce – powiększenie wokół środka palców. Gumka usuwa całe kreski (odległość od
 odcinków z ich grubością); kolejne kreski starte jednym pociągnięciem to jeden krok `DrawingHistory`.
 Zakreślacz: `multiply` i przezroczystość 0,45 – tusz pod spodem zostaje ciemny. Ustawienia narzędzi
-(kolory, grubości, czułość, wygładzanie) – `localStorage` urządzenia. Edytor notatki: „Narysuj”
+(kolory, grubości, czułość, wygładzanie, od 1.12.1 tryb i wielkość gumki) – `localStorage` urządzenia.
+Od 1.12.1: **gumka fragmentów** (`eraseFromStroke`, `eraseAt`) przecina kreskę na brzegu koła gumki
+(promień + połowa grubości; odcinek między punktami przecinany dokładnie, grubość z nacisku
+przeliczona w miejscu cięcia) i zastępuje ją kawałkami – rysunek zostaje wektorowy, zdjęcie pod
+spodem nietknięte; koło gumki ma stałą wielkość na ekranie, a szybki ruch jest dzielony na gęste
+kroki. **Historia** to stany listy kresek przed zmianą i po niej (`begin()` … `commit()`), bo kreski
+są niezmienne – starcie, przesunięcie i powielenie dają nowe obiekty. **Zaznaczanie**: kreski
+z linią środkową w całości w prostokącie (`strokesInRect`) albo dotknięta kreska; przesuwanie
+rysuje zaznaczone kreski na warstwie bieżącej z przesunięciem (warstwa zapisanych je pomija) i na
+końcu zastępuje je przesuniętymi (`translateStroke`) jednym krokiem. **Linijka** `{ x, y, angle }`
+w jednostkach strony, szerokość stała na ekranie (64 px), rysowana na warstwie bieżącej z podziałką
+co ćwierć kratki i kątem (`rulerDegrees`: 0–179°, przeciwnie do ruchu wskazówek zegara); kąt
+przyskakuje co 45° (±2,5°, `snapRulerAngle`). Kreska zaczęta do 26 px od krawędzi jest rzutowana na
+prostą krawędzi (`rulerOffset`, `rulerPoint`). Linijkę przesuwa jeden palec albo mysz, obracają dwa
+palce (wokół środka palców) albo uchwyt. Pasek narzędzi leży nad płótnem: płótno ma stałą wielkość,
+a strona mieści się pod paskiem (miejsce mierzone przy otwarciu, obrocie ekranu i „100%”). Edytor notatki: „Narysuj”
 dodaje obraz „Rysunek N”, „Edytuj rysunek” i „Rysuj na zdjęciu” zastępują obraz nowym w tym samym
 miejscu, z tą samą sygnaturą (stary rekord znika przy zapisie notatki, jak usunięty obraz).
 

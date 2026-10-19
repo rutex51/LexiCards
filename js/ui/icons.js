@@ -108,6 +108,9 @@ const ICONS = {
     p('M9 15l-3 3h5l1.5-1.5'), p('M8 13.5l7.8-7.8a2 2 0 0 1 2.8 0l.7.7a2 2 0 0 1 0 2.8L11.5 17z'),
     { d: 'M4 21h16', class: 'icon__accent', 'stroke-width': 2.6 }
   ],
+  // Zaznaczanie prostokątem i linijka w edytorze rysunku (od 1.12.1).
+  marquee: [{ d: 'M4 4.5h12v7.5M4 4.5v12h7.5', 'stroke-dasharray': '2.4 2.4' }, filled('M13.5 13.5l7 2.4-3 1.3-1.3 3z')],
+  ruler: [p('M3.5 15.8L15.8 3.5l4.7 4.7L8.2 20.5z'), p('M7.3 12l1.9 1.9'), p('M10 9.3l1.3 1.3'), p('M12.7 6.6l1.9 1.9')],
   // Sygnatura obrazu (etykieta) – od 1.12, odróżnia się od ołówka „Edytuj rysunek”.
   tag: [p('M3.5 12.5V4h8.5l8.5 8.5-8.5 8.5z'), { tag: 'circle', cx: 8, cy: 8.5, r: 1.4 }],
   eraser: [p('M8.5 19.5h11'), p('M5.2 14.3l8.6-8.6a2 2 0 0 1 2.8 0l2.7 2.7a2 2 0 0 1 0 2.8L12 18.5H9.4l-4.2-4.2z'), p('M9.3 10.2l5.5 5.5')]

@@ -3129,6 +3129,192 @@ test('rysunek: „Narysuj” – pióro z naciskiem rysika, mysz, palec przesuwa
   assert.match((await storedNote(page, ids.statements)).html, /\[\[Rysunek 1\]\]/);
 }, { device: IPAD });
 
+/** Dwa palce obracane wokół punktu `center` (px okna) od kąta `from` do `to` (stopnie ekranu: ujemne – w lewo). */
+async function touchTurn(page, center, radius, from, to, steps = 8) {
+  await page.locator('[data-testid=drawing-canvas]').evaluate((canvas, [middle, distance, start, end, count]) => {
+    const fire = (kind, pointerId, degrees) => {
+      const side = pointerId === 41 ? -1 : 1;
+      const angle = (degrees * Math.PI) / 180;
+      canvas.dispatchEvent(new window.PointerEvent(kind, {
+        bubbles: true, cancelable: true, pointerId, pointerType: 'touch', isPrimary: pointerId === 41,
+        clientX: middle.x + side * distance * Math.cos(angle), clientY: middle.y + side * distance * Math.sin(angle),
+        buttons: kind === 'pointerup' ? 0 : 1, button: kind === 'pointermove' ? -1 : 0
+      }));
+    };
+    fire('pointerdown', 41, start);
+    fire('pointerdown', 42, start);
+    for (let step = 1; step <= count; step += 1) {
+      const degrees = start + ((end - start) * step) / count;
+      fire('pointermove', 41, degrees);
+      fire('pointermove', 42, degrees);
+    }
+    fire('pointerup', 41, end);
+    fire('pointerup', 42, end);
+  }, [center, radius, from, to, steps]);
+}
+
+test('rysunek 1.12.1: gumka fragmentów z rozmiarami, linijka (kąt dwoma palcami i myszą, przyskok do 45°, kreska wzdłuż krawędzi), zaznaczanie prostokątem – przesuń, powiel, usuń, cofnij (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Linijka</p>');
+  const box = await editor.locator('[data-testid=drawing-canvas]').boundingBox();
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+
+  // Gumka fragmentów: tryb i cztery wielkości; dotknięcie przecina kreskę, reszta zostaje.
+  await drawStroke(page, segment([0.2, 0.3], [0.8, 0.3]));
+  await waitUntil(() => darkAt(page, 0.5, 0.3), 'Kreska do starcia');
+  await editor.locator('[data-testid=drawing-tool-eraser]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-eraser-stroke]').getAttribute('aria-checked'), 'true', 'domyślnie całe kreski');
+  assert.equal(await editor.locator('[data-testid=drawing-eraser-size-0]').isVisible(), false, 'wielkość tylko dla fragmentów');
+  await editor.locator('[data-testid=drawing-eraser-pixel]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-eraser-pixel]').getAttribute('aria-checked'), 'true');
+  assert.equal(await editor.locator('[data-testid^=drawing-eraser-size-]').count(), 4);
+  await editor.locator('[data-testid=drawing-eraser-size-3]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-eraser-size-3]').getAttribute('aria-checked'), 'true');
+  await page.mouse.move(center.x, box.y + box.height * 0.5);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-gumka-fragmentow-ipad.png') });
+  await drawStroke(page, [[0.5, 0.3, 0.5]]);
+  await waitUntil(async () => !(await darkAt(page, 0.5, 0.3)), 'Gumka starła środek kreski');
+  assert.equal(await darkAt(page, 0.3, 0.3), true, 'lewa część kreski zostaje');
+  assert.equal(await darkAt(page, 0.7, 0.3), true, 'prawa część kreski zostaje');
+  await editor.locator('[data-testid=drawing-undo]').click();
+  await waitUntil(() => darkAt(page, 0.5, 0.3), 'Cofnij przywraca całą kreskę');
+  await editor.locator('[data-testid=drawing-redo]').click();
+  await waitUntil(async () => !(await darkAt(page, 0.5, 0.3)), 'Ponów znowu ją przecina');
+  const tools = await page.evaluate(() => JSON.parse(localStorage.getItem('lexicards-drawing-tools')));
+  assert.deepEqual([tools.eraserMode, tools.eraserSize], ['pixel', 3], 'tryb i wielkość gumki zapamiętane');
+
+  // Linijka: kąt na pigułce; dwa palce obracają (30°, potem przyskok do 45°), uchwyt myszą – 90°.
+  await editor.locator('[data-testid=drawing-tool-pen]').click();
+  await editor.locator('[data-testid=drawing-ruler]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-ruler]').getAttribute('aria-pressed'), 'true');
+  await expectText(editor.locator('[data-testid=drawing-ruler-angle]'), 'Linijka 0°');
+  await touchTurn(page, center, 90, 0, -30);
+  await expectText(editor.locator('[data-testid=drawing-ruler-angle]'), 'Linijka 30°');
+  await touchTurn(page, center, 90, -30, -44);
+  await expectText(editor.locator('[data-testid=drawing-ruler-angle]'), 'Linijka 45°');
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-linijka-ipad.png') });
+  const handle = (degrees) => [center.x + 170 * Math.cos((degrees * Math.PI) / 180), center.y + 170 * Math.sin((degrees * Math.PI) / 180)];
+  await page.mouse.move(...handle(-45));
+  await page.mouse.down();
+  for (let step = 1; step <= 9; step += 1) await page.mouse.move(...handle(-45 - step * 5));
+  await page.mouse.up();
+  await expectText(editor.locator('[data-testid=drawing-ruler-angle]'), 'Linijka 90°');
+  // Mysz przesuwa linijkę (pionową) o 60 px w prawo.
+  await page.mouse.move(center.x, center.y + 60);
+  await page.mouse.down();
+  for (let step = 1; step <= 6; step += 1) await page.mouse.move(center.x + step * 10, center.y + 60);
+  await page.mouse.up();
+  // Kreska rysikiem przy prawej krawędzi (40–48 px od środka linijki) – prosto wzdłuż krawędzi (32 px).
+  const near = Array.from({ length: 13 }, (_, index) => [
+    (center.x + 60 + 40 + (index % 3) * 4 - box.x) / box.width, (center.y - 120 + index * 20 - box.y) / box.height, 0.5
+  ]);
+  await drawStroke(page, near);
+  await waitUntil(() => darkAt(page, (center.x + 92 - box.x) / box.width, 0.5), 'Kreska wzdłuż krawędzi linijki');
+  assert.equal(await darkAt(page, (center.x + 104 - box.x) / box.width, 0.5), false, 'nie tam, gdzie prowadził rysik');
+  await editor.locator('[data-testid=drawing-ruler]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-ruler-angle]').isHidden(), true, 'linijka schowana');
+
+  // Zaznaczanie: prostokąt zaznacza kreski w całości w środku; polecenia nad ramką.
+  await drawStroke(page, segment([0.22, 0.8], [0.32, 0.8]));
+  await drawStroke(page, segment([0.66, 0.85], [0.76, 0.85]));
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await drawStroke(page, segment([0.2, 0.75], [0.35, 0.88], 6));
+  await expectText(selectionCount, '1 kreska');
+  await drawStroke(page, segment([0.2, 0.75], [0.8, 0.9], 6));
+  await expectText(selectionCount, '2 kreski');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-zaznaczenie-ipad.png') });
+  // Przesunięcie w górę: kreski są w nowym miejscu.
+  await drawStroke(page, segment([0.27, 0.8], [0.27, 0.7], 8));
+  await waitUntil(async () => (await darkAt(page, 0.27, 0.7)) && !(await darkAt(page, 0.27, 0.8)), 'Zaznaczenie przesunięte');
+  assert.equal(await darkAt(page, 0.71, 0.75), true, 'druga kreska przesunięta razem z pierwszą');
+  await expectText(selectionCount, '2 kreski');
+  // Powiel – kopie obok, zaznaczone; Usuń – kopie znikają.
+  await editor.locator('[data-testid=drawing-selection-duplicate]').click();
+  await expectText(selectionCount, '2 kreski');
+  await editor.locator('[data-testid=drawing-selection-delete]').click();
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Po usunięciu bez zaznaczenia');
+  // Cofnij: usunięcie, powielenie, przesunięcie – po kolei; ponów – przesunięcie wraca.
+  await editor.locator('[data-testid=drawing-undo]').click();
+  await editor.locator('[data-testid=drawing-undo]').click();
+  await editor.locator('[data-testid=drawing-undo]').click();
+  await waitUntil(async () => (await darkAt(page, 0.27, 0.8)) && !(await darkAt(page, 0.27, 0.7)), 'Cofnięte przesunięcie');
+  await editor.locator('[data-testid=drawing-redo]').click();
+  await waitUntil(() => darkAt(page, 0.27, 0.7), 'Ponowione przesunięcie');
+  // Dotknięcie kreski zaznacza ją; Ctrl+A – wszystko; Esc zdejmuje zaznaczenie, edytor zostaje.
+  await drawStroke(page, [[0.3, 0.3, 0.5]]);
+  await expectText(selectionCount, '1 kreska');
+  await page.keyboard.press('Control+a');
+  await expectText(selectionCount, '5 kresek');
+  await page.keyboard.press('Escape');
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Esc zdejmuje zaznaczenie (po Ctrl+A)');
+  await editor.locator('[data-testid=drawing-select-all]').click();
+  await expectText(selectionCount, '5 kresek');
+  await page.keyboard.press('Escape');
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Esc zdejmuje zaznaczenie');
+  assert.equal(await editor.isVisible(), true, 'Esc przy zaznaczeniu nie zamyka edytora');
+
+  // Zapis: kreska przy linijce ma stałe x (pionowa), przecięta kreska to dwa kawałki.
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const strokes = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing.strokes, ids.statements);
+  assert.equal(strokes.length, 5);
+  const ruled = strokes[2].points.filter((_, index) => index % 3 === 0);
+  assert.equal(new Set(ruled).size, 1, `kreska przy linijce – jedno x: ${[...new Set(ruled)]}`);
+  const ruledY = strokes[2].points.filter((_, index) => index % 3 === 1);
+  assert.ok(Math.max(...ruledY) - Math.min(...ruledY) > 300, 'i biegnie w pionie');
+  assert.ok(strokes[0].points.at(-3) < strokes[1].points[0], 'dwa kawałki przeciętej kreski z przerwą między nimi');
+}, { device: IPAD });
+
+test('rysunek 1.12.1 na telefonie (bez rysika): palec przesuwa linijkę i rysuje prosto przy jej krawędzi, zaznacza i przesuwa kreskę; pasek narzędzi mieści się', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const box = await editor.locator('[data-testid=drawing-canvas]').boundingBox();
+  const at = (x, y) => [(x - box.x) / box.width, (y - box.y) / box.height];
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  for (const name of ['eraser', 'select', 'pen']) {
+    await editor.locator(`[data-testid=drawing-tool-${name}]`).click();
+    if (name === 'eraser') await editor.locator('[data-testid=drawing-eraser-pixel]').click();
+    assert.equal(await overflowX(page), 0, `pasek narzędzi (${name}) bez przewijania w bok`);
+    const toolbar = await editor.locator('.drawing__toolbar').boundingBox();
+    assert.ok(toolbar.x >= 0 && toolbar.x + toolbar.width <= 390, `pasek w szerokości ekranu (${name})`);
+    if (name === 'pen') assert.ok(toolbar.height < 110, `pióro: pasek w dwóch wierszach (${toolbar.height} px)`);
+    // Pasek o inną liczbę wierszy nie zmienia płótna – strona nie skacze przy zmianie narzędzia.
+    assert.deepEqual(await editor.locator('[data-testid=drawing-canvas]').boundingBox(), box, `płótno bez zmian (${name})`);
+  }
+
+  // Linijka: palec na linijce przesuwa ją o 60 px w górę; kreska palcem tuż pod nią – wzdłuż dolnej krawędzi.
+  await editor.locator('[data-testid=drawing-ruler]').click();
+  await drawStroke(page, segment(at(center.x - 60, center.y), at(center.x - 60, center.y - 60), 6), { type: 'touch', id: 5 });
+  await expectText(editor.locator('[data-testid=drawing-ruler-angle]'), 'Linijka 0°');
+  const wobble = Array.from({ length: 11 }, (_, index) => [...at(center.x - 100 + index * 20, center.y - 60 + 32 + 10 + (index % 2) * 6), 0.5]);
+  await drawStroke(page, wobble, { type: 'touch', id: 6 });
+  await waitUntil(() => darkAt(page, ...at(center.x, center.y - 28)), 'Kreska palcem wzdłuż krawędzi linijki');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-linijka-telefon.png') });
+  await editor.locator('[data-testid=drawing-ruler]').click();
+
+  // Zaznaczanie palcem: prostokąt wokół kreski, przesunięcie w dół o 40 px.
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await drawStroke(page, segment(at(center.x - 130, center.y - 50), at(center.x + 130, center.y - 10), 6), { type: 'touch', id: 7 });
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), '1 kreska');
+  await drawStroke(page, segment(at(center.x, center.y - 28), at(center.x, center.y + 12), 8), { type: 'touch', id: 8 });
+  await waitUntil(async () => (await darkAt(page, ...at(center.x, center.y + 12))) && !(await darkAt(page, ...at(center.x, center.y - 28))), 'Kreska przesunięta palcem');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-zaznaczenie-telefon.png') });
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const [stroke] = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing.strokes, ids.statements);
+  assert.equal(new Set(stroke.points.filter((_, index) => index % 3 === 1)).size, 1, 'kreska przy linijce – prosta (jedno y)');
+});
+
 test('rysunek na zdjęciu: „Rysuj na zdjęciu” – zdjęcie pod kreskami, sygnatura i miejsce bez zmian; bez rysika rysuje palec; nowy pusty rysunek nie trafia do notatki; kopia zapasowa przenosi kreski', async ({ open, browser, track }) => {
   const page = await open();
   const { ids } = await openNoteWithImages(page, { html: '<p>Schemat:</p><p>[[Schemat]]</p>', labels: ['Schemat'] });

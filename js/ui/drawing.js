@@ -1,20 +1,27 @@
 // Edytor rysunku (od 1.12): okno na cały ekran z płótnem, pióro z naciskiem rysika, zakreślacz,
-// gumka całych kresek, kolory, grubości, cofnij i ponów, tło gładkie / w linie / w kratkę,
-// rysowanie na zdjęciu, powiększanie i przesuwanie.
+// gumka całych kresek albo fragmentów (od 1.12.1), kolory, grubości, cofnij i ponów, tło gładkie /
+// w linie / w kratkę, rysowanie na zdjęciu, powiększanie i przesuwanie. Od 1.12.1 także
+// zaznaczanie prostokątem (przesuwanie, powielanie, usuwanie) i linijka z kątem.
 //
 // Rysik i palec: gdy aplikacja raz zobaczy rysik (pointerType 'pen'), rysuje tylko rysik, a palec
 // przesuwa stronę (dłoń oparta o ekran nie zostawia śladów); bez rysika (iPhone) rysuje palec.
 // Dwa palce zawsze powiększają i przesuwają. Myszą rysuje się jak piórem; kółko przewija,
 // Ctrl + kółko powiększa. Gumka na końcu pióra (Windows) ściera bez zmiany narzędzia.
+// Linijkę przesuwa palec albo mysz, obracają ją dwa palce albo uchwyt; kreska zaczęta przy
+// krawędzi linijki biegnie prosto wzdłuż niej.
 //
 // Rysowanie: dwie warstwy płótna – zapisane kreski (rysowane od nowa po zmianie widoku albo
-// cofnięciu) i bieżąca kreska nad nimi. Wynik to obraz notatki: PNG strony (JPEG, gdy pod spodem
+// cofnięciu) i warstwa bieżąca nad nimi (kreska w trakcie, przesuwane zaznaczenie, prostokąt
+// zaznaczania, linijka, kółko gumki). Wynik to obraz notatki: PNG strony (JPEG, gdy pod spodem
 // jest zdjęcie) i kreski do późniejszej edycji (core/drawing.js).
 
 import {
-  DrawingHistory, HIGHLIGHTER_ALPHA, HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, INK_COLORS, PAPERS, PAPER_LABELS, PAPER_STEP,
-  SENSITIVITY_LABELS, addPoint, cleanToolSettings, defaultToolSettings, emptyDrawing, penWidth, smoothPoint, strokesAt
+  DrawingHistory, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA, HIGHLIGHTER_COLORS,
+  HIGHLIGHTER_WIDTHS, INK_COLORS, PAPERS, PAPER_LABELS, PAPER_STEP, SENSITIVITY_LABELS, addPoint, cleanToolSettings,
+  defaultToolSettings, emptyDrawing, eraseAt, penWidth, rulerDegrees, rulerOffset, rulerPoint, selectionBounds, smoothPoint,
+  snapRulerAngle, strokesAt, strokesInRect, translateStroke
 } from '../core/drawing.js';
+import { plural } from '../core/text.js';
 import { confirmDialog, mountDialog, showError } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
@@ -28,6 +35,14 @@ const MAX_ZOOM = 6;
 const ERASER_RADIUS = 14;
 /** Margines wokół strony na ekranie (px). */
 const STAGE_MARGIN = 14;
+/** Linijka (px ekranu): szerokość, jak blisko krawędzi kreska przyskakuje, uchwyty obrotu. */
+const RULER_WIDTH = 64;
+const RULER_SNAP = 26;
+const RULER_HANDLE_RADIUS = 17;
+/** Zaznaczenie: margines ramki (px ekranu), dotknięcie bez przesunięcia (px), przesunięcie kopii (jednostki strony). */
+const SELECTION_PAD = 8;
+const TAP_SLOP = 5;
+const DUPLICATE_OFFSET = PAPER_STEP / 2;
 /** Zakres suwaków grubości pióra (jednostki rysunku). */
 const WIDTH_RANGE = { min: 0.5, max: 20 };
 
@@ -163,11 +178,13 @@ export function paintStroke(ctx, stroke) {
   ctx.restore();
 }
 
-/** Cała strona: tło (albo zdjęcie) i kreski. */
-export function paintDrawing(ctx, drawing, picture = null) {
+/** Cała strona: tło (albo zdjęcie) i kreski; `skip` – kreski pominięte (przesuwane zaznaczenie). */
+export function paintDrawing(ctx, drawing, picture = null, skip = null) {
   paintPaper(ctx, drawing);
   if (picture) ctx.drawImage(picture, 0, 0, drawing.width, drawing.height);
-  for (const stroke of drawing.strokes) paintStroke(ctx, stroke);
+  for (const stroke of drawing.strokes) {
+    if (!skip?.has(stroke)) paintStroke(ctx, stroke);
+  }
 }
 
 /** Obraz rysunku do notatki: PNG strony albo JPEG, gdy pod kreskami jest zdjęcie. */
@@ -213,29 +230,49 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       : emptyDrawing({ photo });
     const history = new DrawingHistory(drawing.strokes);
     const tools = loadTools();
+    /** Narzędzie: 'pen', 'highlighter', 'eraser' albo 'select' (zaznaczanie prostokątem). */
     let tool = 'pen';
     let picture = null;
     let penSeen = penSeenBefore();
     let changed = false;
     let dialog;
     let result = null;
+    /** Linijka { x, y, angle } w jednostkach strony albo null (schowana). Nie jest częścią rysunku. */
+    let ruler = null;
+    /** Zaznaczone kreski (te same obiekty co w rysunku). */
+    let selection = new Set();
+    /** Kółko gumki pod myszą albo zawieszonym rysikiem (jednostki strony) albo null. */
+    let hover = null;
 
-    // Widok: skala (px ekranu na jednostkę rysunku) i przesunięcie strony; zoom – względem „cała strona”.
-    const view = { zoom: 1, scale: 1, x: 0, y: 0, width: 0, height: 0, dpr: 1 };
+    // Widok: skala (px ekranu na jednostkę rysunku) i przesunięcie strony; zoom – względem „cała strona”;
+    // top – miejsce u góry płótna zajęte przez pasek narzędzi (pasek leży nad płótnem).
+    const view = { zoom: 1, scale: 1, x: 0, y: 0, width: 0, height: 0, top: STAGE_MARGIN, dpr: 1 };
     const stage = h('div', { class: 'drawing__stage', dataset: { testid: 'drawing-stage' } });
     const base = h('canvas', { class: 'drawing__canvas', 'aria-hidden': 'true' });
     const live = h('canvas', { class: 'drawing__canvas drawing__canvas--live', role: 'img', 'aria-label': `Płótno rysunku: ${title}`, dataset: { testid: 'drawing-canvas' } });
-    stage.append(base, live);
+    const selectionCount = h('span', { class: 'drawing__selection-count', dataset: { testid: 'drawing-selection-count' } });
+    const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
+      selectionCount,
+      h('button', {
+        type: 'button', class: 'drawing__selection-button', dataset: { testid: 'drawing-selection-duplicate' },
+        onClick: () => duplicateSelection()
+      }, icon('copy', { size: 18 }), 'Powiel'),
+      h('button', {
+        type: 'button', class: 'drawing__selection-button drawing__selection-button--danger', dataset: { testid: 'drawing-selection-delete' },
+        onClick: () => deleteSelection()
+      }, icon('trash', { size: 18 }), 'Usuń'));
+    stage.append(base, live, selectionBar);
 
-    const fitScale = () => Math.min((view.width - STAGE_MARGIN * 2) / drawing.width, (view.height - STAGE_MARGIN * 2) / drawing.height);
-    /** Strona mniejsza niż ekran – na środku; większa – nie ucieka poza krawędź. */
+    const fitScale = () => Math.min((view.width - STAGE_MARGIN * 2) / drawing.width, (view.height - view.top - STAGE_MARGIN) / drawing.height);
+    /** Strona mniejsza niż ekran – na środku (pod paskiem narzędzi); większa – nie ucieka poza krawędź. */
     const clampView = () => {
       const pageWidth = drawing.width * view.scale;
       const pageHeight = drawing.height * view.scale;
+      const room = view.height - view.top - STAGE_MARGIN;
       view.x = pageWidth <= view.width - STAGE_MARGIN * 2 ? (view.width - pageWidth) / 2
         : Math.min(STAGE_MARGIN, Math.max(view.width - STAGE_MARGIN - pageWidth, view.x));
-      view.y = pageHeight <= view.height - STAGE_MARGIN * 2 ? (view.height - pageHeight) / 2
-        : Math.min(STAGE_MARGIN, Math.max(view.height - STAGE_MARGIN - pageHeight, view.y));
+      view.y = pageHeight <= room ? view.top + (room - pageHeight) / 2
+        : Math.min(view.top, Math.max(view.height - STAGE_MARGIN - pageHeight, view.y));
     };
     const setZoom = (zoom, anchorX = view.width / 2, anchorY = view.height / 2) => {
       const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
@@ -249,16 +286,24 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       zoomButton.textContent = `${Math.round(next * 100)}%`;
       requestRender();
     };
+    /** Punkt zdarzenia (albo { clientX, clientY }) w jednostkach strony. */
     const toDrawing = (event) => {
       const box = live.getBoundingClientRect();
       return { x: (event.clientX - box.left - view.x) / view.scale, y: (event.clientY - box.top - view.y) / view.scale };
     };
+    const toScreen = (point) => ({ x: view.x + point.x * view.scale, y: view.y + point.y * view.scale });
 
     const prepare = (ctx) => {
       ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
       ctx.clearRect(0, 0, view.width, view.height);
       ctx.setTransform(view.dpr * view.scale, 0, 0, view.dpr * view.scale, view.dpr * view.x, view.dpr * view.y);
     };
+    const clipPage = (ctx) => {
+      ctx.beginPath();
+      ctx.rect(0, 0, drawing.width, drawing.height);
+      ctx.clip();
+    };
+    let active = null;
     const renderBase = () => {
       const ctx = base.getContext('2d');
       prepare(ctx);
@@ -269,25 +314,159 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       ctx.fillRect(0, 0, drawing.width, drawing.height);
       ctx.restore();
       ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, drawing.width, drawing.height);
-      ctx.clip();
-      paintDrawing(ctx, drawing, picture);
+      clipPage(ctx);
+      // Przesuwane zaznaczenie rysuje warstwa bieżąca.
+      paintDrawing(ctx, drawing, picture, active?.kind === 'move' ? selection : null);
       ctx.restore();
     };
-    let active = null;
+
+    // ---- linijka (na ekranie stałej szerokości, położenie i kąt w jednostkach strony)
+    const rulerHandles = () => {
+      const distance = Math.min(170, Math.max(70, Math.min(view.width, view.height) * 0.3)) / view.scale;
+      return [rulerPoint(ruler, -distance, 0), rulerPoint(ruler, distance, 0)];
+    };
+    /** Co jest pod punktem strony: uchwyt obrotu, linijka albo nic. */
+    const rulerHit = (point) => {
+      if (!ruler) return null;
+      if (rulerHandles().some((handle) => Math.hypot(handle.x - point.x, handle.y - point.y) <= (RULER_HANDLE_RADIUS + 6) / view.scale)) return 'handle';
+      return Math.abs(rulerOffset(ruler, point.x, point.y).across) <= RULER_WIDTH / 2 / view.scale ? 'body' : null;
+    };
+    const paintRuler = (ctx) => {
+      const center = toScreen(ruler);
+      const length = Math.hypot(view.width, view.height) * 2;
+      const half = RULER_WIDTH / 2;
+      ctx.save();
+      ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+      ctx.translate(center.x, center.y);
+      ctx.rotate(ruler.angle);
+      ctx.fillStyle = 'rgba(242, 242, 247, 0.86)';
+      ctx.strokeStyle = 'rgba(60, 60, 67, 0.55)';
+      ctx.lineWidth = 1;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.18)';
+      ctx.shadowBlur = 6;
+      ctx.fillRect(-length / 2, -half, length, RULER_WIDTH);
+      ctx.shadowColor = 'transparent';
+      ctx.beginPath();
+      ctx.moveTo(-length / 2, -half + 0.5);
+      ctx.lineTo(length / 2, -half + 0.5);
+      ctx.moveTo(-length / 2, half - 0.5);
+      ctx.lineTo(length / 2, half - 0.5);
+      ctx.stroke();
+      // Podziałka co ćwierć kratki (dłuższa kreska co kratkę), od środka linijki.
+      const step = (PAPER_STEP / 4) * view.scale;
+      const every = step < 4 ? 4 : 1;
+      ctx.beginPath();
+      for (let index = -Math.ceil(length / 2 / step); index * step <= length / 2; index += every) {
+        const x = index * step;
+        const tick = index % 4 === 0 ? 14 : 7;
+        ctx.moveTo(x, -half);
+        ctx.lineTo(x, -half + tick);
+        ctx.moveTo(x, half);
+        ctx.lineTo(x, half - tick);
+      }
+      ctx.stroke();
+      // Kąt na środku linijki – zawsze czytelny (tekst nie leży do góry nogami).
+      ctx.save();
+      const flip = Math.cos(ruler.angle) < -1e-9 || (Math.abs(Math.cos(ruler.angle)) < 1e-9 && Math.sin(ruler.angle) > 0);
+      if (flip) ctx.rotate(Math.PI);
+      ctx.fillStyle = 'rgba(29, 29, 31, 0.9)';
+      ctx.font = '600 15px -apple-system, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${rulerDegrees(ruler.angle)}°`, 0, 0);
+      ctx.restore();
+      // Uchwyty obrotu.
+      const distance = Math.min(170, Math.max(70, Math.min(view.width, view.height) * 0.3));
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(side * distance, 0, RULER_HANDLE_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(60, 60, 67, 0.45)';
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(side * distance, 0, 8, -Math.PI * 0.85, Math.PI * 0.35);
+        ctx.strokeStyle = 'rgba(29, 29, 31, 0.85)';
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+        const end = { x: side * distance + Math.cos(Math.PI * 0.35) * 8, y: Math.sin(Math.PI * 0.35) * 8 };
+        ctx.beginPath();
+        ctx.moveTo(end.x - 4, end.y - 1);
+        ctx.lineTo(end.x, end.y);
+        ctx.lineTo(end.x + 1, end.y - 4);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+      ctx.restore();
+    };
+
+    const eraserRadius = () => (tools.eraserMode === 'pixel' ? ERASER_SIZES[tools.eraserSize] / 2 : ERASER_RADIUS) / view.scale;
     const renderLive = () => {
       const ctx = live.getContext('2d');
       prepare(ctx);
-      if (active?.stroke) {
+      ctx.save();
+      clipPage(ctx);
+      if (active?.kind === 'stroke') paintStroke(ctx, active.stroke);
+      if (active?.kind === 'move') {
+        ctx.translate(active.dx, active.dy);
+        for (const stroke of selection) paintStroke(ctx, stroke);
+      }
+      ctx.restore();
+      const bounds = selectionBounds([...selection]);
+      if (bounds) {
+        const pad = SELECTION_PAD / view.scale;
+        const [dx, dy] = active?.kind === 'move' ? [active.dx, active.dy] : [0, 0];
         ctx.save();
-        ctx.beginPath();
-        ctx.rect(0, 0, drawing.width, drawing.height);
-        ctx.clip();
-        paintStroke(ctx, active.stroke);
+        ctx.setLineDash([6 / view.scale, 4 / view.scale]);
+        ctx.lineWidth = 1.5 / view.scale;
+        ctx.strokeStyle = '#0058be';
+        ctx.fillStyle = 'rgba(0, 88, 190, 0.06)';
+        ctx.fillRect(bounds.minX - pad + dx, bounds.minY - pad + dy, bounds.maxX - bounds.minX + pad * 2, bounds.maxY - bounds.minY + pad * 2);
+        ctx.strokeRect(bounds.minX - pad + dx, bounds.minY - pad + dy, bounds.maxX - bounds.minX + pad * 2, bounds.maxY - bounds.minY + pad * 2);
         ctx.restore();
       }
+      if (active?.kind === 'marquee') {
+        const { x0, y0, x1, y1 } = active.rect;
+        ctx.save();
+        ctx.setLineDash([5 / view.scale, 4 / view.scale]);
+        ctx.lineWidth = 1.2 / view.scale;
+        ctx.strokeStyle = '#0058be';
+        ctx.fillStyle = 'rgba(0, 88, 190, 0.08)';
+        ctx.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+        ctx.strokeRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+        ctx.restore();
+      }
+      if (ruler) paintRuler(ctx);
+      const cursor = active?.kind === 'erase' ? active.last : (tool === 'eraser' ? hover : null);
+      if (cursor) {
+        ctx.save();
+        ctx.lineWidth = 1.2 / view.scale;
+        ctx.strokeStyle = 'rgba(29, 29, 31, 0.7)';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.beginPath();
+        ctx.arc(cursor.x, cursor.y, eraserRadius(), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+      placeSelectionBar(bounds);
     };
+    /** Polecenia zaznaczenia nad ramką (albo pod nią, gdy u góry brakuje miejsca). */
+    function placeSelectionBar(bounds) {
+      const show = Boolean(bounds) && active?.kind !== 'move' && active?.kind !== 'marquee';
+      selectionBar.hidden = !show;
+      if (!show) return;
+      selectionCount.textContent = plural(selection.size, 'kreska', 'kreski', 'kresek');
+      const top = toScreen({ x: 0, y: bounds.minY }).y - SELECTION_PAD;
+      const bottom = toScreen({ x: 0, y: bounds.maxY }).y + SELECTION_PAD;
+      const middle = toScreen({ x: (bounds.minX + bounds.maxX) / 2, y: 0 }).x;
+      const width = selectionBar.offsetWidth;
+      const height = selectionBar.offsetHeight;
+      const left = Math.min(Math.max(8, middle - width / 2), Math.max(8, view.width - width - 8));
+      const above = top - height - 8;
+      selectionBar.style.left = `${left}px`;
+      selectionBar.style.top = `${above >= 8 ? above : Math.min(bottom + 8, view.height - height - 8)}px`;
+    }
     let frame = 0;
     function requestRender() {
       if (frame) return;
@@ -297,12 +476,24 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         renderLive();
       });
     }
+    let liveFrame = 0;
+    /** Sama warstwa bieżąca (linijka, prostokąt zaznaczania, przesuwane kreski) – w następnej klatce. */
+    function requestLive() {
+      if (liveFrame || frame) return;
+      liveFrame = requestAnimationFrame(() => {
+        liveFrame = 0;
+        renderLive();
+      });
+    }
     const resize = () => {
       const box = stage.getBoundingClientRect();
       if (box.width === 0 || box.height === 0) return;
       const keepFit = view.width === 0;
       view.width = box.width;
       view.height = box.height;
+      // Miejsce pod paskiem narzędzi – mierzone przy otwarciu, obrocie ekranu i „100%”; zmiana
+      // narzędzia (pasek o inny wiersz wyższy na telefonie) nie przesuwa strony.
+      view.top = Math.max(STAGE_MARGIN, topBar.getBoundingClientRect().bottom - box.top + 8);
       view.dpr = Math.min(window.devicePixelRatio || 1, 3);
       for (const canvas of [base, live]) {
         canvas.width = Math.round(box.width * view.dpr);
@@ -326,20 +517,46 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       dataset: { tool: id, testid: `drawing-tool-${id}` },
       onClick: () => {
         // Drugie dotknięcie aktywnego pióra albo zakreślacza – ustawienia.
-        if (tool === id && id !== 'eraser') {
+        if (tool === id && (id === 'pen' || id === 'highlighter')) {
           toggleSettings();
           return;
         }
-        tool = id;
-        closeSettings();
-        updateToolbar();
+        setTool(id);
       }
     }, icon(iconName, { size: 24 }));
+    function setTool(id) {
+      if (id !== 'select') clearSelection();
+      tool = id;
+      hover = null;
+      closeSettings();
+      updateToolbar();
+      requestLive();
+    }
     const penButton = toolButton('pen', 'Pióro', 'pen');
     const highlighterButton = toolButton('highlighter', 'Zakreślacz', 'highlighter');
-    const eraserButton = toolButton('eraser', 'Gumka – ściera całe kreski', 'eraser');
+    const eraserButton = toolButton('eraser', 'Gumka', 'eraser');
+    const selectButton = toolButton('select', 'Zaznaczanie – prostokąt albo dotknięcie kreski', 'marquee');
+    const rulerButton = h('button', {
+      type: 'button', class: 'drawing__tool', 'aria-label': 'Linijka', title: 'Linijka', 'aria-pressed': 'false', dataset: { testid: 'drawing-ruler' },
+      onClick: () => toggleRuler()
+    }, icon('ruler', { size: 24 }));
     const swatches = h('div', { class: 'drawing__group drawing__swatches', role: 'group', 'aria-label': 'Kolor' });
     const widths = h('div', { class: 'drawing__group drawing__widths', role: 'group', 'aria-label': 'Grubość' });
+    const eraserModes = h('div', { class: 'drawing__group drawing__modes', role: 'radiogroup', 'aria-label': 'Gumka' },
+      ERASER_MODES.map((mode) => h('button', {
+        type: 'button', class: 'drawing__mode', role: 'radio', dataset: { mode, testid: `drawing-eraser-${mode}` },
+        onClick: () => { tools.eraserMode = mode; saveTools(tools); updateToolbar(); requestLive(); }
+      }, ERASER_MODE_LABELS[mode])));
+    const eraserSizes = h('div', { class: 'drawing__group drawing__widths', role: 'radiogroup', 'aria-label': 'Wielkość gumki' },
+      ERASER_SIZES.map((size, index) => h('button', {
+        type: 'button', class: 'drawing__width drawing__width--eraser', role: 'radio', 'aria-label': `Gumka: ${ERASER_SIZE_LABELS[index].toLowerCase()}`,
+        title: ERASER_SIZE_LABELS[index], dataset: { size: String(index), testid: `drawing-eraser-size-${index}` },
+        onClick: () => { tools.eraserSize = index; saveTools(tools); updateToolbar(); requestLive(); }
+      }, h('span', { style: { width: `${Math.round(6 + index * 4)}px`, height: `${Math.round(6 + index * 4)}px` } }))));
+    // Zaznacz wszystko – na iPadzie bez klawiatury nie ma Ctrl+A.
+    const selectGroup = h('div', { class: 'drawing__group' }, h('button', {
+      type: 'button', class: 'drawing__chip', dataset: { testid: 'drawing-select-all' }, onClick: () => selectAll()
+    }, 'Zaznacz wszystko'));
     const undoButton = h('button', {
       type: 'button', class: 'drawing__tool', 'aria-label': 'Cofnij', title: 'Cofnij (Ctrl+Z)', dataset: { testid: 'drawing-undo' },
       onClick: () => { if (history.undo()) afterHistory(); }
@@ -359,9 +576,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     });
     // Grupy narzędzi zawijają się w całości (na telefonie – dwa wiersze).
     const toolbar = h('div', { class: 'drawing__toolbar', role: 'toolbar', 'aria-label': 'Narzędzia rysunku' },
-      h('div', { class: 'drawing__group' }, penButton, highlighterButton, eraserButton),
-      swatches, widths,
-      h('div', { class: 'drawing__group' }, undoButton, redoButton, paperButton));
+      h('div', { class: 'drawing__group' }, penButton, highlighterButton, eraserButton, selectButton),
+      swatches, widths, eraserModes, eraserSizes, selectGroup,
+      h('div', { class: 'drawing__group' }, rulerButton, undoButton, redoButton, paperButton));
 
     const zoomButton = h('button', {
       type: 'button', class: 'drawing__pill', title: 'Cała strona', dataset: { testid: 'drawing-zoom' },
@@ -369,12 +586,14 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     }, '100%');
     const penPill = h('span', { class: 'drawing__pill drawing__pill--info', hidden: !penSeen, dataset: { testid: 'drawing-pen-only' } },
       icon('pen', { size: 14 }), 'Rysuje tylko rysik · palec przesuwa');
-    const status = h('div', { class: 'drawing__status' }, penPill, zoomButton);
+    const rulerPill = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, dataset: { testid: 'drawing-ruler-angle' } });
+    const status = h('div', { class: 'drawing__status' }, penPill, rulerPill, zoomButton);
 
     function updateToolbar() {
-      for (const button of [penButton, highlighterButton, eraserButton]) {
+      for (const button of [penButton, highlighterButton, eraserButton, selectButton]) {
         button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
       }
+      const inking = tool === 'pen' || tool === 'highlighter';
       const highlighter = tool === 'highlighter';
       const palette = highlighter ? HIGHLIGHTER_COLORS : INK_COLORS;
       const chosen = highlighter ? tools.highlighterColor : tools.penColor;
@@ -383,15 +602,12 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         'aria-pressed': String(color.id === chosen), dataset: { testid: `drawing-color-${color.id}` },
         onClick: () => {
           if (highlighter) tools.highlighterColor = color.id;
-          else {
-            tools.penColor = color.id;
-            if (tool === 'eraser') tool = 'pen';
-          }
+          else tools.penColor = color.id;
           saveTools(tools);
           updateToolbar();
         }
       })));
-      swatches.hidden = tool === 'eraser';
+      swatches.hidden = !inking;
       // Pasek pod ikoną zakreślacza w kolorze wybranego zakreślacza.
       highlighterButton.style.setProperty('--highlighter-ink', highlighterHex(tools.highlighterColor));
       const sizes = highlighter ? HIGHLIGHTER_WIDTHS.map((width) => width / 3) : tools.penWidths.map((width) => (width.min + width.max) / 1.4);
@@ -407,7 +623,16 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           refreshSettings?.();
         }
       }, h('span', { style: { width: `${Math.max(3, Math.min(14, size))}px`, height: `${Math.max(3, Math.min(14, size))}px` } }))));
-      widths.hidden = tool === 'eraser';
+      widths.hidden = !inking;
+      eraserModes.hidden = tool !== 'eraser';
+      selectGroup.hidden = tool !== 'select';
+      for (const button of eraserModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.eraserMode));
+      eraserSizes.hidden = tool !== 'eraser' || tools.eraserMode !== 'pixel';
+      for (const button of eraserSizes.children) button.setAttribute('aria-checked', String(Number(button.dataset.size) === tools.eraserSize));
+      eraserButton.setAttribute('aria-label', `Gumka – ${ERASER_MODE_LABELS[tools.eraserMode].toLowerCase()}`);
+      rulerButton.setAttribute('aria-pressed', String(Boolean(ruler)));
+      rulerPill.hidden = !ruler;
+      if (ruler) rulerPill.textContent = `Linijka ${rulerDegrees(ruler.angle)}°`;
       undoButton.disabled = !history.canUndo;
       redoButton.disabled = !history.canRedo;
       paperButton.textContent = `Tło: ${PAPER_LABELS[drawing.paper].toLowerCase()}`;
@@ -482,6 +707,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       refreshSettings = refresh;
       refresh();
     }
+    const topBar = h('div', { class: 'drawing__top' }, toolbar, settings);
     function toggleSettings() {
       settings.hidden = !settings.hidden;
       renderSettings();
@@ -493,77 +719,262 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
 
     function afterHistory() {
       changed = true;
+      // Po cofnięciu zaznaczone kreski mogło zastąpić co innego – zaznaczenie znika.
+      selection = new Set();
       updateToolbar();
       requestRender();
     }
 
-    // ---- wskaźniki: rysowanie, gumka, przesuwanie i powiększanie
-    const pointers = new Map();
+    // ---- linijka
+    function toggleRuler() {
+      if (ruler) {
+        ruler = null;
+      } else {
+        // Na środku widocznej części strony, poziomo.
+        const center = { x: (view.width / 2 - view.x) / view.scale, y: (view.height / 2 - view.y) / view.scale };
+        ruler = { x: Math.min(drawing.width, Math.max(0, center.x)), y: Math.min(drawing.height, Math.max(0, center.y)), angle: 0 };
+      }
+      updateToolbar();
+      requestLive();
+    }
+    const setRuler = (next) => {
+      ruler = { x: next.x, y: next.y, angle: snapRulerAngle(next.angle) };
+      rulerPill.textContent = `Linijka ${rulerDegrees(ruler.angle)}°`;
+      requestLive();
+    };
+
+    // ---- zaznaczenie
+    function clearSelection() {
+      if (selection.size === 0) return;
+      selection = new Set();
+      requestLive();
+    }
+    const selectionHit = (point) => {
+      const bounds = selectionBounds([...selection]);
+      const pad = SELECTION_PAD / view.scale;
+      return Boolean(bounds) && point.x >= bounds.minX - pad && point.x <= bounds.maxX + pad && point.y >= bounds.minY - pad && point.y <= bounds.maxY + pad;
+    };
+    /** Zastępuje zaznaczone kreski nowymi (przesunięte) albo dokłada kopie – jeden krok cofania. */
+    function moveSelection(dx, dy, { copy = false } = {}) {
+      const moved = new Set();
+      history.begin();
+      if (copy) {
+        for (const stroke of drawing.strokes.filter((item) => selection.has(item))) {
+          const duplicate = translateStroke(stroke, dx, dy);
+          drawing.strokes.push(duplicate);
+          moved.add(duplicate);
+        }
+      } else {
+        drawing.strokes.forEach((stroke, index) => {
+          if (!selection.has(stroke)) return;
+          drawing.strokes[index] = translateStroke(stroke, dx, dy);
+          moved.add(drawing.strokes[index]);
+        });
+      }
+      if (history.commit()) changed = true;
+      selection = moved;
+      updateToolbar();
+      requestRender();
+    }
+    const duplicateSelection = () => moveSelection(DUPLICATE_OFFSET, DUPLICATE_OFFSET, { copy: true });
+    function deleteSelection() {
+      if (selection.size === 0) return;
+      history.begin();
+      for (let index = drawing.strokes.length - 1; index >= 0; index -= 1) {
+        if (selection.has(drawing.strokes[index])) drawing.strokes.splice(index, 1);
+      }
+      if (history.commit()) changed = true;
+      selection = new Set();
+      updateToolbar();
+      requestRender();
+    }
+    function selectAll() {
+      if (tool !== 'select') setTool('select');
+      selection = new Set(drawing.strokes);
+      requestLive();
+    }
+
+    // ---- wskaźniki: rysowanie, gumka, zaznaczanie, linijka, przesuwanie i powiększanie
+    // `active` – jedna czynność jednym wskaźnikiem (kreska, gumka, prostokąt zaznaczania,
+    // przesuwanie zaznaczenia, linijka); `touches` i `gesture` – palce przesuwające stronę albo linijkę.
+    const touches = new Map();
     let gesture = null;
+    const local = (event) => ({ clientX: event.clientX, clientY: event.clientY });
 
     const usesEraser = (event) => tool === 'eraser' || (event.pointerType === 'pen' && (event.button === 5 || (event.buttons & 32) === 32));
-    const startStroke = (event) => {
-      const point = toDrawing(event);
-      if (usesEraser(event)) {
-        active = { id: event.pointerId, erase: true };
-        erase(point);
-        return;
-      }
-      const highlighter = tool === 'highlighter';
-      const stroke = { tool: highlighter ? 'highlighter' : 'pen', color: highlighter ? highlighterHex(tools.highlighterColor) : inkHex(tools.penColor), points: [] };
-      active = { id: event.pointerId, stroke, last: null, pressure: event.pointerType === 'pen' };
-      extendStroke(event);
-    };
     const pointWidth = (event) => {
       if (active.stroke.tool === 'highlighter') return HIGHLIGHTER_WIDTHS[tools.highlighterWidth];
       return penWidth(active.pressure ? event.pressure : 0.5, tools.penWidths[tools.penWidth], active.pressure ? tools.sensitivity : 'off');
     };
+    /** Punkt kreski: przy linijce – rzut na prostą wzdłuż jej krawędzi. */
+    const strokePoint = (event) => {
+      const point = toDrawing(event);
+      if (!active.edge) return point;
+      return rulerPoint(active.edge.ruler, rulerOffset(active.edge.ruler, point.x, point.y).along, active.edge.across);
+    };
+    function startStroke(event) {
+      const highlighter = tool === 'highlighter';
+      const stroke = { tool: highlighter ? 'highlighter' : 'pen', color: highlighter ? highlighterHex(tools.highlighterColor) : inkHex(tools.penColor), points: [] };
+      active = { kind: 'stroke', id: event.pointerId, touch: event.pointerType === 'touch', stroke, last: null, pressure: event.pointerType === 'pen', edge: null };
+      if (ruler) {
+        // Kreska zaczęta na linijce albo przy niej biegnie wzdłuż bliższej krawędzi.
+        const point = toDrawing(event);
+        const { across } = rulerOffset(ruler, point.x, point.y);
+        const half = RULER_WIDTH / 2 / view.scale;
+        if (Math.abs(across) <= half + RULER_SNAP / view.scale) active.edge = { ruler: { ...ruler }, across: (across < 0 ? -1 : 1) * half };
+      }
+      extendStroke(event);
+    }
     function extendStroke(event) {
       const events = event.getCoalescedEvents?.() ?? [];
       for (const item of events.length > 0 ? events : [event]) {
-        const raw = { ...toDrawing(item), w: pointWidth(item) };
-        const point = smoothPoint(active.last, raw, active.stroke.tool === 'pen' ? tools.smoothing : 0);
+        const raw = { ...strokePoint(item), w: pointWidth(item) };
+        const point = smoothPoint(active.last, raw, active.stroke.tool === 'pen' && !active.edge ? tools.smoothing : 0);
         addPoint(active.stroke, point);
         active.last = point;
       }
       renderLive();
     }
-    function erase(point) {
-      const hits = strokesAt(drawing.strokes, point.x, point.y, ERASER_RADIUS / view.scale);
-      if (hits.length > 0 && history.remove(hits)) afterHistory();
+    function startErase(event) {
+      const point = toDrawing(event);
+      active = { kind: 'erase', id: event.pointerId, touch: event.pointerType === 'touch', mode: tools.eraserMode, last: point };
+      history.begin();
+      eraseTo(point);
     }
-    const finishStroke = (cancelled = false) => {
-      if (!active) return;
-      if (active.erase) history.closeStep();
-      else if (!cancelled && active.stroke.points.length >= 3) {
-        history.add(active.stroke);
-        changed = true;
+    /** Gumka od ostatniego punktu do bieżącego – gęsto, żeby szybki ruch nie zostawiał przerw. */
+    function eraseTo(point) {
+      const radius = eraserRadius();
+      const from = active.last;
+      const steps = Math.max(1, Math.ceil(Math.hypot(point.x - from.x, point.y - from.y) / (radius / 2)));
+      let erased = false;
+      for (let step = 1; step <= steps; step += 1) {
+        const x = from.x + ((point.x - from.x) * step) / steps;
+        const y = from.y + ((point.y - from.y) * step) / steps;
+        if (active.mode === 'pixel') erased = eraseAt(drawing.strokes, x, y, radius) || erased;
+        else erased = history.remove(strokesAt(drawing.strokes, x, y, radius)) || erased;
       }
+      active.last = point;
+      if (erased) {
+        changed = true;
+        requestRender();
+      } else {
+        requestLive();
+      }
+    }
+    function startSelect(event) {
+      const point = toDrawing(event);
+      if (selectionHit(point)) {
+        active = { kind: 'move', id: event.pointerId, touch: event.pointerType === 'touch', start: point, dx: 0, dy: 0, client: local(event) };
+        requestRender();
+        return;
+      }
+      selection = new Set();
+      active = { kind: 'marquee', id: event.pointerId, touch: event.pointerType === 'touch', rect: { x0: point.x, y0: point.y, x1: point.x, y1: point.y }, client: local(event) };
+      requestLive();
+    }
+    function startRuler(event, kind) {
+      const point = toDrawing(event);
+      const grab = Math.atan2(point.y - ruler.y, point.x - ruler.x) - ruler.angle;
+      active = { kind, id: event.pointerId, touch: event.pointerType === 'touch', start: point, ruler: { ...ruler }, grab };
+    }
+    function moveActive(event) {
+      const point = toDrawing(event);
+      switch (active.kind) {
+        case 'stroke':
+          extendStroke(event);
+          break;
+        case 'erase':
+          eraseTo(point);
+          break;
+        case 'marquee':
+          active.rect.x1 = point.x;
+          active.rect.y1 = point.y;
+          requestLive();
+          break;
+        case 'move':
+          active.dx = point.x - active.start.x;
+          active.dy = point.y - active.start.y;
+          requestLive();
+          break;
+        case 'ruler-move':
+          setRuler({ x: active.ruler.x + point.x - active.start.x, y: active.ruler.y + point.y - active.start.y, angle: active.ruler.angle });
+          break;
+        case 'ruler-rotate':
+          setRuler({ ...active.ruler, angle: Math.atan2(point.y - active.ruler.y, point.x - active.ruler.x) - active.grab });
+          break;
+        default:
+          break;
+      }
+    }
+    function finishActive(cancelled = false) {
+      if (!active) return;
+      const done = active;
       active = null;
+      if (done.kind === 'stroke' && !cancelled && done.stroke.points.length >= 3) {
+        history.add(done.stroke);
+        changed = true;
+      } else if (done.kind === 'erase') {
+        history.commit();
+        // Rysikiem z gumką przy zaznaczaniu: starte kreski wypadają z zaznaczenia.
+        if (selection.size > 0) selection = new Set(drawing.strokes.filter((stroke) => selection.has(stroke)));
+      } else if (done.kind === 'marquee') {
+        const { x0, y0, x1, y1 } = done.rect;
+        if (Math.abs(x1 - x0) * view.scale < TAP_SLOP && Math.abs(y1 - y0) * view.scale < TAP_SLOP) {
+          // Dotknięcie kreski zaznacza ją (najwyższą w tym miejscu).
+          const [top] = strokesAt(drawing.strokes, x0, y0, SELECTION_PAD / view.scale);
+          selection = new Set(top === undefined ? [] : [drawing.strokes[top]]);
+        } else {
+          selection = new Set(strokesInRect(drawing.strokes, done.rect).map((index) => drawing.strokes[index]));
+        }
+      } else if (done.kind === 'move' && !cancelled && (done.dx !== 0 || done.dy !== 0)) {
+        moveSelection(done.dx, done.dy);
+      }
       // Palce, które zostały na ekranie, przesuwają dalej od miejsca, w którym są teraz.
-      if (gesture && pointers.size > 0) startGesture();
+      if (gesture && touches.size > 0) startGesture(gesture.kind);
       updateToolbar();
       requestRender();
-    };
+    }
 
-    const startGesture = () => {
-      const touches = [...pointers.values()];
-      const [a, b] = touches;
+    /** Palce: przesuwanie i powiększanie strony albo przesuwanie i obracanie linijki. */
+    function startGesture(kind) {
+      const fingers = [...touches.values()];
+      const [a, b] = fingers.map((touch) => toDrawing(touch));
+      const [sa, sb] = fingers;
       gesture = {
+        kind,
         startZoom: view.zoom, startX: view.x, startY: view.y,
-        center: b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : { x: a.x, y: a.y },
-        distance: b ? Math.hypot(a.x - b.x, a.y - b.y) : 0
+        center: sb ? { x: (sa.clientX + sb.clientX) / 2, y: (sa.clientY + sb.clientY) / 2 } : { x: sa.clientX, y: sa.clientY },
+        distance: sb ? Math.hypot(sa.clientX - sb.clientX, sa.clientY - sb.clientY) : 0,
+        ruler: ruler ? { ...ruler } : null,
+        point: b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : a,
+        turn: b ? Math.atan2(b.y - a.y, b.x - a.x) : null
       };
-    };
-    const moveGesture = () => {
-      const touches = [...pointers.values()];
-      const [a, b] = touches;
-      if (!a) return;
-      const center = b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : { x: a.x, y: a.y };
+    }
+    function moveGesture() {
+      const fingers = [...touches.values()];
+      if (fingers.length === 0) return;
+      if (gesture.kind === 'ruler') {
+        const [a, b] = fingers.map((touch) => toDrawing(touch));
+        const point = b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : a;
+        const start = gesture.ruler;
+        if (!b || gesture.turn === null) {
+          setRuler({ x: start.x + point.x - gesture.point.x, y: start.y + point.y - gesture.point.y, angle: start.angle });
+          return;
+        }
+        // Obrót wokół środka palców: linijka obraca się i przesuwa razem z nimi.
+        const angle = snapRulerAngle(start.angle + Math.atan2(b.y - a.y, b.x - a.x) - gesture.turn);
+        const turn = angle - start.angle;
+        const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
+        const [rx, ry] = [start.x - gesture.point.x, start.y - gesture.point.y];
+        setRuler({ x: point.x + rx * cos - ry * sin, y: point.y + rx * sin + ry * cos, angle });
+        return;
+      }
+      const [a, b] = fingers;
+      const center = b ? { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 } : { x: a.clientX, y: a.clientY };
       view.x = gesture.startX + center.x - gesture.center.x;
       view.y = gesture.startY + center.y - gesture.center.y;
       if (b && gesture.distance > 0) {
-        const zoom = gesture.startZoom * Math.hypot(a.x - b.x, a.y - b.y) / gesture.distance;
+        const zoom = gesture.startZoom * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / gesture.distance;
         // Powiększenie wokół środka palców.
         const box = live.getBoundingClientRect();
         setZoom(zoom, center.x - box.left, center.y - box.top);
@@ -571,8 +982,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       }
       clampView();
       requestRender();
-    };
-    const local = (event) => ({ x: event.clientX, y: event.clientY });
+    }
 
     live.addEventListener('pointerdown', (event) => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
@@ -583,19 +993,45 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         penPill.hidden = false;
         rememberPen();
       }
+      const point = toDrawing(event);
       if (event.pointerType === 'touch') {
-        pointers.set(event.pointerId, local(event));
-        // Rysik w użyciu – palec przesuwa; drugi palec – zawsze powiększanie (zaczęta kreska palcem przepada).
-        if (penSeen || pointers.size > 1) {
-          if (active && !active.erase && pointers.has(active.id)) finishStroke(true);
-          startGesture();
+        // Kolejny palec dołącza do trwającego gestu.
+        if (gesture) {
+          touches.set(event.pointerId, local(event));
+          startGesture(gesture.kind);
           return;
         }
-      } else if (event.pointerType === 'pen' && active && pointers.has(active.id)) {
-        // Rysik odbiera palcowi kreskę.
-        finishStroke(true);
-        pointers.clear();
-        gesture = null;
+        // Dłoń oparta o ekran w trakcie kreski rysikiem albo myszą – gest bez skutku do końca kreski.
+        if (active && !active.touch) {
+          touches.set(event.pointerId, local(event));
+          startGesture('page');
+          return;
+        }
+        // Drugi palec przy czynności palcem: przy linijce – obrót linijki, inaczej powiększanie
+        // (zaczęta kreska palcem przepada).
+        if (active?.touch) {
+          const first = active;
+          const kind = first.kind === 'ruler-move' ? 'ruler' : 'page';
+          finishActive(true);
+          if (first.client) touches.set(first.id, first.client);
+          touches.set(event.pointerId, local(event));
+          startGesture(kind);
+          return;
+        }
+        const hit = rulerHit(point);
+        if (hit === 'body') {
+          touches.set(event.pointerId, local(event));
+          startGesture('ruler');
+          return;
+        }
+        if (!hit && penSeen && !(tool === 'select' && selectionHit(point))) {
+          touches.set(event.pointerId, local(event));
+          startGesture('page');
+          return;
+        }
+      } else if (event.pointerType === 'pen' && active?.touch) {
+        // Rysik odbiera palcowi czynność.
+        finishActive(true);
       }
       if (active) return;
       try {
@@ -603,37 +1039,51 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       } catch {
         // przechwycenie nie jest konieczne
       }
-      startStroke(event);
+      const hit = rulerHit(point);
+      if (hit === 'handle') startRuler(event, 'ruler-rotate');
+      else if (hit === 'body' && event.pointerType !== 'pen') startRuler(event, 'ruler-move');
+      else if (usesEraser(event)) startErase(event);
+      else if (tool === 'select') startSelect(event);
+      else startStroke(event);
+      if (active?.touch) active.client = local(event);
     });
     live.addEventListener('pointermove', (event) => {
-      if (pointers.has(event.pointerId)) {
-        pointers.set(event.pointerId, local(event));
-        if (gesture) {
-          // Dłoń oparta o ekran w trakcie pisania rysikiem nie przesuwa strony.
-          if (!active) moveGesture();
-          return;
-        }
-      }
-      if (!active || active.id !== event.pointerId) return;
-      event.preventDefault();
-      if (active.erase) {
-        erase(toDrawing(event));
+      if (touches.has(event.pointerId)) {
+        touches.set(event.pointerId, local(event));
+        // Dłoń oparta o ekran w trakcie pisania rysikiem nie przesuwa strony.
+        if (gesture && !(active && !active.touch)) moveGesture();
         return;
       }
-      extendStroke(event);
+      if (!active || active.id !== event.pointerId) {
+        // Kółko gumki pod myszą albo zawieszonym nad ekranem rysikiem.
+        if (tool === 'eraser' && event.pointerType !== 'touch' && !active) {
+          hover = toDrawing(event);
+          requestLive();
+        }
+        return;
+      }
+      event.preventDefault();
+      if (active.touch) active.client = local(event);
+      moveActive(event);
     });
     const release = (event, cancelled) => {
-      if (pointers.delete(event.pointerId)) {
+      if (touches.delete(event.pointerId)) {
         if (gesture) {
-          if (pointers.size === 0) gesture = null;
-          else startGesture();
-          return;
+          if (touches.size === 0) gesture = null;
+          else startGesture(gesture.kind);
+          updateToolbar();
         }
+        return;
       }
-      if (active && active.id === event.pointerId) finishStroke(cancelled);
+      if (active && active.id === event.pointerId) finishActive(cancelled);
     };
     live.addEventListener('pointerup', (event) => release(event, false));
     live.addEventListener('pointercancel', (event) => release(event, true));
+    live.addEventListener('pointerleave', () => {
+      if (!hover) return;
+      hover = null;
+      requestLive();
+    });
     live.addEventListener('wheel', (event) => {
       event.preventDefault();
       if (event.ctrlKey || event.metaKey) {
@@ -676,33 +1126,46 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const doneButton = h('button', { type: 'button', class: 'button button--plain sheet__submit', dataset: { testid: 'drawing-done' }, onClick: () => close(true) }, 'Gotowe');
     const panel = h('div', { class: 'sheet__panel drawing', 'aria-label': `Rysunek: ${title}` },
       h('header', { class: 'sheet__header' }, cancelButton, h('h2', { class: 'sheet__title' }, title), doneButton),
-      h('div', { class: 'drawing__body' }, h('div', { class: 'drawing__top' }, toolbar, settings), stage, status));
+      h('div', { class: 'drawing__body' }, stage, topBar, status));
 
     // Skróty działają w całym oknie – także gdy fokus zniknął (np. „Ponów” stał się nieaktywny),
     // ale nie w oknie pytania nad edytorem.
     const onKey = (event) => {
       if (event.target !== document.body && !dialog.contains(event.target)) return;
       const key = event.key.toLowerCase();
-      if ((event.ctrlKey || event.metaKey) && key === 'z') {
+      const command = event.ctrlKey || event.metaKey;
+      if (command && key === 'z') {
         event.preventDefault();
         if (event.shiftKey ? history.redo() : history.undo()) afterHistory();
-      } else if ((event.ctrlKey || event.metaKey) && key === 'y') {
+      } else if (command && key === 'y') {
         event.preventDefault();
         if (history.redo()) afterHistory();
+      } else if (command && key === 'a') {
+        event.preventDefault();
+        selectAll();
+      } else if ((event.key === 'Delete' || event.key === 'Backspace') && selection.size > 0) {
+        event.preventDefault();
+        deleteSelection();
+      } else if (event.key === 'Escape' && selection.size > 0) {
+        // Esc najpierw zdejmuje zaznaczenie, dopiero następny zamyka edytor.
+        event.preventDefault();
+        clearSelection();
       }
     };
 
     dialog = mountDialog('drawing-dialog', panel, {
       onDismiss: () => close(false),
       onClose: () => {
-        document.removeEventListener('keydown', onKey);
+        document.removeEventListener('keydown', onKey, true);
         observer.disconnect();
         window.cancelAnimationFrame(frame);
+        window.cancelAnimationFrame(liveFrame);
         resolve(result);
       }
     });
     dialog.dataset.testid = 'drawing-dialog';
-    document.addEventListener('keydown', onKey);
+    // Faza przechwytywania: Esc przy zaznaczeniu nie dociera do okna (nie zamyka edytora).
+    document.addEventListener('keydown', onKey, true);
     updateToolbar();
     observer.observe(stage);
     const pictureReady = loadPicture(drawing.photo).then((loaded) => {

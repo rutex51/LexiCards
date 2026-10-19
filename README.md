@@ -65,9 +65,11 @@ Rysunki odręczne w notatce – rysik z naciskiem, zakreślacz, gumka, rysowanie
   w osobnym wierszu. Przycisk **Σ** wstawia wzór, a ikona **ⓘ** obok otwiera ściągawkę zapisu
   z polem do wypróbowania. Czytanie na głos i słuchanie czytają wzór słowami („x do kwadratu”).
 - Rysunki odręczne w notatce: **Narysuj** przy obrazach otwiera edytor na cały ekran – pióro
-  z naciskiem rysika (Apple Pencil, rysik w laptopie), zakreślacz, gumka, kolory, grubości, cofnij
-  i ponów, tło gładkie, w linie albo w kratkę. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest
-  obrazem notatki (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski zostają do poprawy.
+  z naciskiem rysika (Apple Pencil, rysik w laptopie), zakreślacz, gumka całych kresek albo
+  fragmentów (cztery wielkości), zaznaczanie prostokątem (przesuń, powiel, usuń), linijka z kątem,
+  kolory, grubości, cofnij i ponów, tło gładkie, w linie albo w kratkę. Na zdjęciu – **Rysuj na
+  zdjęciu**. Rysunek jest obrazem notatki (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski
+  zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
   Notatki do lekcji przychodzą z osobnego arkusza tego samego pliku – razem z pojęciami albo osobno.
@@ -288,10 +290,19 @@ czytają go słowami w języku notatki. Zapis trafia bez zmian do eksportu, kopi
 
 **Rysunki:** w sekcji obrazów edytora kafelek **Narysuj** otwiera edytor rysunku na cały ekran –
 z nagłówkiem **Anuluj – Rysunek 1 – Gotowe** i paskiem narzędzi na środku u góry: **pióro**,
-**zakreślacz** (półprzezroczysty, nie zasłania tuszu), **gumka** (ściera całe kreski), kolory (pióro:
+**zakreślacz** (półprzezroczysty, nie zasłania tuszu), **gumka**, **zaznaczanie**, kolory (pióro:
 czarny, niebieski, czerwony, zielony, pomarańczowy, fioletowy; zakreślacz: żółty, zielony, różowy,
-niebieski), trzy grubości, **cofnij** i **ponów** (też Ctrl+Z, Ctrl+Shift+Z albo Ctrl+Y) oraz **Tło**
-(kratka, gładkie, linie). Drugie dotknięcie aktywnego pióra otwiera **ustawienia pióra**: czułość
+niebieski), trzy grubości, **linijka**, **cofnij** i **ponów** (też Ctrl+Z, Ctrl+Shift+Z albo Ctrl+Y)
+oraz **Tło** (kratka, gładkie, linie). Gumka ma dwa tryby: **Całe kreski** (dotknięta kreska znika
+w całości) i **Fragmenty** (ściera tylko to, czego dotknie – kreska dzieli się na części) w czterech
+wielkościach; pod myszą i zawieszonym rysikiem widać kółko gumki. Gumka nie ściera zdjęcia pod
+kreskami. **Zaznaczanie:** prostokąt zaznacza kreski leżące w nim w całości, dotknięcie kreski –
+tę jedną, **Zaznacz wszystko** (albo Ctrl+A) – wszystkie; nad ramką zaznaczenia są **Powiel**
+i **Usuń** (też klawisz Delete), a przeciągnięcie wewnątrz ramki przesuwa kreski (palcem także, gdy
+jest rysik). Esc zdejmuje zaznaczenie. **Linijka** (przycisk na pasku) pokazuje na środku kąt, także
+w pigułce w rogu: przesuwasz ją palcem albo myszą, obracasz dwoma palcami albo uchwytem obrotu
+(okrągłe przyciski na linijce); przy 0°, 45°, 90° i 135° lekko przyskakuje. Kreska zaczęta na
+linijce albo przy niej biegnie prosto wzdłuż jej krawędzi. Drugie dotknięcie aktywnego pióra otwiera **ustawienia pióra**: czułość
 nacisku (Wył., Mała, Średnia, Duża), grubość kreski od–do (przy lekkim i mocnym nacisku), wygładzanie
 kreski i podgląd; ustawienia zostają na urządzeniu. Grubość zależy od nacisku tylko przy rysiku –
 palcem i myszą kreska ma stałą grubość. Gdy aplikacja raz zobaczy rysik, rysuje tylko rysik, a palec
@@ -520,8 +531,8 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 16. **Wersja 1.9: przesuwanie wierszy lekcji i modułów (utrwal / usuń), data utworzenia i filtr daty, kolejność utrwalonych do wyboru** – gotowe.
 17. **Wersja 1.10: notatka głosowa – nagrywanie w trakcie pisania notatki, nagranie w załącznikach, odtwarzanie** – gotowe.
 18. **Wersja 1.11: równania w notatkach – zapis tekstem, wzory w podglądzie, ściągawka, czytanie słowami** – gotowe.
-19. **Wersja 1.12: rysunki odręczne w notatce – rysik z naciskiem, zakreślacz, gumka, rysowanie na zdjęciu (etap 1)** – gotowe.
-20. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), uchwyty, zaznaczanie i przesuwanie** – po akceptacji makiet.
+19. **Wersja 1.12: rysunki odręczne w notatce – rysik z naciskiem, zakreślacz, gumka całych kresek i fragmentów, zaznaczanie prostokątem, linijka z kątem, rysowanie na zdjęciu (etap 1)** – gotowe.
+20. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

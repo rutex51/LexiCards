@@ -1,13 +1,16 @@
 // Rysunki odręczne (1.12): grubość kreski z nacisku, wygładzanie, zapis punktów, gumka całych
 // kresek, cofanie i ponawianie, sprawdzanie danych rysunku, ustawienia narzędzi, sygnatury,
-// rysunek w notatce (zapis, kopia lekcji, kopia zapasowa w obu plikach).
+// rysunek w notatce (zapis, kopia lekcji, kopia zapasowa w obu plikach). Od 1.12.1: gumka
+// fragmentów, zaznaczanie prostokątem i przesuwanie, linijka, historia jako stany przed i po zmianie.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
   DrawingHistory, PAGE_HEIGHT, PAGE_WIDTH, PEN_WIDTHS, addPoint, cleanDrawing, cleanToolSettings, defaultToolSettings,
-  drawingWithoutPhotoBytes, emptyDrawing, hasContent, nextDrawingLabel, penWidth, smoothPoint, strokesAt, touchesStroke
+  drawingWithoutPhotoBytes, emptyDrawing, eraseAt, eraseFromStroke, hasContent, nextDrawingLabel, penWidth, rulerDegrees,
+  rulerOffset, rulerPoint, selectionBounds, smoothPoint, snapRulerAngle, strokeBounds, strokesAt, strokesInRect, touchesStroke,
+  translateStroke
 } from '../../js/core/drawing.js';
 import { createBackup, createMediaArchive, openMediaArchive, restoreBackup, restoreMedia, validateBackup } from '../../js/core/backup.js';
 import { openZipBlob } from '../../js/core/zip.js';
@@ -134,6 +137,104 @@ test('ustawienia narzędzi: domyślne, złe wartości zastąpione, grubości od 
   assert.deepEqual([cleaned.penColor, cleaned.highlighterWidth, cleaned.highlighterColor], ['blue', 2, 'pink']);
   assert.deepEqual(cleaned.penWidths, [{ min: 2, max: 9 }, { min: 0.5, max: 40 }, { min: PEN_WIDTHS[2].min, max: 8 }]);
   assert.deepEqual(cleanToolSettings({ penWidths: [{ min: 1, max: 2 }] }).penWidths, defaultToolSettings().penWidths, 'zła liczba grubości');
+  assert.deepEqual([cleaned.eraserMode, cleaned.eraserSize], ['stroke', 1], 'gumka – domyślnie całe kreski, średnia');
+  const eraser = cleanToolSettings({ eraserMode: 'pixel', eraserSize: 3 });
+  assert.deepEqual([eraser.eraserMode, eraser.eraserSize], ['pixel', 3]);
+  const wrong = cleanToolSettings({ eraserMode: 'laser', eraserSize: 9 });
+  assert.deepEqual([wrong.eraserMode, wrong.eraserSize], ['stroke', 1]);
+});
+
+test('gumka fragmentów: dziura na brzegu koła także między rzadkimi punktami, kawałki z grubością, kropka, cała kreska', () => {
+  const horizontal = line(0, 100, 200, 100, 4);
+  assert.equal(eraseFromStroke(horizontal, 100, 130, 10), null, 'koło obok kreski');
+  const pieces = eraseFromStroke(horizontal, 100, 100, 10);
+  assert.equal(pieces.length, 2);
+  // Promień 10 + połowa grubości 2: dziura od x = 88 do x = 112.
+  assert.deepEqual(pieces[0].points.slice(-3), [88, 100, 4]);
+  assert.deepEqual(pieces[1].points.slice(0, 3), [112, 100, 4]);
+  assert.deepEqual([pieces[0].tool, pieces[0].color], ['pen', '#1d1d1f']);
+  assert.equal(horizontal.points.length, 33, 'oryginał bez zmian');
+
+  // Dwa punkty daleko od siebie – przecięcie w środku odcinka; grubość z nacisku przeliczona w miejscu cięcia.
+  const sparse = { tool: 'highlighter', color: '#ffd60a', points: [0, 0, 2, 200, 0, 6] };
+  const cut = eraseFromStroke(sparse, 100, 0, 7);
+  assert.deepEqual(cut.map((piece) => piece.points), [[0, 0, 2, 90, 0, 3.8], [110, 0, 4.2, 200, 0, 6]]);
+  assert.equal(cut[0].tool, 'highlighter');
+
+  assert.deepEqual(eraseFromStroke(line(0, 0, 10, 0), 5, 0, 30), [], 'cała kreska w kole');
+  const dot = { tool: 'pen', color: '#000000', points: [50, 50, 8] };
+  assert.deepEqual(eraseFromStroke(dot, 55, 50, 2), []);
+  assert.equal(eraseFromStroke(dot, 70, 50, 2), null);
+  // Brzeg kreski: od końca zostaje okruch krótszy niż jeden odcinek – bez kropek.
+  assert.deepEqual(eraseFromStroke(line(0, 0, 100, 0, 2), 0, 0, 30).map((piece) => piece.points.slice(0, 3)), [[31, 0, 2]]);
+
+  // Na całym rysunku: skrzyżowanie dwóch kresek – każda w dwóch kawałkach; nic nie dotyka – bez zmian.
+  const strokes = [line(0, 100, 200, 100), line(100, 0, 100, 200)];
+  assert.equal(eraseAt(strokes, 100, 100, 5), true);
+  assert.equal(strokes.length, 4);
+  assert.equal(eraseAt(strokes, 500, 500, 5), false);
+  assert.deepEqual(strokeBounds(line(10, 20, 30, 20, 4)), { minX: 8, minY: 18, maxX: 32, maxY: 22 });
+});
+
+test('zaznaczanie prostokątem: kreski w całości w prostokącie, granice zaznaczenia, przesunięcie bez zmiany oryginału', () => {
+  const strokes = [line(10, 10, 50, 10), line(10, 100, 300, 100), line(20, 30, 40, 50)];
+  assert.deepEqual(strokesInRect(strokes, { x0: 0, y0: 0, x1: 60, y1: 60 }), [0, 2]);
+  assert.deepEqual(strokesInRect(strokes, { x0: 60, y0: 60, x1: 0, y1: 0 }), [0, 2], 'prostokąt od dowolnego rogu');
+  assert.deepEqual(strokesInRect(strokes, { x0: 0, y0: 0, x1: 100, y1: 120 }), [0, 2], 'kreska wystająca poza prostokąt – nie');
+  assert.deepEqual(selectionBounds([strokes[0], strokes[2]]), { minX: 8, minY: 8, maxX: 52, maxY: 52 });
+  assert.equal(selectionBounds([]), null);
+  const moved = translateStroke(strokes[0], 5.04, -2);
+  assert.deepEqual(moved.points.slice(0, 6), [15, 8, 4, 19, 8, 4]);
+  assert.deepEqual(strokes[0].points.slice(0, 3), [10, 10, 4], 'oryginał bez zmian');
+  assert.notEqual(moved, strokes[0]);
+});
+
+test('linijka: kąt przyskakuje co 45°, stopnie jak w geometrii (0–179), położenie punktu względem linijki', () => {
+  const degrees = (value) => Math.round((value * 180) / Math.PI * 1000) / 1000;
+  const radians = (value) => (value * Math.PI) / 180;
+  assert.equal(degrees(snapRulerAngle(radians(44))), 45);
+  assert.equal(degrees(snapRulerAngle(radians(40))), 40);
+  assert.equal(degrees(snapRulerAngle(radians(-89))), -90);
+  assert.equal(degrees(snapRulerAngle(radians(-179))), 180);
+  assert.equal(degrees(snapRulerAngle(radians(361))), 0);
+  assert.equal(rulerDegrees(0), 0);
+  assert.equal(rulerDegrees(radians(-45)), 45, 'w górę w prawo – 45°');
+  assert.equal(rulerDegrees(radians(45)), 135);
+  assert.equal(rulerDegrees(Math.PI), 0, 'obrócona o 180° – ta sama linijka');
+  assert.equal(rulerDegrees(radians(-90)), 90);
+  const ruler = { x: 100, y: 100, angle: Math.PI / 2 };
+  const offset = rulerOffset(ruler, 80, 150);
+  assert.deepEqual([Math.round(offset.along), Math.round(offset.across)], [50, 20]);
+  const point = rulerPoint(ruler, 50, 20);
+  assert.deepEqual([Math.round(point.x), Math.round(point.y)], [80, 150]);
+});
+
+test('historia od 1.12.1: zmiana jako jeden krok (begin … commit), bez skutku – bez kroku, cofnięcie przywraca dokładny stan', () => {
+  const [a, b] = [line(0, 0, 10, 0), line(0, 10, 10, 10)];
+  const strokes = [a, b];
+  const history = new DrawingHistory(strokes);
+  history.begin();
+  assert.equal(history.commit(), false, 'bez zmian – bez kroku');
+  assert.equal(history.canUndo, false);
+  // Przesunięcie zaznaczenia: w trakcie kilka zmian, w historii jeden krok.
+  history.begin();
+  strokes[1] = translateStroke(b, 5, 0);
+  strokes[1] = translateStroke(b, 9, 0);
+  assert.equal(history.canUndo, true, 'trwająca zmiana też da się cofnąć');
+  assert.equal(history.commit(), true);
+  const moved = strokes[1];
+  // Gumka fragmentów – a w dwóch kawałkach.
+  history.begin();
+  eraseAt(strokes, 5, 0, 1);
+  history.commit();
+  assert.equal(strokes.length, 3);
+  assert.equal(history.undo(), true);
+  assert.deepEqual(strokes, [a, moved]);
+  assert.equal(history.undo(), true);
+  assert.deepEqual(strokes, [a, b]);
+  assert.equal(history.undo(), false);
+  assert.equal(history.redo(), true);
+  assert.deepEqual(strokes, [a, moved]);
 });
 
 test('sygnatura nowego rysunku: kolejna wolna „Rysunek N”', () => {

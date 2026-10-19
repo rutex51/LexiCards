@@ -72,6 +72,46 @@ Szczegóły:
 - Zrzuty (Chromium): edytor i ustawienia pióra na ekranie iPada (jasny i ciemny motyw), pasek
   na telefonie, miniatura i menu rysunku, podgląd notatki z rysunkiem, rysunek na zdjęciu.
 
+## Uzupełnienie w wersji 1.12.1
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Gumka – drugi tryb: zamazywanie fragmentów, nie całych obiektów; kilka wielkości | Po wybraniu gumki na pasku jest przełącznik **Całe kreski / Fragmenty** i – dla fragmentów – cztery wielkości (kółka: mała, średnia, duża, bardzo duża). Gumka fragmentów ściera tylko to, czego dotknie: kreska dzieli się na części, a reszta zostaje (dalej da się ją zaznaczyć, przesunąć, cofnąć). Pod myszą i zawieszonym rysikiem widać kółko gumki. Zdjęcie pod kreskami zostaje nietknięte. Wielkość gumki jest stała na ekranie – po powiększeniu strony ściera dokładniej. Tryb i wielkość zostają zapamiętane |
+| Linijka z kątem pochylenia, sterowana palcami albo myszą | Przycisk **linijki** na pasku. Na środku linijki i w pigułce w rogu – kąt (0–179°). Jeden palec albo mysz przesuwa linijkę, dwa palce ją obracają (i przesuwają), a mysz obraca ją okrągłymi uchwytami na linijce. Przy 0°, 45°, 90° i 135° linijka lekko przyskakuje. Kreska rysikiem, myszą albo palcem zaczęta na linijce albo przy niej biegnie prosto wzdłuż bliższej krawędzi (z naciskiem rysika). Linijka nie jest częścią rysunku |
+| Skrzynka do zaznaczania kilku obiektów | Narzędzie **zaznaczanie**: prostokąt zaznacza kreski leżące w nim w całości, dotknięcie kreski – tę jedną, **Zaznacz wszystko** (albo Ctrl+A) – wszystkie. Nad ramką zaznaczenia: liczba kresek, **Powiel** i **Usuń** (też Delete). Przeciągnięcie wewnątrz ramki przesuwa zaznaczone kreski – rysikiem, myszą i palcem. Esc zdejmuje zaznaczenie (dopiero następne zamyka edytor). Każda zmiana to jeden krok cofania |
+
+Przy okazji: pasek narzędzi leży teraz nad płótnem – zmiana narzędzia (na telefonie pasek bywa
+o wiersz wyższy) nie przesuwa strony.
+
+**Dociąganie szkicu do linii kratek** – zostaje do etapu 2, razem z zamianą odręcznych kształtów na
+figury: to ta sama mechanika (wierzchołki rozpoznanej figury przyciągane do przecięć kratek,
+odcinki – do linii kratek).
+
+Testy wersji 1.12.1:
+
+- **Testy logiki (Node.js): 277 – wszystkie zaliczone** (273 wcześniejsze + 4 nowe): gumka
+  fragmentów (dziura na brzegu koła, przecięcie między rzadkimi punktami, grubość w miejscu cięcia,
+  kropka, cała kreska, okruchy bez kropek, skrzyżowane kreski), zaznaczanie prostokątem, granice
+  i przesunięcie bez zmiany oryginału, kąt linijki (przyskok co 45°, stopnie 0–179, położenie punktu
+  względem linijki), historia jako stany przed i po zmianie; ustawienia gumki.
+- **Testy w przeglądarce (Chromium): 121 – wszystkie zaliczone w dwóch przebiegach** (119
+  wcześniejszych + 2 nowe):
+  - ekran iPada: gumka fragmentów – tryb, cztery wielkości, kółko pod myszą, dotknięcie przecina
+    kreskę (obie części zostają), cofnij i ponów, zapamiętane ustawienia; linijka – 0°, dwa palce:
+    30°, potem przyskok do 45°, uchwyt myszą: 90°, mysz przesuwa linijkę, kreska rysikiem 40–48 px od
+    środka biegnie prosto wzdłuż krawędzi (w zapisie jedno x), linijka schowana; zaznaczanie –
+    prostokąt (1 i 2 kreski), przesunięcie, powielenie, usunięcie, trzy cofnięcia i ponowienie,
+    dotknięcie kreski, Ctrl+A, „Zaznacz wszystko”, Esc nie zamyka edytora; zapis – 5 kresek, dwa
+    kawałki przeciętej kreski;
+  - ekran telefonu bez rysika: pasek każdego narzędzia w szerokości ekranu (pióro – dwa wiersze),
+    płótno bez zmian przy zmianie narzędzia; palec przesuwa linijkę, kreska palcem przy krawędzi –
+    prosta; zaznaczenie palcem i przesunięcie palcem.
+- **Lint: bez błędów.**
+- W trakcie pracy testy wyłapały: strona przeskakiwała przy zmianie narzędzia na telefonie
+  (pasek o inną liczbę wierszy) – teraz pasek leży nad płótnem.
+- Zrzuty (Chromium): gumka fragmentów, linijka pod kątem 45°, zaznaczenie z poleceniami (iPad),
+  linijka i zaznaczenie na telefonie.
+
 ## Czego nie sprawdzono
 
 - **Prawdziwy rysik:** Apple Pencil na iPadzie (Safari) i rysik w laptopie z Windows – nacisk,
@@ -82,6 +122,8 @@ Szczegóły:
 - **Duże rysunki** (tysiące kresek) – szybkość na starszym iPadzie.
 - Testem nie są objęte: kółko myszy i Ctrl + kółko, gumka na końcu rysika (Windows) – działanie
   jest w kodzie, ale bez sprawdzenia w przeglądarce.
+- Od 1.12.1: obracanie linijki dwoma palcami i przesuwanie zaznaczenia palcem na prawdziwym iPadzie
+  (w testach – udawane zdarzenia dotyku); szybkość gumki fragmentów przy bardzo dużych rysunkach.
 
 ## Warto wiedzieć
 
