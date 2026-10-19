@@ -4725,6 +4725,73 @@ test('słuchanie: „Słuchaj lekcji” z ekranu lekcji otwiera słuchanie z mat
   await expectText(page.locator('[data-testid=listen-planned]'), '3 pojęcia');
 });
 
+test('nawigacja: wstecz i dalej jak w przeglądarce – z lekcji do słuchania i z powrotem, statystyki, po przeładowaniu', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  const back = page.locator('[data-testid=history-back]');
+  const forward = page.locator('[data-testid=history-forward]');
+  assert.equal(await back.isVisible(), false, 'na pierwszym ekranie nie ma dokąd wrócić');
+
+  await page.evaluate((id) => { location.hash = `#/library/lesson/${id}`; }, ids.basicsID);
+  await page.locator('[data-testid=lesson-listen]').waitFor();
+  assert.equal(await back.isEnabled(), true);
+  assert.equal(await forward.isDisabled(), true);
+
+  // Lekcja → słuchanie → wstecz: z powrotem na lekcji (a nie na ekranie Nauka, jak strzałka „poziom wyżej”).
+  await page.click('[data-testid=lesson-listen]');
+  await page.locator('[data-testid=listen-start]').waitFor();
+  await expectText(page.locator('.navbar__backlink'), 'Nauka');
+  await back.click();
+  await page.locator('[data-testid=lesson-listen]').waitFor();
+  assert.match(page.url(), /#\/library\/lesson\//);
+  assert.equal(await forward.isEnabled(), true);
+  await forward.click();
+  await page.locator('[data-testid=listen-start]').waitFor();
+  assert.match(page.url(), /#\/study\/listen\/lesson\//);
+  assert.equal(await forward.isDisabled(), true);
+
+  // Statystyki: wstecz wraca do słuchania; nowy ekran po cofnięciu kasuje „dalej”.
+  await page.evaluate((id) => { location.hash = `#/stats/lesson/${id}`; }, ids.basicsID);
+  await waitUntil(() => page.url().includes('#/stats/lesson/'), 'Statystyki lekcji');
+  await back.click();
+  await page.locator('[data-testid=listen-start]').waitFor();
+  assert.equal(await forward.isEnabled(), true);
+  await page.evaluate(() => { location.hash = '#/quiz'; });
+  await waitUntil(async () => page.url().endsWith('#/quiz') && await forward.isDisabled(), 'Po nowym ekranie „dalej” jest nieaktywne');
+
+  // Po przeładowaniu strony historia ekranów działa dalej.
+  await back.click();
+  await page.locator('[data-testid=listen-start]').waitFor();
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await page.locator('[data-testid=listen-start]').waitFor();
+  assert.equal(await back.isEnabled(), true);
+  assert.equal(await forward.isEnabled(), true);
+  await back.click();
+  await page.locator('[data-testid=lesson-listen]').waitFor();
+  await back.click();
+  await waitUntil(async () => page.url().includes('#/start') || page.url().endsWith('/'), 'Pierwszy ekran');
+  assert.equal(await back.isDisabled(), true, 'z pierwszego ekranu aplikacji nie wychodzi się wstecz');
+});
+
+test('menu poleceń: „Anuluj” po najechaniu i przy naciśnięciu jest nieprzezroczysty i czytelny', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  await page.goto(`${page.url().split('#')[0]}#/library`);
+  await page.getByRole('button', { name: /Więcej poleceń/ }).first().click();
+  const cancel = page.locator('dialog.menu[open] .menu__cancel');
+  await cancel.waitFor();
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  await cancel.hover();
+  const hovered = await cancel.evaluate((element) => getComputedStyle(element).backgroundColor);
+  assert.doesNotMatch(hovered, /rgba|\/ 0?\.\d|\/ 0\b/, `tło „Anuluj” po najechaniu nieprzezroczyste: ${hovered}`);
+  await page.mouse.down();
+  const pressed = await cancel.evaluate((element) => getComputedStyle(element).backgroundColor);
+  await page.mouse.up();
+  assert.doesNotMatch(pressed, /rgba|\/ 0?\.\d|\/ 0\b/, `tło „Anuluj” przy naciśnięciu nieprzezroczyste: ${pressed}`);
+  await page.locator('dialog.menu[open]').waitFor({ state: 'detached' });
+}, { device: DESKTOP });
+
 test('słuchanie: pojęcie, czas na zastanowienie, odpowiedź, definicja i przykład; koniec; powtórki bez zmian', async ({ open, context }) => {
   await fakeSpeechForListening(context);
   await context.clock.install({ time: new Date('2026-10-12T10:00:00') });
@@ -4775,6 +4842,74 @@ test('słuchanie: pojęcie, czas na zastanowienie, odpowiedź, definicja i przyk
   assert.equal(await page.evaluate(() => window.lexicards.library.adapter.count('assessments')), 0);
   const settings = await page.evaluate(() => window.lexicards.library.getSettings());
   assert.deepEqual([settings.listenDirection, settings.listenPause, settings.listenCount], ['pl_en', 3, 0]);
+});
+
+test('słuchanie: notatka lekcji przed pojęciami – po polsku, po angielsku albo obie wersje; „Dalej” przechodzi do pojęć', async ({ open, context }) => {
+  await fakeSpeechForListening(context);
+  await context.clock.install({ time: new Date('2026-10-12T10:00:00') });
+  const page = await open();
+  const ids = await seedStudy(page);
+  await page.evaluate((id) => window.lexicards.library.saveNote(id, {
+    html: '<h3>Bilans</h3><p>Aktywa równają się pasywom. To ważne!</p><p>[[Obraz 1]]</p><hr data-page=""><ul><li>Kapitał własny</li></ul>',
+    htmlEN: '<p>Assets equal liabilities.</p>',
+    images: []
+  }), ids.basicsID);
+  await page.evaluate(() => window.lexicards.library.updateSettings({ listenDirection: 'pl_en', listenCount: 0, listenPause: 3 }));
+  await openListening(page, ids);
+
+  // Domyślnie bez notatki; opis mówi, że materiał ma notatkę.
+  const notes = page.getByRole('radiogroup', { name: 'Notatka lekcji przed pojęciami' });
+  assert.equal(await notes.getByRole('radio', { name: 'Nie' }).isChecked(), true);
+  await expectText(page.locator('[data-testid=listen-note-info]'), 'Lekcja tego materiału ma notatkę');
+  await expectText(page.locator('[data-testid=listen-planned]'), '3 pojęcia, ok. 1 min');
+  await choose(page, 'Notatka lekcji przed pojęciami', 'PL + EN');
+  await expectText(page.locator('[data-testid=listen-planned]'), '1 notatka i 3 pojęcia');
+
+  await page.click('[data-testid=listen-start]');
+  await page.locator('[data-testid=listen-player]').waitFor();
+  await waitUntil(async () => {
+    await page.clock.runFor(300);
+    return (await page.locator('[data-testid=listen-player]').getAttribute('data-step')) === 'note';
+  }, 'Czytanie notatki');
+  await expectText(page.locator('[data-testid=listen-item]'), 'Notatka – Podstawy');
+  await waitUntil(async () => {
+    await page.clock.runFor(500);
+    return page.locator('[data-testid=listen-done]').count();
+  }, 'Słuchanie powinno dojść do końca', 30000);
+  await expectText(page.locator('[data-testid=listen-summary]'), 'Odsłuchane pojęcia: 3 z 3.');
+  const spoken = (await spokenTexts(page)).map(({ text, lang }) => `${lang} ${text}`);
+  assert.deepEqual(spoken.slice(0, 8), [
+    'pl-PL Zaczynamy. Notatka lekcji i 3 pojęcia.',
+    'pl-PL Notatka do lekcji Podstawy.',
+    'pl-PL Bilans',
+    'pl-PL Aktywa równają się pasywom.',
+    'pl-PL To ważne!',
+    'pl-PL Kapitał własny',
+    'en-US English version.',
+    'en-US Assets equal liabilities.'
+  ], 'notatka bez odwołań do obrazów i podziałów stron, potem wersja angielska');
+  assert.ok(spoken[8].startsWith('pl-PL '), 'potem pierwsze pojęcie');
+  assert.equal((await page.evaluate(() => window.lexicards.library.getSettings())).listenNote, 'both');
+
+  // Tylko po angielsku; „Dalej” w trakcie notatki przechodzi od razu do pojęć.
+  await page.click('[data-testid=listen-settings]');
+  await notes.locator('.segmented__option', { hasText: /^EN$/ }).click();
+  assert.equal(await notes.getByRole('radio', { name: 'EN', exact: true }).isChecked(), true);
+  const before = (await spokenTexts(page)).length;
+  await page.click('[data-testid=listen-start]');
+  await waitUntil(async () => {
+    await page.clock.runFor(100);
+    return (await spokenTexts(page)).slice(before).some((item) => item.text === 'Assets equal liabilities.');
+  }, 'Czytanie notatki po angielsku');
+  await page.click('[data-testid=listen-next]');
+  await waitUntil(async () => {
+    await page.clock.runFor(300);
+    return (await page.locator('[data-testid=listen-item]').textContent()).startsWith('Pojęcie 1 z 3');
+  }, '„Dalej” przechodzi do pierwszego pojęcia');
+  const second = (await spokenTexts(page)).slice(before).map(({ text, lang }) => `${lang} ${text}`);
+  assert.deepEqual(second.slice(0, 3), ['pl-PL Zaczynamy. Notatka lekcji i 3 pojęcia.', 'pl-PL Notatka do lekcji Podstawy.', 'en-US Assets equal liabilities.']);
+  assert.ok(!second.some((text) => text.includes('Aktywa równają')), 'bez wersji polskiej');
+  await page.getByRole('button', { name: 'Zakończ', exact: true }).first().click();
 });
 
 test('słuchanie: pauza, wznowienie, dalej, powtórz i sprawdzenie czytania przy wyłączonym ekranie', async ({ open, context }) => {

@@ -1,14 +1,15 @@
-// Słuchanie: ustawienia (materiał, kierunek, zakres, czas na zastanowienie, co czytać)
-// i odtwarzanie. Ekran ma być obsługiwany bez patrzenia: duży przycisk pauzy, ekran nie gaśnie.
+// Słuchanie: ustawienia (materiał, kierunek, zakres, czas na zastanowienie, co czytać – od 1.7
+// także notatki lekcji przed pojęciami) i odtwarzanie. Ekran ma być obsługiwany bez patrzenia: duży przycisk pauzy, ekran nie gaśnie.
 //
 // Słuchanie nie zmienia powtórek FSRS ani postępów – nie ma oceny odpowiedzi.
 
 import {
-  DEFAULT_LISTEN_PAUSE, LISTEN_COUNTS, LISTEN_DETAIL_LANGUAGES, LISTEN_PAUSES, STEP_LABELS, estimateListening
+  DEFAULT_LISTEN_PAUSE, LISTEN_COUNTS, LISTEN_DETAIL_LANGUAGES, LISTEN_NOTE_MODES, LISTEN_PAUSES, STEP_LABELS,
+  estimateListening, estimateNotes, noteSteps
 } from '../../core/listen.js';
 import { DIRECTIONS } from '../../core/model.js';
 import { MIXED, STUDY_DIRECTIONS, STUDY_SCOPES, buildQueue, scopeCounts } from '../../core/study.js';
-import { pluralTerms } from '../../core/text.js';
+import { pluralNotes, pluralTerms } from '../../core/text.js';
 import { checkRow, emptyState, field, formGroup, group, navButton, segmented, selectInput } from '../components.js';
 import { AudioKeepAlive } from '../audio-keepalive.js';
 import { toast } from '../dialogs.js';
@@ -46,6 +47,7 @@ export class ListenScreen {
     this.example = settings.listenExample !== false;
     this.repeatAnswer = Boolean(settings.listenRepeatAnswer);
     this.detailLanguage = known(LISTEN_DETAIL_LANGUAGES, settings.listenDetailLanguage, 'en');
+    this.noteMode = known(LISTEN_NOTE_MODES, settings.listenNote, 'off');
     this.keepAudio = settings.listenKeepAudio !== false;
     this.keepAlive = null;
     /** Czy dziennik dźwięku jest rozwinięty (widok przebudowuje się po każdym kroku). */
@@ -199,15 +201,38 @@ export class ListenScreen {
       .filter((card) => card.term);
   }
 
+  /**
+   * Notatki lekcji materiału do przeczytania przed pojęciami (w kolejności biblioteki): lekcje
+   * wszystkich pojęć z wybranego zakresu, z notatką w wybranej wersji (albo w tej, która jest).
+   */
+  #notes(mode = this.noteMode) {
+    if (mode === 'off') return [];
+    const { library } = this.ctx;
+    const lessonIDs = new Set(this.#cards({ ...this.#config(), shuffle: false, count: 0 }).map((card) => card.term.lessonID));
+    const notes = [];
+    for (const domain of library.listDomains()) {
+      for (const module of library.listModules(domain.id)) {
+        for (const lesson of library.listLessons(module.id)) {
+          if (!lessonIDs.has(lesson.id)) continue;
+          const steps = noteSteps(library.getNote(lesson.id), lesson.name, mode);
+          if (steps.length > 0) notes.push({ lessonID: lesson.id, lessonName: lesson.name, steps });
+        }
+      }
+    }
+    return notes;
+  }
+
   /** Start w obsłudze dotknięcia: pierwsza wypowiedź musi paść bezpośrednio po geście. */
   #start(cards = null) {
     const list = cards ?? this.#cards();
     if (list.length === 0) return;
+    const notes = this.#notes();
     this.player?.stop();
     clearSpeechLog();
     logSpeech('słuchanie', `${pluralTerms(list.length)}, dźwięk w tle: ${this.keepAudio ? 'tak' : 'nie'}`);
     this.player = new ListenPlayer({
       cards: list,
+      notes,
       options: this.#options(),
       settings: () => this.ctx.library.getSettings(),
       onChange: () => {
@@ -230,6 +255,7 @@ export class ListenScreen {
       listenExample: this.example,
       listenRepeatAnswer: this.repeatAnswer,
       listenDetailLanguage: this.detailLanguage,
+      listenNote: this.noteMode,
       listenKeepAudio: this.keepAudio
     }).catch((error) => console.error(error));
     window.scrollTo(0, 0);
@@ -316,9 +342,12 @@ export class ListenScreen {
     const available = speechAvailable();
     // Szacunek na przykładowych pojęciach z wybranego zakresu.
     const sample = planned > 0 ? this.#cards({ ...config, shuffle: false, count: 0 }).slice(0, 40) : [];
-    const estimate = sample.length > 0
-      ? (estimateListening(sample, this.#options(), Number(library.getSettings().speechRate) || 1) / sample.length) * planned
-      : 0;
+    const rate = Number(library.getSettings().speechRate) || 1;
+    const notes = planned > 0 ? this.#notes() : [];
+    // Ile notatek ma materiał – do opisu przy wyborze (także gdy czytanie notatek jest wyłączone).
+    const noteCount = planned > 0 ? this.#notes('both').length : 0;
+    const estimate = (sample.length > 0 ? (estimateListening(sample, this.#options(), rate) / sample.length) * planned : 0)
+      + estimateNotes(notes, rate);
 
     // Telefon: „Rozpocznij” to środkowy przycisk paska zakładek; szeroki ekran: przycisk na pasku poleceń.
     const wide = ctx.isWide();
@@ -341,6 +370,20 @@ export class ListenScreen {
           icon('warning', { size: 18 }), h('span', null, 'Ta przeglądarka nie ma syntezatora mowy, więc słuchanie nie zadziała.')),
         materialGroup(ctx, this.selection, 'listen'),
         lessonsGroup(ctx, this.selection, 'listen'),
+        h('section', { class: 'group' },
+          h('h2', { class: 'form-group__title' }, 'Notatka lekcji przed pojęciami'),
+          segmented({
+            name: 'listen-note', label: 'Notatka lekcji przed pojęciami', value: this.noteMode,
+            options: LISTEN_NOTE_MODES.map((item) => ({ value: item.id, label: item.label })),
+            onChange: (value) => { this.noteMode = value; ctx.refresh(); }
+          }),
+          h('p', { class: 'group__footer', dataset: { testid: 'listen-note-info' } }, noteCount === 0
+            ? 'Lekcje tego materiału nie mają notatek.'
+            : `${noteCount === 1
+              ? 'Lekcja tego materiału ma notatkę – aplikacja może ją przeczytać'
+              : `Materiał ma ${pluralNotes(noteCount)} lekcji – aplikacja może je przeczytać`} przed pojęciami: po polsku, `
+              + 'po angielsku albo obie wersje. Gdy notatka nie ma wybranej wersji, aplikacja czyta tę, która jest.')
+        ),
         h('section', { class: 'group' },
           h('h2', { class: 'form-group__title' }, 'Kierunek'),
           segmented({
@@ -413,7 +456,8 @@ export class ListenScreen {
       ],
       bottomBar: h('div', { class: `bottombar__inner${startButton ? '' : ' bottombar__inner--note'}` },
         h('span', { class: 'bottombar__note', role: 'status', dataset: { testid: 'listen-planned' } },
-          planned === 0 ? 'Brak pojęć dla tych ustawień' : `${pluralTerms(planned)}, ${formatMinutes(estimate)}`),
+          planned === 0 ? 'Brak pojęć dla tych ustawień'
+            : `${notes.length > 0 ? `${pluralNotes(notes.length)} i ` : ''}${pluralTerms(planned)}, ${formatMinutes(estimate)}`),
         startButton
       ),
       // Start w obsłudze dotknięcia – pierwsza wypowiedź musi paść bezpośrednio po geście (Safari).
@@ -453,7 +497,8 @@ export class ListenScreen {
       };
     }
 
-    const number = card ? player.cardIndex + 1 : (player.cardIndex < 0 ? 0 : player.total);
+    const number = player.cardNumber;
+    const note = player.currentNote();
     const progress = player.total > 0 ? Math.round((player.listened.size / player.total) * 100) : 0;
     const thinking = step.kind === 'think' && player.thinkEndsAt && player.phase === 'playing';
     const remaining = thinking ? Math.max(0, player.thinkEndsAt - Date.now()) : 0;
@@ -477,7 +522,8 @@ export class ListenScreen {
       body: h('div', { class: 'listen', dataset: { testid: 'listen-player', phase: player.phase, step: step.kind } },
         h('div', { class: 'study__header' },
           h('div', { class: 'study__meta' },
-            h('span', { class: 'study__lesson' }, card ? `Pojęcie ${number} z ${player.total}` : STEP_LABELS[step.kind]),
+            h('span', { class: 'study__lesson', dataset: { testid: 'listen-item' } },
+              card ? `Pojęcie ${number} z ${player.total}` : (note ? `Notatka – ${note.lessonName}` : STEP_LABELS[step.kind])),
             card ? h('span', { class: 'study__counter' }, DIRECTION_SHORT[card.direction]) : null),
           h('div', {
             class: 'study__progress', role: 'progressbar', 'aria-label': 'Postęp słuchania',
@@ -487,7 +533,10 @@ export class ListenScreen {
         h('div', { class: 'listen__stage' },
           h('span', { class: `listen__label listen__label--${step.kind}`, dataset: { testid: 'listen-step' } },
             playing ? STEP_LABELS[step.kind] : 'Pauza'),
-          shown?.text ? h('p', { class: `listen__text${step.kind === 'description' || step.kind === 'example' ? ' listen__text--long' : ''}`, lang: shown.lang, dataset: { testid: 'listen-text' } }, shown.text) : null,
+          shown?.text ? h('p', {
+            class: `listen__text${['description', 'example', 'note', 'noteTitle'].includes(step.kind) ? ' listen__text--long' : ''}`,
+            lang: shown.lang, dataset: { testid: 'listen-text' }
+          }, shown.text) : null,
           thinking ? h('div', { class: 'listen__think', 'aria-hidden': 'true' },
             h('span', {
               class: 'listen__think-fill',

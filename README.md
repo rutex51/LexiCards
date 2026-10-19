@@ -1,4 +1,4 @@
-# LexiCards 1.6
+# LexiCards 1.7
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -15,8 +15,9 @@ Stos fiszek, notatki w stronach, utrwalone na końcu list (wersja 1.3): [docs/RE
 Kartki notatek zaginane od rogu, dwie strony obok siebie na komputerze (wersja 1.4): [docs/RELEASE-1.4.md](docs/RELEASE-1.4.md).
 Obrazy notatki przed tekstem albo po nim (wersja 1.5): [docs/RELEASE-1.5.md](docs/RELEASE-1.5.md).
 Sygnatury obrazów w treści notatki, notatka po angielsku, czytanie notatki na głos (wersja 1.6): [docs/RELEASE-1.6.md](docs/RELEASE-1.6.md).
+Notatka lekcji w słuchaniu, przyciski wstecz / dalej, czytelne „Anuluj” (wersja 1.7): [docs/RELEASE-1.7.md](docs/RELEASE-1.7.md).
 
-## Co potrafi wersja 1.6
+## Co potrafi wersja 1.7
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -79,7 +80,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.2 – postęp i utrwalenie](docs/RELEASE-1.2.md), [wersja 1.3 – stos fiszek i strony notatek](docs/RELEASE-1.3.md),
 [wersja 1.4 – kartki zaginane od rogu, dwie strony](docs/RELEASE-1.4.md),
 [wersja 1.5 – obrazy notatki przed tekstem albo po nim](docs/RELEASE-1.5.md),
-[wersja 1.6 – sygnatury obrazów, notatka po angielsku, czytanie na głos](docs/RELEASE-1.6.md).
+[wersja 1.6 – sygnatury obrazów, notatka po angielsku, czytanie na głos](docs/RELEASE-1.6.md),
+[wersja 1.7 – notatka w słuchaniu, wstecz / dalej](docs/RELEASE-1.7.md).
 
 ## Jak korzystać
 
@@ -96,6 +98,13 @@ niż karta Safari. Dane wprowadzone wcześniej w Safari przeniesiesz kopią zapa
 
 Otwórz adres w Chrome albo Edge. Ikona instalacji w pasku adresu pozwala otwierać
 aplikację w osobnym oknie, ale nie jest to konieczne.
+
+### Nawigacja
+
+Strzałka z nazwą u góry ekranu („‹ Finance”) prowadzi o poziom wyżej w bibliotece. Przed nią są
+przyciski **←** i **→** – poprzedni i następny ekran, jak „wstecz” i „dalej” przeglądarki (np. z lekcji
+do słuchania i **←** z powrotem do lekcji). Działają też w trybie pełnoekranowym, gdzie przycisków
+przeglądarki nie widać, i tylko w obrębie aplikacji; pojawiają się, gdy jest dokąd przejść.
 
 ### Aktualizacje
 
@@ -275,6 +284,12 @@ jazdą. Aplikacja czyta pojęcie, czeka, czyta odpowiedź, a potem definicję i 
 po polsku). Duży przycisk w środku zatrzymuje i wznawia, boczne przechodzą do poprzedniego i następnego
 pojęcia. Słuchanie nie zmienia terminów powtórek.
 
+**Notatka lekcji przed pojęciami** – w ustawieniach słuchania: **Nie** (domyślnie), **PL**, **EN** albo
+**PL + EN**. Przed pojęciami aplikacja czyta notatki lekcji z wybranego materiału (zapowiedź „Notatka
+do lekcji …”, potem tekst zdanie po zdaniu – bez obrazów); przy „PL + EN” najpierw wersję polską,
+potem angielską. Gdy notatka nie ma wybranej wersji, czyta tę, która jest. Przycisk „następne” w trakcie
+notatki przechodzi od razu do pojęć.
+
 Na iPhonie strona mówi tylko wtedy, gdy jest na ekranie; aplikacja nie pozwala ekranowi zgasnąć. Czy
 czytanie trwa przy zablokowanym ekranie, aplikacja sprawdza sama: zablokuj telefon na około 30 sekund
 w trakcie słuchania, a po odblokowaniu zobaczysz wynik (zapamiętany w ustawieniach słuchania).
@@ -362,6 +377,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 11. **Wersja 1.4: kartki notatek zaginane od rogu, dwie strony obok siebie na komputerze** – gotowe.
 12. **Wersja 1.5: obrazy notatki na górze edytora, w podglądzie przed tekstem albo po nim** – gotowe.
 13. **Wersja 1.6: sygnatury obrazów i odwołania w treści, notatka po angielsku, czytanie notatki na głos** – gotowe.
+14. **Wersja 1.7: notatka lekcji w słuchaniu, przyciski wstecz / dalej, czytelne „Anuluj” w menu** – gotowe.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

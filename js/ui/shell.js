@@ -1,5 +1,6 @@
 // Powłoka aplikacji: pasek zakładek u dołu (telefon) albo panel boczny (szeroki ekran),
-// pasek nawigacji z przyciskiem powrotu i poleceniami oraz obszar treści.
+// pasek nawigacji z przyciskami wstecz/dalej (historia ekranów), powrotem o poziom wyżej
+// i poleceniami oraz obszar treści.
 
 import { captureFocus, h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
@@ -15,6 +16,14 @@ export class Shell {
     this.sideLinks = new Map();
 
     this.backSlot = h('div', { class: 'navbar__back' });
+    // Wstecz/dalej jak w przeglądarce – w trybie pełnoekranowym (z ekranu początkowego) jej przycisków nie ma.
+    const historyButton = (iconName, label, testID, action) => h('button', {
+      type: 'button', class: 'icon-button navbar__history-button', 'aria-label': label, title: label,
+      dataset: { testid: testID }, onClick: action
+    }, icon(iconName));
+    this.historyBack = historyButton('arrowLeft', 'Wstecz – poprzedni ekran', 'history-back', () => router.back());
+    this.historyForward = historyButton('arrowRight', 'Dalej – następny ekran', 'history-forward', () => router.forward());
+    this.historySlot = h('div', { class: 'navbar__history', hidden: true }, this.historyBack, this.historyForward);
     this.actionSlot = h('div', { class: 'navbar__actions' });
     this.inlineTitle = h('div', { class: 'navbar__inline-title', 'aria-hidden': 'true' });
     this.titleElement = h('h1', { class: 'screen__title', tabindex: '-1' });
@@ -46,7 +55,7 @@ export class Shell {
       ])
     );
 
-    this.navbar = h('header', { class: 'navbar' }, this.backSlot, this.inlineTitle, this.actionSlot);
+    this.navbar = h('header', { class: 'navbar' }, this.historySlot, this.backSlot, this.inlineTitle, this.actionSlot);
     this.main = h('main', { class: 'screen', id: 'main' },
       this.banner,
       this.navbar,
@@ -152,6 +161,7 @@ export class Shell {
     replaceChildren(this.backSlot, view.back
       ? h('a', { class: 'navbar__backlink', href: view.back.href }, icon('chevronLeft'), h('span', null, view.back.label))
       : null);
+    this.#updateHistory();
     replaceChildren(this.actionSlot, view.actions ?? []);
     replaceChildren(this.bodyElement, view.body);
     this.main.classList.toggle('screen--wide', Boolean(view.wide));
@@ -171,6 +181,15 @@ export class Shell {
       window.scrollTo(0, 0);
     }
     this.#updateScrolled();
+  }
+
+  /** Przyciski wstecz/dalej: widoczne, gdy jest dokąd przejść w obrębie aplikacji. */
+  #updateHistory() {
+    const back = this.router.canBack;
+    const forward = this.router.canForward;
+    this.historySlot.hidden = !back && !forward;
+    this.historyBack.disabled = !back;
+    this.historyForward.disabled = !forward;
   }
 
   /** Przenosi fokus na tytuł nowego ekranu (czytniki ekranu ogłaszają zmianę). */

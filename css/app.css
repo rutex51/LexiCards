@@ -422,6 +422,24 @@ button:disabled { cursor: default; }
   min-width: 0;
 }
 
+/* Wstecz / dalej (historia ekranów) przed powrotem o poziom wyżej. */
+.navbar__history {
+  flex: none;
+  display: flex;
+  align-items: center;
+  margin-right: 2px;
+}
+
+.navbar__history[hidden] { display: none; }
+
+.navbar__history-button {
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+}
+
+.navbar__history-button:disabled { color: var(--text-3); }
+
 .navbar__backlink {
   display: inline-flex;
   align-items: center;
@@ -3572,9 +3590,16 @@ a.row__main:active,
   font-weight: 600;
 }
 
+/*
+ * „Anuluj” leży bezpośrednio na przyciemnionym tle okna – po najechaniu i przy naciśnięciu
+ * zostaje nieprzezroczysty (półprzezroczyste tło zwykłych pozycji menu przepuszczało
+ * przyciemnienie i napis był słabo czytelny).
+ */
+.menu__item.menu__cancel:active { background: color-mix(in srgb, var(--elevated) 84%, var(--text)); }
+
 @media (hover: hover) {
   .menu__item:hover:not(:disabled) { background: var(--hover); }
-  .menu__cancel:hover { background: color-mix(in srgb, var(--elevated) 92%, var(--text)); }
+  .menu__item.menu__cancel:hover:not(:disabled) { background: color-mix(in srgb, var(--elevated) 92%, var(--text)); }
 }
 
 /* ------------------------------------------------------------------ 9. pozostałe */

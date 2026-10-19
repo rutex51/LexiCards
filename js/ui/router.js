@@ -75,6 +75,26 @@ export function parseHash(hash) {
   }
 }
 
+/** Ostatnia pozycja w historii aplikacji (do „dalej”) – przeżywa przeładowanie karty. */
+const HISTORY_LAST_KEY = 'lexicards-history-last';
+
+function readHistoryLast() {
+  try {
+    const value = Number(window.sessionStorage.getItem(HISTORY_LAST_KEY));
+    return Number.isInteger(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveHistoryLast(value) {
+  try {
+    window.sessionStorage.setItem(HISTORY_LAST_KEY, String(value));
+  } catch {
+    // bez pamięci sesji „dalej” działa do przeładowania strony
+  }
+}
+
 export function routeKey(route) {
   return `${route.name}:${route.id ?? ''}`;
 }
@@ -85,6 +105,14 @@ export class Router {
     /** Ostatnio odwiedzony adres w każdej zakładce (jak osobne stosy nawigacji w iOS). */
     this.lastHashByTab = new Map();
     this.current = parseHash(location.hash);
+    /**
+     * Pozycja bieżącego wpisu w historii aplikacji (0 – pierwszy ekran) i ostatnia pozycja,
+     * do której można wrócić „dalej” – przyciski wstecz/dalej działają tylko w obrębie aplikacji.
+     */
+    this.index = 0;
+    this.last = 0;
+    this.replacing = false;
+    this.started = false;
     // Pozycję przewijania przywracamy sami – treść ekranu powstaje dopiero po zmianie adresu.
     if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
     window.addEventListener('hashchange', () => this.#handle());
@@ -103,10 +131,46 @@ export class Router {
    */
   #entry() {
     const known = history.state?.lexicardsEntry;
-    if (known) return { entry: known, restored: true };
+    if (known) {
+      // Powrót do znanego wpisu (wstecz/dalej, przeładowanie) – jego pozycja jest zapisana we wpisie.
+      this.index = Number.isInteger(history.state.lexicardsIndex) ? history.state.lexicardsIndex : 0;
+      this.last = Math.max(this.index, this.started ? this.last : readHistoryLast());
+      this.started = true;
+      return { entry: known, restored: true };
+    }
     const entry = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    history.replaceState({ ...(history.state ?? {}), lexicardsEntry: entry }, '');
+    if (!this.started) {
+      this.index = 0;
+      this.last = 0;
+    } else if (!this.replacing) {
+      // Nowy ekran: wpisy „dalej” przepadają, jak w przeglądarce.
+      this.index += 1;
+      this.last = this.index;
+    }
+    this.started = true;
+    history.replaceState({ ...(history.state ?? {}), lexicardsEntry: entry, lexicardsIndex: this.index }, '');
+    saveHistoryLast(this.last);
     return { entry, restored: false };
+  }
+
+  /** Czy jest poprzedni ekran aplikacji (przycisk „wstecz”). */
+  get canBack() {
+    return this.index > 0;
+  }
+
+  /** Czy jest następny ekran, z którego się cofnięto (przycisk „dalej”). */
+  get canForward() {
+    return this.index < this.last;
+  }
+
+  /** Poprzedni ekran – jak przycisk „wstecz” przeglądarki (także w trybie pełnoekranowym). */
+  back() {
+    if (this.canBack) history.back();
+  }
+
+  /** Następny ekran – jak przycisk „dalej” przeglądarki. */
+  forward() {
+    if (this.canForward) history.forward();
   }
 
   #handle() {
@@ -119,7 +183,12 @@ export class Router {
   navigate(hash, { replace = false } = {}) {
     if (replace) {
       history.replaceState(null, '', hash);
-      this.#handle();
+      this.replacing = true;
+      try {
+        this.#handle();
+      } finally {
+        this.replacing = false;
+      }
     } else if (location.hash === hash) {
       // Ponowny wybór miejsca, w którym już jesteśmy, wraca na górę ekranu.
       this.#handle();

@@ -115,6 +115,7 @@ export function defaultSettings() {
     listenDetailLanguage: 'en',    // język definicji i przykładu: en | pl
     listenBackground: null,        // wynik sprawdzenia czytania przy zablokowanym ekranie: { result, testedAt }
     listenKeepAudio: true,         // cichy dźwięk w tle podczas słuchania (Bluetooth, CarPlay) i przyciski systemu
+    listenNote: 'off',             // notatki lekcji przed pojęciami: off | pl | en | both
     dailyLearningGoal: 20,
     speechRate: 1,
     preferredVoicePL: null,

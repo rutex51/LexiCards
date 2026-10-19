@@ -130,7 +130,13 @@ działa na adapterze pamięciowym i wyświetla ostrzeżenie, że dane znikną po
   z zachowaniem przewinięcia i fokusu.
 - **Nawigacja** opiera się na adresach `#/…`, więc działa przycisk „wstecz” przeglądarki
   i gest cofania w Safari. Każda zakładka pamięta ostatnie miejsce. Przy powrocie
-  przywracane jest przewinięcie listy.
+  przywracane jest przewinięcie listy. Od 1.7 pasek nawigacji ma też przyciski ← i → (historia
+  ekranów – `history.back()` / `forward()`, ważne w trybie pełnoekranowym bez przycisków
+  przeglądarki), obok strzałki „poziom wyżej”. Router numeruje wpisy historii aplikacji
+  (`lexicardsIndex` w `history.state`, ostatnia pozycja „dalej” w `sessionStorage`, więc przetrwa
+  przeładowanie): nowy ekran – pozycja + 1 i koniec „dalej”, zastąpienie adresu (`replace`) – ta sama
+  pozycja, powrót do znanego wpisu – pozycja z wpisu. ← jest aktywne od drugiego ekranu, → –
+  po cofnięciu; oba ukryte, gdy nie ma dokąd przejść, i nigdy nie wychodzą poza aplikację.
 - **Okna** to natywny `<dialog>`: przeglądarka pilnuje fokusu, klawisza Esc i blokady tła.
 - **Układ**: poniżej 900 px zakładki u dołu, powyżej panel boczny; glosariusz na szerokim
   ekranie jest tabelą. Rozmiar tekstu na iPhonie podąża za ustawieniem systemowym.
@@ -509,6 +515,14 @@ Reguły są w `js/core/quiz.js` (bez przeglądarki), zapis w `Library`, ekrany w
 
 ## Słuchanie
 
+- **Notatki lekcji** (od 1.7, ustawienie `listenNote`: off | pl | en | both): przed pojęciami
+  odtwarzacz czyta notatki lekcji wszystkich pojęć z wybranego zakresu, w kolejności biblioteki.
+  `noteSteps()` w `js/core/listen.js` robi z notatki zapowiedź „Notatka do lekcji …” i zdania
+  (`sentences()`, wspólne z czytaniem w oknie notatki) – bez podziałów stron, odwołań do obrazów
+  i punktorów; „PL + EN” – wersja angielska z zapowiedzią „English version.”, a brak wybranej
+  wersji – ta, która jest (`noteVersions()`). W odtwarzaczu notatki są pozycjami przed pojęciami
+  (`items`), więc „następne”, „poprzednie” i „powtórz” działają też na notatce, a liczby pojęć,
+  postęp i podsumowanie liczą tylko pojęcia. Szacunek czasu dolicza notatki (`estimateNotes()`).
 - **Wejście** z zakładki Nauka (materiał wybrany ostatnio) albo – od 1.5.1 – przyciskiem „Słuchaj
   lekcji” na ekranie lekcji: adres `#/study/listen/lesson/<id>` ustawia materiał na tę lekcję
   (`initialSelection()` jak w nauce i quizie).

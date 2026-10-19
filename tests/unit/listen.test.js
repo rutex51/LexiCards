@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 import {
-  CARD_GAP, DETAIL_GAP, estimateListening, introText, listenSteps, outroText
+  CARD_GAP, DETAIL_GAP, estimateListening, estimateNotes, introText, listenSteps, noteSteps, noteVersions, outroText, sentences
 } from '../../js/core/listen.js';
 import { ListenPlayer } from '../../js/ui/listen-player.js';
 
@@ -143,4 +143,66 @@ test('odtwarzacz: pauza zatrzymuje, wznowienie czyta krok od początku; dalej, w
   assert.equal(player.currentStep().kind, 'outro');
   player.stop();
   assert.equal(player.phase, 'finished');
+});
+
+test('notatka lekcji w słuchaniu: wersje (PL, EN, obie, brakująca – druga), zdania bez odwołań, podziałów i punktorów', () => {
+  const note = {
+    html: '<h3>Bilans</h3><p>Aktywa. Pasywa!</p><p>[[Obraz 1]]</p><hr data-page=""><ul><li>Kapitał</li></ul>',
+    htmlEN: '<p>Assets.</p>'
+  };
+  assert.deepEqual(noteVersions(note, 'off'), []);
+  assert.deepEqual(noteVersions(note, 'pl').map((item) => item.lang), ['pl']);
+  assert.deepEqual(noteVersions(note, 'en').map((item) => item.lang), ['en']);
+  assert.deepEqual(noteVersions(note, 'both').map((item) => item.lang), ['pl', 'en']);
+  assert.deepEqual(noteVersions({ html: '<p>Tylko PL</p>', htmlEN: '' }, 'en').map((item) => item.lang), ['pl'], 'brak EN – czyta PL');
+  assert.deepEqual(noteVersions({ html: '', htmlEN: '<p>Only EN</p>' }, 'both').map((item) => item.lang), ['en']);
+  assert.deepEqual(noteVersions(null, 'both'), []);
+
+  assert.deepEqual(noteSteps(note, 'Ratios', 'both').map(({ kind, text, lang }) => `${kind}/${lang} ${text}`), [
+    'noteTitle/pl Notatka do lekcji Ratios.',
+    'note/pl Bilans',
+    'note/pl Aktywa.',
+    'note/pl Pasywa!',
+    'note/pl Kapitał',
+    'noteTitle/en English version.',
+    'note/en Assets.'
+  ]);
+  assert.deepEqual(noteSteps({ html: '<p>[[Obraz 1]]</p>', htmlEN: '' }, 'X', 'pl'), [], 'same odwołania – nic do czytania');
+  assert.deepEqual(sentences('Pierwsze. Drugie? Trzecie… a dalej'), ['Pierwsze.', 'Drugie?', 'Trzecie…', 'a dalej']);
+  assert.equal(introText(20, 1), 'Zaczynamy. Notatka lekcji i 20 pojęć.');
+  assert.equal(introText(3, 2), 'Zaczynamy. 2 notatki i 3 pojęcia.');
+  assert.ok(estimateNotes([{ steps: noteSteps(note, 'Ratios', 'pl') }]) > 1500);
+});
+
+test('odtwarzacz z notatką: najpierw notatka, potem pojęcia; liczby pojęć bez notatki; „dalej” pomija notatkę', (t) => {
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  t.after(() => mock.timers.reset());
+  const steps = noteSteps({ html: '<p>Raz. Dwa.</p>' }, 'Ratios', 'pl');
+  const player = new ListenPlayer({
+    cards: [{ term: FULL, direction: PL_EN }, { term: BARE, direction: EN_PL }],
+    notes: [{ lessonID: 'l1', lessonName: 'Ratios', steps }, { lessonID: 'l2', lessonName: 'Pusta', steps: [] }],
+    options: { thinkMs: 1000 },
+    settings: () => ({ speechRate: 1 }),
+    onChange: () => {}
+  });
+  assert.equal(player.total, 2, 'notatka nie jest pojęciem');
+  assert.equal(player.notes.length, 1, 'notatka bez kroków jest pomijana');
+  player.start();
+  assert.equal(player.currentStep().text, 'Zaczynamy. Notatka lekcji i 2 pojęcia.');
+  mock.timers.tick(0);
+  mock.timers.tick(DETAIL_GAP);
+  mock.timers.tick(0);
+  assert.equal(player.currentNote()?.lessonName, 'Ratios');
+  assert.equal(player.currentCard(), null);
+  assert.equal(player.cardNumber, 0);
+  assert.equal(player.currentStep().kind, 'note', 'po zapowiedzi notatki jej zdania');
+  player.next();
+  mock.timers.tick(1000);
+  assert.equal(player.currentCard()?.term.id, FULL.id, '„dalej” – pierwsze pojęcie');
+  assert.equal(player.cardNumber, 1);
+  player.previous();
+  assert.equal(player.cardNumber, 1, 'w środku pojęcia – to samo od początku');
+  player.previous();
+  assert.equal(player.currentNote()?.lessonName, 'Ratios', 'wstecz z początku pierwszego pojęcia – notatka');
+  player.stop();
 });

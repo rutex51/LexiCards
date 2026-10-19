@@ -6,6 +6,7 @@
 // formatowanie z cofaniem (Ctrl+Z) bez dodatkowych bibliotek. Treść przy wklejaniu i zapisie
 // przechodzi przez normalizeNoteHtml(), więc w bazie zawsze jest bezpieczny, prosty HTML.
 
+import { sentences } from '../core/listen.js';
 import { NOTE_IMAGE_LIMIT } from '../core/model.js';
 import { bytesToBase64 } from '../core/base64.js';
 import { NOTE_COLORS, PAGE_BREAK_LINE, isEmptyNoteHtml, noteText, normalizeNoteHtml, portableNoteHtml } from '../core/note-format.js';
@@ -323,13 +324,6 @@ function focusPanel(panel) {
 }
 
 // ---------------------------------------------------------------- czytanie na głos
-
-/** Zdania tekstu – czytanie kawałkami, żeby pauza i wznowienie nie cofały o cały akapit. */
-function sentences(text) {
-  const parts = text.match(/[^.!?…]+(?:[.!?…]+["”»)]*|$)/g) ?? [];
-  const result = parts.map((part) => part.trim()).filter(Boolean);
-  return result.length > 0 ? result : [text];
-}
 
 /**
  * Czytanie notatki na głos (synteza mowy urządzenia, głos i tempo z Ustawień): zdanie po
