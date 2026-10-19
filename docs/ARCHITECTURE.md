@@ -30,12 +30,14 @@ js/ui/listen-player.js     odtwarzacz słuchania: kolejne kroki czytane syntezat
 js/ui/notes.js             okno notatki lekcji: podgląd, edytor z paskiem formatowania, obrazy, załączniki, powiększanie
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
+js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
 js/ui/images.js            obrazy w przeglądarce: odczyt, zmniejszanie dużych zdjęć, adresy do wyświetlenia
 js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
 js/core/model.js           kształt rekordów, wartości domyślne, stałe
 js/core/backup.js          kopia zapasowa: plik danych i plik obrazów i załączników – tworzenie, walidacja, przywracanie
 js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (PDF, Word, Excel, PowerPoint…)
+js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
 js/core/zip.js             odczyt i zapis archiwów ZIP (także kawałkami przez Blob – duże pliki)
 js/core/xlsx.js            odczyt i zapis skoroszytów XLSX
 js/core/csv.js             kodowanie, separator, odczyt i zapis CSV
@@ -312,6 +314,23 @@ tekst albo za niego. W edytorze miniatura pokazuje sygnaturę, menu obrazu ma �
 (akapit z odwołaniem w miejscu kursora – ta sama funkcja co „Nowa strona”: `insertBlock`) i „Zmień
 sygnaturę” (jedyna w notatce; `renameReferences` zmienia odwołania w obu wersjach językowych).
 „Kopiuj notatkę” wstawia obrazy w miejsca odwołań.
+
+Od 1.11 **wzory** (`js/core/math.js`, `js/ui/math.js`): w treści notatki zostają tekstem `$…$`
+i `$$…$$` – zapis nie zmienia filtra HTML, eksportu, kopii ani wyszukiwania. `mathSegments()` znajduje
+wzory jak Pandoc: po otwierającym `$` i przed zamykającym nie ma odstępu, a po zamykającym – cyfry,
+więc kwoty („$20 i $30”, „$5/$10”) zostają tekstem; `\$` to zwykły dolar. `parseMath()` czyta podzbiór
+LaTeX (potęgi i indeksy, `\frac`, `\sqrt[n]`, `\binom`, litery greckie, relacje i strzałki, `\sum`/`\prod`
+z granicami, całki, funkcje `\sin`…`\lim`, `\mathbb`, `\text`, `\left…\right`, akcenty, odstępy) do drzewa
+z listą błędów (nieznane polecenie, nawiasy); długość i zagnieżdżenie są ograniczone. `js/ui/math.js`
+buduje z drzewa MathML przez `createElementNS` (bez `innerHTML`) – wzory składa przeglądarka (MathML
+Core w Chrome i Edge, MathML w Safari), czcionką z tablicą matematyczną systemu (STIX Two Math na
+urządzeniach Apple, Cambria Math na Windows). `contentUnits` w `note-book.js` zamienia zapis na wzory
+po rozpoznaniu odwołań do obrazów, a podział akapitu między strony pomija miejsca wewnątrz wzoru
+(`mathRanges`). Każdy `<math>` ma `data-source` (zapis) i `data-spoken` (`spokenMath` – słowa
+w języku notatki: „x do kwadratu”, „a przez b”, „pierwiastek z x”); z tego czyta „Czytaj na głos”,
+a słuchanie lekcji (`noteSteps`) – z `spokenText()`. Edytor: przycisk „Wzór” (`$$` z kursorem w środku
+albo `$zaznaczenie$`) i „Równania – ściągawka” (`openMathHelp`: pole z podglądem, przykłady
+z `MATH_CHEATSHEET`, wstawienie po zamknięciu okna – wcześniej edytor pod oknem jest zablokowany).
 
 Od 1.6 **wersja angielska**: `htmlEN` obok `html`; w edytorze przełącznik Polski / Angielski zamienia
 treść jednego pola `contenteditable` (stan drugiej wersji jest w pamięci edytora; zmiana języka

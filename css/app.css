@@ -4928,6 +4928,73 @@ a.row__main:active,
   opacity: 0;
 }
 
+/* Wzory w notatce (od 1.11): MathML składany przez przeglądarkę. Wzór w osobnym wierszu ($$…$$)
+   – na środku, za szeroki przewija się w bok zamiast wychodzić poza stronę. */
+/* Czcionki z tablicą matematyczną: iPhone, iPad i Mac – STIX Two Math, Windows – Cambria Math. */
+math { font-family: "STIX Two Math", "Cambria Math", "STIX Math", "Latin Modern Math", math, serif; }
+.note-text math { font-size: 1.12em; }
+.note-text math[display="block"] { margin: 0.45em 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; }
+.math-bold { font-weight: 700; }
+.math-error { color: var(--danger); }
+
+/* Ściągawka zapisu wzorów (okno „Równania”). */
+.math-help__intro { margin: 0; }
+.math-try { display: flex; flex-direction: column; gap: 8px; }
+.math-try .field { margin: 0; }
+.math-try__preview {
+  display: grid;
+  place-items: center;
+  min-height: 64px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 1.2em;
+  overflow-x: auto;
+}
+.math-try__preview math[display="block"] { margin: 0; }
+.math-try__empty { font-size: var(--size-foot); color: var(--text-3); }
+.math-try__message--error { color: var(--danger); }
+.math-help__group { display: flex; flex-direction: column; gap: 8px; }
+.math-help__group .form-group__title { margin: 0; }
+.math-help__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+.math-help__list > li + li { border-top: 1px solid var(--separator); }
+.math-help__item {
+  display: grid;
+  grid-template-columns: minmax(96px, 38%) 1fr;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.math-help__item:active { background: var(--pressed); }
+@media (hover: hover) {
+  .math-help__item:hover { background: var(--hover); }
+}
+.math-help__result { min-width: 0; font-size: 1.12em; overflow-x: auto; }
+.math-help__result math[display="block"] { margin: 0; text-align: left; }
+.math-help__plain { font-size: 0.95em; }
+.math-help__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.math-help__source {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+.math-help__note { font-size: var(--size-foot); color: var(--text-2); }
+
 /* Wiersz notatki na ekranie lekcji i przycisk notatki na liście lekcji. */
 .row__button.note-row { color: var(--text); }
 

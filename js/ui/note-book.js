@@ -10,7 +10,8 @@
 //   - obraz z odwołaniem [[sygnatura]] stoi w miejscu odwołania (od 1.6), pozostałe obrazy są po
 //     tekście albo – gdy tak wybrano w notatce – przed nim; każdy zmniejszony najwyżej do wysokości strony;
 //   - blok, którego nie da się podzielić (np. bardzo długa lista zagnieżdżona), dostaje stronę
-//     przewijaną – to jedyny wyjątek od zasady „bez przewijania”.
+//     przewijaną – to jedyny wyjątek od zasady „bez przewijania”;
+//   - wzory zapisane $…$ (od 1.11) są składane przed podziałem i nigdy nie dzielą się między strony.
 // Krótka notatka (jedna strona) wygląda jak dawniej: karta o wysokości treści.
 //
 // Przewracanie: kartka zagina się od chwyconego rogu (geometria w core/page-curl.js). Płaska
@@ -25,6 +26,7 @@ import {
 } from '../core/page-curl.js';
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
+import { renderMath } from './math.js';
 
 /** Akapit dzielimy między stronami, gdy na dole zostało co najmniej tyle wierszy. */
 const MIN_LINES_TO_SPLIT = 2.2;
@@ -45,7 +47,7 @@ function reducedMotion() {
  * akapit z samym odwołaniem [[sygnatura]] staje się obrazem, odwołanie bez obrazu zostaje
  * tekstem oznaczonym na czerwono; obrazy bez odwołania są na początku albo na końcu.
  */
-function contentUnits(html, images, imagesFirst = false) {
+function contentUnits(html, images, imagesFirst = false, language = 'pl') {
   const template = document.createElement('template');
   template.innerHTML = normalizeNoteHtml(html);
   const root = document.importNode(template.content, true);
@@ -75,6 +77,8 @@ function contentUnits(html, images, imagesFirst = false) {
       units.push({ kind: 'block', node });
     }
   }
+  // Wzory $…$ – już po rozpoznaniu odwołań do obrazów (te sprawdzają sam tekst).
+  for (const unit of units) if (unit.node) renderMath(unit.node, language);
   const rest = images.map((_, index) => index).filter((index) => !referenced.has(index)).map((index) => ({ kind: 'image', index }));
   const all = imagesFirst ? [...rest, ...units] : [...units, ...rest];
   return all.map((unit, source) => ({ ...unit, source }));
@@ -111,6 +115,17 @@ function wordStarts(text) {
     if (/\s/.test(text[index - 1]) && !/\s/.test(text[index])) starts.push(index);
   }
   return starts;
+}
+
+/** Zakresy tekstu elementu zajęte przez wzory [od, do) – wzoru nie dzielimy między strony. */
+function mathRanges(element) {
+  return [...element.querySelectorAll('math')].map((math) => {
+    const before = document.createRange();
+    before.setStart(element, 0);
+    before.setEndBefore(math);
+    const start = before.toString().length;
+    return [start, start + math.textContent.length];
+  });
 }
 
 /** Czy jednostkę można dzielić między stronami: akapit albo punkt listy bez list zagnieżdżonych. */
@@ -243,7 +258,8 @@ function paginate(units, images, content, available, language = 'pl') {
   const split = (unit) => {
     if (!splittable(unit)) return null;
     const full = unit.node.textContent;
-    const starts = wordStarts(full);
+    const formulas = mathRanges(unit.node);
+    const starts = wordStarts(full).filter((point) => !formulas.some(([from, to]) => point > from && point < to));
     let low = 0;
     let high = starts.length - 1;
     let best = -1;
@@ -408,7 +424,7 @@ export function noteBook({
   html, images, imagesFirst = false, language = 'pl', onOpenImage, onLayout = () => {}, spread: spreadChosen = false,
   onSpreadChange = () => {}
 }) {
-  const units = contentUnits(html, withImageLabels(images), imagesFirst);
+  const units = contentUnits(html, withImageLabels(images), imagesFirst, language);
   const element = h('div', { class: 'note-book', dataset: { testid: 'note-book' } });
   const indicator = h('span', { class: 'note-pager__indicator', 'aria-live': 'polite', dataset: { testid: 'note-page-indicator' } });
   const spreadButton = h('button', {
@@ -848,6 +864,8 @@ export function noteBook({
           if (block.classList.contains('note-ref--missing')) continue;
           const copy = block.cloneNode(true);
           for (const nested of copy.querySelectorAll('ul, ol')) nested.remove();
+          // Wzór czytany słowami („x do kwadratu”), nie znak po znaku.
+          for (const math of copy.querySelectorAll('math')) math.replaceWith(` ${math.getAttribute('data-spoken') ?? ''} `);
           const text = copy.textContent.replace(/\s+/g, ' ').trim();
           if (text) parts.push({ text, page, element: block });
         }

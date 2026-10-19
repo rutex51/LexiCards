@@ -1,4 +1,4 @@
-# LexiCards 1.10
+# LexiCards 1.11
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -19,8 +19,9 @@ Notatka lekcji w słuchaniu, przyciski wstecz / dalej, czytelne „Anuluj” (we
 Załączniki notatek, przeniesienie dwoma plikami – dane oraz obrazy z załącznikami (wersja 1.8): [docs/RELEASE-1.8.md](docs/RELEASE-1.8.md).
 Przesuwanie wierszy lekcji i modułów, data utworzenia i filtr daty, kolejność utrwalonych do wyboru (wersja 1.9): [docs/RELEASE-1.9.md](docs/RELEASE-1.9.md).
 Notatka głosowa nagrywana w trakcie pisania notatki (wersja 1.10): [docs/RELEASE-1.10.md](docs/RELEASE-1.10.md).
+Równania w notatkach – zapis tekstem, wzory w podglądzie, ściągawka (wersja 1.11): [docs/RELEASE-1.11.md](docs/RELEASE-1.11.md).
 
-## Co potrafi wersja 1.10
+## Co potrafi wersja 1.11
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -58,6 +59,10 @@ Notatka głosowa nagrywana w trakcie pisania notatki (wersja 1.10): [docs/RELEAS
 - Notatka głosowa: w edytorze notatki **Nagraj notatkę głosową** nagrywa w tle, a Ty w tym czasie
   piszesz i poprawiasz notatkę (pauza, wznowienie, „Zakończ”). Nagranie trafia do załączników
   („Notatka głosowa 2026-10-19 15.01.m4a”, z czasem trwania) i odtwarzasz je w aplikacji.
+- Równania w notatkach: wzór wpisujesz tekstem między znakami dolara (`$x^2 + y^2 = r^2$`,
+  `$\frac{a}{b}$`, `$\sqrt{x}$`…), a podgląd notatki pokazuje go jak w podręczniku; `$$…$$` – wzór
+  w osobnym wierszu. Przycisk **Σ** wstawia wzór, a ikona **ⓘ** obok otwiera ściągawkę zapisu
+  z polem do wypróbowania. Czytanie na głos i słuchanie czytają wzór słowami („x do kwadratu”).
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
   Notatki do lekcji przychodzą z osobnego arkusza tego samego pliku – razem z pojęciami albo osobno.
@@ -102,7 +107,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.7 – notatka w słuchaniu, wstecz / dalej](docs/RELEASE-1.7.md),
 [wersja 1.8 – załączniki, przeniesienie dwoma plikami](docs/RELEASE-1.8.md),
 [wersja 1.9 – przesuwanie wierszy, data utworzenia, kolejność utrwalonych](docs/RELEASE-1.9.md),
-[wersja 1.10 – notatka głosowa](docs/RELEASE-1.10.md).
+[wersja 1.10 – notatka głosowa](docs/RELEASE-1.10.md),
+[wersja 1.11 – równania w notatkach](docs/RELEASE-1.11.md).
 
 ## Jak korzystać
 
@@ -258,6 +264,20 @@ plik można też otworzyć lub zapisać jak każdy załącznik i zmienić mu naz
 ekranu przyciskiem, przejście do innej aplikacji albo połączenie telefoniczne kończy nagrywanie –
 to, co się nagrało, zostaje w załącznikach (komunikat to mówi). Format zależy od przeglądarki: Safari
 nagrywa AAC (`.m4a`), Chrome i Edge – AAC (`.m4a`), gdy system ma koder, inaczej Opus (`.webm`).
+
+**Równania:** wzór wpisujesz w tekście notatki zapisem jak w LaTeX, między znakami dolara: `$x^2$`
+w zdaniu, `$$…$$` – w osobnym wierszu, na środku. W edytorze zapis zostaje tekstem (łatwo go
+poprawić), a w podglądzie notatki zamienia się we wzór – przeglądarka składa go sama, bez internetu.
+Przycisk **Σ** na pasku formatowania wstawia `$$` z kursorem w środku (zaznaczony tekst obejmuje
+znakami dolara), a **ⓘ** obok otwiera okno **Równania**: pole **Wypróbuj** z podglądem i opisem
+błędu (np. „Nieznane polecenie”), przykłady w grupach – potęgi i indeksy (`x^2`, `a_1`, `x^{10}`),
+ułamki i pierwiastki (`\frac{a}{b}`, `\sqrt{x}`, `\sqrt[3]{x}`), znaki działań i relacje (`\cdot`,
+`\le`, `\ne`, `\to`, `\in`), sumy, całki i granice, litery greckie (`\alpha`, `\pi`, `\Delta`), nawiasy,
+tekst i akcenty – oraz **Wstaw**, które dokłada wypróbowany wzór w miejscu kursora. Dotknięcie
+przykładu wpisuje go do pola. Kwoty pisane ze znakiem dolara („$20 i $30”) zostają tekstem;
+`\$` to zawsze zwykły dolar. Wzór nie dzieli się między strony, a czytanie na głos i słuchanie
+czytają go słowami w języku notatki. Zapis trafia bez zmian do eksportu, kopii i „Kopiuj notatkę”
+(inne aplikacje dostają tekst `$…$`).
 
 ### Postęp i lekcje utrwalone
 
@@ -471,6 +491,8 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 15. **Wersja 1.8: załączniki notatek (PDF, Word, Excel, PowerPoint), przeniesienie dwoma plikami – dane oraz obrazy z załącznikami** – gotowe.
 16. **Wersja 1.9: przesuwanie wierszy lekcji i modułów (utrwal / usuń), data utworzenia i filtr daty, kolejność utrwalonych do wyboru** – gotowe.
 17. **Wersja 1.10: notatka głosowa – nagrywanie w trakcie pisania notatki, nagranie w załącznikach, odtwarzanie** – gotowe.
+18. **Wersja 1.11: równania w notatkach – zapis tekstem, wzory w podglądzie, ściągawka, czytanie słowami** – gotowe.
+19. **Rysunki odręczne w notatce (rysik, nacisk, rozpoznawanie kształtów)** – makiety do akceptacji.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

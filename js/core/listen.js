@@ -6,6 +6,7 @@
 // Słuchanie nie zmienia harmonogramu powtórek (FSRS): aplikacja nie wie, czy pamiętałeś odpowiedź.
 
 import { DIRECTIONS } from './model.js';
+import { spokenText } from './math.js';
 import { PAGE_BREAK_LINE, isEmptyNoteHtml, noteText } from './note-format.js';
 import { referenceLabel } from './note-refs.js';
 import { pluralNotes, pluralTerms } from './text.js';
@@ -125,7 +126,9 @@ export function noteSteps(note, lessonName, mode) {
       .map((line) => line.trim())
       .filter((line) => line !== '' && line !== PAGE_BREAK_LINE && referenceLabel(line) === null);
     for (const line of lines) {
-      for (const sentence of sentences(line.replace(/^•\s*/, ''))) steps.push({ kind: 'note', text: sentence, lang: version.lang });
+      // Wzory $…$ (od 1.11) czytane słowami: „x do kwadratu”.
+      const spoken = spokenText(line.replace(/^•\s*/, ''), version.lang);
+      for (const sentence of sentences(spoken)) steps.push({ kind: 'note', text: sentence, lang: version.lang });
     }
   });
   // Notatka bez tekstu do przeczytania (np. same odwołania do obrazów) – bez zapowiedzi.

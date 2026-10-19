@@ -21,6 +21,7 @@ import { confirmDialog, mountDialog, openFormSheet, openMenu, showError, toast }
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
 import { prepareImage, urlPool } from './images.js';
+import { openMathHelp } from './math.js';
 import { recordingSupported, startRecording } from './recorder.js';
 import { noteBook } from './note-book.js';
 import { speakThen, speechAvailable, stopSpeaking } from './speech.js';
@@ -40,6 +41,9 @@ const FORMAT_BUTTONS = [
   { command: 'insertUnorderedList', icon: 'listBullet', label: 'Lista punktowana' },
   { command: 'insertOrderedList', icon: 'listNumber', label: 'Lista numerowana' },
   { command: 'pageBreak', icon: 'pageBreak', label: 'Nowa strona' },
+  // Wzory (od 1.11): zapis $…$ i ściągawka zapisu.
+  { command: 'equation', icon: 'sigma', label: 'Wzór', keys: '$…$' },
+  { command: 'equationHelp', icon: 'info', label: 'Równania – ściągawka' },
   { command: 'color', icon: 'textColor', label: 'Kolor tekstu' },
   { command: 'removeFormat', icon: 'clearFormat', label: 'Usuń formatowanie' }
 ];
@@ -808,6 +812,14 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
             insertBlock(h('hr', { 'data-page': '' }));
             return;
           }
+          if (definition.command === 'equation') {
+            insertEquation();
+            return;
+          }
+          if (definition.command === 'equationHelp') {
+            openMathHelp({ onInsert: (text) => run('insertText', text) });
+            return;
+          }
           if (definition.command === 'heading') {
             const block = String(document.queryCommandValue('formatBlock') ?? '').toLowerCase();
             run('formatBlock', block === 'h3' ? '<p>' : '<h3>');
@@ -816,7 +828,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
           run(definition.command);
         }
       }, icon(definition.icon, { size: 20 }));
-      if (!['color', 'removeFormat', 'pageBreak'].includes(definition.command)) button.setAttribute('aria-pressed', 'false');
+      if (!['color', 'removeFormat', 'pageBreak', 'equation', 'equationHelp'].includes(definition.command)) button.setAttribute('aria-pressed', 'false');
       buttons.set(definition.command, button);
       return button;
     })
@@ -830,6 +842,18 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
       selection.addRange(state.range);
     }
   };
+
+  /** Wzór: zaznaczony tekst dostaje znaki dolara ($zaznaczenie$), bez zaznaczenia – „$$” z kursorem w środku. */
+  function insertEquation() {
+    restoreSelection();
+    const selection = window.getSelection();
+    const selected = selection.rangeCount > 0 && area.contains(selection.anchorNode) ? selection.toString() : '';
+    document.execCommand('insertText', false, selected ? `$${selected}$` : '$$');
+    if (!selected) selection.modify?.('move', 'backward', 'character');
+    if (selection.rangeCount > 0) state.range = selection.getRangeAt(0).cloneRange();
+    syncEmpty();
+    updateToolbar();
+  }
 
   function run(command, value = null) {
     restoreSelection();

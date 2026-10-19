@@ -2723,6 +2723,106 @@ async function openNoteWithImages(page, { html, htmlEN = '', labels = [], images
   return { ids, book };
 }
 
+test('równania w notatce: $…$ jako wzór w podglądzie, kwoty zostają tekstem, czytanie słowami; przycisk wzoru, ściągawka i wstawianie w edytorze', async ({ open, context }) => {
+  await fakeSpeechForListening(context);
+  const page = await open();
+  const html = String.raw`<p>Pole koła: $P = \pi r^2$, obwód $2\pi r$. Kwoty $20 i $30 zostają tekstem.</p>`
+    + String.raw`<p>$$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$$</p>`
+    + String.raw`<p>Suma $\sum_{i=1}^{n} i = \frac{n(n+1)}{2}$, granica $\lim_{x \to 0} \frac{\sin x}{x} = 1$, błąd $\foo + 1$.</p>`;
+  const { ids } = await openNoteWithImages(page, { html });
+  const dialog = noteDialog(page);
+  const text = dialog.locator('[data-testid=note-text]');
+  const formulas = () => text.locator('math').evaluateAll((items) => items.map((math) => ({
+    source: math.getAttribute('data-source'), display: math.getAttribute('display'), spoken: math.getAttribute('data-spoken'),
+    tags: [...math.querySelectorAll('*')].map((node) => node.localName), height: math.getBoundingClientRect().height,
+    error: math.querySelector('.math-error') !== null
+  })));
+  const shown = await formulas();
+  assert.deepEqual(shown.map((formula) => formula.source), [
+    String.raw`P = \pi r^2`, String.raw`2\pi r`, String.raw`x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}`,
+    String.raw`\sum_{i=1}^{n} i = \frac{n(n+1)}{2}`, String.raw`\lim_{x \to 0} \frac{\sin x}{x} = 1`, String.raw`\foo + 1`
+  ]);
+  assert.deepEqual(shown.map((formula) => formula.display), [null, null, 'block', null, null, null], 'tylko $$…$$ w osobnym wierszu');
+  assert.ok(shown[0].tags.includes('msup'), 'potęga');
+  assert.ok(['mfrac', 'msqrt'].every((tag) => shown[2].tags.includes(tag)), 'ułamek i pierwiastek');
+  assert.ok(shown[3].tags.includes('munderover'), 'suma z granicami');
+  assert.ok(shown[2].height > 34, `wzór z ułamkiem jest wyższy od wiersza (${shown[2].height} px)`);
+  assert.deepEqual(shown.map((formula) => formula.error), [false, false, false, false, false, true], 'nieznane polecenie oznaczone');
+  await expectText(text, 'Kwoty $20 i $30 zostają tekstem.');
+  assert.equal(shown[0].spoken, 'P równa się pi r do kwadratu');
+  await page.screenshot({ path: path.join(OUTPUT, 'rownania-podglad-telefon.png') });
+
+  // Czytanie na głos: wzory słowami.
+  await dialog.locator('[data-testid=note-listen]').click();
+  await waitUntil(() => page.evaluate(() => window.spokenTexts.some((item) => item.text.includes('pierwiastek z b do kwadratu'))), 'Wzór przeczytany słowami');
+  const spoken = (await page.evaluate(() => window.spokenTexts.map((item) => item.text))).join(' ');
+  assert.ok(spoken.includes('P równa się pi r do kwadratu'), spoken);
+  assert.ok(!spoken.includes('\\'), 'bez znaków zapisu');
+  await dialog.locator('[data-testid=note-listen]').click();
+
+  // Edytor: przycisk wzoru wstawia $$ z kursorem w środku.
+  await dialog.locator('[data-testid=note-right]').click();
+  const editor = dialog.locator('[data-testid=note-editor]');
+  await editor.waitFor();
+  await editor.click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await dialog.locator('[data-testid=note-format-equation]').click();
+  await page.keyboard.type('E=mc^2');
+  await waitUntil(async () => (await editor.textContent()).includes('$E=mc^2$'), 'Wzór wpisany między znaki dolara');
+  // Kursor stoi przed zamykającym $ – dalszy tekst za wzorem.
+  await page.keyboard.press('End');
+  await page.keyboard.type(' oraz ');
+  await dialog.locator('[data-testid=note-format-equation]').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUTPUT, 'rownania-edytor-telefon.png') });
+
+  // Ściągawka: pole „Wypróbuj” z podglądem, błąd zapisu, przykład wpisany dotknięciem, „Wstaw”.
+  await dialog.locator('[data-testid=note-format-equationHelp]').click();
+  const help = page.locator('dialog.sheet[open]', { hasText: 'Wypróbuj' });
+  await help.waitFor();
+  await expectText(help.locator('.sheet__title'), 'Równania');
+  assert.ok(await help.locator('[data-testid=math-example]').count() >= 25, 'przykłady w ściągawce');
+  assert.ok(await help.locator('[data-testid=math-example] math').count() >= 24, 'przy przykładach – gotowe wzory');
+  await help.locator('[data-testid=math-try]').fill(String.raw`\frac{1}{2}`);
+  assert.equal(await help.locator('[data-testid=math-preview] mfrac').count(), 1);
+  await expectText(help.locator('[data-testid=math-message]'), String.raw`W notatce wpisz: $\frac{1}{2}$`);
+  await help.locator('[data-testid=math-try]').fill(String.raw`\bogus`);
+  await expectText(help.locator('[data-testid=math-message]'), String.raw`Nieznane polecenie: \bogus`);
+  await help.getByRole('button', { name: /pierwiastek kwadratowy/ }).click();
+  assert.equal(await help.locator('[data-testid=math-try]').inputValue(), String.raw`\sqrt{x}`);
+  await help.locator('.sheet__body').evaluate((body) => { body.scrollTop = 0; });
+  await help.evaluate((sheet) => Promise.all(sheet.getAnimations({ subtree: true }).map((animation) => animation.finished)));
+  await page.screenshot({ path: path.join(OUTPUT, 'rownania-sciagawka-telefon.png') });
+  await help.getByRole('button', { name: 'Wstaw' }).click();
+  await help.waitFor({ state: 'detached' });
+  await waitUntil(async () => (await editor.textContent()).includes(String.raw`$\sqrt{x}$`), 'Wzór ze ściągawki wstawiony');
+
+  // Zapis: zapis zostaje tekstem w notatce, podgląd pokazuje nowe wzory.
+  await dialog.locator('[data-testid=note-right]').click();
+  await page.locator('.toast', { hasText: 'Zapisano notatkę.' }).waitFor();
+  const note = await storedNote(page, ids.statements);
+  assert.ok(note.html.includes(String.raw`$E=mc^2$ oraz $\sqrt{x}$`), note.html);
+  await waitUntil(async () => (await formulas()).length === 8, 'Nowe wzory w podglądzie');
+});
+
+test('równania: długi akapit ze wzorami dzieli się na strony między wyrazami – żaden wzór nie jest rozcięty', async ({ open }) => {
+  const page = await open();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const formula = String.raw`a_{i}^{2} + \frac{b}{c}`;
+  const paragraph = Array.from({ length: 70 }, (_, index) => `Wyraz ${index + 1} to $${formula}$ dalej.`).join(' ');
+  const { book } = await openNoteWithImages(page, { html: `<p>${paragraph}</p>` });
+  const total = Number(await book.getAttribute('data-pages'));
+  assert.ok(total >= 2, `kilka stron (jest ${total})`);
+  const sources = [];
+  for (let pageNumber = 1; pageNumber <= total; pageNumber += 1) {
+    await waitUntil(async () => Number(await book.getAttribute('data-page')) === pageNumber, `Strona ${pageNumber}`);
+    sources.push(...await book.locator('.note-page:not([hidden]) math').evaluateAll((items) => items.map((math) => math.getAttribute('data-source'))));
+    if (pageNumber < total) await noteDialog(page).locator('[data-testid=note-page-next]').click();
+  }
+  assert.equal(sources.length, 70, 'każdy wzór dokładnie raz');
+  assert.ok(sources.every((source) => source === formula), 'wzory całe');
+});
+
 test('notatka: sygnatury obrazów – obraz w miejscu odwołania, brak obrazu na czerwono, wstawienie i zmiana sygnatury w edytorze, kopiowanie', async ({ open, context }) => {
   const page = await open();
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin });
