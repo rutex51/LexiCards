@@ -5525,6 +5525,65 @@ test('„Utrwalone na końcu listy” z menu „…” ekranu lekcji, modułu i 
   await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().consolidatedLast === false), 'Wyłączone z dziedziny');
 });
 
+test('„Zmień kolejność”: przełącznik „Utrwalone na końcu listy” nad listą – wyłączony pozwala przesuwać utrwalone między innymi', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const base = page.url().split('#')[0];
+  const titles = () => page.locator('.group .row .row__title').allTextContents().then((items) => items.map((item) => item.trim()));
+  const domainID = await page.evaluate(async (moduleID) => {
+    const { library } = window.lexicards;
+    await library.setModuleConsolidated(moduleID, true);
+    return library.getModule(moduleID).domainID;
+  }, ids.module);
+
+  // Dziedzina: utrwalony moduł „Finance” na końcu; w trybie zmiany kolejności – przełącznik włączony.
+  await page.goto(`${base}#/library/domain/${domainID}`);
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  await menuItem(page, 'Zmień kolejność modułów');
+  const toggle = page.locator('[data-testid=reorder-consolidated-last]');
+  assert.equal(await toggle.isChecked(), true);
+  await expectText(page.locator('.group__footer').first(), 'Utrwalone moduły są pod pozostałymi i przesuwasz je tylko między sobą.');
+  const before = await titles();
+  assert.equal(before.at(-1), 'Finance', 'utrwalony na końcu');
+  assert.equal(await page.getByRole('button', { name: 'Przesuń wyżej: Finance' }).isDisabled(), true, 'nie mija nieutrwalonych');
+  await page.screenshot({ path: path.join(OUTPUT, 'zmiana-kolejnosci-przelacznik-wlaczony.png') });
+
+  // Wyłączenie: to samo ustawienie co w Ustawieniach; utrwalony przesuwa się razem z innymi.
+  await toggle.uncheck();
+  await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().consolidatedLast === false), 'Ustawienie zapisane');
+  await expectText(page.locator('.group__footer').first(), 'Utrwalone moduły przesuwasz razem z innymi.');
+  assert.equal(await toggle.isChecked(), false);
+  assert.ok(await page.getByRole('button', { name: 'Gotowe' }).isVisible(), 'tryb zmiany kolejności trwa');
+  const order = await titles();
+  const index = order.indexOf('Finance');
+  const moveFinance = index > 0 ? 'Przesuń wyżej: Finance' : 'Przesuń niżej: Finance';
+  assert.equal(await page.getByRole('button', { name: moveFinance }).isDisabled(), false);
+  await page.getByRole('button', { name: moveFinance }).click();
+  await waitUntil(async () => (await titles()).indexOf('Finance') === index + (index > 0 ? -1 : 1), 'Finance przesunięty między nieutrwalone');
+  await page.screenshot({ path: path.join(OUTPUT, 'zmiana-kolejnosci-przelacznik-wylaczony.png') });
+  await page.getByRole('button', { name: 'Gotowe' }).click();
+  await page.goto(`${base}#/settings`);
+  assert.equal(await page.locator('[data-testid=consolidated-last]').isChecked(), false, 'Ustawienia pokazują ten sam stan');
+
+  // Lista lekcji: przełącznik tylko wtedy, gdy są utrwalone lekcje.
+  const plainModule = await page.evaluate((id) => {
+    const { library } = window.lexicards;
+    return [...library.maps.modules.values()].find((module) => module.id !== id && library.listLessons(module.id).length > 1).id;
+  }, ids.module);
+  await page.goto(`${base}#/library/module/${plainModule}`);
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  await menuItem(page, 'Zmień kolejność lekcji');
+  assert.equal(await toggle.count(), 0, 'bez utrwalonych – bez przełącznika');
+  await page.getByRole('button', { name: 'Gotowe' }).click();
+  await page.goto(`${base}#/library/module/${ids.module}`);
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  await menuItem(page, 'Zmień kolejność lekcji');
+  assert.equal(await toggle.isChecked(), false);
+  await toggle.check();
+  await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().consolidatedLast === true), 'Włączone z listy lekcji');
+});
+
 test('data utworzenia przy modułach i lekcjach; filtr daty w module, w lekcji i w glosariuszu', async ({ open }) => {
   const page = await open();
   await loadSamples(page);

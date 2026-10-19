@@ -14,8 +14,8 @@ import { openMenu, toast } from '../dialogs.js';
 import { h } from '../dom.js';
 import { icon } from '../icons.js';
 import {
-  confirmConsolidation, consolidatedLastMenuItem, consolidationMenuItem, markConsolidated, masteryBar, masteryOf, masterySubtitle,
-  setConsolidated
+  confirmConsolidation, consolidatedLastMenuItem, consolidatedLastToggle, consolidationMenuItem, markConsolidated, masteryBar, masteryOf,
+  masterySubtitle, setConsolidated
 } from '../mastery.js';
 import { noteButton, noteMenuItem } from '../notes.js';
 import { routes } from '../router.js';
@@ -308,7 +308,8 @@ export class DomainScreen {
               })
             }), progress), 'module', module.id, progress);
           });
-      body = [list.control, group({ title: list.title }, rows), list.empty];
+      const toggle = this.reordering && consolidatedLastToggle(ctx, 'module', modules.some((item) => library.isModuleConsolidated(item.id)));
+      body = [list.control, toggle || null, group({ title: list.title }, rows), list.empty];
     }
 
     return {
@@ -413,7 +414,8 @@ export class ModuleScreen {
               })
             }), progress), 'lesson', lesson.id, progress);
           });
-      body = [list.control, group({ title: list.title }, rows), list.empty];
+      const toggle = this.reordering && consolidatedLastToggle(ctx, 'lesson', lessons.some((item) => library.isLessonConsolidated(item.id)));
+      body = [list.control, toggle || null, group({ title: list.title }, rows), list.empty];
     }
 
     return {

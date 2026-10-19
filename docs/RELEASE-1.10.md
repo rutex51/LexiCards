@@ -138,6 +138,23 @@ Testy wersji 1.10.5:
 - Zrzuty (Chromium, ekran telefonu): lista lekcji (jasny i ciemny motyw, zielony kolor aplikacji),
   ekran lekcji (jasny i ciemny), menu „…” ekranu lekcji z nowym poleceniem.
 
+## Uzupełnienie w wersji 1.10.6
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Wyłączanie „Utrwalone na końcu listy” także w trybie zmiany kolejności (ekran „Zmień kolejność modułów” / „Zmień kolejność lekcji”) | Nad listą ze strzałkami jest przełącznik **Utrwalone na końcu listy** z opisem: włączony – „Utrwalone moduły są pod pozostałymi i przesuwasz je tylko między sobą” (dlatego strzałka w górę przy pierwszym utrwalonym jest szara), wyłączony – „Utrwalone moduły przesuwasz razem z innymi”. Po wyłączeniu lista od razu układa się w Twojej kolejności i utrwalone można przesuwać między pozostałe, bez wychodzenia z trybu. To samo ustawienie co w Ustawieniach i w menu „…”. Przełącznik pokazuje się tylko wtedy, gdy na liście są utrwalone moduły albo lekcje |
+
+Testy wersji 1.10.6:
+
+- **Testy logiki: 259 – wszystkie zaliczone** (bez zmian w logice).
+- **Testy w przeglądarce: 113 – wszystkie zaliczone w dwóch przebiegach** (112 wcześniejszych
+  + 1 nowy): dziedzina z utrwalonym modułem – w trybie zmiany kolejności przełącznik włączony,
+  opis, utrwalony na końcu i bez strzałki w górę; wyłączenie – zapisane ustawienie, nowy opis, tryb
+  trwa, utrwalony przesuwa się między nieutrwalone; Ustawienia pokazują ten sam stan; lista lekcji
+  bez utrwalonych – bez przełącznika; włączenie z listy lekcji.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium, ekran telefonu): tryb zmiany kolejności z przełącznikiem włączonym i wyłączonym.
+
 ## Czego nie sprawdzono
 
 - **Na iPhonie** – testy działają w Chromium z udawanym mikrofonem, nie w Safari na iOS. Do

@@ -8,6 +8,7 @@
 import { CONSOLIDATED_REVIEW_OPTIONS, consolidatedReviewDays } from '../core/model.js';
 import { lessonMastery, moduleMastery, statsDirection } from '../core/stats.js';
 import { joinList, pluralForm } from '../core/text.js';
+import { checkRow, group } from './components.js';
 import { confirmDialog, showError, toast } from './dialogs.js';
 import { h } from './dom.js';
 import { icon } from './icons.js';
@@ -121,6 +122,32 @@ export function consolidatedLastMenuItem(ctx) {
         : 'Utrwalone lekcje i moduły są teraz na końcu listy.');
     }
   };
+}
+
+/**
+ * Przełącznik „Utrwalone na końcu listy” nad listą w trybie zmiany kolejności (od 1.10.6) – to samo
+ * ustawienie co w Ustawieniach. Tylko gdy na liście są utrwalone – bez nich niczego nie zmienia.
+ */
+export function consolidatedLastToggle(ctx, level, hasConsolidated) {
+  if (!hasConsolidated) return null;
+  const last = ctx.library.getSettings().consolidatedLast !== false;
+  const noun = level === 'module' ? 'moduły' : 'lekcje';
+  return group({
+    footer: last
+      ? `Utrwalone ${noun} są pod pozostałymi i przesuwasz je tylko między sobą. Wyłącz, żeby przesuwać je razem z innymi.`
+      : `Utrwalone ${noun} przesuwasz razem z innymi. Włącz, żeby były na końcu listy.`
+  }, checkRow({
+    checked: last,
+    title: 'Utrwalone na końcu listy',
+    testID: 'reorder-consolidated-last',
+    onChange: async (value) => {
+      try {
+        await ctx.library.updateSettings({ consolidatedLast: value });
+      } catch (error) {
+        await showError(error);
+      }
+    }
+  }));
 }
 
 const shortDate = (iso) => new Date(iso).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' });
