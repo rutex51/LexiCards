@@ -81,6 +81,7 @@ const ICONS = {
   italic: [p('M10.5 5h7'), p('M6.5 19h7'), p('M14.5 5l-5 14')],
   underline: [p('M7.5 4.5v6.25a4.5 4.5 0 0 0 9 0V4.5'), p('M5.5 20h13')],
   heading: [{ d: 'M6.5 5v14M17.5 5v14M6.5 12h11', 'stroke-width': 2.2 }],
+  pageBreak: [p('M6.5 3.5V8.5h11v-5'), p('M6.5 20.5v-5h11v5'), p('M3 12h3'), p('M10.5 12h3'), p('M18 12h3')],
   listBullet: [dot(5.2, 7, 1.4), dot(5.2, 12, 1.4), dot(5.2, 17, 1.4), p('M9.5 7h10'), p('M9.5 12h10'), p('M9.5 17h10')],
   listNumber: [
     { d: 'M4.3 5.3l1.4-.8v5', 'stroke-width': 1.5 },

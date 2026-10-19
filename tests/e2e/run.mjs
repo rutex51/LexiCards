@@ -1107,6 +1107,53 @@ function sampleLessons(page) {
 /** Notatka z biblioteki (tekst i opis obrazów). */
 const storedNote = (page, lessonID) => page.evaluate((id) => window.lexicards.library.getNote(id), lessonID);
 
+/**
+ * Przechodzi po kolei przez strony otwartej notatki (przyciskiem „Następna strona”) i zwraca
+ * dla każdej: liczbę obrazów, tekst i o ile treść wystaje poza stronę (≤ 0 – mieści się).
+ */
+async function walkNotePages(page) {
+  const dialog = noteDialog(page);
+  const book = dialog.locator('[data-testid=note-book]');
+  await book.waitFor();
+  const total = Number(await book.getAttribute('data-pages'));
+  if ((await book.getAttribute('data-page')) !== '1') {
+    await page.keyboard.press('Home');
+    await waitUntil(async () => (await book.getAttribute('data-page')) === '1', 'Pierwsza strona notatki');
+  }
+  const result = [];
+  for (let number = 1; number <= total; number += 1) {
+    if (number > 1) {
+      await dialog.locator('[data-testid=note-page-next]').click();
+      await waitUntil(async () => (await book.getAttribute('data-page')) === String(number)
+        && (await dialog.locator('[data-testid=note-page]').count()) === 1, `Strona ${number} notatki`);
+    }
+    const current = dialog.locator('[data-testid=note-page]');
+    await waitUntil(() => imagesLoaded(current), 'Obrazy strony powinny się wyświetlić');
+    result.push({
+      figures: await current.locator('.note-page__figure').count(),
+      text: (await current.textContent()).replace(/\s+/g, ' ').trim(),
+      overflow: await pageOverflow(current)
+    });
+  }
+  return result;
+}
+
+/** O ile treść strony notatki wystaje poza jej obrys (w pionie albo w poziomie). */
+function pageOverflow(locator) {
+  return locator.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    // Treść ma się mieścić w polu strony bez dolnego marginesu wewnętrznego.
+    const bottom = box.bottom - parseFloat(getComputedStyle(element).paddingBottom);
+    let worst = -Infinity;
+    for (const child of element.querySelectorAll('.note-page__content *')) {
+      const rect = child.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) continue;
+      worst = Math.max(worst, rect.bottom - bottom, rect.right - box.right, box.left - rect.left);
+    }
+    return worst;
+  });
+}
+
 /** Czy wszystkie obrazy w elemencie są wczytane (mają wymiary). */
 function imagesLoaded(locator) {
   return locator.evaluate((element) => [...element.querySelectorAll('img')].every((image) => image.complete && image.naturalWidth > 0));
@@ -1158,14 +1205,16 @@ test('notatka lekcji: dodanie z listy lekcji, formatowanie, obraz, podgląd, pow
   const html = await dialog.locator('[data-testid=note-text]').innerHTML();
   assert.equal(html, '<h3>Bilans</h3><p>Pokazuje <strong>majątek</strong> firmy.</p><ul><li>Aktywa = Pasywa</li><li>Kapitał <span data-color="green">własny</span></li></ul>');
   await expectText(dialog.locator('[data-testid=note-right]'), 'Edytuj');
-  await dialog.locator('.note-gallery__item img').waitFor();
-  await waitUntil(() => imagesLoaded(dialog.locator('[data-testid=note-gallery]')), 'Obraz notatki powinien się wyświetlić');
+  await dialog.locator('.note-page__figure img').waitFor();
+  await waitUntil(() => imagesLoaded(dialog.locator('[data-testid=note-book]')), 'Obraz notatki powinien się wyświetlić');
+  assert.equal(await dialog.locator('[data-testid=note-book]').getAttribute('data-pages'), '1', 'krótka notatka to jedna strona');
+  assert.equal(await dialog.locator('.note-pager').isHidden(), true, 'przy jednej stronie nie ma przycisków stron');
   const note = await storedNote(page, ids.statements);
   assert.equal(note.images.length, 1);
   assert.deepEqual([note.images[0].type, note.images[0].width, note.images[0].height], ['image/png', 192, 192]);
 
   // Powiększenie: dwukrotne kliknięcie i klawisze; Esc zamyka tylko podgląd obrazu.
-  await dialog.locator('.note-gallery__item').click();
+  await dialog.locator('.note-page__figure').click();
   const lightbox = page.locator('dialog.lightbox[open]');
   await lightbox.waitFor();
   const width = () => lightbox.locator('.lightbox__image').evaluate((image) => image.getBoundingClientRect().width);
@@ -1313,7 +1362,7 @@ test('import notatek z arkusza: wybór zawartości, sprawdzenie notatek z obraza
   await expectText(text.locator('h3'), 'Bilans');
   await expectText(text.locator('[data-color=red]'), 'zobowiązania');
   await expectText(text.locator('u'), 'pasywów');
-  await waitUntil(async () => (await noteDialog(page).locator('.note-gallery__item img').count()) === 2 && imagesLoaded(noteDialog(page)), 'Dwa obrazy w notatce');
+  assert.equal((await walkNotePages(page)).reduce((sum, item) => sum + item.figures, 0), 2, 'dwa obrazy w notatce');
 });
 
 test('import samych notatek do istniejących lekcji: zastąp albo zostaw istniejące', async ({ open }) => {
@@ -1428,7 +1477,7 @@ test('kopia zapasowa z notatkami: obrazy wracają po usunięciu wszystkich danyc
   await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
   await page.click('[data-testid=lesson-note]');
   await expectText(noteDialog(page).locator('[data-testid=note-text]'), 'Notatka w kopii');
-  await waitUntil(async () => (await noteDialog(page).locator('.note-gallery__item img').count()) === 1 && imagesLoaded(noteDialog(page)), 'Obraz z kopii się wyświetla');
+  assert.equal((await walkNotePages(page)).reduce((sum, item) => sum + item.figures, 0), 1, 'obraz z kopii się wyświetla');
 });
 
 test('notatka w trakcie nauki i w szczegółach pojęcia; klawisze fiszek nie działają pod oknem notatki', async ({ open }) => {
@@ -1483,7 +1532,7 @@ test('okno notatki na wąskim ekranie 320 px i w ciemnym motywie: nic nie wystaj
   await dialog.locator('[data-testid=note-text]').waitFor();
   const fits = () => dialog.evaluate((element) => {
     const panel = element.querySelector('.sheet__panel').getBoundingClientRect();
-    return [...element.querySelectorAll('.note-text, .note-gallery img, .note-toolbar, .note-images, .button')]
+    return [...element.querySelectorAll('.note-text, .note-page, .note-page__figure img, .note-toolbar, .note-images, .button')]
       .every((child) => { const box = child.getBoundingClientRect(); return box.left >= panel.left - 0.5 && box.right <= panel.right + 0.5; });
   });
   assert.equal(await fits(), true, 'podgląd mieści się w oknie');
@@ -1494,6 +1543,190 @@ test('okno notatki na wąskim ekranie 320 px i w ciemnym motywie: nic nie wystaj
   assert.ok(toolbar.scroll >= toolbar.client, 'pasek formatowania może się przewijać');
   const color = await dialog.locator('.note-editor__area').evaluate((element) => getComputedStyle(element).color);
   assert.equal(color, 'rgb(255, 255, 255)', 'w ciemnym motywie tekst jest jasny');
+});
+
+const LONG_SENTENCE = 'Zasada lex superior derogat legi inferiori oznacza, że akt wyższego rzędu uchyla akt niższego rzędu w zakresie, w jakim są ze sobą sprzeczne. ';
+
+/** Czeka, aż książka notatki pokaże stronę `number` (po zakończonym obrocie kartki). */
+async function notePageShown(page, number) {
+  const dialog = noteDialog(page);
+  await waitUntil(async () => (await dialog.locator('[data-testid=note-book]').getAttribute('data-page')) === String(number)
+    && (await dialog.locator('[data-testid=note-page]').count()) === 1, `Powinna być widoczna strona ${number}`);
+}
+
+test('notatka w stronach: długi tekst bez przewijania, podział akapitu i listy, przewracanie przyciskami, klawiszami i palcem', async ({ open, context }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const items = Array.from({ length: 24 }, (_, index) => `Punkt numer ${index + 1} listy`);
+  const paragraph = LONG_SENTENCE.repeat(16).trim();
+  const html = `<h3>Hierarchia źródeł</h3><p>Konstytucja jest <strong>najwyższym prawem</strong>.</p><ol>${items.map((item) => `<li>${item}</li>`).join('')}</ol>`
+    + `<h3>Zasady kolizyjne</h3><p>${paragraph}</p><p>Ostatni akapit tekstu.</p>`;
+  await page.evaluate(async ([id, noteHtml]) => {
+    const bytes = await (await fetch('./icons/icon-512.png')).arrayBuffer();
+    await window.lexicards.library.saveNote(id, { html: noteHtml, images: [{ bytes, type: 'image/png', width: 512, height: 512 }] });
+  }, [ids.statements, html]);
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await page.click('[data-testid=lesson-note]');
+  const dialog = noteDialog(page);
+  const book = dialog.locator('[data-testid=note-book]');
+  await book.waitFor();
+
+  // Po otwarciu fokus jest na oknie, a nie na „Zamknij” (Safari obrysowywał przycisk ramką).
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('note-sheet')), true);
+  const total = Number(await book.getAttribute('data-pages'));
+  assert.ok(total >= 4, `długa notatka powinna mieć kilka stron (jest ${total})`);
+  await expectText(dialog.locator('[data-testid=note-page-indicator]'), `1 z ${total}`);
+  assert.equal(await dialog.locator('[data-testid=note-page-previous]').isDisabled(), true);
+  assert.ok(await dialog.locator('.sheet__body').evaluate((element) => element.scrollHeight <= element.clientHeight + 1), 'okno się nie przewija');
+
+  // Każda strona mieści się bez przewijania; cała treść jest, w tej samej kolejności.
+  const pages = await walkNotePages(page);
+  pages.forEach((item, index) => assert.ok(item.overflow <= 1, `strona ${index + 1} wystaje o ${item.overflow} px`));
+  const joined = pages.map((item) => item.text).join(' ');
+  assert.ok(joined.includes(paragraph), 'długi akapit podzielony między wyrazami, bez zgubionych słów');
+  let position = 0;
+  for (const item of [...items, 'Zasady kolizyjne', 'Ostatni akapit tekstu.']) {
+    const found = joined.indexOf(item, position);
+    assert.ok(found >= position, `„${item}” na swoim miejscu`);
+    position = found;
+  }
+  assert.equal(pages.reduce((sum, item) => sum + item.figures, 0), 1, 'obraz na stronie po tekście');
+  await expectText(dialog.locator('[data-testid=note-page-indicator]'), `${total} z ${total}`);
+  assert.equal(await dialog.locator('[data-testid=note-page-next]').isDisabled(), true);
+
+  // Lista na dwóch stronach: numeracja biegnie dalej.
+  await page.keyboard.press('Home');
+  await notePageShown(page, 1);
+  await page.keyboard.press('ArrowRight');
+  await notePageShown(page, 2);
+  const list = dialog.locator('[data-testid=note-page] ol').first();
+  const start = Number(await list.getAttribute('start'));
+  assert.ok(start > 1, 'druga strona zaczyna listę od dalszego numeru');
+  await expectText(list.locator('li').first(), `Punkt numer ${start} listy`);
+  await page.keyboard.press('ArrowLeft');
+  await notePageShown(page, 1);
+  await page.keyboard.press('End');
+  await notePageShown(page, total);
+  await page.keyboard.press('PageUp');
+  await notePageShown(page, total - 1);
+
+  // Palcem: w lewo – następna strona, w prawo – poprzednia, krótki ruch wraca.
+  await page.keyboard.press('Home');
+  await notePageShown(page, 1);
+  await touchDrag(context, page, book, -230);
+  await notePageShown(page, 2);
+  await touchDrag(context, page, book, 230);
+  await notePageShown(page, 1);
+  await touchDrag(context, page, book, -14);
+  await notePageShown(page, 1);
+
+  // W trakcie przeciągania kartka obraca się wokół lewej krawędzi, a pod nią jest już następna strona.
+  const { end } = await touchDrag(context, page, book, -150, { release: false });
+  const turning = await dialog.locator('[data-testid=note-page]').evaluateAll((elements) => elements.map((element) => ({
+    page: element.dataset.page, transform: element.style.transform
+  })));
+  assert.equal(turning.length, 2, 'dwie strony w trakcie obrotu');
+  assert.equal(turning[0].page, '2', 'pod spodem następna strona');
+  assert.match(turning[1].transform, /rotateY\(-\d/);
+  await end();
+  await notePageShown(page, 2);
+
+  // Obraz na stronie powiększa się dotknięciem.
+  await page.keyboard.press('End');
+  await notePageShown(page, total);
+  await dialog.locator('.note-page__figure').click();
+  await page.locator('dialog.lightbox[open]').waitFor();
+  await page.keyboard.press('Escape');
+  await page.locator('dialog.lightbox[open]').waitFor({ state: 'detached' });
+  assert.equal(await noteDialog(page).count(), 1);
+
+  // Niższe okno: strony liczone od nowa, nadal bez przewijania.
+  await page.setViewportSize({ width: 390, height: 640 });
+  await waitUntil(async () => Number(await book.getAttribute('data-pages')) > total, 'Na niższym ekranie powinno być więcej stron');
+  for (const [index, item] of (await walkNotePages(page)).entries()) assert.ok(item.overflow <= 1, `po zmianie: strona ${index + 1} wystaje o ${item.overflow} px`);
+});
+
+test('notatka: „Nowa strona” w edytorze; podgląd na liście bez znacznika; ograniczony ruch – strony bez animacji', async ({ open }) => {
+  const page = await open();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await page.click('[data-testid=lesson-note-add]');
+  const dialog = noteDialog(page);
+  const editor = dialog.locator('[data-testid=note-editor]');
+  await editor.click();
+  await page.keyboard.type('Pierwsza strona');
+  await dialog.locator('[data-testid=note-format-pageBreak]').click();
+  await page.keyboard.type('Druga strona');
+  assert.equal(await editor.locator('hr').count(), 1, 'w edytorze widać linię nowej strony');
+  assert.match(await editor.locator('hr').evaluate((element) => getComputedStyle(element, '::after').content), /Nowa strona/);
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  assert.equal((await storedNote(page, ids.statements)).html, '<p>Pierwsza strona</p><hr data-page=""><p>Druga strona</p>');
+
+  const book = dialog.locator('[data-testid=note-book]');
+  assert.equal(await book.getAttribute('data-pages'), '2');
+  await expectText(dialog.locator('[data-testid=note-page]'), 'Pierwsza strona');
+  await dialog.locator('[data-testid=note-page-next]').click();
+  // Ograniczony ruch: strona zmienia się od razu, bez obrotu.
+  assert.equal(await book.getAttribute('data-page'), '2');
+  await expectText(dialog.locator('[data-testid=note-page]'), 'Druga strona');
+
+  // Ponowna edycja: linia jest na miejscu, a zamknięcie bez zmian niczego nie pyta.
+  await dialog.locator('[data-testid=note-right]').click();
+  assert.equal(await editor.locator('hr').count(), 1);
+  await dialog.locator('[data-testid=note-left]').click();
+  await book.waitFor();
+  assert.equal(await page.locator('dialog.alert[open]').count(), 0);
+
+  /** Kursor w tekście pola edycji: w węźle tekstowym zawierającym `text`, za `offset` znakami. */
+  const placeCaret = async (text, offset) => {
+    await editor.evaluate((area, [needle, at]) => {
+      const walker = document.createTreeWalker(area, window.NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        if (!walker.currentNode.data.includes(needle)) continue;
+        const range = document.createRange();
+        range.setStart(walker.currentNode, at);
+        range.collapse(true);
+        area.focus();
+        window.getSelection().removeAllRanges();
+        window.getSelection().addRange(range);
+        return;
+      }
+    }, [text, offset]);
+    await page.waitForTimeout(50);
+  };
+
+  // W środku akapitu: akapit dzieli się na dwie strony.
+  await dialog.locator('[data-testid=note-right]').click();
+  await placeCaret('Pierwsza strona', 'Pierwsza'.length);
+  await dialog.locator('[data-testid=note-format-pageBreak]').click();
+  await dialog.locator('[data-testid=note-right]').click();
+  await book.waitFor();
+  assert.equal((await storedNote(page, ids.statements)).html,
+    '<p>Pierwsza</p><hr data-page=""><p>strona</p><hr data-page=""><p>Druga strona</p>');
+  assert.equal(await book.getAttribute('data-pages'), '3');
+
+  // W liście: lista dzieli się po punkcie z kursorem, a nowa strona zaczyna się od zwykłego akapitu.
+  await page.evaluate((id) => window.lexicards.library.saveNote(id, { html: '<ul><li>alfa</li><li>beta</li><li>gamma</li></ul>', images: [] }), ids.statements);
+  await dialog.locator('[data-testid=note-left]').click();
+  await noteDialog(page).waitFor({ state: 'detached' });
+  await page.click('[data-testid=lesson-note]');
+  await dialog.locator('[data-testid=note-right]').click();
+  await placeCaret('beta', 4);
+  await dialog.locator('[data-testid=note-format-pageBreak]').click();
+  await page.keyboard.type('nowa');
+  await dialog.locator('[data-testid=note-right]').click();
+  await book.waitFor();
+  assert.equal((await storedNote(page, ids.statements)).html,
+    '<ul><li>alfa</li><li>beta</li></ul><hr data-page=""><p>nowa</p><ul><li>gamma</li></ul>');
+  await dialog.locator('[data-testid=note-left]').click();
+  await noteDialog(page).waitFor({ state: 'detached' });
+  const preview = (await page.locator('[data-testid=lesson-note] .note-row__preview').textContent()).trim();
+  assert.equal(preview.includes('---'), false, `podgląd bez znacznika strony: ${preview}`);
+  assert.ok(preview.includes('nowa'));
 });
 
 // ---------------------------------------------------------------- nauka z fiszkami
@@ -2724,6 +2957,76 @@ test('fiszki: wąski ekran 320 px i długie teksty – nic nie wystaje, przycisk
   assert.ok((await overflow()) <= 0, `podsumowanie: treść wystaje o ${await overflow()} px`);
 }, { device: { ...PHONE, viewport: { width: 320, height: 568 } } });
 
+test('fiszki: stos – pod spodem następna fiszka; widać ją przy obrocie i wyrzuceniu; ostatnia bez stosu', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page, `#/study/lesson/${ids.basicsID}`);
+  await startStudy(page);
+  const stack = page.locator('[data-testid=card-stack]');
+  const first = stack.locator('.card-stack__layer--1');
+  assert.equal(await stack.getAttribute('data-depth'), '2');
+  await expectText(first.locator('.flashcard__text'), 'pasywa');
+  assert.equal((await stack.locator('.card-stack__layer--2').textContent()).trim(), '', 'głębsza fiszka jest pusta');
+  assert.equal(await stack.locator('.card-stack__layer button, .card-stack__layer [data-testid]').count(), 0, 'pod spodem nic nie da się nacisnąć');
+  assert.equal(await first.getAttribute('aria-hidden'), 'true');
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  const height = (await flashcard(page).boundingBox()).height;
+  const top = await flashcard(page).boundingBox();
+  const under = await first.boundingBox();
+  assert.ok(under.y + under.height > top.y + top.height + 3, 'następna fiszka wystaje spod dolnej krawędzi');
+  assert.ok(under.width < top.width - 8, 'i jest nieco węższa');
+
+  /** Co jest w punkcie fiszki (x – ułamek szerokości) w trakcie animacji zatrzymanej w podanej chwili. */
+  const pointAt = (time, fraction) => page.evaluate(([moment, x]) => {
+    for (const animation of document.getAnimations()) {
+      animation.pause();
+      animation.currentTime = moment;
+    }
+    const box = document.querySelector('[data-testid=card-stack]').getBoundingClientRect();
+    // Fiszki pod spodem są nieaktywne (inert, bez dotknięć); na czas sprawdzenia „widać” je dla elementFromPoint.
+    const layers = [...document.querySelectorAll('.card-stack__layer')];
+    for (const layer of layers) {
+      layer.inert = false;
+      layer.style.pointerEvents = 'auto';
+    }
+    const element = document.elementFromPoint(box.left + box.width * x, box.top + box.height * 0.45);
+    for (const layer of layers) {
+      layer.inert = true;
+      layer.style.pointerEvents = '';
+    }
+    return element?.closest('.card-stack__layer') ? 'stack' : (element?.closest('[data-testid=flashcard]') ? 'card' : 'other');
+  }, [time, fraction]);
+  const resume = () => page.evaluate(() => { for (const animation of document.getAnimations()) animation.play(); });
+
+  // Obrót (wokół pionowej osi fiszki): krawędzią do patrzącego – obok osi widać następną fiszkę.
+  await page.click('[data-testid=card-flip]');
+  assert.equal(await pointAt(168, 0.25), 'stack');
+  await resume();
+  await waitUntil(async () => (await side(page)) === 'back', 'Fiszka powinna się odwrócić');
+  // Wyrzucenie: w połowie lotu w środku jest już następna fiszka, podniesiona na wierzch.
+  await page.click('[data-testid=know-all]');
+  await page.click('[data-testid=decide-know]');
+  assert.equal(await pointAt(150, 0.8), 'stack', 'fiszka odlatuje w lewo – po prawej widać następną');
+  await resume();
+  await expectText(counter(page), '2 z 3');
+  await expectText(page.locator('[data-testid=card-front] .flashcard__text'), 'pasywa');
+  assert.equal(await flashcard(page).getAttribute('data-enter'), 'stack', 'następna fiszka jest już na miejscu – bez animacji wejścia');
+  assert.equal(await stack.getAttribute('data-depth'), '1');
+  await expectText(first.locator('.flashcard__text'), 'zysk');
+
+  await assess(page, [], 'repeat');
+  await expectText(counter(page), '3 z 3');
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  assert.equal(await stack.getAttribute('data-depth'), '0', 'ostatnia fiszka bez fiszek pod spodem');
+  assert.equal(await stack.locator('.card-stack__layer').count(), 0);
+  assert.ok(Math.abs((await flashcard(page).boundingBox()).height - height) < 1, 'fiszka ma tę samą wysokość przez całą sesję');
+
+  // Cofnięcie: poprzednia fiszka wraca, a stos znów ma jedną fiszkę pod spodem.
+  await page.click('[data-testid=study-undo]');
+  await expectText(counter(page), '2 z 3');
+  assert.equal(await stack.getAttribute('data-depth'), '1');
+});
+
 test('fiszki: ograniczony ruch – obrót i decyzja działają bez animacji', async ({ open, context }) => {
   const page = await open();
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -3729,6 +4032,48 @@ test('import: krok „Zatwierdź import” uprzedza o lekcjach, które przestan�
   await finishImport(page, 'Importuj 1 pojęcie');
   await expectText(page.locator('[data-testid=import-done]'), 'Zdjęto utrwalenie z 1 lekcji.');
   assert.equal(await page.evaluate((id) => window.lexicards.library.isLessonConsolidated(id), ids.investments), false);
+});
+
+test('utrwalone na końcu list lekcji i modułów; zmiana kolejności tylko w obrębie grup', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const base = page.url().split('#')[0];
+  const titles = () => page.locator('.group .row .row__title').allTextContents().then((items) => items.map((item) => item.trim()));
+  await page.goto(`${base}#/library/module/${ids.module}`);
+  assert.deepEqual(await titles(), ['Financial Statements', 'Investments', 'Financial Ratios']);
+  await page.getByRole('button', { name: 'Więcej poleceń: Investments' }).click();
+  await menuItem(page, 'Oznacz jako utrwaloną');
+  await waitUntil(async () => (await titles()).join() === 'Financial Statements,Financial Ratios,Investments', 'Utrwalona lekcja na końcu listy');
+  await page.getByRole('button', { name: 'Więcej poleceń: Financial Statements' }).click();
+  await menuItem(page, 'Oznacz jako utrwaloną');
+  await waitUntil(async () => (await titles()).join() === 'Financial Ratios,Financial Statements,Investments', 'Utrwalone w swojej kolejności');
+
+  // Zmiana kolejności: przesuwanie tylko wśród utrwalonych albo wśród pozostałych.
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  await menuItem(page, 'Zmień kolejność lekcji');
+  const up = (name) => page.getByRole('button', { name: `Przesuń wyżej: ${name}` });
+  const down = (name) => page.getByRole('button', { name: `Przesuń niżej: ${name}` });
+  assert.equal(await up('Financial Ratios').isDisabled(), true);
+  assert.equal(await down('Financial Ratios').isDisabled(), true, 'nieutrwalona nie przejdzie między utrwalone');
+  assert.equal(await up('Financial Statements').isDisabled(), true, 'utrwalona nie przejdzie nad nieutrwalone');
+  await down('Financial Statements').click();
+  await waitUntil(async () => (await up('Investments').isDisabled()), 'Investments na początku utrwalonych');
+  await page.getByRole('button', { name: 'Gotowe' }).click();
+  await waitUntil(async () => (await titles()).join() === 'Financial Ratios,Investments,Financial Statements', 'Nowa kolejność utrwalonych');
+
+  // Cofnięcie utrwalenia: lekcja wraca między nieutrwalone (według zapisanej kolejności).
+  await page.getByRole('button', { name: 'Więcej poleceń: Financial Statements' }).click();
+  await menuItem(page, 'Cofnij utrwalenie');
+  await waitUntil(async () => (await titles()).join() === 'Financial Ratios,Financial Statements,Investments', 'Lekcja wraca wyżej');
+
+  // Moduły w dziedzinie.
+  const domainID = await page.evaluate((id) => window.lexicards.library.getModule(id).domainID, ids.module);
+  await page.goto(`${base}#/library/domain/${domainID}`);
+  assert.deepEqual(await titles(), ['Management', 'Finance', 'Negotiations']);
+  await page.getByRole('button', { name: 'Więcej poleceń: Management' }).click();
+  await menuItem(page, 'Oznacz jako utrwalony');
+  await waitUntil(async () => (await titles()).join() === 'Finance,Negotiations,Management', 'Utrwalony moduł na końcu');
 });
 
 // ---------------------------------------------------------------- słuchanie

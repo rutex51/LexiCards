@@ -2,6 +2,7 @@
 //
 // W bazie notatka jest zapisana jako HTML z wąskiego, stałego zestawu znaczników:
 //   bloki:  <p>, <h3>, <ul>/<ol> z <li> (listy zagnieżdżone do trzech poziomów),
+//           <hr data-page=""> – podział na strony (od 1.3),
 //   wewnątrz: <strong>, <em>, <u>, <s>, <sup>, <sub>, <span data-color="…">, <a href>, <br>.
 // Każdy HTML – wklejony z Worda, strony WWW, Notatek, zapisany w edytorze albo z kopii
 // zapasowej – przechodzi przez normalizeNoteHtml(), która zostawia wyłącznie te znaczniki.
@@ -12,7 +13,8 @@
 // HTML, zwykły tekst oraz tekst sformatowany komórki Excela (eksport) – i odwrotnie: tekst
 // sformatowany z komórki (import) zamienia się w dokument.
 //
-//   Dokument: { blocks: [{ type: 'p' | 'h' | 'li', list?: 'ul' | 'ol', depth?: 0–2, runs }] }
+//   Dokument: { blocks: [{ type: 'p' | 'h' | 'li' | 'break', list?: 'ul' | 'ol', depth?: 0–2, runs }] }
+//   ('break' – nowa strona; bez tekstu, nigdy na początku, na końcu ani dwa razy z rzędu)
 //   Fragment: { text, b?, i?, u?, s?, sup?, sub?, color?, href? } – '\n' w tekście to nowy wiersz.
 //
 // Moduł nie zależy od przeglądarki.
@@ -293,6 +295,12 @@ export function docFromHtml(html) {
 
   const topMarks = () => stack[stack.length - 1]?.marks ?? {};
 
+  /** Nowa strona: zamyka bieżący blok (porządek podziałów – na końcu, normalizePageBreaks). */
+  const pageBreak = () => {
+    flush();
+    blocks.push({ type: 'break', runs: [] });
+  };
+
   const flush = () => {
     if (current) {
       const runs = cleanRuns(current.runs);
@@ -419,6 +427,7 @@ export function docFromHtml(html) {
         continue;
       }
       const attributes = parseAttributes(match[3]);
+      if (startsNewPage(attributes)) pageBreak();
       if (tag === 'br') {
         if (!current) startBlock();
         pushRun(current.runs, '\n', {});
@@ -426,7 +435,9 @@ export function docFromHtml(html) {
         continue;
       }
       if (VOID.has(tag)) {
-        if (tag === 'hr') flush();
+        // Zwykła linia pozioma (np. ze strony WWW) tylko kończy akapit; podział strony – notatki.
+        if (tag === 'hr' && 'data-page' in attributes) pageBreak();
+        else if (tag === 'hr') flush();
         continue;
       }
       if (tag === 'li') {
@@ -476,7 +487,28 @@ export function docFromHtml(html) {
     }
     block.runs = cleanRuns(block.runs);
   }
-  return { blocks: blocks.filter((block) => block.runs.length > 0) };
+  return { blocks: normalizePageBreaks(blocks.filter((block) => block.type === 'break' || block.runs.length > 0)) };
+}
+
+/** Czy element zaczyna nową stronę: styl podziału strony z Worda albo przeglądarki. */
+function startsNewPage(attributes) {
+  if (!attributes.style) return false;
+  const style = parseStyle(attributes.style);
+  return style['page-break-before'] === 'always' || style['break-before'] === 'page';
+}
+
+/** Podziały stron tylko między treścią: bez pustych stron na początku, na końcu i podwójnych. */
+function normalizePageBreaks(blocks) {
+  const result = [];
+  for (const block of blocks) {
+    if (block.type === 'break') {
+      if (result.length > 0 && result[result.length - 1].type !== 'break') result.push({ type: 'break', runs: [] });
+    } else {
+      result.push(block);
+    }
+  }
+  while (result.length > 0 && result[result.length - 1].type === 'break') result.pop();
+  return result;
 }
 
 /** Usuwa `count` pierwszych znaków z listy fragmentów. */
@@ -525,7 +557,12 @@ export function htmlFromDoc(doc) {
   const closeLists = (depth) => {
     while (open.length > depth) html += `</li></${open.pop()}>`;
   };
-  for (const block of doc.blocks ?? []) {
+  for (const block of normalizePageBreaks(doc.blocks ?? [])) {
+    if (block.type === 'break') {
+      closeLists(0);
+      html += '<hr data-page="">';
+      continue;
+    }
     const runs = cleanRuns((block.runs ?? []).map((run) => ({ ...run })));
     if (runs.length === 0) continue;
     if (block.type !== 'li') {
@@ -586,7 +623,9 @@ export function textFromDoc(doc) {
   blocks.forEach((block, index) => {
     const content = runsText(block.runs);
     if (index > 0) text += block.type === 'li' && blocks[index - 1].type === 'li' ? '\n' : '\n\n';
-    if (block.type === 'li') {
+    if (block.type === 'break') {
+      text += PAGE_BREAK_LINE;
+    } else if (block.type === 'li') {
       const indent = '    '.repeat(block.depth ?? 0);
       text += `${indent}${block.list === 'ol' ? `${numbers[index]}.` : '•'} ${content.replace(/\n/g, `\n${indent}  `)}`;
     } else {
@@ -595,6 +634,9 @@ export function textFromDoc(doc) {
   });
   return text;
 }
+
+/** Podział strony w zwykłym tekście i w komórce arkusza: wiersz z trzema łącznikami. */
+export const PAGE_BREAK_LINE = '---';
 
 /** Zwykły tekst notatki zapisanej w HTML (podgląd, kopiowanie, wyszukiwanie). */
 export function noteText(html) {
@@ -715,6 +757,11 @@ export function docFromRichText(runs) {
       paragraph = null;
       continue;
     }
+    if (text.trim() === PAGE_BREAK_LINE) {
+      paragraph = null;
+      blocks.push({ type: 'break', runs: [] });
+      continue;
+    }
     const leading = /^[ \t]*/.exec(text)[0];
     const indent = [...leading].reduce((sum, char) => sum + (char === '\t' ? 2 : 1), 0);
     let content = line.map((run) => ({ ...run }));
@@ -774,7 +821,7 @@ export function docFromRichText(runs) {
     blocks.push(block);
   }
   for (const block of blocks) block.runs = cleanRuns(block.runs);
-  return { blocks: blocks.filter((block) => block.runs.length > 0) };
+  return { blocks: normalizePageBreaks(blocks.filter((block) => block.type === 'break' || block.runs.length > 0)) };
 }
 
 /** Rozmiar czcionki nagłówka w komórce arkusza (zwykły tekst ma 11). */
@@ -802,7 +849,11 @@ export function richTextFromDoc(doc) {
     }
   };
   blocks.forEach((block, index) => {
-    if (index > 0) push(block.type === 'p' && blocks[index - 1].type === 'p' ? '\n\n' : '\n');
+    if (block.type === 'break') {
+      push(`\n\n${PAGE_BREAK_LINE}`);
+      return;
+    }
+    if (index > 0) push((block.type === 'p' && blocks[index - 1].type === 'p') || blocks[index - 1].type === 'break' ? '\n\n' : '\n');
     if (block.type === 'li') {
       push(`${'  '.repeat(block.depth ?? 0)}${block.list === 'ol' ? `${numbers[index]}.` : '•'} `);
     }

@@ -234,6 +234,41 @@ porządkuje `DOMParser`. Edytor to `contenteditable` z `document.execCommand` (c
 działa), kolory zapisane są nazwą, więc w ciemnym motywie są jaśniejsze. „Kopiuj notatkę”
 kładzie do schowka HTML z kolorami w stylu i obrazami jako `data:` oraz zwykły tekst.
 
+Od 1.3 dokument ma też blok `break` – podział na strony. W HTML to `<hr data-page="">`
+(zwykła linia `<hr>`, np. ze strony WWW, tylko kończy akapit); podział strony z Worda
+(`page-break-before: always`, `break-before: page`) też go daje. Podział nigdy nie stoi na
+początku, na końcu ani dwa razy z rzędu (`normalizePageBreaks`). W zwykłym tekście i w komórce
+arkusza to wiersz `---` – eksport i import dają tę samą notatkę. Przycisk „Nowa strona” w edytorze
+wstawia podział między blokami: na końcu bloku (z pustym akapitem do pisania dalej), w środku
+akapitu (akapit dzieli się na dwa) albo w liście (lista dzieli się po bieżącym punkcie).
+
+### Notatka w stronach (od 1.3)
+
+Podgląd notatki to książka (`js/ui/note-book.js`) – strona ma wysokość okna, więc nic się nie
+przewija:
+
+- **Podział na strony** liczy przeglądarka: treść (`contentUnits`: akapity, nagłówki, punkty list,
+  podziały, obrazy) trafia po kolei do niewidocznej strony pomiarowej o tej samej szerokości
+  i stylach. Akapit albo punkt listy, który się nie mieści, jest dzielony między wyrazami
+  (wyszukiwanie binarne po początkach wyrazów; `Range.cloneContents()` zachowuje formatowanie
+  po obu stronach), o ile na dole zostały co najmniej ~2 wiersze. Lista na kolejnej stronie ma
+  `start`, a ciąg dalszy punktu – bez drugiego punktora. Nagłówek nie zostaje sam na dole strony.
+  Obrazy są po tekście, zmniejszone najwyżej do wysokości strony; obraz, który nie mieści się
+  pod tekstem, zostaje na tej stronie zmniejszony, jeśli zachowa co najmniej 55% wysokości
+  (i 140 px) – inaczej przechodzi na następną. Blok niepodzielny wyższy niż strona (np. długa
+  lista zagnieżdżona) dostaje stronę przewijaną – jedyny wyjątek.
+- **Jedna strona** wygląda jak dawniej: karta o wysokości treści, bez przycisków stron. Na
+  szerokim ekranie okno dostaje stałą wysokość tylko wtedy, gdy stron jest kilka.
+- **Ponowny podział** po zmianie wielkości okna (np. obrót telefonu) zachowuje miejsce w treści:
+  pokazuje stronę z tą samą pierwszą jednostką.
+- **Przewracanie:** strona obraca się wokół lewej krawędzi (`rotateY` do −100°,
+  `backface-visibility: hidden`, perspektywa książki), z cieniem na obracanej kartce i na stronie
+  pod nią. Palcem (zdarzenia wskaźnika typu dotyk/pióro – mysz zostaje do zaznaczania tekstu)
+  kartka idzie za palcem i po puszczeniu kończy obrót albo wraca (30% szerokości albo szybki
+  ruch). Przyciski ‹ › i klawisze ←/→, Page Up/Down, Home/End. Ograniczony ruch – strony zmieniają
+  się od razu. Fokus z usuwanej strony (np. z obrazu) przechodzi na okno, żeby klawisze działały
+  dalej; po otwarciu okna fokus jest na panelu, a nie na „Zamknij” (bez ramki fokusu w Safari).
+
 ## Nauka z fiszkami
 
 Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany w
@@ -263,6 +298,13 @@ Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany 
   zwraca polecenia do pokazania, bez grup identycznych z „odłożonymi”.
 - **Cofnięcie** usuwa ostatni wpis historii i przywraca poprzedni rekord postępu, zapamiętany
   w wyniku fiszki. Działa także z ekranu podsumowania.
+- **Stos** (od 1.3): pod fiszką leżą najwyżej dwie następne z kolejki – pierwsza ze stroną
+  pytania (bez przycisków, `inert`, `aria-hidden`), druga pusta – przesunięte o 6 i 11 px w dół
+  i zwężone. Przy obrocie i przeciąganiu widać następną; przy wyrzuceniu stos podnosi się o jedno
+  miejsce (te same 220 ms co lot fiszki), a nowa fiszka pojawia się w tym samym położeniu bez
+  animacji wejścia (`data-enter="stack"`, także przy kolejnych odświeżeniach ekranu). Ostatnia
+  fiszka nie ma nic pod spodem; miejsce pod stosem jest zarezerwowane zawsze, więc fiszka nie
+  zmienia wysokości w trakcie sesji.
 - **Dzienniki** (`assessments`, `studySessions`) nie są trzymane w pamięci: zapis idzie przez
   `UnitOfWork.append()` / `erase()` w tej samej transakcji co reszta zmian, a odczyt historii
   pojęcia przez indeks `termID`.
@@ -437,7 +479,9 @@ wykresy w `js/ui/charts.js`.
 - **Postęp na listach** (od 1.2, `lessonMastery()` i `moduleMastery()`): procent pojęć ze statusem
   „Opanowane” w kierunku wybranym w Statystykach (dla „oba kierunki” – słabszy z dwóch). Lekcja
   utrwalona ma pełny pasek i opis „utrwalona”, a w module jej pojęcia liczą się jako opanowane.
-  Pasek, opis i pozycje menu rysuje `js/ui/mastery.js`.
+  Pasek, opis i pozycje menu rysuje `js/ui/mastery.js`. Od 1.3 utrwalone są na końcu listy
+  modułów i lekcji (w obu grupach kolejność ustalona przez użytkownika); w trybie zmiany kolejności
+  przesuwa się tylko w obrębie grupy, a zapisana kolejność to kolejność listy.
 - **Wykresy** są rysowane w SVG w rzeczywistej szerokości kontenera (ResizeObserver), bez
   bibliotek. Kolory to zmienne `--viz-*`, osobne dla jasnego i ciemnego motywu, sprawdzone
   walidatorem palet (kontrast z tłem, rozróżnialność przy protanopii i deuteranopii): statusy

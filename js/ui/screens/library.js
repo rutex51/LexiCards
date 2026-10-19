@@ -16,7 +16,11 @@ import { noteButton, noteMenuItem } from '../notes.js';
 import { routes } from '../router.js';
 
 /** Wiersze w trybie zmiany kolejności; każda zmiana jest od razu zapisywana. */
-function reorderRows(ctx, level, items, leadingFor = () => null) {
+/**
+ * Wiersze trybu zmiany kolejności. groupOf: elementy różnych grup (np. utrwalone na końcu listy)
+ * nie mijają się – przesuwać można tylko w obrębie grupy, a zapisana kolejność to kolejność listy.
+ */
+function reorderRows(ctx, level, items, leadingFor = () => null, groupOf = () => 0) {
   const move = (index, delta) => {
     const ids = items.map((item) => item.id);
     const [moved] = ids.splice(index, 1);
@@ -26,11 +30,17 @@ function reorderRows(ctx, level, items, leadingFor = () => null) {
   return items.map((item, index) => reorderRow({
     leading: leadingFor(item),
     title: item.name,
-    isFirst: index === 0,
-    isLast: index === items.length - 1,
+    isFirst: index === 0 || groupOf(items[index - 1]) !== groupOf(item),
+    isLast: index === items.length - 1 || groupOf(items[index + 1]) !== groupOf(item),
     onUp: () => move(index, -1),
     onDown: () => move(index, 1)
   }));
+}
+
+/** Utrwalone na koniec listy; w obu grupach zostaje kolejność ustalona przez użytkownika. */
+function consolidatedLast(items, isConsolidated) {
+  const flags = new Map(items.map((item) => [item.id, isConsolidated(item.id)]));
+  return [...items.filter((item) => !flags.get(item.id)), ...items.filter((item) => flags.get(item.id))];
 }
 
 /** Ekran pokazywany, gdy element został usunięty (np. w innej karcie). */
@@ -154,7 +164,7 @@ export class DomainScreen {
     const domain = library.getDomain(this.id);
     if (!domain) return missingView('Dziedzina', routes.domains(), 'Biblioteka');
 
-    const modules = library.listModules(domain.id);
+    const modules = consolidatedLast(library.listModules(domain.id), (id) => library.isModuleConsolidated(id));
     if (modules.length < 2) this.reordering = false;
 
     const moreMenu = () => openMenu({
@@ -201,7 +211,7 @@ export class DomainScreen {
       });
     } else {
       const rows = this.reordering
-        ? reorderRows(ctx, 'module', modules)
+        ? reorderRows(ctx, 'module', modules, () => null, (module) => library.isModuleConsolidated(module.id))
         : modules.map((module) => {
             const counts = library.counts('module', module.id);
             const progress = masteryOf(ctx, 'module', module.id);
@@ -257,7 +267,7 @@ export class ModuleScreen {
 
     const domain = library.getDomain(module.domainID);
     const backHref = domain ? routes.domain(domain.id) : routes.domains();
-    const lessons = library.listLessons(module.id);
+    const lessons = consolidatedLast(library.listLessons(module.id), (id) => library.isLessonConsolidated(id));
     if (lessons.length < 2) this.reordering = false;
 
     const moreMenu = () => openMenu({
@@ -298,7 +308,7 @@ export class ModuleScreen {
       });
     } else {
       const rows = this.reordering
-        ? reorderRows(ctx, 'lesson', lessons)
+        ? reorderRows(ctx, 'lesson', lessons, () => null, (lesson) => library.isLessonConsolidated(lesson.id))
         : lessons.map((lesson) => {
             const progress = masteryOf(ctx, 'lesson', lesson.id);
             return markConsolidated(linkRow({

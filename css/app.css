@@ -27,6 +27,10 @@
   --fill: rgba(118, 118, 128, 0.13);
   --pressed: rgba(118, 118, 128, 0.2);
   --hover: rgba(118, 118, 128, 0.08);
+  /* Fiszki pod spodem w stosie: obrys i przyciemnienie. */
+  --stack-edge: rgba(0, 0, 0, 0.07);
+  --stack-shade: rgba(60, 60, 67, 0.07);
+  --page-spine: rgba(60, 60, 67, 0.05);
 
   /* Kolory aplikacji (Ustawienia → Wygląd → Kolor). Każdy: tekst i zaznaczenia, wypełnienie
      przycisków (biały tekst na nim) i tło delikatne; wszystkie z kontrastem co najmniej 4,5:1.
@@ -124,6 +128,9 @@
     --fill: rgba(118, 118, 128, 0.24);
     --pressed: rgba(118, 118, 128, 0.36);
     --hover: rgba(118, 118, 128, 0.16);
+    --stack-edge: rgba(255, 255, 255, 0.07);
+    --stack-shade: rgba(0, 0, 0, 0.42);
+    --page-spine: rgba(0, 0, 0, 0.35);
     --tone-blue: #78b7ff;
     --tone-blue-fill: #0a6fe0;
     --tone-blue-soft: rgba(120, 183, 255, 0.18);
@@ -190,6 +197,9 @@
   --fill: rgba(118, 118, 128, 0.24);
   --pressed: rgba(118, 118, 128, 0.36);
   --hover: rgba(118, 118, 128, 0.16);
+  --stack-edge: rgba(255, 255, 255, 0.07);
+  --stack-shade: rgba(0, 0, 0, 0.42);
+  --page-spine: rgba(0, 0, 0, 0.35);
   --tone-blue: #78b7ff;
   --tone-blue-fill: #0a6fe0;
   --tone-blue-soft: rgba(120, 183, 255, 0.18);
@@ -327,6 +337,9 @@ button:disabled { cursor: default; }
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* Panel okna, który dostaje fokus po otwarciu (np. notatka) – bez obrysu. */
+.dialog-focus:focus { outline: none; }
 
 .visually-hidden {
   position: absolute;
@@ -1673,6 +1686,49 @@ a.row__main:active,
   background: var(--accent-fill);
   transition: width 0.25s ease;
 }
+
+/*
+ * Stos fiszek: pod wierzchnią leżą najwyżej dwie następne, wystające kilka pikseli spod dolnej
+ * krawędzi (zwężone od dołu). Margines pod stosem rezerwuje na nie miejsce zawsze – także przy
+ * ostatniej fiszce – żeby fiszka nie zmieniała wysokości w trakcie sesji.
+ */
+.card-stack {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 7px;
+}
+
+.card-stack__layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: 0 0 0 0.5px var(--stack-edge), 0 6px 18px rgba(0, 0, 0, 0.05);
+  transform-origin: 50% 100%;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.card-stack__layer--1 { transform: translateY(6px) scale(0.955); }
+.card-stack__layer--2 { transform: translateY(11px) scale(0.91); }
+
+/* Przyciemnienie głębszych fiszek; znika, gdy fiszka podnosi się na wierzch. */
+.card-stack__shade {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--stack-shade);
+  pointer-events: none;
+}
+
+.card-stack__layer--1 .card-stack__shade { opacity: 0.5; }
+.card-stack__layer--2 .card-stack__shade { opacity: 1; }
 
 .flashcard {
   position: relative;
@@ -3768,48 +3824,183 @@ a.row__main:active,
   overflow-wrap: anywhere;
 }
 
-.note-sheet__text {
-  padding: 16px var(--gutter) 18px;
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
 .note-sheet__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
+/*
+ * Podgląd w stronach (książka). Okno nie przewija się: nagłówek, strona na całą dostępną
+ * wysokość i pasek z przyciskami stron. Na szerokim ekranie okno dostaje stałą wysokość
+ * na czas podziału na strony; krótka notatka (jedna strona) wraca do wysokości treści.
+ */
+.note-sheet__body--book {
+  overflow: hidden;
+  gap: 14px;
+}
+
+.sheet__body > .note-book {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  perspective: 2600px;
+  touch-action: pan-y;
+}
+
+.sheet__body > .note-book--single { flex: none; }
+
+/* Kolejna strona wystaje spod bieżącej – jak w stosie fiszek. */
+.note-book:not(.note-book--single) { margin-bottom: 6px; }
+
+.note-book:not(.note-book--single)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 0 0 0.5px var(--stack-edge);
+  transform: translateY(6px) scale(0.96);
+  transform-origin: 50% 100%;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.note-book[data-more="true"]:not(.note-book--single)::before { opacity: 1; }
+
+.note-page {
+  position: absolute;
+  inset: 0;
+  padding: 16px var(--gutter) 18px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+  transform-origin: 0 50%;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.note-book--single .note-page {
+  position: relative;
+  inset: auto;
+}
+
+/* Grzbiet: delikatny cień przy lewej krawędzi stron (tylko w książce). */
+.note-book:not(.note-book--single) .note-page {
+  background:
+    linear-gradient(to right, var(--page-spine), transparent 16px),
+    var(--surface);
+}
+
+.note-page--measure {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.note-page--scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.note-page__content { display: flow-root; }
+.note-page__content > * + * { margin-top: 0.85em; }
+
+/* Ciąg dalszy punktu listy z poprzedniej strony – bez drugiego punktora. */
+.note-page__continued { list-style: none; }
+.note-page__continued::marker { content: none; }
+
+.note-page__figure {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 0;
+  cursor: zoom-in;
+}
+
+.note-page__figure img {
+  display: block;
+  max-width: 100%;
+  border-radius: calc(var(--radius) - 4px);
+  background: #ffffff;
+  object-fit: contain;
+}
+
+.note-page__figure:focus-visible { outline-offset: 3px; border-radius: var(--radius); }
+
+/* Cień obracanej kartki i kartki pod nią (przezroczystość ustawia skrypt w trakcie obrotu). */
+.note-page__shade {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0.06) 70%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.note-sheet__footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.note-sheet__footer:empty { display: none; }
+
+.note-pager {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.note-pager[hidden] { display: none; }
+
+.note-pager__indicator {
+  min-width: 4.2em;
+  font-size: var(--size-sub);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  text-align: center;
+}
+
+.note-pager__button { color: var(--accent); }
+.note-pager__button:disabled { color: var(--text-3); }
+
+/* Na szerokim ekranie okno na czas podziału (i dla wielu stron) ma stałą wysokość. */
+@media (min-width: 700px) {
+  .note-dialog .sheet__panel.note-sheet--paged { height: min(900px, calc(var(--vv-height, 100dvh) - 48px)); }
+}
+
 .note-sheet__actions:empty { display: none; }
 
 .button--danger-plain { background: var(--danger-soft); color: var(--danger); }
 
-/* Obrazy w podglądzie: pełna szerokość, dotknięcie powiększa. Białe tło – schematy z
-   przezroczystym tłem są czytelne także w ciemnym motywie. */
-.note-gallery {
-  display: grid;
-  gap: 12px;
+
+/* Podział strony w edytorze: przerywana linia z podpisem. */
+.note-editor__area hr {
+  position: relative;
+  height: 0;
+  margin: 1.4em 0 1.1em;
+  border: 0;
+  border-top: 1.5px dashed var(--separator);
+  overflow: visible;
 }
 
-.note-gallery__item {
-  display: block;
-  width: 100%;
-  padding: 0;
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: #ffffff;
-  cursor: zoom-in;
+.note-editor__area hr::after {
+  content: "Nowa strona";
+  position: absolute;
+  left: 50%;
+  top: -0.8em;
+  transform: translateX(-50%);
+  padding: 0 8px;
+  background: var(--surface);
+  font-size: var(--size-foot);
+  line-height: 1.6;
+  color: var(--text-2);
+  white-space: nowrap;
 }
-
-.note-gallery__item img {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-height: 72vh;
-  object-fit: contain;
-}
-
-.note-gallery__item:focus-visible { outline-offset: 3px; }
 
 /* Edytor. */
 .note-editor {
@@ -4245,6 +4436,8 @@ a.row__main:active,
   .dialog[open]::backdrop { animation: fade 0.25s ease-out; }
   .toast { animation: toast-in 0.25s ease-out; }
   .flashcard { animation: card-in 0.22s ease-out; }
+  /* Fiszka podniesiona ze stosu jest już na miejscu – bez animacji wejścia. */
+  .flashcard[data-enter="stack"] { animation: none; }
 
   @media (min-width: 700px) {
     .dialog.sheet[open] .sheet__panel,

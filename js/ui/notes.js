@@ -7,13 +7,14 @@
 
 import { NOTE_IMAGE_LIMIT } from '../core/model.js';
 import { bytesToBase64 } from '../core/base64.js';
-import { NOTE_COLORS, isEmptyNoteHtml, noteText, normalizeNoteHtml, portableNoteHtml } from '../core/note-format.js';
+import { NOTE_COLORS, PAGE_BREAK_LINE, isEmptyNoteHtml, noteText, normalizeNoteHtml, portableNoteHtml } from '../core/note-format.js';
 import { pluralImages } from '../core/text.js';
 import { iconButton } from './components.js';
 import { confirmDialog, mountDialog, openMenu, showError, toast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
 import { prepareImage, urlPool } from './images.js';
+import { noteBook } from './note-book.js';
 
 let titleCounter = 0;
 
@@ -29,6 +30,7 @@ const FORMAT_BUTTONS = [
   { command: 'heading', icon: 'heading', label: 'Nagłówek' },
   { command: 'insertUnorderedList', icon: 'listBullet', label: 'Lista punktowana' },
   { command: 'insertOrderedList', icon: 'listNumber', label: 'Lista numerowana' },
+  { command: 'pageBreak', icon: 'pageBreak', label: 'Nowa strona' },
   { command: 'color', icon: 'textColor', label: 'Kolor tekstu' },
   { command: 'removeFormat', icon: 'clearFormat', label: 'Usuń formatowanie' }
 ];
@@ -37,7 +39,8 @@ const FORMAT_BUTTONS = [
 
 /** Krótki opis notatki: początek tekstu (akapity w osobnych wierszach) albo liczba obrazów. */
 export function noteSummary(note) {
-  const text = noteText(note.html).replace(/\n\s*\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+  const text = noteText(note.html).split('\n').filter((line) => line.trim() !== PAGE_BREAK_LINE).join('\n')
+    .replace(/\n\s*\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
   if (text) return text.length > 160 ? `${text.slice(0, 160)}…` : text;
   return pluralImages(note.images.length);
 }
@@ -282,8 +285,15 @@ export function openLightbox(images, startIndex = 0) {
   window.addEventListener('resize', onResize);
   image.addEventListener('load', onResize);
   show(index);
-  close.focus();
+  focusPanel(panel);
   return dialog;
+}
+
+/** Fokus na panelu okna zamiast na pierwszym przycisku (bez ramki fokusu po otwarciu). */
+function focusPanel(panel) {
+  panel.tabIndex = -1;
+  panel.classList.add('dialog-focus');
+  panel.focus({ preventScroll: true });
 }
 
 // ---------------------------------------------------------------- okno notatki
@@ -304,6 +314,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
     let stored = [];
     let mode = null;
     let editor = null;
+    let book = null;
     let dialog;
 
     const leftButton = h('button', { type: 'button', class: 'button button--plain', dataset: { testid: 'note-left' } });
@@ -350,6 +361,12 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       close();
     };
 
+    /** Tryb podglądu w stronach (książka) albo zwykły układ przewijany (edycja). */
+    const setPaged = (state) => {
+      body.classList.toggle('note-sheet__body--book', state !== null);
+      panel.classList.toggle('note-sheet--paged', state === 'measure' || state === 'paged');
+    };
+
     function showView() {
       const note = library.getNote(lessonID);
       if (!note) {
@@ -359,41 +376,38 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       mode = 'view';
       editor?.destroy();
       editor = null;
+      book?.destroy();
       leftButton.textContent = 'Zamknij';
       rightButton.textContent = 'Edytuj';
       rightButton.disabled = false;
-      const text = h('div', { class: 'note-text note-sheet__text', dataset: { testid: 'note-text' }, lang: 'pl' });
       // Treść jest normalizowana przed wstawieniem – tylko bezpieczne znaczniki notatki.
-      text.innerHTML = normalizeNoteHtml(note.html);
-      const gallery = stored.length > 0
-        ? h('div', { class: 'note-gallery', dataset: { testid: 'note-gallery' } },
-            stored.map((image, index) => h('button', {
-              type: 'button',
-              class: 'note-gallery__item',
-              'aria-label': `Powiększ obraz ${index + 1} z ${stored.length}`,
-              onClick: () => openLightbox(stored, index)
-            }, h('img', {
-              src: image.url, alt: '', loading: 'lazy',
-              width: image.width ?? null, height: image.height ?? null
-            }))))
-        : null;
+      book = noteBook({
+        html: note.html,
+        images: stored,
+        onOpenImage: (index) => openLightbox(stored, index),
+        onLayout: setPaged
+      });
       replaceChildren(body,
         heading(),
-        note.html ? text : null,
-        gallery,
-        h('div', { class: 'note-sheet__actions' },
+        book.element,
+        h('div', { class: 'note-sheet__footer' },
           note.html
             ? h('button', {
-                type: 'button', class: 'button button--secondary', dataset: { testid: 'note-copy' },
+                type: 'button', class: 'button button--secondary note-sheet__copy', dataset: { testid: 'note-copy' },
                 onClick: () => copyNote(note, stored)
               }, icon('copy', { size: 18 }), h('span', null, 'Kopiuj notatkę'))
-            : null
+            : null,
+          book.pager
         )
       );
+      book.layout();
     }
 
     function showEdit() {
       mode = 'edit';
+      book?.destroy();
+      book = null;
+      setPaged(null);
       const note = library.getNote(lessonID);
       leftButton.textContent = 'Anuluj';
       rightButton.textContent = 'Zapisz';
@@ -465,6 +479,8 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       if (mode === 'edit' && (event.ctrlKey || event.metaKey) && event.key === 'Enter') {
         event.preventDefault();
         save();
+      } else if (mode === 'view' && book?.handleKey(event)) {
+        event.preventDefault();
       }
     });
 
@@ -472,11 +488,15 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       onDismiss: () => requestClose(),
       onClose: () => {
         editor?.destroy();
+        book?.destroy();
         urls.release();
         resolve();
       }
     });
     dialog.dataset.testid = 'note-dialog';
+    // Przeglądarka ustawia fokus na pierwszym przycisku („Zamknij”), a Safari obrysowuje go
+    // ramką. Fokus na samym oknie: bez ramki, a Tab i klawisze dalej działają w oknie.
+    focusPanel(panel);
     replaceChildren(body, heading(), h('p', { class: 'picker__empty' }, 'Wczytywanie…'));
     loadImages()
       .catch((error) => console.error(error))
@@ -546,6 +566,10 @@ function noteEditor({ html, images, urls }) {
             colorPanel.hidden = !colorPanel.hidden;
             return;
           }
+          if (definition.command === 'pageBreak') {
+            insertPageBreak();
+            return;
+          }
           if (definition.command === 'heading') {
             const block = String(document.queryCommandValue('formatBlock') ?? '').toLowerCase();
             run('formatBlock', block === 'h3' ? '<p>' : '<h3>');
@@ -554,7 +578,7 @@ function noteEditor({ html, images, urls }) {
           run(definition.command);
         }
       }, icon(definition.icon, { size: 20 }));
-      if (!['color', 'removeFormat'].includes(definition.command)) button.setAttribute('aria-pressed', 'false');
+      if (!['color', 'removeFormat', 'pageBreak'].includes(definition.command)) button.setAttribute('aria-pressed', 'false');
       buttons.set(definition.command, button);
       return button;
     })
@@ -573,6 +597,57 @@ function noteEditor({ html, images, urls }) {
     restoreSelection();
     document.execCommand('styleWithCSS', false, false);
     document.execCommand(command, false, value);
+    syncEmpty();
+    updateToolbar();
+  }
+
+  /**
+   * „Nowa strona” zawsze między blokami: na końcu bloku – linia i pusty akapit do pisania dalej;
+   * w środku akapitu – akapit dzieli się na dwa; w liście – lista dzieli się po bieżącym punkcie.
+   */
+  function insertPageBreak() {
+    restoreSelection();
+    const selection = window.getSelection();
+    const range = selection.rangeCount ? selection.getRangeAt(0) : null;
+    let block = range && area.contains(range.startContainer) ? range.startContainer : area.lastChild;
+    if (block === area) block = area.childNodes[Math.max(0, range.startOffset - 1)] ?? area.lastChild;
+    while (block && block.parentNode !== area) block = block.parentNode;
+    const rule = h('hr', { 'data-page': '' });
+    const empty = h('p', null, h('br'));
+    let after = [empty];
+    let caretTarget = empty;
+    if (block?.nodeType === 1 && /^(UL|OL)$/.test(block.tagName)) {
+      let item = range.startContainer;
+      while (item && item.parentNode !== block) item = item.parentNode;
+      const items = [...block.children];
+      const following = item ? items.slice(items.indexOf(item) + 1) : [];
+      if (following.length > 0) {
+        const rest = document.createElement(block.tagName);
+        rest.append(...following);
+        after = [empty, rest];
+      }
+    } else if (block?.nodeType === 1 && range) {
+      // Tekst za kursorem przechodzi na nową stronę.
+      const tail = range.cloneRange();
+      tail.collapse(true);
+      tail.setEnd(block, block.childNodes.length);
+      const moved = tail.extractContents();
+      if (moved.textContent.trim() !== '') {
+        const rest = block.cloneNode(false);
+        rest.append(moved);
+        after = [rest];
+        caretTarget = rest;
+      }
+      if (block.textContent === '' && !block.querySelector('br')) block.append(h('br'));
+    }
+    if (block) block.after(rule, ...after);
+    else area.append(rule, ...after);
+    const caret = document.createRange();
+    caret.setStart(caretTarget, 0);
+    caret.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(caret);
+    state.range = caret.cloneRange();
     syncEmpty();
     updateToolbar();
   }
@@ -745,18 +820,24 @@ function noteEditor({ html, images, urls }) {
   renderImages();
   syncEmpty();
 
+  /** Treść pola: linie poziome w edytorze pochodzą tylko z „Nowa strona”, więc to podziały stron. */
+  const areaHtml = () => {
+    for (const rule of area.querySelectorAll('hr:not([data-page])')) rule.setAttribute('data-page', '');
+    return normalizeNoteHtml(area.innerHTML);
+  };
+
   return {
     element,
     draft() {
       return {
-        html: normalizeNoteHtml(area.innerHTML),
+        html: areaHtml(),
         images: state.images.map((image) => (image.stored
           ? { id: image.id }
           : { bytes: image.bytes, type: image.type, width: image.width, height: image.height, name: image.name ?? null }))
       };
     },
     dirty() {
-      return normalizeNoteHtml(area.innerHTML) !== initialHtml
+      return areaHtml() !== initialHtml
         || state.images.map((image) => image.id ?? image.url).join(',') !== initialImages
         || state.pending > 0;
     },

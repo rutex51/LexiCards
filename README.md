@@ -1,4 +1,4 @@
-# LexiCards 1.2
+# LexiCards 1.3
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -11,8 +11,9 @@ prywatne, więc strona jest publikowana tylko na czas instalacji albo aktualizac
 Sprawdzenie całości i zgodność ze specyfikacją: [docs/RELEASE-1.0.md](docs/RELEASE-1.0.md).
 Notatki do lekcji (wersja 1.1): [docs/RELEASE-1.1.md](docs/RELEASE-1.1.md).
 Postęp na listach i lekcje utrwalone (wersja 1.2): [docs/RELEASE-1.2.md](docs/RELEASE-1.2.md).
+Stos fiszek, notatki w stronach, utrwalone na końcu list (wersja 1.3): [docs/RELEASE-1.3.md](docs/RELEASE-1.3.md).
 
-## Co potrafi wersja 1.2
+## Co potrafi wersja 1.3
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -21,7 +22,8 @@ Postęp na listach i lekcje utrwalone (wersja 1.2): [docs/RELEASE-1.2.md](docs/R
 - Lekcje i moduły „utrwalone”: ręczne oznaczenie w menu „…” (moduł – razem ze wszystkimi lekcjami;
   moduł jest utrwalony, gdy wszystkie jego lekcje są). Wiersz ma zieloną poświatę, a fiszki wracają
   rzadko – najwcześniej po okresie z Ustawień (domyślnie miesiąc). Nowe pojęcie w lekcji albo nowa
-  lekcja w module zdejmuje oznaczenie samo; dodane pojęcie zaczyna jako nowe.
+  lekcja w module zdejmuje oznaczenie samo; dodane pojęcie zaczyna jako nowe. Utrwalone są na
+  końcu listy.
 - Pojęcie ma nazwę po polsku i po angielsku oraz opcjonalnie opis i przykład w obu językach,
   tagi, trudność, notatki i oznaczenie „ulubione”.
 - Glosariusz wszystkich pojęć: wyszukiwanie bez polskich znaków („plynnosc” znajduje
@@ -30,7 +32,9 @@ Postęp na listach i lekcje utrwalone (wersja 1.2): [docs/RELEASE-1.2.md](docs/R
   W trakcie nauki, Częściowo opanowane, Opanowane); pojęcia do powtórki pokazuje filtr.
 - Notatka do każdej lekcji: tekst z formatowaniem (pogrubienie, kursywa, podkreślenie, nagłówki,
   listy, pięć kolorów) i obrazy, w osobnym oknie z podglądem i edycją. Otwierasz ją z listy lekcji
-  w module, z ekranu lekcji, ze szczegółów pojęcia i w trakcie nauki fiszek. Wklejony tekst z Worda,
+  w module, z ekranu lekcji, ze szczegółów pojęcia i w trakcie nauki fiszek. Długa notatka dzieli się
+  na strony mieszczące się w oknie (bez przewijania) – przewracasz je palcem jak kartki książki,
+  przyciskami ‹ › albo strzałkami; „Nowa strona” w edytorze zaczyna stronę tam, gdzie chcesz. Wklejony tekst z Worda,
   stron WWW czy Notatek zachowuje formatowanie, wklejony obraz trafia do obrazów notatki, a
   „Kopiuj notatkę” przenosi ją z formatowaniem i obrazami do innej aplikacji.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
@@ -39,7 +43,7 @@ Postęp na listach i lekcje utrwalone (wersja 1.2): [docs/RELEASE-1.2.md](docs/R
 - Eksport do XLSX lub CSV: cała biblioteka, dziedzina, moduł, lekcja albo zaznaczone pojęcia;
   XLSX ma też arkusz z notatkami (formatowanie i obrazy).
 - Nauka z fiszkami: wybór materiału, kierunku (PL → EN, EN → PL, mieszany), zakresu i liczby fiszek;
-  obracana fiszka, trzy kafelki oceny (pojęcie, definicja, przykład), zatwierdzanie gestem albo
+  obracana fiszka na stosie następnych, trzy kafelki oceny (pojęcie, definicja, przykład), zatwierdzanie gestem albo
   przyciskiem, cofanie, podsumowanie i runda powtórkowa. Postępy są osobne dla każdego kierunku.
   Zakresy „Nie znam pojęcia”, „Nie znam definicji” i „Nie znam przykładu” zbierają fiszki
   z konkretnym brakiem z ostatniej oceny.
@@ -68,7 +72,7 @@ Postęp na listach i lekcje utrwalone (wersja 1.2): [docs/RELEASE-1.2.md](docs/R
 Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2](docs/STAGE-2.md),
 [etap 3](docs/STAGE-3.md), [etap 4](docs/STAGE-4.md), [etap 5](docs/STAGE-5.md), [etap 6](docs/STAGE-6.md),
 [wersja 1.0](docs/RELEASE-1.0.md), [wersja 1.1 – notatki](docs/RELEASE-1.1.md),
-[wersja 1.2 – postęp i utrwalenie](docs/RELEASE-1.2.md).
+[wersja 1.2 – postęp i utrwalenie](docs/RELEASE-1.2.md), [wersja 1.3 – stos fiszek i strony notatek](docs/RELEASE-1.3.md).
 
 ## Jak korzystać
 
@@ -131,7 +135,7 @@ trzeba najpierw zapisać w Excelu jako `.xlsx`.
 | Kolumna | Znaczenie |
 | --- | --- |
 | `Domain`, `Module`, `Lesson` | lekcja notatki; brakujące elementy zostaną utworzone |
-| `Note` | treść – formatowanie z Excela (pogrubienie, kursywa, podkreślenie, przekreślenie, kolor) zostaje |
+| `Note` | treść – formatowanie z Excela (pogrubienie, kursywa, podkreślenie, przekreślenie, kolor) zostaje; wiersz `---` to nowa strona |
 | `Image` | obrazy wklejone do komórki („Umieść w komórce”) albo na arkusz przy tej komórce |
 
 W treści: wiersz zaczynający się od „• ” albo „- ” to punkt listy, od „1. ” – lista numerowana, od „# ” –
@@ -149,6 +153,12 @@ fiszek (ikona u góry). Okno pokazuje tekst i obrazy; dotknięcie obrazu powięk
 dwukrotne dotknięcie). **Edytuj** włącza pasek formatowania i sekcję obrazów: **Dodaj obraz** (zdjęcie,
 plik, aparat), dotknięcie obrazu – powiększ, przesuń, usuń. Duże zdjęcia są zmniejszane do 2048 px
 dłuższego boku. Wklejony tekst zachowuje formatowanie (bez skryptów, stylów i obrazów z sieci).
+
+Długa notatka dzieli się na strony o wysokości okna: przewracasz je, przeciągając stronę palcem
+w lewo lub w prawo (kartka obraca się jak w książce), przyciskami ‹ › pod stroną albo klawiszami
+←/→ (Home i End – pierwsza i ostatnia). Obrazy są po tekście. Przycisk **Nowa strona** w pasku
+formatowania (dwie połówki kartki) zaczyna nową stronę w miejscu kursora; w komórce arkusza
+importu nową stronę oznacza wiersz `---`.
 
 ### Postęp i lekcje utrwalone
 

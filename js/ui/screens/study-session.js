@@ -53,6 +53,24 @@ function sizeClass(text) {
   return 'flashcard__text--sm';
 }
 
+/** Podpis nad pytaniem: język pojęcia albo „Definicja / Przykład po …”. */
+function frontLabelOf(content) {
+  return {
+    term: LANGUAGE_NAMES[content.source],
+    description: `Definicja ${LANGUAGE_LOCATIVE[content.source]}`,
+    example: `Przykład ${LANGUAGE_LOCATIVE[content.source]}`
+  }[content.front.kind];
+}
+
+/*
+ * Stos: pod fiszką leżą najwyżej dwie następne (pierwsza z pytaniem, druga pusta), lekko
+ * przesunięte w dół i zwężone. Przy obrocie i wyrzuceniu fiszki widać następną; po decyzji
+ * podnosi się na miejsce wyrzuconej, a po przebudowie widoku jej miejsce zajmuje prawdziwa
+ * fiszka w tym samym położeniu (bez animacji wejścia). Ostatnia fiszka nie ma nic pod spodem.
+ */
+const STACK_POSES = ['none', 'translateY(6px) scale(0.955)', 'translateY(11px) scale(0.91)'];
+const STACK_SHADES = [0, 0.5, 1];
+
 export class StudySessionScreen {
   constructor(ctx) {
     this.ctx = ctx;
@@ -67,6 +85,10 @@ export class StudySessionScreen {
     this.elements = {};
     this.drag = null;
     this.suppressClick = false;
+    /** Następna fiszka podniosła się ze stosu (ustawiane przy wyrzuceniu bieżącej). */
+    this.fromStack = false;
+    /** Bieżąca fiszka przyszła ze stosu – rysowana bez animacji wejścia (także przy odświeżeniu). */
+    this.enterStack = false;
     /** Losowanie do rozmycia odstępu FSRS – jedno na fiszkę, żeby podgląd zgadzał się z zapisem. */
     this.fuzz = Math.random();
     /** Chwila pokazania bieżącej fiszki – czas nad fiszką trafia do statystyk. */
@@ -199,17 +221,42 @@ export class StudySessionScreen {
     if (!card || reducedMotion() || typeof card.animate !== 'function') return;
     const direction = decision === DECISIONS.KNOW ? -1 : 1;
     const from = this.drag?.offset ?? 0;
+    const duration = 220;
+    this.#raiseStack(duration);
     try {
       await card.animate(
         [
           { transform: `translateX(${from}px) rotate(${from / 24}deg)`, opacity: 1 },
           { transform: `translateX(${direction * 120}%) rotate(${direction * 14}deg)`, opacity: 0 }
         ],
-        { duration: 220, easing: 'ease-in', fill: 'forwards' }
+        { duration, easing: 'ease-in', fill: 'forwards' }
       ).finished;
     } catch {
       // animacja przerwana – decyzja i tak zostanie zapisana
     }
+  }
+
+  /** Fiszki ze stosu przesuwają się o jedno miejsce w górę (w czasie wyrzucania wierzchniej). */
+  #raiseStack(duration) {
+    const layers = this.elements.layers ?? [];
+    if (layers.length === 0) return;
+    this.fromStack = true;
+    const options = { duration, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)', fill: 'forwards' };
+    layers.forEach((layer, index) => {
+      const depth = index + 1;
+      layer.animate([{ transform: getComputedStyle(layer).transform }, { transform: STACK_POSES[depth - 1] }], options);
+      layer.querySelector('.card-stack__shade')
+        ?.animate([{ opacity: STACK_SHADES[depth] }, { opacity: STACK_SHADES[depth - 1] }], options);
+    });
+  }
+
+  /** W trakcie przeciągania następna fiszka lekko się podnosi (lift 0–1). */
+  #liftStack(lift) {
+    const first = this.elements.layers?.[0];
+    if (!first) return;
+    const amount = Math.min(1, Math.max(0, lift)) * 0.5;
+    first.style.transition = '';
+    first.style.transform = lift > 0 ? `translateY(${6 * (1 - amount)}px) scale(${0.955 + 0.045 * amount})` : '';
   }
 
   async #decide(decision) {
@@ -299,6 +346,11 @@ export class StudySessionScreen {
       card.style.transition = animated && !reducedMotion() ? 'transform 0.2s ease' : '';
       card.style.transform = '';
       card.dataset.swipe = '';
+      const first = this.elements.layers?.[0];
+      if (first) {
+        first.style.transition = animated && !reducedMotion() ? 'transform 0.2s ease' : '';
+        first.style.transform = '';
+      }
     };
     card.addEventListener('pointerdown', (event) => {
       if (event.button !== 0 || this.busy) return;
@@ -330,6 +382,7 @@ export class StudySessionScreen {
       drag.offset = dx;
       card.style.transform = `translateX(${dx}px) rotate(${dx / 24}deg)`;
       card.dataset.swipe = dx < 0 ? 'know' : 'repeat';
+      this.#liftStack(Math.abs(dx) / Math.min(130, card.offsetWidth * 0.28));
     });
     const finish = (event, cancelled) => {
       const drag = this.drag;
@@ -394,11 +447,7 @@ export class StudySessionScreen {
   #cardView(term, card, front) {
     const { library } = this.ctx;
     const content = cardContent(term, card.direction, front);
-    const frontLabel = {
-      term: LANGUAGE_NAMES[content.source],
-      description: `Definicja ${LANGUAGE_LOCATIVE[content.source]}`,
-      example: `Przykład ${LANGUAGE_LOCATIVE[content.source]}`
-    }[content.front.kind];
+    const frontLabel = frontLabelOf(content);
 
     // Każdą linię opisu i przykładu można odsłuchać osobno, w jej języku.
     const section = (id, title, items, speakLabel) => h('div', { class: 'flashcard__section', dataset: { section: id } },
@@ -445,7 +494,10 @@ export class StudySessionScreen {
 
     const cardElement = h('div', {
       class: 'flashcard',
-      dataset: { testid: 'flashcard', side: this.showingBack ? 'back' : 'front', swipe: '', direction: card.direction }
+      dataset: {
+        testid: 'flashcard', side: this.showingBack ? 'back' : 'front', swipe: '', direction: card.direction,
+        enter: this.enterStack ? 'stack' : null
+      }
     },
       frontFace,
       backFace,
@@ -458,6 +510,46 @@ export class StudySessionScreen {
     this.elements.back = backFace;
     this.elements.lessonName = library.getLesson(term.lessonID)?.name ?? '';
     return cardElement;
+  }
+
+  /**
+   * Fiszka razem ze stosem: pod spodem następna fiszka (strona z pytaniem, bez przycisków)
+   * i – gdy zostały co najmniej dwie – jeszcze jedna pusta.
+   */
+  #stackView(session, cardElement) {
+    const { library } = this.ctx;
+    const upcoming = [];
+    for (let index = session.position + 1; index < session.queue.length && upcoming.length < 2; index += 1) {
+      const next = session.queue[index];
+      const term = library.getTerm(next.termID);
+      if (term) upcoming.push({ card: next, term });
+    }
+    const front = session.config.front ?? 'term';
+    const layers = upcoming.map((item, index) => h('div', {
+      class: `card-stack__layer card-stack__layer--${index + 1}`, 'aria-hidden': 'true', inert: ''
+    },
+      index === 0 ? this.#previewFace(item.term, item.card, front) : null,
+      h('span', { class: 'card-stack__shade' })
+    ));
+    this.elements.layers = layers;
+    // Głębsza warstwa wcześniej w dokumencie – leży niżej.
+    return h('div', { class: 'card-stack', dataset: { testid: 'card-stack', depth: String(layers.length) } },
+      [...layers].reverse(), cardElement);
+  }
+
+  /** Strona z pytaniem następnej fiszki – wygląda jak prawdziwa, ale niczego nie obsługuje. */
+  #previewFace(term, card, front) {
+    const content = cardContent(term, card.direction, front);
+    return h('div', { class: 'flashcard__face' },
+      h('div', { class: 'flashcard__top' },
+        h('span', { class: 'flashcard__label' }, frontLabelOf(content)),
+        speechAvailable() && content.front.text
+          ? h('span', { class: 'icon-button flashcard__speak' }, icon('speaker', { size: 22 }))
+          : null
+      ),
+      h('p', { class: `flashcard__text ${sizeClass(content.front.text)}`, lang: content.front.lang }, content.front.text),
+      h('span', { class: 'flashcard__flip' }, icon('flip', { size: 18 }), h('span', null, 'Pokaż odpowiedź'))
+    );
   }
 
   #tilesView() {
@@ -567,12 +659,15 @@ export class StudySessionScreen {
       this.drag = null;
       this.fuzz = Math.random();
       this.cardShownAt = Date.now();
+      this.enterStack = this.fromStack;
+      this.fromStack = false;
       stopSpeaking();
     }
 
     const total = session.queue.length;
     const number = session.position + 1;
     const cardElement = this.#cardView(term, card, session.config.front ?? 'term');
+    const stack = this.#stackView(session, cardElement);
     const tiles = this.#tilesView();
 
     this.elements.scoreFill = h('span', { class: 'score__fill' });
@@ -614,7 +709,7 @@ export class StudySessionScreen {
           'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(session.position)
         }, h('span', { class: 'study__progress-fill', style: { width: `${Math.round((session.position / total) * 100)}%` } }))
       ),
-      cardElement,
+      stack,
       tiles,
       h('div', { class: 'score' }, this.elements.scoreBar, this.elements.scoreText),
       h('div', { class: 'quick' }, allButton, noneButton),
