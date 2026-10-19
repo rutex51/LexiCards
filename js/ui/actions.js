@@ -15,7 +15,7 @@ import {
 import { installSampleData } from '../core/samples.js';
 import { formatTags, isBlank, parseTags, pluralNotes, pluralTerms } from '../core/text.js';
 import { field, formGroup, message, segmented, selectInput, textArea, textInput, toggle } from './components.js';
-import { confirmDialog, openFormSheet, showError, toast } from './dialogs.js';
+import { confirmDialog, openFormSheet, showError, toast, undoToast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { deliverFile } from './files.js';
 import { icon } from './icons.js';
@@ -566,6 +566,36 @@ export function reorder(ctx, level, orderedIDs) {
 
 const DELETED = { domain: 'dziedzinę', module: 'moduł', lesson: 'lekcję' };
 
+/** „lekcję „Ratios””, „pojęcie „bilans””, „3 pojęcia” – do komunikatu po usunięciu. */
+function deletedName(target, impact) {
+  if (target.kind === 'terms') return impact.terms === 1 ? `pojęcie „${impact.name}”` : pluralTerms(impact.terms);
+  return `${DELETED[target.kind] ?? 'element'} „${impact.name}”`;
+}
+
+/**
+ * Usuwa i przez minutę pozwala to cofnąć przyciskiem „Cofnij” w komunikacie (od 1.9) – wraca
+ * wszystko: elementy, pojęcia, postępy, historia nauki, notatki z obrazami i załącznikami.
+ */
+async function deleteUndoable(ctx, target, impact) {
+  let copy;
+  try {
+    copy = await ctx.library.deleteWithUndo(target);
+  } catch (error) {
+    await showError(error);
+    return false;
+  }
+  const name = deletedName(target, impact);
+  undoToast(`Usunięto ${name}.`, async () => {
+    try {
+      await ctx.library.restoreDeleted(copy);
+      toast(`Przywrócono ${name}.`);
+    } catch (error) {
+      await showError(error);
+    }
+  });
+  return true;
+}
+
 /** Usuwa od razu, bez pytania (zdecydowane przesunięcie wiersza, od 1.9). Zwraca true po usunięciu. */
 export async function deleteNow(ctx, target) {
   let impact;
@@ -575,7 +605,7 @@ export async function deleteNow(ctx, target) {
     await showError(error);
     return false;
   }
-  return runAction(() => ctx.library.delete(target), `Usunięto ${DELETED[target.kind] ?? 'element'} „${impact.name}”.`);
+  return deleteUndoable(ctx, target, impact);
 }
 
 /** Liczy skutki usunięcia, prosi o potwierdzenie i usuwa. Zwraca true po usunięciu. */
@@ -594,7 +624,7 @@ export async function requestDeletion(ctx, target) {
     destructive: true
   });
   if (!confirmed) return false;
-  return runAction(() => ctx.library.delete(target));
+  return deleteUndoable(ctx, target, impact);
 }
 
 // ---------------------------------------------------------------- historia ocen

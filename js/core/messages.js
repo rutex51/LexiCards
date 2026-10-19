@@ -28,7 +28,7 @@ export function deletionMessage(target, impact) {
   const sentences = [];
   if (parts.length > 0) sentences.push(`Usunięte zostaną również: ${joinList(parts)}.`);
   if (impact.progressRecords > 0) sentences.push('Usunięte zostaną także zapisane postępy i historia nauki tych pojęć.');
-  sentences.push('Tej operacji nie można cofnąć.');
+  sentences.push('Przez minutę po usunięciu możesz to cofnąć przyciskiem „Cofnij”.');
   return sentences.join(' ');
 }
 

@@ -159,6 +159,12 @@ działa na adapterze pamięciowym i wyświetla ostrzeżenie, że dane znikną po
   `confirmConsolidation`), zdecydowany – połowa szerokości wiersza (od razu: `deleteNow`,
   `setConsolidated`). Napis działania widać, gdy mieści się w odsłoniętej części. Kliknięcie
   w link tuż po przesunięciu jest pomijane.
+- **Cofnij po usunięciu** (od 1.9.1): `deleteWithUndo(target)` przed usunięciem kopiuje wszystko, co
+  zniknie – rekordy z pamięci (dziedzina, moduły, lekcje, pojęcia, postępy, notatki), dzienniki
+  nauki tych pojęć (`readByTerm`) i pliki notatek – a `restoreDeleted(kopia)` zapisuje je z powrotem
+  jedną transakcją (odmawia, gdy w międzyczasie zniknął element nadrzędny albo kopia została już
+  przywrócona). Kopia żyje tylko w komunikacie z przyciskiem „Cofnij” (`undoToast`, 60 s, pasek
+  czasu; przy ograniczonym ruchu bez animacji) – po przeładowaniu jej nie ma.
 - **Data utworzenia** (od 1.9): każdy rekord ma `createdAt`. Wiersze modułów i lekcji pokazują ją pod
   opisem, szczegóły pojęcia – w „Utworzono”. Filtr (`js/core/created.js`: okresy dziś, 7 i 30 dni,
   ten rok, własny zakres od – do, dni w czasie lokalnym, „do” obejmuje cały dzień) jest nad listą

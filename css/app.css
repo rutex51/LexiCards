@@ -3804,6 +3804,32 @@ a.row__main:active,
   pointer-events: auto;
 }
 
+/* „Cofnij” po usunięciu (od 1.9): pasek u dołu komunikatu kurczy się przez czas, w którym można cofnąć. */
+.toast--undo {
+  position: relative;
+  overflow: hidden;
+}
+
+.toast__timer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: currentColor;
+  opacity: 0.55;
+  transform-origin: left center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .toast__timer { animation: undo-time var(--undo-time, 60s) linear forwards; }
+}
+
+@keyframes undo-time {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
 .toast__button {
   flex: none;
   min-height: 36px;

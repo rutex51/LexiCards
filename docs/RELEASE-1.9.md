@@ -41,6 +41,25 @@ budowy: [ARCHITECTURE.md](ARCHITECTURE.md) (sekcje „Interfejs” i „Statysty
 - Zrzuty (Chromium): przesuwanie w lewo i w prawo (telefon), lista lekcji z datami i filtrem okresu
   (telefon i komputer), glosariusz z filtrem daty.
 
+## Uzupełnienie w wersji 1.9.1
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Przycisk „Cofnij” po usunięciu – nie wyskakujące okno, tylko przycisk, który wisi około minuty i znika | Po każdym usunięciu – zdecydowanym przesunięciem, po pytaniu (lekkie przesunięcie, menu „…”) i zaznaczonych pojęć – u dołu ekranu jest komunikat „Usunięto lekcję „…”.” z przyciskiem **Cofnij**. Nie zasłania ekranu i niczego nie blokuje; pasek u dołu komunikatu kurczy się przez 60 sekund, potem komunikat znika sam. **Cofnij** przywraca wszystko, co zniknęło: element na swoim miejscu, pojęcia, postępy i historię nauki, notatki z obrazami i załącznikami („Przywrócono lekcję „…”.”). Okno ostrzeżenia przed usunięciem mówi teraz „Przez minutę po usunięciu możesz to cofnąć przyciskiem „Cofnij”.” zamiast „Tej operacji nie można cofnąć.” |
+
+Testy wersji 1.9.1:
+
+- **Testy logiki: 258 – wszystkie zaliczone** (256 wcześniejszych, z nich 1 dostosowany do nowego
+  tekstu ostrzeżenia, + 2 nowe): usunięcie lekcji i cofnięcie – wracają pojęcia, postępy, oceny,
+  powtórki i odpowiedzi quizów, notatka z obrazami i załącznikami (te same pliki w bazie); drugie
+  cofnięcie – odmowa; pojęcia wracają do lekcji; cofnięcie, gdy w międzyczasie usunięto moduł – odmowa.
+- **Testy w przeglądarce: 106 – wszystkie zaliczone w dwóch przebiegach** (105 wcześniejszych,
+  z nich 2 uzupełnione, + 1 nowy): usunięcie dziedziny z menu i „Cofnij” – bez okna, 40 pojęć z powrotem,
+  także po przeładowaniu; zdecydowane przesunięcie – komunikat z paskiem czasu, „Cofnij” – lekcja na
+  swoim miejscu; zegar testu: po 58 s komunikat nadal jest, po minucie znika, a lekcja zostaje usunięta
+  (test nie przechodzi, gdy komunikat nie znika sam).
+- **Lint: bez błędów.**
+
 ## Czego nie sprawdzono
 
 - **Na iPhonie** – testy działają w Chromium z ekranem telefonu (dotyk wysyłany przez przeglądarkę),
@@ -53,7 +72,8 @@ budowy: [ARCHITECTURE.md](ARCHITECTURE.md) (sekcje „Interfejs” i „Statysty
 
 ## Warto wiedzieć
 
-- Zdecydowane przesunięcie w lewo usuwa **bez pytania i bez cofnięcia** – także cały moduł z lekcjami,
-  pojęciami i historią nauki. Jeśli chcesz, mogę dodać „Cofnij” w komunikacie po usunięciu.
+- Zdecydowane przesunięcie w lewo usuwa **bez pytania** – także cały moduł z lekcjami, pojęciami
+  i historią nauki; od 1.9.1 przez około minutę można to cofnąć przyciskiem „Cofnij” w komunikacie
+  (po przeładowaniu aplikacji – już nie).
 - Data utworzenia elementów z importu i danych przykładowych to dzień importu; kopiowanie lekcji
   i pojęć daje nową datę.

@@ -9,8 +9,8 @@
 
 import {
   ALL_STORES, DIFFICULTY_MAX, DIFFICULTY_MIN, HISTORY_STORES, MEDIA_STORES, MEMORY_STORES, NOTE_FILE_LIMIT, NOTE_FILE_MAX_BYTES,
-  NOTE_IMAGE_LIMIT, NOTE_IMAGE_MAX_BYTES, SETTINGS_ID, defaultSettings, makeDomain, makeLesson, makeModule, makeNoteFile,
-  makeNoteImage, makeTerm, newID, noteFileMeta, noteImageMeta, nowISO, termFieldsFromDraft, termToDraft
+  NOTE_IMAGE_LIMIT, NOTE_IMAGE_MAX_BYTES, SETTINGS_ID, TERM_HISTORY_STORES, defaultSettings, makeDomain, makeLesson, makeModule,
+  makeNoteFile, makeNoteImage, makeTerm, newID, noteFileMeta, noteImageMeta, nowISO, termFieldsFromDraft, termToDraft
 } from './model.js';
 import { createdRange, createdWithin } from './created.js';
 import { cleanFileName, fileTypeOf } from './note-files.js';
@@ -82,7 +82,8 @@ const errors = {
   invalidImage: () => new LibraryError('invalidImage', 'Nie udało się zapisać obrazu – plik jest pusty albo uszkodzony.'),
   tooManyFiles: () => new LibraryError('tooManyFiles', `Notatka może mieć najwyżej ${NOTE_FILE_LIMIT} załączników.`),
   fileTooLarge: (name) => new LibraryError('fileTooLarge', `Plik „${name}” jest za duży (limit to 50 MB).`),
-  invalidFile: (name) => new LibraryError('invalidFile', `Nie udało się zapisać pliku „${name}” – jest pusty.`)
+  invalidFile: (name) => new LibraryError('invalidFile', `Nie udało się zapisać pliku „${name}” – jest pusty.`),
+  cannotRestore: (message) => new LibraryError('cannotRestore', message)
 };
 
 /** Bajty obrazu jako Uint8Array (z ArrayBuffer albo widoku). */
@@ -1377,35 +1378,107 @@ export class Library {
 
   /** Usuwa cel wraz z elementami podrzędnymi i danymi nauki usuwanych pojęć. */
   delete(target) {
+    return this.#mutate((unit) => this.#deleteTarget(unit, target));
+  }
+
+  /**
+   * Usuwa jak delete(), ale najpierw zapamiętuje wszystko, co znika: elementy, pojęcia, postępy,
+   * dzienniki nauki tych pojęć, notatki z obrazami i załącznikami (od 1.9). Zwraca kopię do
+   * restoreDeleted() – „Cofnij” przez chwilę po usunięciu.
+   */
+  deleteWithUndo(target) {
+    return this.#mutate((unit, saved) => {
+      this.#deleteTarget(unit, target);
+      return saved;
+    }, () => this.#deletionCopy(target));
+  }
+
+  #deleteTarget(unit, target) {
+    if (target.kind === 'terms' && target.ids.length === 0) throw errors.nothingSelected();
+    if (target.kind !== 'terms') this.#require(target.kind, target.id);
+
+    const terms = this.#termsOf(target);
+    const termIDs = new Set(terms.map((term) => term.id));
+    for (const term of terms) unit.delete('terms', term.id);
+    for (const record of [...this.maps.progress.values()]) {
+      if (termIDs.has(record.termID)) unit.delete('progress', record.id);
+    }
+    unit.purgeTerms([...termIDs]);
+    for (const lesson of this.#lessonsOf(target)) this.#removeNote(unit, lesson.id);
+
+    if (target.kind === 'domain') {
+      for (const lesson of [...this.maps.lessons.values()]) {
+        if (lesson.domainID === target.id) unit.delete('lessons', lesson.id);
+      }
+      for (const module of [...this.maps.modules.values()]) {
+        if (module.domainID === target.id) unit.delete('modules', module.id);
+      }
+      unit.delete('domains', target.id);
+    } else if (target.kind === 'module') {
+      for (const lesson of [...this.maps.lessons.values()]) {
+        if (lesson.moduleID === target.id) unit.delete('lessons', lesson.id);
+      }
+      unit.delete('modules', target.id);
+    } else if (target.kind === 'lesson') {
+      unit.delete('lessons', target.id);
+    }
+  }
+
+  /** Kopia wszystkiego, co usunie #deleteTarget() – rekordy z pamięci, dzienniki i pliki z bazy. */
+  async #deletionCopy(target) {
+    if (target.kind !== 'terms' && !this.maps[LEVEL_STORE[target.kind]]?.has(target.id)) return null;
+    const terms = this.#termsOf(target);
+    const termIDs = new Set(terms.map((term) => term.id));
+    const lessons = this.#lessonsOf(target);
+    const records = {
+      domains: target.kind === 'domain' ? [this.maps.domains.get(target.id)] : [],
+      modules: [...this.maps.modules.values()].filter((module) => (target.kind === 'domain' && module.domainID === target.id)
+        || (target.kind === 'module' && module.id === target.id)),
+      lessons,
+      terms,
+      progress: [...this.maps.progress.values()].filter((record) => termIDs.has(record.termID)),
+      notes: lessons.map((lesson) => this.maps.notes.get(lesson.id)).filter(Boolean)
+    };
+    const journals = {};
+    for (const name of TERM_HISTORY_STORES) {
+      journals[name] = (await Promise.all([...termIDs].map((id) => this.adapter.readByTerm(name, id)))).flat();
+    }
+    const media = { noteImages: [], noteFiles: [] };
+    for (const note of records.notes) {
+      for (const { store, meta } of mediaOf(note)) {
+        const [record] = await this.adapter.getMany(store, [meta.id]);
+        if (record) media[store].push(record);
+      }
+    }
+    return { target: { ...target }, records: structuredClone(records), journals, media };
+  }
+
+  /**
+   * Przywraca to, co usunęło deleteWithUndo() (kopia z jego wyniku). Element wraca na swoje
+   * miejsce, z pojęciami, postępami, historią nauki i notatkami. Nie da się, gdy w międzyczasie
+   * zniknął element nadrzędny (np. moduł usuwanej lekcji) albo kopia została już przywrócona.
+   */
+  restoreDeleted(copy) {
     return this.#mutate((unit) => {
-      if (target.kind === 'terms' && target.ids.length === 0) throw errors.nothingSelected();
-      if (target.kind !== 'terms') this.#require(target.kind, target.id);
-
-      const terms = this.#termsOf(target);
-      const termIDs = new Set(terms.map((term) => term.id));
-      for (const term of terms) unit.delete('terms', term.id);
-      for (const record of [...this.maps.progress.values()]) {
-        if (termIDs.has(record.termID)) unit.delete('progress', record.id);
+      if (!copy?.records) throw errors.cannotRestore('Nie ma czego przywrócić.');
+      const { records, journals, media } = copy;
+      const present = [...records.domains.map((item) => ['domains', item]), ...records.modules.map((item) => ['modules', item]),
+        ...records.lessons.map((item) => ['lessons', item]), ...records.terms.map((item) => ['terms', item])];
+      if (present.some(([store, item]) => this.maps[store].has(item.id))) throw errors.cannotRestore('To zostało już przywrócone.');
+      const domainIDs = new Set([...this.maps.domains.keys(), ...records.domains.map((item) => item.id)]);
+      const moduleIDs = new Set([...this.maps.modules.keys(), ...records.modules.map((item) => item.id)]);
+      const lessonIDs = new Set([...this.maps.lessons.keys(), ...records.lessons.map((item) => item.id)]);
+      const orphaned = records.modules.some((item) => !domainIDs.has(item.domainID))
+        || records.lessons.some((item) => !moduleIDs.has(item.moduleID))
+        || records.terms.some((item) => !lessonIDs.has(item.lessonID));
+      if (orphaned) throw errors.cannotRestore('Nie można cofnąć – element, w którym to było, został w międzyczasie usunięty.');
+      for (const store of ['domains', 'modules', 'lessons', 'terms', 'progress', 'notes']) {
+        for (const record of records[store]) unit.put(store, record);
       }
-      unit.purgeTerms([...termIDs]);
-      for (const lesson of this.#lessonsOf(target)) this.#removeNote(unit, lesson.id);
-
-      if (target.kind === 'domain') {
-        for (const lesson of [...this.maps.lessons.values()]) {
-          if (lesson.domainID === target.id) unit.delete('lessons', lesson.id);
-        }
-        for (const module of [...this.maps.modules.values()]) {
-          if (module.domainID === target.id) unit.delete('modules', module.id);
-        }
-        unit.delete('domains', target.id);
-      } else if (target.kind === 'module') {
-        for (const lesson of [...this.maps.lessons.values()]) {
-          if (lesson.moduleID === target.id) unit.delete('lessons', lesson.id);
-        }
-        unit.delete('modules', target.id);
-      } else if (target.kind === 'lesson') {
-        unit.delete('lessons', target.id);
+      for (const [store, list] of [...Object.entries(journals), ...Object.entries(media)]) {
+        for (const record of list) unit.append(store, record);
       }
+      return { kind: copy.target.kind, terms: records.terms.length };
     });
   }
 

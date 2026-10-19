@@ -174,8 +174,44 @@ export function openMenu({ title = null, items }) {
   return dialog;
 }
 
-/** Krótki komunikat u dołu ekranu, odczytywany przez czytniki ekranu. */
-export function toast(message, { kind = 'info', duration = 4500, action = null } = {}) {
+/** Usuwa komunikat z krótką animacją znikania. */
+function dismissToast(element) {
+  if (!element.isConnected || element.classList.contains('toast--leaving')) return;
+  element.classList.add('toast--leaving');
+  setTimeout(() => element.remove(), 300);
+}
+
+/**
+ * Komunikat z przyciskiem „Cofnij” (od 1.9): bez okna, wisi przez `seconds` sekund – pasek u dołu
+ * komunikatu pokazuje, ile czasu zostało – i znika sam. onUndo() po dotknięciu (raz).
+ */
+export function undoToast(message, onUndo, { seconds = 60 } = {}) {
+  let element = null;
+  let used = false;
+  element = toast(message, {
+    timeout: seconds * 1000,
+    action: {
+      label: 'Cofnij',
+      onSelect: () => {
+        if (used) return;
+        used = true;
+        dismissToast(element);
+        onUndo();
+      }
+    }
+  });
+  element.classList.add('toast--undo');
+  element.dataset.testid = 'undo-toast';
+  element.style.setProperty('--undo-time', `${seconds}s`);
+  element.append(h('span', { class: 'toast__timer', 'aria-hidden': 'true' }));
+  return element;
+}
+
+/**
+ * Krótki komunikat u dołu ekranu, odczytywany przez czytniki ekranu. Komunikat z przyciskiem
+ * (action) zostaje, dopóki użytkownik go nie użyje – albo przez `timeout` ms, gdy jest podany.
+ */
+export function toast(message, { kind = 'info', duration = 4500, action = null, timeout = null } = {}) {
   let region = document.getElementById('toasts');
   if (!region) {
     region = h('div', { id: 'toasts', class: 'toasts', role: 'status', 'aria-live': 'polite' });
@@ -187,12 +223,7 @@ export function toast(message, { kind = 'info', duration = 4500, action = null }
     action ? h('button', { type: 'button', class: 'toast__button', onClick: () => action.onSelect() }, action.label) : null
   );
   region.appendChild(element);
-  if (!action) {
-    setTimeout(() => {
-      element.classList.add('toast--leaving');
-      setTimeout(() => element.remove(), 300);
-    }, duration);
-  }
+  if (!action || timeout) setTimeout(() => dismissToast(element), action ? timeout : duration);
   return element;
 }
 

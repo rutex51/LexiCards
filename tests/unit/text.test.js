@@ -105,14 +105,14 @@ test('ostrzeżenie przed usunięciem podaje liczbę elementów podrzędnych', ()
   const message = deletionMessage(target, impact);
   assert.match(message, /2 moduły, 5 lekcji i 18 pojęć/);
   assert.match(message, /postępy i historia nauki/);
-  assert.match(message, /nie można cofnąć/);
+  assert.match(message, /Przez minutę po usunięciu możesz to cofnąć przyciskiem „Cofnij”/);
 
   const empty = { name: 'Pusta', modules: 0, lessons: 0, terms: 0, progressRecords: 0 };
-  assert.equal(deletionMessage(target, empty), 'Tej operacji nie można cofnąć.');
+  assert.equal(deletionMessage(target, empty), 'Przez minutę po usunięciu możesz to cofnąć przyciskiem „Cofnij”.');
 
   const many = { name: null, modules: 0, lessons: 0, terms: 5, progressRecords: 0 };
   assert.equal(deletionTitle({ kind: 'terms', ids: [] }, many), 'Usunąć 5 pojęć?');
-  assert.equal(deletionMessage({ kind: 'terms', ids: [] }, many), 'Tej operacji nie można cofnąć.');
+  assert.equal(deletionMessage({ kind: 'terms', ids: [] }, many), 'Przez minutę po usunięciu możesz to cofnąć przyciskiem „Cofnij”.');
   assert.equal(deletionTitle({ kind: 'terms', ids: [] }, { ...many, terms: 1, name: 'sonda' }), 'Usunąć pojęcie „sonda”?');
 });
 

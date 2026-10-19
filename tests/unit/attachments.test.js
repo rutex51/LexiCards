@@ -297,3 +297,52 @@ test('ZIP kawałkami: zapis plik po pliku do Bloba i odczyt bez wczytywania cał
   assert.equal((await zip.read(zip.entries.get('pusty'))).byteLength, 0);
   await assert.rejects(openZipBlob(new Blob(['krótki'])), /To nie jest archiwum ZIP/);
 });
+
+// ---------------------------------------------------------------- cofnięcie usunięcia (1.9)
+
+test('cofnięcie usunięcia: lekcja wraca z pojęciami, postępami, dziennikami, notatką, obrazami i załącznikami', async () => {
+  const { library, adapter, lesson, module } = await libraryWithMedia();
+  const term = await library.createTerm({ termPL: 'bilans', termEN: 'balance sheet' }, lesson.id);
+  const progress = { id: 'p1', termID: term.id, lessonID: lesson.id, moduleID: lesson.moduleID, domainID: lesson.domainID, direction: 'pl_en', reviewCount: 1 };
+  await adapter.commit({
+    puts: { progress: [progress], assessments: [{ id: 'a1', termID: term.id, direction: 'pl_en', assessedAt: '2026-10-01T10:00:00.000Z' }],
+      reviews: [{ id: 'r1', termID: term.id, direction: 'pl_en' }], quizAnswers: [{ id: 'q1', termID: term.id, isCorrect: true }] },
+    deletes: {}, purgeTermIDs: [], clear: []
+  });
+  library.maps.progress.set(progress.id, progress);
+  const before = await adapter.readStore('noteFiles');
+
+  const copy = await library.deleteWithUndo({ kind: 'lesson', id: lesson.id });
+  assert.equal(library.getLesson(lesson.id), null);
+  assert.equal((await adapter.readStore('noteFiles')).length, 0);
+  assert.equal((await adapter.readStore('assessments')).length, 0);
+
+  await library.restoreDeleted(copy);
+  assert.equal(library.getLesson(lesson.id).moduleID, module.id);
+  assert.equal(library.getTerm(term.id).termPL, 'bilans');
+  assert.ok(library.maps.progress.has('p1'));
+  for (const store of ['assessments', 'reviews', 'quizAnswers']) assert.equal((await adapter.readStore(store)).length, 1, store);
+  assert.equal(library.getNote(lesson.id).files.length, 2);
+  assert.equal((await library.noteImages(lesson.id)).length, 2);
+  const after = await adapter.readStore('noteFiles');
+  assert.deepEqual(after.map((record) => [record.id, record.size]).sort(), before.map((record) => [record.id, record.size]).sort());
+  assert.deepEqual(await library.missingMedia(), { images: 0, files: 0, size: 0 });
+
+  // Drugi raz – już przywrócone.
+  await assert.rejects(library.restoreDeleted(copy), /już przywrócone/);
+});
+
+test('cofnięcie usunięcia: pojęcia wracają do lekcji; nie da się, gdy zniknął element nadrzędny', async () => {
+  const { library, lesson, module } = await libraryWithMedia();
+  const first = await library.createTerm({ termPL: 'aktywa', termEN: 'assets' }, lesson.id);
+  const second = await library.createTerm({ termPL: 'pasywa', termEN: 'liabilities' }, lesson.id);
+  const copy = await library.deleteWithUndo({ kind: 'terms', ids: [first.id, second.id] });
+  assert.equal(library.listTerms(lesson.id).length, 0);
+  await library.restoreDeleted(copy);
+  assert.deepEqual(library.listTerms(lesson.id).map((term) => term.termPL), ['aktywa', 'pasywa']);
+
+  const lessonCopy = await library.deleteWithUndo({ kind: 'lesson', id: lesson.id });
+  await library.delete({ kind: 'module', id: module.id });
+  await assert.rejects(library.restoreDeleted(lessonCopy), /został w międzyczasie usunięty/);
+  assert.equal(library.getLesson(lesson.id), null);
+});

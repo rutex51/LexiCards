@@ -268,7 +268,7 @@ test('usuwanie dziedziny ostrzega, ile elementów zniknie', async ({ open }) => 
   await menuItem(page, 'Usuń');
   await expectText(page.locator('.alert__title'), 'Usunąć dziedzinę „Metrology”?');
   await expectText(page.locator('.alert__message'), 'Usunięte zostaną również: 2 moduły, 5 lekcji i 18 pojęć.');
-  await expectText(page.locator('.alert__message'), 'Tej operacji nie można cofnąć.');
+  await expectText(page.locator('.alert__message'), 'Przez minutę po usunięciu możesz to cofnąć przyciskiem „Cofnij”.');
 
   // Anulowanie niczego nie usuwa.
   await page.locator('dialog.alert[open]').getByRole('button', { name: 'Anuluj' }).click();
@@ -280,6 +280,18 @@ test('usuwanie dziedziny ostrzega, ile elementów zniknie', async ({ open }) => 
   await waitUntil(async () => (await summary(page)).terms === 22, 'Po usunięciu powinny zostać 22 pojęcia');
   assert.deepEqual(await summary(page), { domains: 1, modules: 3, lessons: 8, terms: 22, favorites: 0 });
   await waitUntil(async () => (await page.getByRole('link', { name: /Metrology/ }).count()) === 0, 'Dziedzina powinna zniknąć z listy');
+
+  // „Cofnij” w komunikacie (bez okna) przywraca dziedzinę ze wszystkim.
+  const undo = page.locator('[data-testid=undo-toast]');
+  await expectText(undo, 'Usunięto dziedzinę „Metrology”.');
+  assert.equal(await page.locator('dialog[open]').count(), 0, 'bez okna');
+  await undo.getByRole('button', { name: 'Cofnij' }).click();
+  await page.locator('.toast', { hasText: 'Przywrócono dziedzinę „Metrology”.' }).waitFor();
+  await waitUntil(async () => (await summary(page)).terms === 40, 'Po cofnięciu znowu 40 pojęć');
+  assert.deepEqual(await summary(page), { domains: 2, modules: 5, lessons: 13, terms: 40, favorites: 0 });
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  assert.equal((await summary(page)).terms, 40, 'przywrócone dane są w bazie');
 });
 
 test('duplikat w lekcji wymaga potwierdzenia; „Zapisz i dodaj kolejne” zostawia formularz otwarty', async ({ open }) => {
@@ -5044,6 +5056,16 @@ test('lekcje i moduły: przesunięcie w prawo utrwala, w lewo usuwa; lekkie pyta
   await page.locator('.toast', { hasText: 'Usunięto lekcję „Investments”.' }).waitFor();
   assert.equal(await page.locator('dialog.alert[open]').count(), 0, 'bez pytania');
   assert.equal(await lessonID('Investments'), null);
+  // „Cofnij” w komunikacie: lekcja wraca na swoje miejsce; potem usuwamy ją jeszcze raz.
+  const undo = page.locator('[data-testid=undo-toast]', { hasText: 'Investments' });
+  assert.equal(await undo.locator('.toast__timer').count(), 1, 'pasek czasu do cofnięcia');
+  await page.screenshot({ path: path.join(OUTPUT, 'cofnij-usuniecie-telefon.png') });
+  await undo.getByRole('button', { name: 'Cofnij' }).click();
+  await page.locator('.toast', { hasText: 'Przywrócono lekcję „Investments”.' }).waitFor();
+  await waitUntil(async () => (await page.locator('.group .row .row__title').allTextContents()).map((item) => item.trim()).join()
+    === 'Financial Statements,Investments,Financial Ratios', 'Lekcja wraca na swoje miejsce');
+  await swipeRowBy(context, page, row('Investments'), -260);
+  await waitUntil(async () => (await lessonID('Investments')) === null, 'Usunięta ponownie');
 
   // Lekkie przesunięcie w prawo: pytanie o utrwalenie, „Utrwal” – lekcja utrwalona.
   const light = await swipeRowBy(context, page, row('Financial Ratios'), 150, { release: false });
@@ -5086,6 +5108,24 @@ test('lekcje i moduły: przesunięcie w prawo utrwala, w lewo usuwa; lekkie pyta
   await page.evaluate((id) => window.lexicards.library.createModule({ name: 'Pusty moduł' }, { existing: id }), domainID);
   await swipeRowBy(context, page, row('Pusty moduł'), 270);
   await page.locator('.toast', { hasText: 'Moduł nie ma pojęć – nie ma czego utrwalić.' }).waitFor();
+});
+
+test('„Cofnij” po usunięciu wisi około minuty i znika sam; usunięcie z menu też można cofnąć', async ({ open, context }) => {
+  await context.clock.install();
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.goto(`${page.url().split('#')[0]}#/library/module/${ids.module}`);
+  await page.getByRole('button', { name: 'Więcej poleceń: Investments' }).click();
+  await menuItem(page, 'Usuń');
+  await confirm(page);
+  const undo = page.locator('[data-testid=undo-toast]');
+  await expectText(undo, 'Usunięto lekcję „Investments”.');
+  await page.clock.fastForward('00:58');
+  assert.equal(await undo.isVisible(), true, 'po 58 s nadal można cofnąć');
+  await page.clock.fastForward('00:03');
+  await waitUntil(async () => (await undo.count()) === 0, 'Po minucie komunikat znika');
+  assert.equal(await page.evaluate((id) => window.lexicards.library.getLesson(id), ids.investments), null, 'lekcja zostaje usunięta');
 });
 
 test('ustawienie „Utrwalone na końcu listy”: wyłączone – utrwalone zostają na miejscu i przesuwają się z innymi', async ({ open }) => {
