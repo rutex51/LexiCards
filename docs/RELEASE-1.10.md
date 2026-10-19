@@ -51,7 +51,7 @@ Szczegóły:
 
 | Prośba | Jak jest zrobione |
 | --- | --- |
-| Pole notatki na ekranie lekcji bardzo delikatnie żółte | Wiersz **Notatka** nad listą pojęć ma bardzo jasne, żółtawe tło (jak kartka notesu), a kwadrat z ikoną notatki – odrobinę mocniejsze. To samo przy lekcji bez notatki („Dodaj notatkę do lekcji”). W ciemnym motywie odcień jest przyciemniony, żeby nie raził. Wiersz utrwalenia, lista pojęć i pozostałe pola – bez zmian |
+| Pole notatki na ekranie lekcji bardzo delikatnie żółte | Wiersz **Notatka** nad listą pojęć ma bardzo jasne, żółtawe tło (jak kartka notesu), a kwadrat z ikoną notatki – odrobinę mocniejsze (od 1.10.2 – szare). To samo przy lekcji bez notatki („Dodaj notatkę do lekcji”). W ciemnym motywie odcień jest przyciemniony, żeby nie raził. Wiersz utrwalenia, lista pojęć i pozostałe pola – bez zmian |
 
 Testy wersji 1.10.1:
 
@@ -60,6 +60,21 @@ Testy wersji 1.10.1:
   + 1 nowy): w jasnym i ciemnym motywie wiersz notatki jest żółtawy, ale delikatnie (niebieski
   składnik niższy od czerwonego o 12–40 na 255), tło grupy jest takie jak tło listy pojęć, a wiersz
   „Dodaj notatkę do lekcji” ma ten sam kolor.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium, ekran telefonu): ekran lekcji w jasnym i ciemnym motywie.
+
+## Uzupełnienie w wersji 1.10.2
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Tylko szare tło piktogramu notatki | Kwadrat z ikoną w żółtym wierszu notatki ma neutralnie szare, nieprzezroczyste tło (żółć przez nie nie prześwituje), w obu motywach. Wiersz zostaje delikatnie żółty |
+
+Testy wersji 1.10.2:
+
+- **Testy logiki: 259 – wszystkie zaliczone** (bez zmian w logice).
+- **Testy w przeglądarce: 110 – wszystkie zaliczone w dwóch przebiegach** (test wiersza notatki
+  uzupełniony: tło ikony jest szare – składowe różnią się najwyżej o 4 – i odróżnia się od tła,
+  w jasnym i ciemnym motywie).
 - **Lint: bez błędów.**
 - Zrzuty (Chromium, ekran telefonu): ekran lekcji w jasnym i ciemnym motywie.
 

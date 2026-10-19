@@ -1894,6 +1894,10 @@ test('ekran lekcji: wiersz notatki bardzo delikatnie żółty (jasny i ciemny mo
     assert.ok(tint >= 12 && tint <= 40, `${theme}: odcień delikatny (różnica ${tint})`);
     assert.deepEqual(surface, term, `${theme}: tło grupy jak tło listy pojęć`);
     assert.notDeepEqual(note, surface, `${theme}: wiersz notatki różni się od tła`);
+    // Kwadrat z ikoną – szary: składowe prawie równe, ciemniejszy od tła (jasny) albo jaśniejszy (ciemny).
+    const box = await color(page.locator('[data-testid=lesson-note] .row__leading--icon'));
+    assert.ok(Math.max(box.r, box.g, box.b) - Math.min(box.r, box.g, box.b) <= 4, `${theme}: tło ikony szare (${JSON.stringify(box)})`);
+    assert.ok(Math.abs(box.r - surface.r) >= 10, `${theme}: tło ikony odróżnia się od tła wiersza`);
     await page.screenshot({ path: path.join(OUTPUT, `notatka-wiersz-zolty-${theme}.png`) });
     // Lekcja bez notatki: „Dodaj notatkę do lekcji” też na żółtym.
     await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.investments}`);

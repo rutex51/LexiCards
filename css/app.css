@@ -4901,7 +4901,8 @@ a.row__main:active,
 
 /* Wiersz notatki na ekranie lekcji (od 1.10.1): bardzo delikatnie żółty, jak kartka notesu. */
 .row--note { background: color-mix(in srgb, var(--note-paper) 9%, var(--surface)); }
-.row--note .row__leading--icon { background: color-mix(in srgb, var(--note-paper) 26%, var(--surface)); }
+/* Kwadrat z ikoną – neutralnie szary (nieprzezroczysty, więc żółte tło przez niego nie prześwituje). */
+.row--note .row__leading--icon { background: color-mix(in srgb, #767680 14%, var(--surface)); }
 
 .note-row__preview {
   white-space: pre-line;
