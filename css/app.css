@@ -5396,6 +5396,21 @@ svg.icon--note { color: var(--note-icon); }
 .drawing__selection-button--danger { color: var(--danger); }
 .drawing__selection-button:active { background: var(--pressed); }
 
+/* Pole tekstowe i wzór na rysunku (od 1.13): wielkość i kolor w oknie wstawiania. */
+.drawing__element-options {
+  display: grid;
+  gap: 14px;
+}
+
+.drawing__element-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+/* Wybór wielkości i koloru po dotknięciu – bez ramki pola (z klawiatury ramka zostaje). */
+:root.input-pointer .drawing__element-options .field:focus-within { box-shadow: 0 -1px 0 var(--separator); }
+
 /* Ustawienia pióra pod paskiem narzędzi. */
 .drawing__settings {
   position: absolute;

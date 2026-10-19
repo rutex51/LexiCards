@@ -3271,6 +3271,120 @@ test('rysunek 1.12.1: gumka fragmentów z rozmiarami, linijka (kąt dwoma palcam
   assert.ok(strokes[0].points.at(-3) < strokes[1].points[0], 'dwa kawałki przeciętej kreski z przerwą między nimi');
 }, { device: IPAD });
 
+/** Granice (ułamki płótna) pikseli warstwy zapisanych kresek spełniających warunek koloru albo null. */
+const colorBox = (page, kind) => page.locator('.drawing__canvas:not(.drawing__canvas--live)').evaluate((canvas, which) => {
+  const test = {
+    red: (r, g, b) => r > 150 && g < 90 && b < 90,
+    blue: (r, g, b) => b > 150 && r < 80 && g < 130
+  }[which];
+  const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+  let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (let y = 0; y < canvas.height; y += 2) {
+    for (let x = 0; x < canvas.width; x += 2) {
+      const index = (y * canvas.width + x) * 4;
+      if (!test(data[index], data[index + 1], data[index + 2])) continue;
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+      top = Math.min(top, y);
+      bottom = Math.max(bottom, y);
+    }
+  }
+  return left === Infinity ? null : { x0: left / canvas.width, y0: top / canvas.height, x1: right / canvas.width, y1: bottom / canvas.height };
+}, kind);
+const sheetSubmit = (page) => page.locator('dialog.sheet[open]').last().locator('button[type=submit]');
+
+test('rysunek 1.13: pole tekstowe i wzór – wstawienie (wielkość, kolor), jeden pod drugim, przesunięcie, poprawka dotknięciem i „Edytuj”, gumka, zapis i ponowna edycja (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Tekst i wzór</p>');
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+
+  // Pole tekstowe: dwa wiersze, duże, czerwone – na środku widocznej części strony, zaznaczone.
+  await editor.locator('[data-testid=drawing-insert-text]').click();
+  await expectText(page.locator('dialog.sheet[open] .sheet__title').last(), 'Nowe pole tekstowe');
+  assert.equal(await sheetSubmit(page).isDisabled(), true, 'bez tekstu nie da się wstawić');
+  await page.locator('[data-testid=drawing-text-input]').fill('Bilans: aktywa = pasywa\nKapitał własny');
+  await page.locator('dialog.sheet[open]').last().getByRole('radio', { name: 'Duża' }).check();
+  await page.locator('[data-testid=drawing-element-color-red]').click();
+  await sheetSubmit(page).click();
+  await expectText(selectionCount, 'Pole tekstowe');
+  assert.equal(await editor.locator('[data-testid=drawing-tool-select]').getAttribute('aria-pressed'), 'true', 'po wstawieniu – zaznaczanie');
+  const text = await waitUntil(() => colorBox(page, 'red'), 'Czerwony tekst na płótnie');
+  assert.ok(text.x0 < 0.5 && text.x1 > 0.5, 'tekst na środku strony');
+
+  // Wzór (zapis jak w notatce), niebieski – pod polem tekstowym, nie na nim.
+  await editor.locator('[data-testid=drawing-insert-math]').click();
+  await expectText(page.locator('dialog.sheet[open] .sheet__title').last(), 'Nowy wzór');
+  await page.locator('[data-testid=math-try]').fill('\\frac{a+b}{2} = x^2');
+  await expectText(page.locator('[data-testid=math-message]'), 'Wzór jest gotowy.');
+  await page.locator('[data-testid=drawing-element-color-blue]').click();
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-wzor-okno-ipad.png') });
+  await sheetSubmit(page).click();
+  await expectText(selectionCount, 'Wzór');
+  const formula = await waitUntil(() => colorBox(page, 'blue'), 'Niebieski wzór na płótnie');
+  assert.ok(formula.y0 > text.y1, 'wzór pod polem tekstowym');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-tekst-i-wzor-ipad.png') });
+
+  // Przesunięcie zaznaczonego wzoru w prawo (rysikiem, wewnątrz ramki).
+  const canvasBox = await editor.locator('[data-testid=drawing-canvas]').boundingBox();
+  const middle = [(formula.x0 + formula.x1) / 2, (formula.y0 + formula.y1) / 2];
+  const shift = 150 / canvasBox.width;
+  await drawStroke(page, segment(middle, [middle[0] + shift, middle[1]], 8));
+  const moved = await waitUntil(async () => { const box = await colorBox(page, 'blue'); return box && box.x0 > formula.x0 + shift * 0.8 ? box : null; }, 'Wzór przesunięty');
+  // Dotknięcie zaznaczonego wzoru – poprawka zapisu.
+  await drawStroke(page, [[(moved.x0 + moved.x1) / 2, (moved.y0 + moved.y1) / 2, 0.5]]);
+  await expectText(page.locator('dialog.sheet[open] .sheet__title').last(), 'Wzór na rysunku');
+  assert.equal(await page.locator('[data-testid=math-try]').inputValue(), '\\frac{a+b}{2} = x^2');
+  await page.locator('[data-testid=math-try]').fill('\\sqrt{x} + 1');
+  await sheetSubmit(page).click();
+  await expectText(selectionCount, 'Wzór');
+
+  // „Edytuj” pola tekstowego (zaznaczonego dotknięciem).
+  await drawStroke(page, [[(text.x0 + text.x1) / 2, (text.y0 + text.y1) / 2, 0.5]]);
+  await expectText(selectionCount, 'Pole tekstowe');
+  await editor.locator('[data-testid=drawing-selection-edit]').click();
+  assert.equal(await page.locator('[data-testid=drawing-text-input]').inputValue(), 'Bilans: aktywa = pasywa\nKapitał własny');
+  await page.locator('[data-testid=drawing-text-input]').fill('Aktywa = pasywa');
+  await sheetSubmit(page).click();
+  await expectText(selectionCount, 'Pole tekstowe');
+
+  // Gumka fragmentów nie przecina tekstu; gumka całych kresek usuwa wzór (cofnij – wraca).
+  await editor.locator('[data-testid=drawing-tool-eraser]').click();
+  await editor.locator('[data-testid=drawing-eraser-pixel]').click();
+  const shortText = await waitUntil(() => colorBox(page, 'red'), 'Poprawiony tekst');
+  await drawStroke(page, segment([shortText.x0, (shortText.y0 + shortText.y1) / 2], [shortText.x1, (shortText.y0 + shortText.y1) / 2], 10));
+  await nextFrames(page);
+  assert.deepEqual(await colorBox(page, 'red'), shortText, 'tekst bez zmian po gumce fragmentów');
+  await editor.locator('[data-testid=drawing-eraser-stroke]').click();
+  const blue = await colorBox(page, 'blue');
+  await drawStroke(page, segment([blue.x0, (blue.y0 + blue.y1) / 2], [blue.x1, (blue.y0 + blue.y1) / 2], 10));
+  await waitUntil(async () => (await colorBox(page, 'blue')) === null, 'Gumka całych kresek usunęła wzór');
+  await editor.locator('[data-testid=drawing-undo]').click();
+  await waitUntil(() => colorBox(page, 'blue'), 'Cofnij – wzór wraca');
+
+  // Zapis: pole tekstowe i wzór w danych rysunku, rysunek w podglądzie notatki.
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const strokes = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing.strokes, ids.statements);
+  assert.deepEqual(strokes.map((item) => [item.tool, item.color, item.size, item.text ?? item.source]),
+    [['text', '#d70015', 56, 'Aktywa = pasywa'], ['math', '#0040dd', 56, '\\sqrt{x} + 1']], 'wzór – ostatnio wybrana wielkość (Duża)');
+  assert.ok(strokes.every((item) => item.width > 0 && item.height > 0));
+  await waitUntil(() => dialog.locator('.note-page__figure img').evaluate((image) => image.complete && image.naturalWidth === 1600), 'Rysunek w podglądzie');
+
+  // Ponowna edycja rysunku: pole tekstowe nadal da się zaznaczyć i poprawić.
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('.note-images__item--drawing .note-images__open').click();
+  await menuItem(page, 'Edytuj rysunek');
+  await editor.waitFor();
+  const again = await waitUntil(() => colorBox(page, 'red'), 'Tekst po ponownym otwarciu');
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await drawStroke(page, [[(again.x0 + again.x1) / 2, (again.y0 + again.y1) / 2, 0.5]]);
+  await expectText(selectionCount, 'Pole tekstowe');
+}, { device: IPAD });
+
 test('rysunek 1.12.1 na telefonie (bez rysika): palec przesuwa linijkę i rysuje prosto przy jej krawędzi, zaznacza i przesuwa kreskę; pasek narzędzi mieści się', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
@@ -3285,7 +3399,8 @@ test('rysunek 1.12.1 na telefonie (bez rysika): palec przesuwa linijkę i rysuje
     assert.equal(await overflowX(page), 0, `pasek narzędzi (${name}) bez przewijania w bok`);
     const toolbar = await editor.locator('.drawing__toolbar').boundingBox();
     assert.ok(toolbar.x >= 0 && toolbar.x + toolbar.width <= 390, `pasek w szerokości ekranu (${name})`);
-    if (name === 'pen') assert.ok(toolbar.height < 110, `pióro: pasek w dwóch wierszach (${toolbar.height} px)`);
+    // Od 1.13 (pole tekstowe i wzór na pasku) – najwyżej trzy wiersze.
+    if (name === 'pen') assert.ok(toolbar.height < 150, `pióro: pasek najwyżej w trzech wierszach (${toolbar.height} px)`);
     // Pasek o inną liczbę wierszy nie zmienia płótna – strona nie skacze przy zmianie narzędzia.
     assert.deepEqual(await editor.locator('[data-testid=drawing-canvas]').boundingBox(), box, `płótno bez zmian (${name})`);
   }

@@ -3,13 +3,17 @@
 // wygładzanie, gumka całych kresek i fragmentów (od 1.12.1), zaznaczanie i przesuwanie kresek,
 // linijka, historia cofania, sprawdzanie danych (zapis, kopia zapasowa).
 //
-// Rysunek: { version: 1, width, height, paper: 'plain' | 'lines' | 'grid', strokes, photo? }
+// Rysunek: { version: 2, width, height, paper: 'plain' | 'lines' | 'grid', strokes, photo? }
 //   width, height – wielkość strony w jednostkach rysunku (strona bez zdjęcia: 1600 × 1100);
 //   strokes – [{ tool: 'pen' | 'highlighter', color: '#rrggbb', points: [x, y, w, x, y, w, …] }],
 //   w – grubość kreski w danym punkcie (pióro – zależna od nacisku, zakreślacz – stała);
+//   od 1.13 także pola tekstowe { tool: 'text', color, x, y, size, text, maxWidth, width, height }
+//   i wzory { tool: 'math', color, x, y, size, source, width, height } – (x, y) to lewy górny róg,
+//   width i height – zmierzone przy wstawieniu (zaznaczanie, gumka), size – wysokość czcionki;
 //   photo – { type, width, height, bytes } – zdjęcie pod kreskami („Rysuj na zdjęciu”).
 
-export const DRAWING_VERSION = 1;
+/** 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13). */
+export const DRAWING_VERSION = 2;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -52,6 +56,15 @@ export const WIDTH_LIMITS = Object.freeze({ min: 0.5, max: 40 });
 export const SENSITIVITY = Object.freeze({ off: 0, low: 0.5, medium: 1, high: 1.6 });
 export const SENSITIVITY_LABELS = Object.freeze({ off: 'Wył.', low: 'Mała', medium: 'Średnia', high: 'Duża' });
 
+/** Pola tekstowe i wzory (od 1.13): wielkość czcionki w jednostkach strony (kratka ma 44). */
+export const TEXT_SIZES = Object.freeze([28, 40, 56]);
+export const TEXT_SIZE_LABELS = Object.freeze(['Mała', 'Średnia', 'Duża']);
+/** Najdłuższy tekst pola i zapis wzoru. */
+export const ELEMENT_TEXT_MAX = 2000;
+
+/** Czy to pole tekstowe albo wzór (a nie kreska z punktami). */
+export const isElement = (stroke) => stroke?.tool === 'text' || stroke?.tool === 'math';
+
 /** Gumka (od 1.12.1): całe kreski albo fragmenty; wielkość gumki fragmentów – średnica na ekranie (px). */
 export const ERASER_MODES = Object.freeze(['stroke', 'pixel']);
 export const ERASER_MODE_LABELS = Object.freeze({ stroke: 'Całe kreski', pixel: 'Fragmenty' });
@@ -69,7 +82,8 @@ export function defaultToolSettings() {
     highlighterWidth: 1,
     highlighterColor: 'yellow',
     eraserMode: 'stroke',
-    eraserSize: 1
+    eraserSize: 1,
+    textSize: 1
   };
 }
 
@@ -97,7 +111,8 @@ export function cleanToolSettings(raw) {
       ? raw.highlighterWidth : base.highlighterWidth,
     highlighterColor: HIGHLIGHTER_COLORS.some((color) => color.id === raw.highlighterColor) ? raw.highlighterColor : base.highlighterColor,
     eraserMode: ERASER_MODES.includes(raw.eraserMode) ? raw.eraserMode : base.eraserMode,
-    eraserSize: Number.isInteger(raw.eraserSize) && raw.eraserSize >= 0 && raw.eraserSize < ERASER_SIZES.length ? raw.eraserSize : base.eraserSize
+    eraserSize: Number.isInteger(raw.eraserSize) && raw.eraserSize >= 0 && raw.eraserSize < ERASER_SIZES.length ? raw.eraserSize : base.eraserSize,
+    textSize: Number.isInteger(raw.textSize) && raw.textSize >= 0 && raw.textSize < TEXT_SIZES.length ? raw.textSize : base.textSize
   };
 }
 
@@ -150,6 +165,9 @@ function segmentDistance(px, py, ax, ay, bx, by) {
 
 /** Czy gumka o promieniu `radius` w punkcie (x, y) dotyka kreski (z jej grubością). */
 export function touchesStroke(stroke, x, y, radius) {
+  if (isElement(stroke)) {
+    return x >= stroke.x - radius && x <= stroke.x + stroke.width + radius && y >= stroke.y - radius && y <= stroke.y + stroke.height + radius;
+  }
   const { points } = stroke;
   if (points.length < 3) return false;
   if (points.length === 3) return Math.hypot(x - points[0], y - points[1]) <= radius + points[2] / 2;
@@ -176,6 +194,11 @@ const boundsCache = new WeakMap();
 export function strokeBounds(stroke) {
   let bounds = boundsCache.get(stroke);
   if (bounds) return bounds;
+  if (isElement(stroke)) {
+    bounds = { minX: stroke.x, minY: stroke.y, maxX: stroke.x + stroke.width, maxY: stroke.y + stroke.height };
+    boundsCache.set(stroke, bounds);
+    return bounds;
+  }
   const { points } = stroke;
   bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   for (let index = 0; index < points.length; index += 3) {
@@ -203,6 +226,8 @@ function strokeFrom(source, points) {
  * dotyka kreski, albo listę kawałków (pustą, gdy znika cała kreska).
  */
 export function eraseFromStroke(stroke, x, y, radius) {
+  // Pola tekstowego i wzoru nie da się przeciąć – usuwa je gumka całych kresek albo zaznaczenie.
+  if (isElement(stroke)) return null;
   const bounds = strokeBounds(stroke);
   if (x + radius < bounds.minX || x - radius > bounds.maxX || y + radius < bounds.minY || y - radius > bounds.maxY) return null;
   const { points } = stroke;
@@ -269,6 +294,10 @@ export function strokesInRect(strokes, rect) {
   const [top, bottom] = [Math.min(rect.y0, rect.y1), Math.max(rect.y0, rect.y1)];
   const found = [];
   strokes.forEach((stroke, index) => {
+    if (isElement(stroke)) {
+      if (stroke.x >= left && stroke.x + stroke.width <= right && stroke.y >= top && stroke.y + stroke.height <= bottom) found.push(index);
+      return;
+    }
     const { points } = stroke;
     for (let point = 0; point < points.length; point += 3) {
       if (points[point] < left || points[point] > right || points[point + 1] < top || points[point + 1] > bottom) return;
@@ -290,6 +319,7 @@ export function selectionBounds(strokes) {
 
 /** Kreska przesunięta o (dx, dy) – nowa kreska, oryginał bez zmian. */
 export function translateStroke(stroke, dx, dy) {
+  if (isElement(stroke)) return { ...stroke, x: round(stroke.x + dx, 1), y: round(stroke.y + dy, 1) };
   const points = stroke.points.slice();
   for (let index = 0; index < points.length; index += 3) {
     points[index] = round(points[index] + dx, 1);
@@ -451,6 +481,11 @@ export function cleanDrawing(raw) {
   if (!width || !height) return null;
   const strokes = [];
   for (const stroke of Array.isArray(raw.strokes) ? raw.strokes.slice(0, MAX_STROKES) : []) {
+    if (isElement(stroke)) {
+      const element = cleanElement(stroke, width, height);
+      if (element) strokes.push(element);
+      continue;
+    }
     if (!stroke || (stroke.tool !== 'pen' && stroke.tool !== 'highlighter') || !HEX.test(stroke.color ?? '')) continue;
     if (!Array.isArray(stroke.points)) continue;
     const points = [];
@@ -480,6 +515,26 @@ export function cleanDrawing(raw) {
     strokes,
     ...(photo ? { photo } : {})
   };
+}
+
+/** Sprawdzone pole tekstowe albo wzór (zapis, kopia zapasowa) albo null. */
+function cleanElement(raw, pageWidth, pageHeight) {
+  const content = raw.tool === 'text' ? raw.text : raw.source;
+  if (typeof content !== 'string' || content.trim() === '' || !HEX.test(raw.color ?? '')) return null;
+  if (![raw.x, raw.y, raw.size, raw.width, raw.height].every(finite)) return null;
+  const size = clamp(raw.size, 8, 200);
+  const element = {
+    tool: raw.tool,
+    color: raw.color.toLowerCase(),
+    x: clamp(raw.x, -pageWidth, pageWidth * 2),
+    y: clamp(raw.y, -pageHeight, pageHeight * 2),
+    size,
+    [raw.tool === 'text' ? 'text' : 'source']: content.slice(0, ELEMENT_TEXT_MAX),
+    width: clamp(raw.width, 1, pageWidth * 3),
+    height: clamp(raw.height, 1, pageHeight * 3)
+  };
+  if (raw.tool === 'text') element.maxWidth = finite(raw.maxWidth) ? clamp(raw.maxWidth, size, pageWidth * 3) : pageWidth;
+  return element;
 }
 
 /** Bajty zdjęcia jako ArrayBuffer (z ArrayBuffer albo widoku, np. z archiwum ZIP) albo null. */

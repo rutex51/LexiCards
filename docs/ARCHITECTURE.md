@@ -40,6 +40,7 @@ js/core/backup.js          kopia zapasowa: plik danych i plik obrazów i załąc
 js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (PDF, Word, Excel, PowerPoint…)
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
 js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, sprawdzanie danych rysunku
+js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
 js/core/zip.js             odczyt i zapis archiwów ZIP (także kawałkami przez Blob – duże pliki)
 js/core/xlsx.js            odczyt i zapis skoroszytów XLSX
 js/core/csv.js             kodowanie, separator, odczyt i zapis CSV
@@ -367,7 +368,21 @@ co ćwierć kratki i kątem (`rulerDegrees`: 0–179°, przeciwnie do ruchu wska
 przyskakuje co 45° (±2,5°, `snapRulerAngle`). Kreska zaczęta do 26 px od krawędzi jest rzutowana na
 prostą krawędzi (`rulerOffset`, `rulerPoint`). Linijkę przesuwa jeden palec albo mysz, obracają dwa
 palce (wokół środka palców) albo uchwyt. Pasek narzędzi leży nad płótnem: płótno ma stałą wielkość,
-a strona mieści się pod paskiem (miejsce mierzone przy otwarciu, obrocie ekranu i „100%”). Edytor notatki: „Narysuj”
+a strona mieści się pod paskiem (miejsce mierzone przy otwarciu, obrocie ekranu i „100%”).
+Od 1.13 (format rysunku 2) lista `strokes` ma też **pola tekstowe** `{ tool: 'text', color, x, y, size,
+text, maxWidth, width, height }` i **wzory** `{ tool: 'math', color, x, y, size, source, width, height }`
+– wspólna kolejność rysowania, zaznaczanie, przesuwanie, powielanie i historia jak dla kresek
+(`isElement`: granice z `width`/`height`, gumka całych kresek usuwa całość, gumka fragmentów je
+omija). Wymiary są mierzone przy wstawieniu i od nowa przy otwarciu edytora (czcionki urządzenia).
+Tekst – czcionka systemu, łamanie na słowach do `maxWidth` (60% strony). Wzoru w MathML nie da się
+przenieść na płótno (Safari blokuje zapis płótna z obrazem SVG z `foreignObject`), więc
+`js/core/math-layout.js` składa go sam z drzewa `parseMath()`: pudełka { w, a, d, draw } w czterech
+stylach (wyświetlany, tekstowy, indeks, indeks indeksu), odstępy wokół działań i relacji, znak liczby,
+ułamek z kreską na osi wzoru, znak pierwiastka i stopień, granice sumy i lim nad i pod, duże operatory
+wyśrodkowane na osi, akcenty i nawiasy rysowane kreską w wysokości treści; szerokości mierzy
+`measureText` płótna (czcionka wzorów systemu: STIX Two Math, Cambria Math). Okno wzoru to okno
+„Równania” (`openMathHelp` z opcjami `raw`, `extra`, `allowEmpty`). Nowy element trafia na środek
+widocznej części strony, pod już leżące tam pola i wzory, i jest od razu zaznaczony. Edytor notatki: „Narysuj”
 dodaje obraz „Rysunek N”, „Edytuj rysunek” i „Rysuj na zdjęciu” zastępują obraz nowym w tym samym
 miejscu, z tą samą sygnaturą (stary rekord znika przy zapisie notatki, jak usunięty obraz).
 
@@ -760,7 +775,8 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
 - `tests/unit/` – Node.js (`node --test`), bez przeglądarki: reguły biblioteki, wycofywanie
   nieudanych zmian, glosariusz, odczyt i zapis plików, import i eksport, nauka z fiszkami,
   FSRS (zgodność z py-fsrs i zapis powtórek), quizy, statystyki, kopia zapasowa (oba pliki),
-  załączniki, rysunki (nacisk, wygładzanie, gumka, historia, dane, zapis i kopia), spójność plików wydania.
+  załączniki, rysunki (nacisk, wygładzanie, gumka, historia, dane, zapis i kopia, pola tekstowe i wzory),
+  układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.
   Notatki: skoroszyt z openpyxl (fragmenty z formatowaniem, obrazy przy komórkach), ten sam

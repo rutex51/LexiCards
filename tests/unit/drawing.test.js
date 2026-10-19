@@ -2,13 +2,14 @@
 // kresek, cofanie i ponawianie, sprawdzanie danych rysunku, ustawienia narzędzi, sygnatury,
 // rysunek w notatce (zapis, kopia lekcji, kopia zapasowa w obu plikach). Od 1.12.1: gumka
 // fragmentów, zaznaczanie prostokątem i przesuwanie, linijka, historia jako stany przed i po zmianie.
+// Od 1.13: pola tekstowe i wzory na rysunku (dane, gumka, zaznaczanie, zapis i kopia zapasowa).
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
   DrawingHistory, PAGE_HEIGHT, PAGE_WIDTH, PEN_WIDTHS, addPoint, cleanDrawing, cleanToolSettings, defaultToolSettings,
-  drawingWithoutPhotoBytes, emptyDrawing, eraseAt, eraseFromStroke, hasContent, nextDrawingLabel, penWidth, rulerDegrees,
+  drawingWithoutPhotoBytes, emptyDrawing, eraseAt, eraseFromStroke, hasContent, isElement, nextDrawingLabel, penWidth, rulerDegrees,
   rulerOffset, rulerPoint, selectionBounds, smoothPoint, snapRulerAngle, strokeBounds, strokesAt, strokesInRect, touchesStroke,
   translateStroke
 } from '../../js/core/drawing.js';
@@ -235,6 +236,65 @@ test('historia od 1.12.1: zmiana jako jeden krok (begin … commit), bez skutku 
   assert.equal(history.undo(), false);
   assert.equal(history.redo(), true);
   assert.deepEqual(strokes, [a, moved]);
+});
+
+const textBox = (x = 100, y = 100) => ({ tool: 'text', color: '#1d1d1f', x, y, size: 40, text: 'Bilans', maxWidth: 960, width: 120, height: 50 });
+const formula = (x = 400, y = 300) => ({ tool: 'math', color: '#0040dd', x, y, size: 40, source: '\\frac{a}{b}', width: 60, height: 90 });
+
+test('pola tekstowe i wzory (1.13): granice, gumka całych kresek tak, gumka fragmentów nie, zaznaczanie i przesunięcie', () => {
+  const [text, math] = [textBox(), formula()];
+  assert.equal(isElement(text), true);
+  assert.equal(isElement(line(0, 0, 1, 1)), false);
+  assert.deepEqual(strokeBounds(text), { minX: 100, minY: 100, maxX: 220, maxY: 150 });
+  assert.equal(touchesStroke(text, 150, 120, 0), true);
+  assert.equal(touchesStroke(text, 230, 120, 5), false);
+  assert.equal(touchesStroke(text, 223, 120, 5), true, 'z promieniem gumki');
+  assert.deepEqual(strokesAt([text, math], 420, 340, 2), [1]);
+  assert.equal(eraseFromStroke(math, 420, 340, 30), null, 'gumka fragmentów nie przecina wzoru');
+  const strokes = [text, line(0, 120, 300, 120)];
+  eraseAt(strokes, 150, 120, 10);
+  assert.equal(strokes[0], text, 'pole tekstowe zostaje, kreska pod nim jest przecięta');
+  assert.equal(strokes.length, 3);
+  assert.deepEqual(strokesInRect([text, math], { x0: 90, y0: 90, x1: 230, y1: 160 }), [0]);
+  assert.deepEqual(strokesInRect([text, math], { x0: 90, y0: 90, x1: 200, y1: 160 }), [], 'pole wystaje poza prostokąt');
+  const moved = translateStroke(math, 10.04, -5);
+  assert.deepEqual([moved.x, moved.y, moved.source, moved.width], [410, 295, '\\frac{a}{b}', 60]);
+  assert.equal(math.x, 400, 'oryginał bez zmian');
+});
+
+test('pola tekstowe i wzory: sprawdzanie danych (puste, złe liczby i kolory odrzucone, wielkość ograniczona), zapis w notatce i kopia zapasowa', async () => {
+  const cleaned = cleanDrawing({
+    ...emptyDrawing(),
+    strokes: [
+      { ...textBox(), color: '#1D1D1F', size: 999, maxWidth: undefined },
+      { ...formula(), text: 'zbędne' },
+      { ...textBox(), text: '   ' },
+      { ...formula(), source: 42 },
+      { ...textBox(), x: 'x' },
+      { ...formula(), color: 'blue' },
+      { ...textBox(), text: 'x'.repeat(5000) }
+    ]
+  });
+  assert.equal(cleaned.version, 2);
+  assert.equal(cleaned.strokes.length, 3);
+  assert.deepEqual([cleaned.strokes[0].color, cleaned.strokes[0].size, cleaned.strokes[0].maxWidth], ['#1d1d1f', 200, 1600]);
+  assert.deepEqual(Object.keys(cleaned.strokes[1]).sort(), ['color', 'height', 'size', 'source', 'tool', 'width', 'x', 'y']);
+  assert.equal(cleaned.strokes[2].text.length, 2000);
+
+  const { library } = await makeLibrary();
+  const { lesson } = await makeBranch(library);
+  const drawing = { ...emptyDrawing(), strokes: [line(10, 10, 300, 10), textBox(), formula()] };
+  await library.saveNote(lesson.id, {
+    html: '<p>Rysunek</p>',
+    images: [{ bytes: pngBytes(7), type: 'image/png', width: 1600, height: 1100, label: 'Rysunek 1', drawing }]
+  });
+  const backup = JSON.parse(JSON.stringify(await createBackup(library, 'test')));
+  const archive = await createMediaArchive(library, 'test');
+  const { library: fresh } = await makeLibrary();
+  await restoreBackup(fresh, backup);
+  await restoreMedia(fresh, archive.blob);
+  const [restored] = await fresh.noteImages(lesson.id);
+  assert.deepEqual(restored.drawing.strokes.slice(1), [textBox(), formula()], 'pole tekstowe i wzór po przywróceniu kopii');
 });
 
 test('sygnatura nowego rysunku: kolejna wolna „Rysunek N”', () => {

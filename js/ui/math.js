@@ -153,8 +153,12 @@ function sample(item) {
  * Ściągawka zapisu wzorów z polem do wypróbowania. Dotknięcie przykładu wpisuje go do pola;
  * onInsert(tekst) – „Wstaw” dokłada wypróbowany wzór do notatki ($…$). Bez onInsert – tylko podgląd.
  */
-export function openMathHelp({ onInsert = null } = {}) {
-  let value = '';
+export function openMathHelp({
+  onInsert = null, value: initial = '', title = 'Równania', submitLabel = null, intro = null, extra = null, raw = false, allowEmpty = false
+} = {}) {
+  // Od 1.13 to samo okno wstawia wzór na rysunek: raw – zapis bez znaków dolara, extra – dodatkowe
+  // pola (wielkość, kolor), allowEmpty – pusty zapis też można zatwierdzić (usuwa wzór z rysunku).
+  let value = initial;
   let sheet = null;
   let pending = null;
   const preview = h('div', { class: 'math-try__preview', 'aria-live': 'polite', dataset: { testid: 'math-preview' } });
@@ -174,14 +178,14 @@ export function openMathHelp({ onInsert = null } = {}) {
     const source = value.trim();
     if (source === '') {
       preview.replaceChildren(h('span', { class: 'math-try__empty' }, 'Tu pojawi się wzór.'));
-      message.textContent = 'Wpisz zapis albo dotknij przykładu poniżej.';
+      message.textContent = allowEmpty ? 'Pusty zapis usuwa wzór z rysunku.' : 'Wpisz zapis albo dotknij przykładu poniżej.';
     } else {
       preview.replaceChildren(mathElement(source, { display: true }));
       const { errors } = parseMath(source);
-      message.textContent = errors.length > 0 ? errors.join(' ') : `W notatce wpisz: $${source}$`;
+      message.textContent = errors.length > 0 ? errors.join(' ') : raw ? 'Wzór jest gotowy.' : `W notatce wpisz: $${source}$`;
       message.classList.toggle('math-try__message--error', errors.length > 0);
     }
-    sheet?.setCanSubmit(source !== '' || !onInsert);
+    sheet?.setCanSubmit(source !== '' || !onInsert || allowEmpty);
   }
 
   const groups = MATH_CHEATSHEET.map((group) => h('section', { class: 'math-help__group' },
@@ -206,23 +210,24 @@ export function openMathHelp({ onInsert = null } = {}) {
       ))))));
 
   sheet = openFormSheet({
-    title: 'Równania',
-    cancelLabel: 'Zamknij',
-    submitLabel: onInsert ? 'Wstaw' : 'Gotowe',
+    title,
+    cancelLabel: raw ? 'Anuluj' : 'Zamknij',
+    submitLabel: submitLabel ?? (onInsert ? 'Wstaw' : 'Gotowe'),
     build: () => [
-      h('p', { class: 'field__hint math-help__intro' },
+      h('p', { class: 'field__hint math-help__intro' }, intro ?? [
         'Wzór wpisujesz w tekście notatki między znakami dolara: $x^2$. W podglądzie notatki zapis zamienia się we wzór; ',
-        'w edytorze zostaje tekstem, więc łatwo go poprawić. Do czytania na głos wzór zamienia się w słowa.'),
-      h('div', { class: 'math-try' }, field('Wypróbuj', input), preview, message),
+        'w edytorze zostaje tekstem, więc łatwo go poprawić. Do czytania na głos wzór zamienia się w słowa.']),
+      h('div', { class: 'math-try' }, field(raw ? 'Zapis wzoru' : 'Wypróbuj', input), preview, message),
+      extra,
       ...groups
     ],
     onSubmit: () => {
       const source = value.trim();
-      if (onInsert && source !== '') pending = `$${source}$`;
+      if (onInsert && (source !== '' || allowEmpty)) pending = { source: raw ? source : `$${source}$` };
     },
     // Wstawienie dopiero po zamknięciu okna – dopóki jest otwarte, edytor pod spodem jest zablokowany.
     onClose: () => {
-      if (pending) onInsert(pending);
+      if (pending) onInsert(pending.source);
     }
   });
   update();

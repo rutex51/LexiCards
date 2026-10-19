@@ -1,7 +1,8 @@
 // Edytor rysunku (od 1.12): okno na cały ekran z płótnem, pióro z naciskiem rysika, zakreślacz,
 // gumka całych kresek albo fragmentów (od 1.12.1), kolory, grubości, cofnij i ponów, tło gładkie /
 // w linie / w kratkę, rysowanie na zdjęciu, powiększanie i przesuwanie. Od 1.12.1 także
-// zaznaczanie prostokątem (przesuwanie, powielanie, usuwanie) i linijka z kątem.
+// zaznaczanie prostokątem (przesuwanie, powielanie, usuwanie) i linijka z kątem, od 1.13 – pola
+// tekstowe i wzory (zapis jak w notatce, składany na płótnie przez core/math-layout.js).
 //
 // Rysik i palec: gdy aplikacja raz zobaczy rysik (pointerType 'pen'), rysuje tylko rysik, a palec
 // przesuwa stronę (dłoń oparta o ekran nie zostawia śladów); bez rysika (iPhone) rysuje palec.
@@ -16,15 +17,18 @@
 // jest zdjęcie) i kreski do późniejszej edycji (core/drawing.js).
 
 import {
-  DrawingHistory, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA, HIGHLIGHTER_COLORS,
-  HIGHLIGHTER_WIDTHS, INK_COLORS, PAPERS, PAPER_LABELS, PAPER_STEP, SENSITIVITY_LABELS, addPoint, cleanToolSettings,
-  defaultToolSettings, emptyDrawing, eraseAt, penWidth, rulerDegrees, rulerOffset, rulerPoint, selectionBounds, smoothPoint,
-  snapRulerAngle, strokesAt, strokesInRect, translateStroke
+  DrawingHistory, ELEMENT_TEXT_MAX, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA,
+  HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, INK_COLORS, PAPERS, PAPER_LABELS, PAPER_STEP, SENSITIVITY_LABELS, TEXT_SIZES,
+  TEXT_SIZE_LABELS, addPoint, cleanToolSettings, defaultToolSettings, emptyDrawing, eraseAt, isElement, penWidth, rulerDegrees,
+  rulerOffset, rulerPoint, selectionBounds, smoothPoint, snapRulerAngle, strokesAt, strokesInRect, touchesStroke, translateStroke
 } from '../core/drawing.js';
+import { layoutMath } from '../core/math-layout.js';
 import { plural } from '../core/text.js';
-import { confirmDialog, mountDialog, showError } from './dialogs.js';
+import { field, segmented, textArea } from './components.js';
+import { confirmDialog, mountDialog, openFormSheet, showError } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
+import { openMathHelp } from './math.js';
 
 const TOOLS_KEY = 'lexicards-drawing-tools';
 const PEN_KEY = 'lexicards-pen-seen';
@@ -123,11 +127,102 @@ export function paintPaper(ctx, drawing) {
   ctx.restore();
 }
 
+// ---------------------------------------------------------------- pola tekstowe i wzory (od 1.13)
+
+const TEXT_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
+/** Wysokość wiersza pola tekstowego względem wielkości czcionki. */
+const TEXT_LINE = 1.25;
+let measureCanvas = null;
+/** Szerokość napisu daną czcionką (płótno pomocnicze – bez rysowania). */
+function measureText(text, font) {
+  measureCanvas ??= document.createElement('canvas');
+  const ctx = measureCanvas.getContext('2d');
+  ctx.font = font;
+  return ctx.measureText(text).width;
+}
+
+/** Wiersze pola tekstowego: Enter zaczyna nowy wiersz, długi wiersz łamie się na słowach (za długie słowo – na znakach). */
+function textLines(text, size, maxWidth) {
+  const font = `${size}px ${TEXT_FONT}`;
+  const fits = (value) => measureText(value, font) <= maxWidth;
+  const lines = [];
+  for (const paragraph of text.split('\n')) {
+    let current = '';
+    for (const word of paragraph.split(' ')) {
+      const candidate = current === '' ? word : `${current} ${word}`;
+      if (current !== '' && !fits(candidate)) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+      while (!fits(current) && [...current].length > 1) {
+        let head = '';
+        for (const char of current) {
+          if (head !== '' && !fits(head + char)) break;
+          head += char;
+        }
+        lines.push(head);
+        current = current.slice(head.length);
+      }
+    }
+    lines.push(current);
+  }
+  return lines;
+}
+
+const mathLayouts = new Map();
+/** Układ wzoru (zapamiętany – ten sam wzór rysuje się w każdej klatce). */
+function mathLayout(source, size) {
+  const key = `${size}|${source}`;
+  let layout = mathLayouts.get(key);
+  if (!layout) {
+    if (mathLayouts.size > 200) mathLayouts.clear();
+    layout = layoutMath(source, { size, measure: measureText });
+    mathLayouts.set(key, layout);
+  }
+  return layout;
+}
+
+/** Wielkość pola tekstowego albo wzoru zmierzona na tym urządzeniu: { width, height }. */
+function measureElement(element) {
+  if (element.tool === 'math') {
+    const layout = mathLayout(element.source, element.size);
+    return { width: Math.max(1, Math.ceil(layout.width)), height: Math.max(1, Math.ceil(layout.ascent + layout.descent)) };
+  }
+  const font = `${element.size}px ${TEXT_FONT}`;
+  const lines = textLines(element.text, element.size, element.maxWidth);
+  const width = Math.max(element.size * 0.5, ...lines.map((line) => measureText(line, font)));
+  return { width: Math.ceil(width) + 2, height: Math.ceil(lines.length * element.size * TEXT_LINE) };
+}
+
+function paintElement(ctx, element) {
+  ctx.save();
+  ctx.fillStyle = element.color;
+  if (element.tool === 'math') {
+    const layout = mathLayout(element.source, element.size);
+    layout.draw(ctx, element.x, element.y + layout.ascent, element.color);
+  } else {
+    ctx.font = `${element.size}px ${TEXT_FONT}`;
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    textLines(element.text, element.size, element.maxWidth).forEach((line, index) => {
+      ctx.fillText(line, element.x + 1, element.y + element.size * (0.95 + index * TEXT_LINE));
+    });
+  }
+  ctx.restore();
+}
+
 /**
  * Kreska: pióro – odcinki między środkami kolejnych punktów (krzywe), każdy z grubością swojego
  * punktu; zakreślacz – jedna ścieżka o stałej grubości, półprzezroczysta i mnożona z tłem.
+ * Pole tekstowe i wzór (od 1.13) – napis i wzór od lewego górnego rogu.
  */
 export function paintStroke(ctx, stroke) {
+  if (isElement(stroke)) {
+    paintElement(ctx, stroke);
+    return;
+  }
   const points = stroke.points;
   const count = points.length / 3;
   if (count === 0) return;
@@ -225,8 +320,9 @@ function previewStroke(tools) {
  */
 export function openDrawingEditor({ drawing: source = null, photo = null, title = 'Rysunek' } = {}) {
   return new Promise((resolve) => {
+    // Pola tekstowe i wzory mierzone od nowa – czcionki tego urządzenia mogą być trochę inne.
     const drawing = source
-      ? { ...source, strokes: source.strokes.map((stroke) => ({ ...stroke, points: [...stroke.points] })) }
+      ? { ...source, strokes: source.strokes.map((stroke) => (isElement(stroke) ? { ...stroke, ...measureElement(stroke) } : { ...stroke, points: [...stroke.points] })) }
       : emptyDrawing({ photo });
     const history = new DrawingHistory(drawing.strokes);
     const tools = loadTools();
@@ -251,8 +347,16 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const base = h('canvas', { class: 'drawing__canvas', 'aria-hidden': 'true' });
     const live = h('canvas', { class: 'drawing__canvas drawing__canvas--live', role: 'img', 'aria-label': `Płótno rysunku: ${title}`, dataset: { testid: 'drawing-canvas' } });
     const selectionCount = h('span', { class: 'drawing__selection-count', dataset: { testid: 'drawing-selection-count' } });
+    const editButton = h('button', {
+      type: 'button', class: 'drawing__selection-button', hidden: true, dataset: { testid: 'drawing-selection-edit' },
+      onClick: () => {
+        const [only] = selection;
+        if (isElement(only)) editElement(only.tool, only);
+      }
+    }, icon('edit', { size: 18 }), 'Edytuj');
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
       selectionCount,
+      editButton,
       h('button', {
         type: 'button', class: 'drawing__selection-button', dataset: { testid: 'drawing-selection-duplicate' },
         onClick: () => duplicateSelection()
@@ -456,7 +560,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const show = Boolean(bounds) && active?.kind !== 'move' && active?.kind !== 'marquee';
       selectionBar.hidden = !show;
       if (!show) return;
-      selectionCount.textContent = plural(selection.size, 'kreska', 'kreski', 'kresek');
+      const items = [...selection];
+      const only = items.length === 1 ? items[0] : null;
+      selectionCount.textContent = only?.tool === 'text' ? 'Pole tekstowe' : only?.tool === 'math' ? 'Wzór'
+        : items.some(isElement) ? plural(items.length, 'element', 'elementy', 'elementów') : plural(items.length, 'kreska', 'kreski', 'kresek');
+      editButton.hidden = !isElement(only);
       const top = toScreen({ x: 0, y: bounds.minY }).y - SELECTION_PAD;
       const bottom = toScreen({ x: 0, y: bounds.maxY }).y + SELECTION_PAD;
       const middle = toScreen({ x: (bounds.minX + bounds.maxX) / 2, y: 0 }).x;
@@ -536,6 +644,14 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const highlighterButton = toolButton('highlighter', 'Zakreślacz', 'highlighter');
     const eraserButton = toolButton('eraser', 'Gumka', 'eraser');
     const selectButton = toolButton('select', 'Zaznaczanie – prostokąt albo dotknięcie kreski', 'marquee');
+    const textButton = h('button', {
+      type: 'button', class: 'drawing__tool', 'aria-label': 'Pole tekstowe', title: 'Pole tekstowe', dataset: { testid: 'drawing-insert-text' },
+      onClick: () => editElement('text')
+    }, icon('textBox', { size: 24 }));
+    const mathButton = h('button', {
+      type: 'button', class: 'drawing__tool', 'aria-label': 'Wzór', title: 'Wzór (zapis jak w notatce)', dataset: { testid: 'drawing-insert-math' },
+      onClick: () => editElement('math')
+    }, icon('sigma', { size: 24 }));
     const rulerButton = h('button', {
       type: 'button', class: 'drawing__tool', 'aria-label': 'Linijka', title: 'Linijka', 'aria-pressed': 'false', dataset: { testid: 'drawing-ruler' },
       onClick: () => toggleRuler()
@@ -576,7 +692,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     });
     // Grupy narzędzi zawijają się w całości (na telefonie – dwa wiersze).
     const toolbar = h('div', { class: 'drawing__toolbar', role: 'toolbar', 'aria-label': 'Narzędzia rysunku' },
-      h('div', { class: 'drawing__group' }, penButton, highlighterButton, eraserButton, selectButton),
+      h('div', { class: 'drawing__group' }, penButton, highlighterButton, eraserButton, selectButton, textButton, mathButton),
       swatches, widths, eraserModes, eraserSizes, selectGroup,
       h('div', { class: 'drawing__group' }, rulerButton, undoButton, redoButton, paperButton));
 
@@ -788,6 +904,138 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       updateToolbar();
       requestRender();
     }
+    // ---- pola tekstowe i wzory
+    /** Środek widocznej części strony (pod paskiem narzędzi) – tam trafia nowe pole albo wzór. */
+    const visibleCenter = () => ({ x: (view.width / 2 - view.x) / view.scale, y: ((view.top + view.height) / 2 - view.y) / view.scale });
+    const sizeIndex = (size) => TEXT_SIZES.reduce((best, value, index) => (Math.abs(value - size) < Math.abs(TEXT_SIZES[best] - size) ? index : best), 0);
+    const inkID = (hex) => (INK_COLORS.find((color) => color.hex === hex) ?? INK_COLORS.find((color) => color.id === tools.penColor) ?? INK_COLORS[0]).id;
+
+    /** Wielkość i kolor pola tekstowego albo wzoru (w oknie wstawiania i poprawiania). */
+    function elementOptions(choice) {
+      const swatchButtons = INK_COLORS.map((color) => h('button', {
+        type: 'button', class: 'drawing__swatch', style: { '--swatch': color.hex }, 'aria-label': color.label, title: color.label,
+        'aria-pressed': String(color.id === choice.color), dataset: { color: color.id, testid: `drawing-element-color-${color.id}` },
+        onClick: () => {
+          choice.color = color.id;
+          for (const button of swatchButtons) button.setAttribute('aria-pressed', String(button.dataset.color === color.id));
+        }
+      }));
+      return h('div', { class: 'drawing__element-options' },
+        field('Wielkość', segmented({
+          name: `drawing-element-size-${Date.now()}`, label: 'Wielkość', value: String(choice.size),
+          options: TEXT_SIZE_LABELS.map((label, index) => ({ value: String(index), label })),
+          onChange: (value) => { choice.size = Number(value); }
+        })),
+        field('Kolor', h('div', { class: 'drawing__element-colors', role: 'group', 'aria-label': 'Kolor' }, swatchButtons)));
+    }
+
+    /** Nowe pole tekstowe albo wzór (element = null) albo poprawka istniejącego; pusta treść usuwa element. */
+    function editElement(kind, element = null) {
+      const choice = { size: element ? sizeIndex(element.size) : tools.textSize, color: element ? inkID(element.color) : tools.penColor };
+      const options = elementOptions(choice);
+      const apply = (content) => {
+        const value = content.slice(0, ELEMENT_TEXT_MAX);
+        if (value.trim() === '') {
+          if (element) replaceElement(element, null);
+          return;
+        }
+        tools.textSize = choice.size;
+        saveTools(tools);
+        const next = {
+          tool: kind, color: inkHex(choice.color), x: 0, y: 0, size: TEXT_SIZES[choice.size],
+          ...(kind === 'text' ? { text: value, maxWidth: element?.maxWidth ?? Math.round(drawing.width * 0.6) } : { source: value })
+        };
+        Object.assign(next, measureElement(next));
+        if (element) {
+          next.x = element.x;
+          next.y = element.y;
+          replaceElement(element, next);
+        } else {
+          placeElement(next);
+          history.add(next);
+          changed = true;
+        }
+        // Nowe albo poprawione pole jest zaznaczone – od razu można je przesunąć.
+        setTool('select');
+        selection = new Set([next]);
+        updateToolbar();
+        requestRender();
+      };
+      if (kind === 'math') {
+        openMathHelp({
+          raw: true, allowEmpty: Boolean(element), value: element?.source ?? '', extra: options,
+          title: element ? 'Wzór na rysunku' : 'Nowy wzór', submitLabel: element ? 'Zapisz' : 'Wstaw',
+          intro: 'Zapis jak we wzorze w notatce, bez znaków dolara: x^2, \\frac{a}{b}, \\sqrt{x}. Wzór pojawi się na środku widocznej części strony i będzie zaznaczony – przesuniesz go palcem, rysikiem albo myszą.',
+          onInsert: apply
+        });
+        return;
+      }
+      let value = element?.text ?? '';
+      let pending = null;
+      let sheet = null;
+      const input = textArea({
+        value, rows: 3, testID: 'drawing-text-input',
+        onInput: (text) => {
+          value = text;
+          sheet?.setCanSubmit(Boolean(element) || value.trim() !== '');
+        }
+      });
+      sheet = openFormSheet({
+        title: element ? 'Pole tekstowe' : 'Nowe pole tekstowe',
+        submitLabel: element ? 'Zapisz' : 'Wstaw',
+        build: () => [
+          field('Tekst', input, { hint: element ? 'Pusty tekst usuwa pole z rysunku.' : 'Enter zaczyna nowy wiersz, długi wiersz łamie się sam.' }),
+          options
+        ],
+        onSubmit: () => { pending = value; },
+        // Wstawienie po zamknięciu okna (dopóki jest otwarte, edytor pod spodem jest zablokowany).
+        onClose: () => {
+          if (pending !== null) apply(pending);
+        }
+      });
+      sheet.setCanSubmit(Boolean(element) || value.trim() !== '');
+      requestAnimationFrame(() => input.focus());
+    }
+
+    /**
+     * Miejsce nowego pola albo wzoru: na środku widocznej części strony, a gdy tam już coś jest –
+     * pod tym (kolejne wstawiane elementy układają się jeden pod drugim, nie na sobie).
+     */
+    function placeElement(next) {
+      const center = visibleCenter();
+      const fit = (value, size, room) => Math.round(Math.min(Math.max(0, value), Math.max(0, room - size)));
+      next.x = fit(center.x - next.width / 2, next.width, drawing.width);
+      const middle = fit(center.y - next.height / 2, next.height, drawing.height);
+      const overlapping = (top) => drawing.strokes.filter((item) => isElement(item)
+        && next.x < item.x + item.width && item.x < next.x + next.width && top < item.y + item.height && item.y < top + next.height);
+      /** Pierwsze wolne miejsce od `start` w dół albo null, gdy do dołu strony go nie ma. */
+      const scan = (start) => {
+        let y = start;
+        for (let guard = 0; guard < 50; guard += 1) {
+          const hits = overlapping(y);
+          if (hits.length === 0) return y;
+          y = Math.round(Math.max(...hits.map((item) => item.y + item.height)) + PAPER_STEP / 4);
+          if (y + next.height > drawing.height) return null;
+        }
+        return null;
+      };
+      // Pod spodem brak miejsca – od góry widocznej części strony; wszędzie zajęte – na środku.
+      next.y = scan(middle) ?? scan(fit((view.top - view.y) / view.scale, next.height, drawing.height)) ?? middle;
+    }
+
+    /** Zastępuje pole albo wzór poprawionym (null – usuwa) jednym krokiem cofania. */
+    function replaceElement(element, next) {
+      const index = drawing.strokes.indexOf(element);
+      if (index < 0) return;
+      history.begin();
+      if (next) drawing.strokes[index] = next;
+      else drawing.strokes.splice(index, 1);
+      if (history.commit()) changed = true;
+      selection = new Set();
+      updateToolbar();
+      requestRender();
+    }
+
     function selectAll() {
       if (tool !== 'select') setTool('select');
       selection = new Set(drawing.strokes);
@@ -926,8 +1174,12 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         } else {
           selection = new Set(strokesInRect(drawing.strokes, done.rect).map((index) => drawing.strokes[index]));
         }
-      } else if (done.kind === 'move' && !cancelled && (done.dx !== 0 || done.dy !== 0)) {
-        moveSelection(done.dx, done.dy);
+      } else if (done.kind === 'move' && !cancelled) {
+        const tap = Math.abs(done.dx) * view.scale < TAP_SLOP && Math.abs(done.dy) * view.scale < TAP_SLOP;
+        const [only] = selection;
+        if (!tap) moveSelection(done.dx, done.dy);
+        // Dotknięcie zaznaczonego pola tekstowego albo wzoru – poprawka.
+        else if (selection.size === 1 && isElement(only) && touchesStroke(only, done.start.x, done.start.y, 0)) editElement(only.tool, only);
       }
       // Palce, które zostały na ekranie, przesuwają dalej od miejsca, w którym są teraz.
       if (gesture && touches.size > 0) startGesture(gesture.kind);

@@ -1,4 +1,4 @@
-# LexiCards 1.12
+# LexiCards 1.13
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -21,8 +21,9 @@ Przesuwanie wierszy lekcji i modułów, data utworzenia i filtr daty, kolejnoś�
 Notatka głosowa nagrywana w trakcie pisania notatki (wersja 1.10): [docs/RELEASE-1.10.md](docs/RELEASE-1.10.md).
 Równania w notatkach – zapis tekstem, wzory w podglądzie, ściągawka (wersja 1.11): [docs/RELEASE-1.11.md](docs/RELEASE-1.11.md).
 Rysunki odręczne w notatce – rysik z naciskiem, zakreślacz, gumka, rysowanie na zdjęciu (wersja 1.12): [docs/RELEASE-1.12.md](docs/RELEASE-1.12.md).
+Pola tekstowe i wzory na rysunku (wersja 1.13): [docs/RELEASE-1.13.md](docs/RELEASE-1.13.md).
 
-## Co potrafi wersja 1.12
+## Co potrafi wersja 1.13
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -67,9 +68,9 @@ Rysunki odręczne w notatce – rysik z naciskiem, zakreślacz, gumka, rysowanie
 - Rysunki odręczne w notatce: **Narysuj** przy obrazach otwiera edytor na cały ekran – pióro
   z naciskiem rysika (Apple Pencil, rysik w laptopie), zakreślacz, gumka całych kresek albo
   fragmentów (cztery wielkości), zaznaczanie prostokątem (przesuń, powiel, usuń), linijka z kątem,
-  kolory, grubości, cofnij i ponów, tło gładkie, w linie albo w kratkę. Na zdjęciu – **Rysuj na
-  zdjęciu**. Rysunek jest obrazem notatki (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski
-  zostają do poprawy.
+  kolory, grubości, cofnij i ponów, tło gładkie, w linie albo w kratkę, a od 1.13 pola tekstowe
+  i wzory (zapis jak w notatce). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
+  (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
   Notatki do lekcji przychodzą z osobnego arkusza tego samego pliku – razem z pojęciami albo osobno.
@@ -116,7 +117,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.9 – przesuwanie wierszy, data utworzenia, kolejność utrwalonych](docs/RELEASE-1.9.md),
 [wersja 1.10 – notatka głosowa](docs/RELEASE-1.10.md),
 [wersja 1.11 – równania w notatkach](docs/RELEASE-1.11.md),
-[wersja 1.12 – rysunki odręczne](docs/RELEASE-1.12.md).
+[wersja 1.12 – rysunki odręczne](docs/RELEASE-1.12.md),
+[wersja 1.13 – pola tekstowe i wzory na rysunku](docs/RELEASE-1.13.md).
 
 ## Jak korzystać
 
@@ -302,7 +304,18 @@ i **Usuń** (też klawisz Delete), a przeciągnięcie wewnątrz ramki przesuwa k
 jest rysik). Esc zdejmuje zaznaczenie. **Linijka** (przycisk na pasku) pokazuje na środku kąt, także
 w pigułce w rogu: przesuwasz ją palcem albo myszą, obracasz dwoma palcami albo uchwytem obrotu
 (okrągłe przyciski na linijce); przy 0°, 45°, 90° i 135° lekko przyskakuje. Kreska zaczęta na
-linijce albo przy niej biegnie prosto wzdłuż jej krawędzi. Drugie dotknięcie aktywnego pióra otwiera **ustawienia pióra**: czułość
+linijce albo przy niej biegnie prosto wzdłuż jej krawędzi.
+**Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno
+**Nowe pole tekstowe** – tekst (Enter zaczyna nowy wiersz, długi wiersz łamie się sam), wielkość
+(Mała, Średnia, Duża) i kolor; przycisk **Σ** – okno **Nowy wzór**: zapis jak we wzorze w notatce,
+ale bez znaków dolara (`\frac{a}{b}`, `x^2`, `\sqrt{x}`…), z podglądem, opisem błędu i całą
+ściągawką, też z wielkością i kolorem. **Wstaw** kładzie pole albo wzór na środku widocznej części
+strony (gdy tam coś już jest – pod tym) i od razu je zaznacza, więc przeciągnięciem przesuniesz je
+w wybrane miejsce. Dotknięcie zaznaczonego pola albo wzoru (albo **Edytuj** nad ramką) otwiera je
+do poprawy; pusta treść usuwa element. Ostatnio wybrana wielkość zostaje dla następnych. Pole i wzór
+zaznaczasz, przesuwasz, powielasz i usuwasz jak kreski; gumka **Całe kreski** usuwa je w całości,
+a gumka **Fragmenty** ich nie przecina. Wzór na rysunku składa sama aplikacja (czcionka wzorów
+systemu – na iPadzie STIX Two Math), więc trafia do obrazu rysunku w notatce i do eksportu. Drugie dotknięcie aktywnego pióra otwiera **ustawienia pióra**: czułość
 nacisku (Wył., Mała, Średnia, Duża), grubość kreski od–do (przy lekkim i mocnym nacisku), wygładzanie
 kreski i podgląd; ustawienia zostają na urządzeniu. Grubość zależy od nacisku tylko przy rysiku –
 palcem i myszą kreska ma stałą grubość. Gdy aplikacja raz zobaczy rysik, rysuje tylko rysik, a palec
@@ -532,7 +545,8 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 17. **Wersja 1.10: notatka głosowa – nagrywanie w trakcie pisania notatki, nagranie w załącznikach, odtwarzanie** – gotowe.
 18. **Wersja 1.11: równania w notatkach – zapis tekstem, wzory w podglądzie, ściągawka, czytanie słowami** – gotowe.
 19. **Wersja 1.12: rysunki odręczne w notatce – rysik z naciskiem, zakreślacz, gumka całych kresek i fragmentów, zaznaczanie prostokątem, linijka z kątem, rysowanie na zdjęciu (etap 1)** – gotowe.
-20. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
+20. **Wersja 1.13: pola tekstowe i wzory na rysunku** – gotowe.
+21. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).
