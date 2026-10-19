@@ -188,7 +188,7 @@ Obrazy w formatach EMF i WMF (Windows) są pomijane z ostrzeżeniem – zapisz j
 ### Notatki do lekcji
 
 Notatkę otworzysz w module (ikona notatki przy lekcji albo „Dodaj notatkę” w menu „…”), na ekranie
-lekcji (wiersz „Notatka” nad listą pojęć), w szczegółach pojęcia („Notatka lekcji”) i w trakcie nauki
+lekcji (wiersz „Notatka” nad listą pojęć, na delikatnie żółtym tle), w szczegółach pojęcia („Notatka lekcji”) i w trakcie nauki
 fiszek (ikona u góry). Okno pokazuje tekst i obrazy; dotknięcie obrazu powiększa go (dwa palce albo
 dwukrotne dotknięcie). **Edytuj** pokazuje u góry sekcję obrazów – **Dodaj obraz** (zdjęcie, plik,
 aparat), dotknięcie obrazu – powiększ, przesuń, usuń – a pod nią tekst z paskiem formatowania. Przy

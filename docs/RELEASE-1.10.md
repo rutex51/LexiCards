@@ -47,6 +47,22 @@ Szczegóły:
 - W trakcie pracy zrzut pokazał, że pasek nagrywania był półprzezroczysty i prześwitywała przez
   niego przewijana treść – teraz ma pełne tło.
 
+## Uzupełnienie w wersji 1.10.1
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Pole notatki na ekranie lekcji bardzo delikatnie żółte | Wiersz **Notatka** nad listą pojęć ma bardzo jasne, żółtawe tło (jak kartka notesu), a kwadrat z ikoną notatki – odrobinę mocniejsze. To samo przy lekcji bez notatki („Dodaj notatkę do lekcji”). W ciemnym motywie odcień jest przyciemniony, żeby nie raził. Wiersz utrwalenia, lista pojęć i pozostałe pola – bez zmian |
+
+Testy wersji 1.10.1:
+
+- **Testy logiki: 259 – wszystkie zaliczone** (bez zmian w logice).
+- **Testy w przeglądarce: 110 – wszystkie zaliczone w dwóch przebiegach** (109 wcześniejszych
+  + 1 nowy): w jasnym i ciemnym motywie wiersz notatki jest żółtawy, ale delikatnie (niebieski
+  składnik niższy od czerwonego o 12–40 na 255), tło grupy jest takie jak tło listy pojęć, a wiersz
+  „Dodaj notatkę do lekcji” ma ten sam kolor.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium, ekran telefonu): ekran lekcji w jasnym i ciemnym motywie.
+
 ## Czego nie sprawdzono
 
 - **Na iPhonie** – testy działają w Chromium z udawanym mikrofonem, nie w Safari na iOS. Do

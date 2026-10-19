@@ -65,7 +65,7 @@ export function lessonNoteRow(ctx, lesson) {
   const note = ctx.library.getNote(lesson.id);
   const open = () => openLessonNote(ctx, lesson.id);
   if (!note) {
-    return h('li', { class: 'row' },
+    return h('li', { class: 'row row--note' },
       h('button', { type: 'button', class: 'row__main row__button', onClick: open, dataset: { testid: 'lesson-note-add' } },
         h('span', { class: 'row__leading row__leading--icon' }, icon('note')),
         h('span', { class: 'row__text' },
@@ -78,7 +78,7 @@ export function lessonNoteRow(ctx, lesson) {
   const preview = h('span', { class: 'note-row__thumb', hidden: note.images.length === 0, 'aria-hidden': 'true' },
     note.images.length > 1 ? h('span', { class: 'note-row__count' }, String(note.images.length)) : null);
   if (note.images.length > 0) attachThumbnail(ctx, lesson.id, preview);
-  return h('li', { class: 'row' },
+  return h('li', { class: 'row row--note' },
     h('button', { type: 'button', class: 'row__main row__button note-row', onClick: open, dataset: { testid: 'lesson-note' } },
       h('span', { class: 'row__leading row__leading--icon note-row__icon' }, icon('note')),
       h('span', { class: 'row__text' },

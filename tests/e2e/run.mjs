@@ -1873,6 +1873,38 @@ test('notatka głosowa: nagrywanie w trakcie pisania, pauza, zakończenie i zapi
   await expectText(page.locator('[data-testid=backup-media-export]'), '2 załączniki');
 });
 
+test('ekran lekcji: wiersz notatki bardzo delikatnie żółty (jasny i ciemny motyw), pozostałe wiersze bez zmian', async ({ open }) => {
+  const page = await open();
+  const ids = await seedNoteWithFiles(page);
+  const color = (locator) => locator.evaluate((element) => {
+    // color-mix() daje „color(srgb 1 0.98 0.91)” (0–1), zwykły kolor – „rgb(255, 255, 255)”.
+    const value = getComputedStyle(element).backgroundColor;
+    const scale = value.startsWith('color(') ? 255 : 1;
+    const [r, g, b] = value.match(/[\d.]+/g).map((part) => Math.round(Number(part) * scale));
+    return { r, g, b };
+  });
+  const check = async (theme) => {
+    await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+    const note = await color(page.locator('li.row--note', { has: page.locator('[data-testid=lesson-note]') }));
+    const surface = await color(page.locator('.lesson-note .group__list'));
+    const term = await color(page.locator('ul.terms').first());
+    // Żółtawy: czerwony i zielony prawie równe, niebieski niżej – ale tylko lekko (delikatnie).
+    assert.ok(note.r >= note.g && note.g > note.b, `${theme}: wiersz notatki żółtawy (${JSON.stringify(note)})`);
+    const tint = note.r - note.b;
+    assert.ok(tint >= 12 && tint <= 40, `${theme}: odcień delikatny (różnica ${tint})`);
+    assert.deepEqual(surface, term, `${theme}: tło grupy jak tło listy pojęć`);
+    assert.notDeepEqual(note, surface, `${theme}: wiersz notatki różni się od tła`);
+    await page.screenshot({ path: path.join(OUTPUT, `notatka-wiersz-zolty-${theme}.png`) });
+    // Lekcja bez notatki: „Dodaj notatkę do lekcji” też na żółtym.
+    await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.investments}`);
+    const add = await color(page.locator('li.row--note', { has: page.locator('[data-testid=lesson-note-add]') }));
+    assert.deepEqual(add, note, `${theme}: pusty wiersz notatki w tym samym kolorze`);
+  };
+  await check('jasny');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await check('ciemny');
+});
+
 test('załączniki na komputerze: PDF w nowej karcie, dokument Word pobierany; upuszczenie pliku na edytor dodaje załącznik', async ({ open, context }) => {
   const page = await open();
   const ids = await seedNoteWithFiles(page);

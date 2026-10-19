@@ -73,6 +73,8 @@
   --note-blue: #0040dd;
   --note-purple: #8944ab;
   --star: #e09b00;
+  /* Odcień kartki notatki (tło wiersza notatki – domieszka do tła wiersza). */
+  --note-paper: #ffcc00;
   --switch-on: #2fa84f;
   --success: #166c2e;
   --success-fill: #1b7f38;
@@ -4896,6 +4898,10 @@ a.row__main:active,
 
 /* Wiersz notatki na ekranie lekcji i przycisk notatki na liście lekcji. */
 .row__button.note-row { color: var(--text); }
+
+/* Wiersz notatki na ekranie lekcji (od 1.10.1): bardzo delikatnie żółty, jak kartka notesu. */
+.row--note { background: color-mix(in srgb, var(--note-paper) 9%, var(--surface)); }
+.row--note .row__leading--icon { background: color-mix(in srgb, var(--note-paper) 26%, var(--surface)); }
 
 .note-row__preview {
   white-space: pre-line;
