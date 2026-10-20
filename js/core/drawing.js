@@ -19,19 +19,26 @@
 //   linii i kratki (0–4), template – szablon pod kreskami (core/templates.js) albo brak;
 //   od 1.17 kształt może mieć wypełnienie (fill) i tekst (label); od 1.19 – zakończenia odcinka
 //   (startCap, endCap) i wymiary widoczne na stałe (dims), a w strokes także szyki { tool: 'array', … }
-//   (core/arrays.js) – elementy powielone w szyku liniowym albo kołowym.
+//   (core/arrays.js) – elementy powielone w szyku liniowym albo kołowym;
+//   od 1.21 tabele { tool: 'table', x, y, width, height, size, color, rows, header, headerColumn, align }
+//   (tabela jak w notatce – core/tables.js; height zmierzona) i karteczki { tool: 'sticky', x, y, width,
+//   height, size, color: nazwa koloru karteczki, text, created: 'rrrr-mm-dd', collapsed?, hidden?,
+//   leader? } – collapsed: zwinięta do ikony, hidden: bez niej na obrazie rysunku w notatce,
+//   leader { x, y }: strzałka od karteczki do punktu strony.
 
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import {
   SEGMENT_CAPS, SHAPES, SHAPE_FILLS, capPoints, cleanShape, isShape, segmentDegrees, shapeAsStroke, shapeBounds, shapeOutline, skewDegrees, touchesShape
 } from './shapes.js';
+import { cleanTable } from './tables.js';
 import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
 
 /**
  * 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13), 3 – kształty, jasność tła, szablon (1.15),
- * 4 – wypełnienie i tekst kształtu (1.17), 5 – zakończenia odcinka, stałe wymiary i szyki (1.19).
+ * 4 – wypełnienie i tekst kształtu (1.17), 5 – zakończenia odcinka, stałe wymiary i szyki (1.19),
+ * 6 – tabele i karteczki (1.21).
  */
-export const DRAWING_VERSION = 5;
+export const DRAWING_VERSION = 6;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -66,8 +73,9 @@ export const PEN_WIDTHS = Object.freeze([
   Object.freeze({ min: 2.6, max: 6.5 }),
   Object.freeze({ min: 4.5, max: 11 })
 ]);
-/** Grubości zakreślacza (stałe). */
+/** Grubości zakreślacza (stałe; od 1.21 do zmiany w ustawieniach zakreślacza). */
 export const HIGHLIGHTER_WIDTHS = Object.freeze([14, 24, 36]);
+export const HIGHLIGHTER_RANGE = Object.freeze({ min: 4, max: 60 });
 export const WIDTH_LIMITS = Object.freeze({ min: 0.5, max: 40 });
 
 /** Czułość nacisku: jak mocno nacisk zmienia grubość kreski między „od” a „do”. */
@@ -197,8 +205,44 @@ export const TEXT_SIZE_LABELS = Object.freeze(['Mała', 'Średnia', 'Duża', 'Ba
 /** Najdłuższy tekst pola i zapis wzoru. */
 export const ELEMENT_TEXT_MAX = 2000;
 
-/** Czy to pole tekstowe, wzór, (od 1.15) kształt albo (od 1.19) szyk – a nie kreska z punktami. */
-export const isElement = (stroke) => stroke?.tool === 'text' || stroke?.tool === 'math' || stroke?.tool === 'shape' || stroke?.tool === 'array';
+/** Czy to pole tekstowe, wzór, (od 1.15) kształt, (od 1.19) szyk albo (od 1.21) tabela lub karteczka – a nie kreska z punktami. */
+export const isElement = (stroke) => ['text', 'math', 'shape', 'array', 'table', 'sticky'].includes(stroke?.tool);
+
+// ---------------------------------------------------------------- tabele i karteczki (od 1.21)
+
+/** Wielkości tekstu tabeli na rysunku (jednostki strony): mała, średnia, duża, bardzo duża. */
+export const TABLE_TEXT_SIZES = Object.freeze([20, 26, 34, 44]);
+/** Karteczki: kolory (tło i ciemniejszy odcień – zagięty róg, strzałka), wielkości tekstu, ikona zwiniętej. */
+export const STICKY_COLORS = Object.freeze([
+  { id: 'yellow', fill: '#ffe680', ink: '#b38b00', label: 'Żółta' },
+  { id: 'pink', fill: '#ffc2d4', ink: '#c2386a', label: 'Różowa' },
+  { id: 'green', fill: '#c4f0b0', ink: '#3f8a2a', label: 'Zielona' },
+  { id: 'blue', fill: '#b9e0ff', ink: '#2a74b8', label: 'Niebieska' },
+  { id: 'orange', fill: '#ffd2a6', ink: '#c2620f', label: 'Pomarańczowa' }
+]);
+export const STICKY_TEXT_SIZES = Object.freeze([24, 30, 38]);
+export const STICKY_ICON = 60;
+export const STICKY_MIN = Object.freeze({ width: 160, height: 120 });
+export const STICKY_TEXT_MAX = 1000;
+export const stickyColor = (id) => STICKY_COLORS.find((color) => color.id === id) ?? STICKY_COLORS[0];
+export const isBox = (stroke) => stroke?.tool === 'table' || stroke?.tool === 'sticky';
+
+/** Prostokąt elementu { x, y, width, height }: zwinięta karteczka (od 1.21) – sama ikona. */
+export function elementBox(element) {
+  if (element.tool === 'sticky' && element.collapsed) return { x: element.x, y: element.y, width: STICKY_ICON, height: STICKY_ICON };
+  return { x: element.x, y: element.y, width: element.width, height: element.height };
+}
+
+/** Początek strzałki karteczki: punkt na brzegu karteczki (albo ikony) w stronę celu. */
+export function leaderStart(sticky) {
+  const box = elementBox(sticky);
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const dx = sticky.leader.x - center.x;
+  const dy = sticky.leader.y - center.y;
+  if (dx === 0 && dy === 0) return center;
+  const scale = Math.min(dx === 0 ? Infinity : (box.width / 2) / Math.abs(dx), dy === 0 ? Infinity : (box.height / 2) / Math.abs(dy));
+  return { x: center.x + dx * Math.min(1, scale), y: center.y + dy * Math.min(1, scale) };
+}
 
 /** Gumka (od 1.12.1): całe kreski albo fragmenty; wielkość gumki fragmentów – średnica na ekranie (px). */
 export const ERASER_MODES = Object.freeze(['stroke', 'pixel']);
@@ -215,6 +259,8 @@ export function defaultToolSettings() {
     penWidth: 1,
     penColor: 'black',
     highlighterWidth: 1,
+    // Od 1.21: grubość każdej z trzech kropek zakreślacza (okno ustawień zakreślacza).
+    highlighterWidths: [...HIGHLIGHTER_WIDTHS],
     highlighterColor: 'yellow',
     eraserMode: 'stroke',
     eraserSize: 1,
@@ -230,7 +276,9 @@ export function defaultToolSettings() {
     shapeLock: false,
     lineCaps: { start: 'none', end: 'none' },
     arrowCaps: { start: 'none', end: 'arrow' },
-    arrayKind: 'linear'
+    arrayKind: 'linear',
+    // Od 1.21: kolor ostatnio dodanej karteczki.
+    stickyColor: 'yellow'
   };
 }
 
@@ -285,6 +333,9 @@ export function cleanToolSettings(raw) {
     penColor: INK_COLORS.some((color) => color.id === raw.penColor) || isHexColor(raw.penColor) ? raw.penColor : base.penColor,
     highlighterWidth: Number.isInteger(raw.highlighterWidth) && raw.highlighterWidth >= 0 && raw.highlighterWidth < HIGHLIGHTER_WIDTHS.length
       ? raw.highlighterWidth : base.highlighterWidth,
+    highlighterWidths: Array.isArray(raw.highlighterWidths) && raw.highlighterWidths.length === HIGHLIGHTER_WIDTHS.length
+      ? raw.highlighterWidths.map((width, index) => (finite(width) ? clamp(Math.round(width), HIGHLIGHTER_RANGE.min, HIGHLIGHTER_RANGE.max) : HIGHLIGHTER_WIDTHS[index]))
+      : base.highlighterWidths,
     highlighterColor: HIGHLIGHTER_COLORS.some((color) => color.id === raw.highlighterColor) || isHexColor(raw.highlighterColor)
       ? raw.highlighterColor : base.highlighterColor,
     eraserMode: ERASER_MODES.includes(raw.eraserMode) ? raw.eraserMode : base.eraserMode,
@@ -301,7 +352,8 @@ export function cleanToolSettings(raw) {
     shapeLock: typeof raw.shapeLock === 'boolean' ? raw.shapeLock : base.shapeLock,
     lineCaps: cleanCaps(raw.lineCaps, base.lineCaps),
     arrowCaps: cleanCaps(raw.arrowCaps, base.arrowCaps),
-    arrayKind: ARRAY_KINDS.includes(raw.arrayKind) ? raw.arrayKind : base.arrayKind
+    arrayKind: ARRAY_KINDS.includes(raw.arrayKind) ? raw.arrayKind : base.arrayKind,
+    stickyColor: STICKY_COLORS.some((color) => color.id === raw.stickyColor) ? raw.stickyColor : base.stickyColor
   };
 }
 
@@ -361,7 +413,14 @@ export function touchesStroke(stroke, x, y, radius) {
     return expandArray(stroke).some((item) => touchesStroke(item, x, y, radius));
   }
   if (isElement(stroke)) {
-    return x >= stroke.x - radius && x <= stroke.x + stroke.width + radius && y >= stroke.y - radius && y <= stroke.y + stroke.height + radius;
+    const box = elementBox(stroke);
+    if (x >= box.x - radius && x <= box.x + box.width + radius && y >= box.y - radius && y <= box.y + box.height + radius) return true;
+    // Strzałka karteczki (od 1.21) też się liczy.
+    if (stroke.tool === 'sticky' && stroke.leader) {
+      const start = leaderStart(stroke);
+      return segmentDistance(x, y, start.x, start.y, stroke.leader.x, stroke.leader.y) <= radius + 4;
+    }
+    return false;
   }
   const { points } = stroke;
   if (points.length < 3) return false;
@@ -400,7 +459,14 @@ export function strokeBounds(stroke) {
     return bounds;
   }
   if (isElement(stroke)) {
-    bounds = { minX: stroke.x, minY: stroke.y, maxX: stroke.x + stroke.width, maxY: stroke.y + stroke.height };
+    const box = elementBox(stroke);
+    bounds = { minX: box.x, minY: box.y, maxX: box.x + box.width, maxY: box.y + box.height };
+    if (stroke.tool === 'sticky' && stroke.leader) {
+      bounds.minX = Math.min(bounds.minX, stroke.leader.x - 6);
+      bounds.minY = Math.min(bounds.minY, stroke.leader.y - 6);
+      bounds.maxX = Math.max(bounds.maxX, stroke.leader.x + 6);
+      bounds.maxY = Math.max(bounds.maxY, stroke.leader.y + 6);
+    }
     boundsCache.set(stroke, bounds);
     return bounds;
   }
@@ -523,7 +589,11 @@ export function strokesInRect(strokes, rect) {
  */
 function elementCorners(element) {
   if (!isShape(element)) {
-    return [[element.x, element.y], [element.x + element.width, element.y], [element.x + element.width, element.y + element.height], [element.x, element.y + element.height]];
+    const box = elementBox(element);
+    const corners = [[box.x, box.y], [box.x + box.width, box.y], [box.x + box.width, box.y + box.height], [box.x, box.y + box.height]];
+    // Koniec strzałki karteczki (od 1.21) też musi być w obszarze.
+    if (element.tool === 'sticky' && element.leader) corners.push([element.leader.x, element.leader.y]);
+    return corners;
   }
   const { points } = shapeOutline(element);
   const corners = [];
@@ -546,7 +616,11 @@ export function selectionBounds(strokes) {
 /** Kreska przesunięta o (dx, dy) – nowa kreska, oryginał bez zmian. */
 export function translateStroke(stroke, dx, dy) {
   if (isArray(stroke)) return translateArray(stroke, dx, dy);
-  if (isElement(stroke)) return { ...stroke, x: round(stroke.x + dx, 1), y: round(stroke.y + dy, 1) };
+  if (isElement(stroke)) {
+    const moved = { ...stroke, x: round(stroke.x + dx, 1), y: round(stroke.y + dy, 1) };
+    if (stroke.leader) moved.leader = { x: round(stroke.leader.x + dx, 1), y: round(stroke.leader.y + dy, 1) };
+    return moved;
+  }
   const points = stroke.points.slice();
   for (let index = 0; index < points.length; index += 3) {
     points[index] = round(points[index] + dx, 1);
@@ -948,10 +1022,12 @@ function cleanStroke(stroke, width, height, arrays) {
   if (!Array.isArray(stroke.points)) return null;
   const points = [];
   const source = stroke.points.slice(0, MAX_POINTS * 3);
+  // Zakreślacz (od 1.21) może być grubszy – do 60.
+  const widest = stroke.tool === 'highlighter' ? HIGHLIGHTER_RANGE.max : WIDTH_LIMITS.max;
   for (let index = 0; index + 2 < source.length; index += 3) {
     const [x, y, w] = [source[index], source[index + 1], source[index + 2]];
     if (!finite(x) || !finite(y) || !finite(w)) continue;
-    points.push(clamp(x, -width, width * 2), clamp(y, -height, height * 2), clamp(w, WIDTH_LIMITS.min, WIDTH_LIMITS.max));
+    points.push(clamp(x, -width, width * 2), clamp(y, -height, height * 2), clamp(w, WIDTH_LIMITS.min, widest));
   }
   return points.length >= 3 ? { tool: stroke.tool, color: stroke.color.toLowerCase(), points } : null;
 }
@@ -959,6 +1035,7 @@ function cleanStroke(stroke, width, height, arrays) {
 /** Sprawdzone pole tekstowe, wzór albo kształt (zapis, kopia zapasowa) albo null. */
 function cleanElement(raw, pageWidth, pageHeight) {
   if (raw.tool === 'shape') return cleanShape(raw, pageWidth, pageHeight, (color) => HEX.test(color ?? ''));
+  if (raw.tool === 'table' || raw.tool === 'sticky') return cleanBox(raw, pageWidth, pageHeight);
   const content = raw.tool === 'text' ? raw.text : raw.source;
   if (typeof content !== 'string' || content.trim() === '' || !HEX.test(raw.color ?? '')) return null;
   if (![raw.x, raw.y, raw.size, raw.width, raw.height].every(finite)) return null;
@@ -975,6 +1052,37 @@ function cleanElement(raw, pageWidth, pageHeight) {
   };
   if (raw.tool === 'text') element.maxWidth = finite(raw.maxWidth) ? clamp(raw.maxWidth, size, pageWidth * 3) : pageWidth;
   return element;
+}
+
+/** Sprawdzona tabela albo karteczka (od 1.21) albo null. */
+function cleanBox(raw, pageWidth, pageHeight) {
+  if (![raw.x, raw.y, raw.width, raw.height, raw.size].every(finite)) return null;
+  const common = {
+    tool: raw.tool,
+    x: clamp(raw.x, -pageWidth, pageWidth * 2),
+    y: clamp(raw.y, -pageHeight, pageHeight * 2),
+    width: clamp(raw.width, 40, pageWidth * 3),
+    height: clamp(raw.height, 20, pageHeight * 3),
+    size: clamp(raw.size, 8, 200)
+  };
+  if (raw.tool === 'table') {
+    const table = cleanTable(raw);
+    if (!table || !HEX.test(raw.color ?? '')) return null;
+    return { ...common, color: raw.color.toLowerCase(), ...table };
+  }
+  if (typeof raw.text !== 'string') return null;
+  const sticky = {
+    ...common,
+    color: stickyColor(raw.color).id,
+    text: raw.text.slice(0, STICKY_TEXT_MAX),
+    created: /^\d{4}-\d{2}-\d{2}$/.test(raw.created ?? '') ? raw.created : '2026-01-01'
+  };
+  if (raw.collapsed === true) sticky.collapsed = true;
+  if (raw.hidden === true) sticky.hidden = true;
+  if (raw.leader && finite(raw.leader.x) && finite(raw.leader.y)) {
+    sticky.leader = { x: clamp(raw.leader.x, -pageWidth, pageWidth * 2), y: clamp(raw.leader.y, -pageHeight, pageHeight * 2) };
+  }
+  return sticky;
 }
 
 /** Bajty zdjęcia jako ArrayBuffer (z ArrayBuffer albo widoku, np. z archiwum ZIP) albo null. */

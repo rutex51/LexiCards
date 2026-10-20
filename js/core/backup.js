@@ -17,6 +17,7 @@ import { IMAGE_EXTENSIONS, imageInfo } from './images.js';
 import { cleanFileName, fileTypeOf } from './note-files.js';
 import { normalizeNoteHtml } from './note-format.js';
 import { cleanImageCaption, withImageLabels } from './note-refs.js';
+import { cleanNoteTables } from './tables.js';
 import { blankToNull, collapseWhitespace, normalizeKey } from './text.js';
 import { ZipError, ZipWriter, openZipBlob } from './zip.js';
 
@@ -215,7 +216,10 @@ export function validateBackup(raw) {
     const htmlEN = normalizeNoteHtml(typeof record.htmlEN === 'string' ? record.htmlEN : '');
     const metas = mediaList(record.images, (meta) => embedded.has(meta.id) || separate);
     const files = separate ? mediaList(record.files, () => true) : [];
-    if (html === '' && htmlEN === '' && metas.length === 0 && files.length === 0) continue;
+    const images = withImageLabels(metas.map((meta) => imageMeta(meta, embedded.get(meta.id))));
+    // Tabele (od 1.21) – sprawdzone jak przy zapisie notatki.
+    const tables = cleanNoteTables(record.tables, images.map((meta) => meta.label));
+    if (html === '' && htmlEN === '' && metas.length === 0 && files.length === 0 && tables.length === 0) continue;
     data.notes.push({
       ...record,
       id: lessonID,
@@ -224,8 +228,9 @@ export function validateBackup(raw) {
       htmlEN,
       imagesFirst: record.imagesFirst === true,
       numberFigures: record.numberFigures === true,
-      images: withImageLabels(metas.map((meta) => imageMeta(meta, embedded.get(meta.id)))),
+      images,
       files: files.map(fileMeta),
+      tables,
       createdAt: record.createdAt ?? nowISO(),
       updatedAt: record.updatedAt ?? record.createdAt ?? nowISO()
     });

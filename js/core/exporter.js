@@ -10,6 +10,7 @@ import { IMPORT_FIELDS } from './importer.js';
 import { docFromHtml, richTextFromDoc } from './note-format.js';
 import { NOTE_HEADER } from './note-import.js';
 import { withImageLabels } from './note-refs.js';
+import { htmlWithTables } from './tables.js';
 import { TEMPLATE_IMAGE, TEMPLATE_IMAGE_BASE64 } from './template-image.js';
 import { formatTags, normalizeKey } from './text.js';
 import { createWorkbook } from './xlsx.js';
@@ -88,7 +89,7 @@ export function collectExportNotes(library, scope) {
         if (scope.kind === 'lesson' && lesson.id !== scope.id) continue;
         const note = library.getNote(lesson.id);
         // Załączniki nie trafiają do arkusza – notatka z samymi załącznikami nie ma tam czego pokazać.
-        if (note && (note.html !== '' || (note.htmlEN ?? '') !== '' || note.images.length > 0)) notes.push({ domain, module, lesson, note });
+        if (note && (note.html !== '' || (note.htmlEN ?? '') !== '' || note.images.length > 0 || note.tables?.length > 0)) notes.push({ domain, module, lesson, note });
       }
     }
   }
@@ -158,9 +159,13 @@ export async function buildExportFile(library, scope, format, date = new Date(),
   if (format === 'xlsx' && withNotes) {
     for (const { domain, module, lesson, note } of collectExportNotes(library, scope)) {
       const images = await library.noteImages(lesson.id);
+      // Tabele (od 1.21) trafiają do komórki jako tekst: podpis i wiersze „a | b | c”.
+      const tables = note.tables ?? [];
+      const html = htmlWithTables(note.html, tables);
+      const htmlEN = (note.htmlEN ?? '') === '' ? '' : htmlWithTables(note.htmlEN, tables);
       // Notatka z samymi obrazami, których plików nie ma na urządzeniu, nie ma czego pokazać w arkuszu.
-      if (note.html === '' && (note.htmlEN ?? '') === '' && images.length === 0) continue;
-      entries.push({ domain: domain.name, module: module.name, lesson: lesson.name, html: note.html, htmlEN: note.htmlEN ?? '', images });
+      if (html === '' && htmlEN === '' && images.length === 0) continue;
+      entries.push({ domain: domain.name, module: module.name, lesson: lesson.name, html, htmlEN, images });
     }
   }
   return {

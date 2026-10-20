@@ -9,6 +9,7 @@ import { DIRECTIONS } from './model.js';
 import { spokenText } from './math.js';
 import { PAGE_BREAK_LINE, isEmptyNoteHtml, noteText } from './note-format.js';
 import { referenceLabel } from './note-refs.js';
+import { findTableByLabel, tableSpeech } from './tables.js';
 import { pluralNotes, pluralTerms } from './text.js';
 
 /** Czas na zastanowienie (sekundy). */
@@ -115,16 +116,35 @@ export function noteVersions(note, mode) {
 /**
  * Kroki notatki lekcji: zapowiedź („Notatka do lekcji …”) i kolejne zdania – bez podziałów
  * stron, odwołań do obrazów i punktorów list. Przy obu wersjach angielska ma własną zapowiedź.
+ * Tabele (od 1.21) – w miejscu odwołania podpis i wiersze (komórki po przecinku); tabele bez
+ * odwołania – przed tekstem albo po nim, jak w podglądzie. Każdą tabelę słychać raz.
  */
 export function noteSteps(note, lessonName, mode) {
   const versions = noteVersions(note, mode);
   if (versions.length === 0) return [];
   const steps = [{ kind: 'noteTitle', text: `Notatka do lekcji ${lessonName}.`, lang: 'pl' }];
+  const tables = note.tables ?? [];
+  const spoken = new Set();
+  const tableLines = (indexes) => indexes.filter((index) => !spoken.has(index)).flatMap((index) => {
+    spoken.add(index);
+    return tableSpeech(tables[index]);
+  });
   versions.forEach((version, index) => {
     if (index > 0) steps.push({ kind: 'noteTitle', text: 'English version.', lang: 'en' });
-    const lines = noteText(version.html).split('\n')
+    const referenced = [];
+    const text = noteText(version.html).split('\n')
       .map((line) => line.trim())
-      .filter((line) => line !== '' && line !== PAGE_BREAK_LINE && referenceLabel(line) === null);
+      .filter((line) => line !== '' && line !== PAGE_BREAK_LINE)
+      .flatMap((line) => {
+        const label = referenceLabel(line);
+        if (label === null) return [line];
+        const table = findTableByLabel(tables, label);
+        if (table < 0) return [];
+        referenced.push(table);
+        return tableLines([table]);
+      });
+    const rest = tableLines(tables.map((_, table) => table).filter((table) => !referenced.includes(table)));
+    const lines = note.imagesFirst ? [...rest, ...text] : [...text, ...rest];
     for (const line of lines) {
       // Wzory $…$ (od 1.11) czytane słowami: „x do kwadratu”.
       const spoken = spokenText(line.replace(/^•\s*/, ''), version.lang);

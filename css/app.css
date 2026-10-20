@@ -4244,6 +4244,35 @@ a.row__main:active,
 .note-text h3[data-line="2"] { line-height: 2.3; }
 .note-text li[data-align] > :is(ul, ol) { text-align: start; }
 .note-text li[data-line] > :is(ul, ol) { line-height: 1.55; }
+/* Tabela w notatce (od 1.21): podpis „Tab. N.” nad nią, cienkie obramowanie, nagłówek z tłem. */
+.note-page__table-box { margin: 0; }
+.note-page__table-caption {
+  margin-bottom: 0.35em;
+  color: var(--text-2);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  text-align: center;
+}
+.note-page__table-scroll { overflow-x: auto; }
+.note-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.94em;
+  line-height: 1.4;
+}
+.note-table th,
+.note-table td {
+  padding: 0.3em 0.55em;
+  border: 1px solid color-mix(in srgb, var(--text) 26%, transparent);
+  vertical-align: top;
+  text-align: left;
+  /* break-word (nie anywhere): krótkie słowa nie łamią się w wąskiej kolumnie. */
+  overflow-wrap: break-word;
+}
+.note-table th { font-weight: 650; background: var(--fill); }
+.note-table tbody th { background: transparent; }
+.note-table tr { break-inside: avoid; }
+
 /* Akapit wyjustowany podzielony między strony: ostatni wiersz na stronie też do obu krawędzi. */
 .note-text .note-page__split[data-align="justify"] { text-align-last: justify; }
 
@@ -4808,6 +4837,40 @@ a.row__main:active,
 
 .note-link__remove { justify-self: start; gap: 6px; }
 
+/* Okno tabeli (od 1.21): szersze na komputerze, siatka pól przewijana w bok. */
+@media (min-width: 700px) {
+  .dialog.sheet.table-dialog { width: min(920px, calc(100vw - 48px)); }
+}
+.table-editor__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.table-editor__action { min-height: 38px; padding: 0 12px; gap: 6px; font-size: var(--size-sub); }
+.table-editor__scroll { overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 4px; }
+.table-editor__grid { border-collapse: separate; border-spacing: 4px; margin: 0 -4px; }
+.table-editor__grid th { padding: 0; }
+.table-editor__align {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--text-2);
+}
+.table-editor__align:active { background: var(--pressed); }
+.table-editor__cell {
+  display: block;
+  width: 9.5rem;
+  min-height: 42px;
+  padding: 8px 10px;
+  resize: none;
+  field-sizing: content;
+  line-height: 1.35;
+}
+.table-editor__cell--head { font-weight: 650; background: var(--fill); }
+.table-editor__status:empty { display: none; }
+.table-editor__options { display: grid; gap: 4px; }
+
+/* Karteczka (od 1.21): przełączniki w oknie karteczki. */
+.drawing__sticky-options { display: grid; gap: 4px; }
+
 /* Wartownik podmiany treści (od 1.20, js/ui/note-editing.js) – widoczny tylko na czas podmiany. */
 .note-editor__area [data-s] { display: none; }
 .note-editor__area--replacing [data-s] { display: block; }
@@ -4923,6 +4986,28 @@ a.row__main:active,
   height: 100%;
   object-fit: cover;
 }
+
+/* Miniatura tabeli (od 1.21): kilka pierwszych komórek i wielkość. */
+.note-tables__preview {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  height: 100%;
+  padding: 8px 6px 24px;
+  color: #1d1d1f;
+  text-align: left;
+}
+.note-tables__preview table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9px; line-height: 1.25; }
+.note-tables__preview td {
+  height: 13px;
+  padding: 1px 2px;
+  border: 1px solid #c7c7cc;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.note-tables__head td { background: #ececf0; font-weight: 700; }
+.note-tables__size { font-size: 10px; color: #6e6e73; }
 
 .note-images__remove {
   position: absolute;
@@ -5638,8 +5723,9 @@ svg.icon--note { color: var(--note-icon); }
 
 /* Telefon: grupy w dwóch wierszach, bez kresek podziału. */
 @media (max-width: 599px) {
-  .drawing__toolbar { gap: 2px 10px; padding: 5px 4px; }
-  .drawing__tool { width: 40px; }
+  /* Od 1.21 tabela i karteczka w pierwszym wierszu z narzędziami – węższe przyciski. */
+  .drawing__toolbar { gap: 2px 8px; padding: 5px 4px; }
+  .drawing__tool { width: 36px; }
   .drawing__swatch { width: 28px; }
   .drawing__swatch::before { width: 23px; height: 23px; }
   .drawing__width { width: 32px; }
@@ -6043,6 +6129,13 @@ button.drawing__pill .icon { color: var(--text-2); }
   .drawing__selection-button { padding: 0 9px; }
   .drawing__wide-label { display: none; }
   .drawing__narrow-label { display: inline; }
+}
+
+/* Od 1.21 (pasek szerszy o tabelę i karteczkę) krótki napis przycisku tła – „Tło”, pełny w podpowiedzi –
+   także na iPadzie i w węższym oknie, żeby pasek mieścił się w jednym wierszu. */
+@media (max-width: 1279px) {
+  .drawing__chip--paper .drawing__wide-label { display: none; }
+  .drawing__chip--paper .drawing__narrow-label { display: inline; }
 }
 
 /* Panele pod paskiem: przewijane, gdy ekran jest niski (telefon w poziomie). */
@@ -6482,4 +6575,10 @@ button.drawing__pill .icon { color: var(--text-2); }
   .note-flow__figure img { max-width: 100%; max-height: 225mm; object-fit: contain; }
   .note-flow__caption { margin-top: 2mm; font-size: 9.5pt; color: var(--text-2); }
   .note-flow__missing { padding: 6mm; border: 1px dashed #999999; color: var(--text-2); }
+  .note-print .note-table th,
+  .note-print .note-table td { border-color: #8e8e93; }
+  .note-print .note-table th { background: #f2f2f2; }
+  .note-print .note-table thead { display: table-header-group; }
+  .note-print .note-page__table-scroll { overflow: visible; }
+  .note-print .note-page__table-caption { font-size: 9.5pt; color: var(--text-2); }
 }

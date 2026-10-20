@@ -1752,9 +1752,9 @@ test('załączniki w edytorze: dodanie, zmiana nazwy z zachowaniem rozszerzenia,
   assert.equal(await dialog.locator('[data-testid=note-files]').count(), 0, 'bez załączników – bez listy');
   await dialog.locator('[data-testid=note-right]').click();
 
-  // Sekcje edytora: obrazy, pod nimi załączniki, na końcu tekst.
+  // Sekcje edytora: obrazy, (od 1.21) tabele, pod nimi załączniki, na końcu tekst.
   assert.deepEqual(await dialog.locator('.note-editor > section > .form-group__title, .note-editor > section > .note-editor__text-head > .form-group__title').allTextContents(),
-    ['Obrazy', 'Załączniki', 'Tekst']);
+    ['Obrazy', 'Tabele', 'Załączniki', 'Tekst']);
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), dialog.locator('[data-testid=note-attachment-add]').click()]);
   await chooser.setFiles([
     { name: 'Instrukcja.pdf', mimeType: 'application/pdf', buffer: Buffer.from(FAKE_PDF) },
@@ -4859,9 +4859,13 @@ test('rysunek 1.19: kilka kartek – nowa kartka, PageUp i PageDown, usunięcie 
   // Esc zamyka panel tła; PageUp – kartka 1 z kreską; PageDown – z powrotem.
   await page.keyboard.press('Escape');
   await paperPanel.waitFor({ state: 'hidden' });
+  // Od 1.21 (pasek szerszy o tabelę i karteczkę) przycisk tła na iPadzie ma krótki napis – pasek w jednym wierszu także z szablonem.
+  assert.ok((await editor.locator('.drawing__toolbar').boundingBox()).height < 70, 'pasek w jednym wierszu');
   await page.keyboard.press('PageUp');
   await expectText(pages, 'Kartka 1 z 2');
   await waitUntil(async () => (await darkest(page, ...at(450, 400), 12)) < 110, 'Kreska kartki 1');
+  const back = await pageFrame(page);
+  assert.ok(Math.abs(back.top - frame.top) < 2 && Math.abs(back.scale - frame.scale) < 0.005, `kartka 1 w tym samym miejscu (${back.top} / ${frame.top})`);
   await page.keyboard.press('PageDown');
   await expectText(pages, 'Kartka 2 z 2');
   // Trzecia, pusta kartka – usunięta bez pytania.
@@ -5102,6 +5106,9 @@ test('notatka 1.20: wyrównanie i interlinia (zaznaczone akapity, bez zaznaczeni
   await selectInEditor(editor, 'Trzeci akapit', { caret: 'end' });
   await page.keyboard.type(' ');
   await button('link').click();
+  // Okno ustawia kursor w polu adresu w następnej klatce – dopiero potem wpisywanie (inaczej pod
+  // obciążeniem tekst linku trafia do adresu).
+  await waitUntil(() => page.evaluate(() => document.activeElement?.dataset.testid === 'note-link-url'), 'kursor w polu adresu');
   await sheet(page).locator('[data-testid=note-link-url]').fill('example.com/strona');
   await sheet(page).locator('[data-testid=note-link-text]').fill('Przykład');
   await sheetSubmit(page).click();
@@ -5353,6 +5360,317 @@ test('Nauka 1.20: nad fiszką cała ścieżka Dziedzina › Moduł › Lekcja; w
   await page.locator('[data-testid=study-review]').waitFor();
   await page.locator('[data-testid=study-repeat-last]').waitFor();
 });
+
+// ---------------------------------------------------------------- 1.21: tabele, karteczki, zakreślacz
+
+/** Okno tabeli i wklejenie fragmentu arkusza (tekst z tabulatorami) do komórki. */
+const tableEditor = (page) => page.locator('dialog[data-testid=table-editor]');
+async function pasteIntoCell(page, cell, text) {
+  await tableEditor(page).locator(`[data-testid=table-cell-${cell}]`).focus();
+  await page.evaluate((value) => {
+    const data = new window.DataTransfer();
+    data.setData('text/plain', value);
+    document.activeElement.dispatchEvent(new window.ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  }, text);
+}
+const COSTS_TSV = 'Pozycja\tKwota\tUwagi\nCzynsz\t1 200 zł\tdo 10.\nMedia\t300 zł\tprąd i gaz\nInternet\t60 zł\t';
+
+test('notatka 1.21: tabela – okno tabeli (wklejenie z Excela, wiersz i kolumna przy kursorze, wyrównanie), sygnatura i [[Tabela 1]], podpis „Tab. 1.” nad tabelą; podgląd, Kopiuj, PDF, poprawka', async ({ open, context }) => {
+  const page = await open();
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin });
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.goto(`${page.url().split('#')[0]}#/library/module/${ids.module}`);
+  await page.getByRole('button', { name: 'Więcej poleceń: Financial Statements' }).click();
+  await menuItem(page, 'Dodaj notatkę');
+  const dialog = noteDialog(page);
+  const editor = dialog.locator('[data-testid=note-editor]');
+  await editor.waitFor();
+  await editor.click();
+  await page.keyboard.type('Koszty miesięczne:');
+
+  // Nowa tabela: pusta – komunikat; wklejony fragment arkusza wypełnia komórki od kursora, tabela rośnie.
+  await dialog.locator('[data-testid=note-table-add]').click();
+  await tableEditor(page).waitFor();
+  await expectText(tableEditor(page).locator('.sheet__title'), 'Nowa tabela');
+  await sheetSubmit(page).click();
+  await expectText(tableEditor(page).locator('.form-message--error'), 'Tabela jest pusta');
+  await pasteIntoCell(page, '0-0', COSTS_TSV);
+  await expectText(tableEditor(page).locator('.table-editor__status'), 'Wklejono 4 × 3');
+  // Wiersz pod „Media”, kolumna za „Kwota”, potem jej usunięcie; druga kolumna do prawej.
+  await tableEditor(page).locator('[data-testid=table-cell-2-0]').focus();
+  await tableEditor(page).locator('[data-testid=table-add-row]').click();
+  await tableEditor(page).locator('[data-testid=table-cell-3-0]').fill('Telefon');
+  await tableEditor(page).locator('[data-testid=table-cell-3-1]').fill('45 zł');
+  await tableEditor(page).locator('[data-testid=table-add-column]').click();
+  assert.equal(await tableEditor(page).locator('[data-testid=table-cell-0-3]').count(), 1, 'czwarta kolumna');
+  await tableEditor(page).locator('[data-testid=table-remove-column]').click();
+  assert.equal(await tableEditor(page).locator('[data-testid=table-cell-0-3]').count(), 0);
+  await tableEditor(page).locator('[data-testid=table-align-1]').click();
+  await tableEditor(page).locator('[data-testid=table-align-1]').click();
+  assert.equal(await tableEditor(page).locator('[data-testid=table-cell-1-1]').evaluate((cell) => getComputedStyle(cell).textAlign), 'right');
+  await settled(tableEditor(page));
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-121-okno-tabeli.png') });
+  await sheetSubmit(page).click();
+  await tableEditor(page).waitFor({ state: 'detached' });
+  assert.deepEqual(await dialog.locator('[data-testid=note-table-label-text]').allTextContents(), ['Tabela 1']);
+  await expectText(dialog.locator('[data-testid=note-table-tile]'), '5 × 3');
+
+  // Odwołanie w miejscu kursora, podpis, numeracja.
+  await editor.click();
+  await page.keyboard.press('Control+End');
+  await dialog.locator('[data-testid=note-table-tile] .note-images__open').click();
+  await menuItem(page, 'Wstaw do tekstu');
+  await page.keyboard.type('Razem około 1 600 zł.');
+  await dialog.locator('[data-testid=note-table-tile] .note-images__open').click();
+  await menuItem(page, 'Dodaj podpis');
+  await expectText(sheet(page).locator('.sheet__title'), 'Podpis tabeli');
+  await sheet(page).locator('[data-testid=note-image-caption]').fill('Koszty stałe');
+  await saveSheet(page);
+  await dialog.locator('.switch', { has: page.locator('[data-testid=note-number-figures]') }).click();
+  await dialog.locator('[data-testid=note-tables]').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-121-tabele-edytor.png') });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-table]').waitFor();
+  const saved = await storedNote(page, ids.statements);
+  assert.equal(saved.html, '<p>Koszty miesięczne:</p><p>[[Tabela 1]]</p><p>Razem około 1 600 zł.</p>');
+  assert.deepEqual(saved.tables, [{
+    label: 'Tabela 1', caption: 'Koszty stałe', header: true, headerColumn: false, align: ['left', 'right', 'left'],
+    rows: [['Pozycja', 'Kwota', 'Uwagi'], ['Czynsz', '1 200 zł', 'do 10.'], ['Media', '300 zł', 'prąd i gaz'], ['Telefon', '45 zł', ''], ['Internet', '60 zł', '']]
+  }]);
+
+  // Podgląd: tabela w miejscu odwołania, podpis nad nią, nagłówek, wyrównanie.
+  const table = dialog.locator('[data-testid=note-table]');
+  await expectText(table.locator('[data-testid=note-table-caption]'), 'Tab. 1. Koszty stałe');
+  const order = await dialog.locator('[data-testid=note-text]').first().evaluate((text) => [...text.children].map((child) => (child.matches('[data-testid=note-table]') ? 'tabela' : child.textContent)));
+  assert.deepEqual(order, ['Koszty miesięczne:', 'tabela', 'Razem około 1 600 zł.']);
+  assert.deepEqual(await table.locator('thead th').allTextContents(), ['Pozycja', 'Kwota', 'Uwagi']);
+  assert.equal(await table.locator('tbody tr').count(), 4);
+  assert.equal(await table.locator('tbody tr').first().locator('td').nth(1).evaluate((cell) => getComputedStyle(cell).textAlign), 'right');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-121-tabela-podglad.png') });
+
+  // Kopiuj: tabela ze stylami i podpisem w miejscu odwołania; zwykły tekst – komórki po tabulatorze.
+  await dialog.locator('[data-testid=note-copy]').click();
+  await page.locator('.toast', { hasText: 'Skopiowano notatkę' }).waitFor();
+  const copied = await page.evaluate(async () => {
+    const [item] = await navigator.clipboard.read();
+    return { html: await (await item.getType('text/html')).text(), text: await (await item.getType('text/plain')).text() };
+  });
+  assert.ok(copied.html.indexOf('<strong>Tab. 1. Koszty stałe</strong>') < copied.html.indexOf('<table style="border-collapse:collapse;width:100%">'));
+  assert.ok(copied.html.indexOf('<table') > copied.html.indexOf('Koszty miesięczne') && copied.html.indexOf('<table') < copied.html.indexOf('Razem'));
+  assert.ok(copied.text.includes('Pozycja\tKwota\tUwagi\nCzynsz\t1 200 zł\tdo 10.'), copied.text);
+  assert.ok(!copied.text.includes('[[Tabela 1]]'));
+
+  // PDF: tabela z nagłówkiem (powtarzanym na stronach wydruku) i podpisem.
+  await page.evaluate(() => { window.print = () => { window.printedTables = document.querySelectorAll('.note-print [data-testid=note-table] thead').length; }; });
+  await dialog.locator('[data-testid=note-pdf]').click();
+  await waitUntil(() => page.evaluate(() => window.printedTables === 1), 'tabela w wydruku');
+  await expectText(page.locator('.note-print [data-testid=note-table-caption]'), 'Tab. 1. Koszty stałe');
+  await page.evaluate(() => window.dispatchEvent(new window.Event('afterprint')));
+
+  // Poprawka tabeli i zmiana sygnatury – odwołanie zmienia się samo.
+  await dialog.locator('[data-testid=note-right]').click();
+  await editor.waitFor();
+  await dialog.locator('[data-testid=note-table-tile] .note-images__open').click();
+  await menuItem(page, 'Edytuj tabelę');
+  await tableEditor(page).locator('[data-testid=table-cell-4-1]').fill('70 zł');
+  await sheetSubmit(page).click();
+  await tableEditor(page).waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-table-tile] .note-images__open').click();
+  await menuItem(page, 'Zmień sygnaturę');
+  await expectText(sheet(page).locator('.sheet__title'), 'Sygnatura tabeli');
+  await sheet(page).locator('[data-testid=note-image-label]').fill('Koszty');
+  await saveSheet(page);
+  await expectText(editor, '[[Koszty]]');
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-table]').waitFor();
+  const again = await storedNote(page, ids.statements);
+  assert.equal(again.tables[0].label, 'Koszty');
+  assert.equal(again.tables[0].rows[4][1], '70 zł');
+  assert.equal(again.html, '<p>Koszty miesięczne:</p><p>[[Koszty]]</p><p>Razem około 1 600 zł.</p>');
+}, { device: DESKTOP });
+
+test('notatka 1.21 na telefonie: długa tabela dzieli się między strony po wierszach – nagłówek na każdej stronie, podpis tylko na pierwszej; okno tabeli przewija się w bok', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate((id) => window.lexicards.library.saveNote(id, {
+    html: '<p>Wstęp do zestawienia.</p><p>[[Tabela 1]]</p><p>Koniec.</p>',
+    numberFigures: true,
+    tables: [{ label: 'Tabela 1', caption: 'Pozycje', rows: [['Nr', 'Nazwa', 'Opis'], ...Array.from({ length: 30 }, (_, index) => [String(index + 1), `Pozycja ${index + 1}`, 'Opis pozycji, który zawija się w komórce na telefonie.'])] }]
+  }), ids.statements);
+  await openNotePreview(page, ids.statements);
+  const dialog = noteDialog(page);
+  const book = dialog.locator('[data-testid=note-book]');
+  const pages = Number(await book.getAttribute('data-pages'));
+  assert.ok(pages >= 3, `kilka stron (${pages})`);
+  const seen = [];
+  for (let number = 1; number <= pages; number += 1) {
+    if (number > 1) {
+      await dialog.locator('[data-testid=note-page-next]').click();
+      await waitUntil(async () => (await book.getAttribute('data-page')) === String(number), `strona ${number}`);
+    }
+    const info = await dialog.locator('[data-testid=note-page]').last().evaluate((element) => ({
+      rows: [...element.querySelectorAll('tbody tr')].map((row) => row.cells[0].textContent),
+      heads: element.querySelectorAll('thead').length,
+      captions: element.querySelectorAll('[data-testid=note-table-caption]').length
+    }));
+    seen.push(info);
+    if (number === 2) await page.screenshot({ path: path.join(OUTPUT, 'notatka-121-tabela-strona-2-telefon.png') });
+  }
+  const tablePages = seen.filter((info) => info.rows.length > 0);
+  assert.ok(tablePages.length >= 2, 'tabela na kilku stronach');
+  assert.ok(tablePages.every((info) => info.heads === 1), 'nagłówek na każdej stronie z tabelą');
+  assert.deepEqual(tablePages.map((info) => info.captions), [1, ...tablePages.slice(1).map(() => 0)], 'podpis tylko nad pierwszą częścią');
+  assert.deepEqual(tablePages.flatMap((info) => info.rows), Array.from({ length: 30 }, (_, index) => String(index + 1)), 'każdy wiersz raz, po kolei');
+
+  // Okno tabeli na telefonie: siatka przewija się w bok, strona – nie.
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-table-tile] .note-images__open').click();
+  await menuItem(page, 'Edytuj tabelę');
+  await tableEditor(page).waitFor();
+  await settled(tableEditor(page));
+  const scroll = await tableEditor(page).locator('.table-editor__scroll').evaluate((element) => ({ scroll: element.scrollWidth, width: element.clientWidth }));
+  assert.ok(scroll.scroll > scroll.width, 'siatka szersza niż ekran – przewijana');
+  assert.equal(await overflowX(page), 0, 'okno bez przewijania strony w bok');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-121-okno-tabeli-telefon.png') });
+});
+
+test('rysunek 1.21: okno grubości zakreślacza; tabela (okno tabeli, wielkość tekstu, szerokość narożnikiem); karteczki – kolor, strzałka (koniec przeciągnięty), zwinięta z numerem, ukryta na obrazie; zapis (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Tabela i karteczki</p>');
+  const frame = await pageFrame(page);
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+
+  // Zakreślacz: drugie dotknięcie – okno jak pióra; gruba kropka – 52.
+  await editor.locator('[data-testid=drawing-tool-highlighter]').click();
+  await editor.locator('[data-testid=drawing-tool-highlighter]').click();
+  const settings = editor.locator('[data-testid=drawing-settings]');
+  await expectText(settings, 'Zakreślacz');
+  await settings.locator('[data-testid=drawing-highlighter-level-2]').click();
+  await settings.locator('[data-testid=drawing-highlighter-width]').fill('52');
+  assert.equal(await editor.locator('[data-testid=drawing-width-2]').getAttribute('aria-pressed'), 'true', 'kropka na pasku');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-121-zakreslacz.png') });
+  await page.mouse.move(...frame.screen(200, 1000));
+  await page.mouse.down();
+  await page.mouse.move(...frame.screen(700, 1000), { steps: 8 });
+  await page.mouse.up();
+
+  // Tabela: okno tabeli jak w notatce, wielkość „Duża”.
+  await editor.locator('[data-testid=drawing-insert-table]').click();
+  await expectText(tableEditor(page).locator('.sheet__title'), 'Nowa tabela');
+  await pasteIntoCell(page, '0-0', 'Wymiar\tWartość\nA\t50 mm\nB\t⌀12 H7');
+  await tableEditor(page).getByRole('radio', { name: 'Duża', exact: true }).check();
+  await sheetSubmit(page).click();
+  await tableEditor(page).waitFor({ state: 'detached' });
+  await expectText(selectionCount, 'Tabela');
+
+  // Karteczka 1: różowa, ze strzałką; karteczka 2: zielona, zwinięta, bez obrazu w notatce.
+  await editor.locator('[data-testid=drawing-insert-sticky]').click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Nowa karteczka');
+  await sheet(page).locator('[data-testid=drawing-sticky-input]').fill('Sprawdzić wymiar B');
+  await sheet(page).locator('[data-testid=drawing-sticky-color-pink]').click();
+  await sheet(page).locator('.switch', { has: page.locator('[data-testid=drawing-sticky-leader]') }).click();
+  await settled(sheet(page));
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-121-okno-karteczki.png') });
+  await sheetSubmit(page).click();
+  await expectText(selectionCount, 'Karteczka 1');
+  await editor.locator('[data-testid=drawing-insert-sticky]').click();
+  await sheet(page).locator('[data-testid=drawing-sticky-input]').fill('Tylko dla mnie');
+  await sheet(page).locator('[data-testid=drawing-sticky-color-green]').click();
+  await sheet(page).locator('.switch', { has: page.locator('[data-testid=drawing-sticky-collapsed]') }).click();
+  await sheet(page).locator('.switch', { has: page.locator('[data-testid=drawing-sticky-visible]') }).click();
+  await sheetSubmit(page).click();
+  await expectText(selectionCount, 'Karteczka 2');
+  await expectText(editor.locator('[data-testid=drawing-selection-collapse]'), 'Rozwiń');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-121-karteczki.png') });
+
+  // Zapis: grubość zakreślacza, tabela, karteczki.
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  let strokes = await savedStrokes(page, ids.statements);
+  assert.equal(strokes.find((stroke) => stroke.tool === 'highlighter').points[2], 52);
+  const table = strokes.find((stroke) => stroke.tool === 'table');
+  assert.deepEqual([table.rows, table.size, table.header], [[['Wymiar', 'Wartość'], ['A', '50 mm'], ['B', '⌀12 H7']], 34, true]);
+  // Szerokość nowej tabeli – słowa nagłówka w jednym wierszu (bez łamania w środku słowa).
+  const boxes = (code) => page.evaluate(async ([source, element]) => {
+    const module = await import(new URL('js/ui/drawing-boxes.js', location.href).href);
+    return source === 'layout' ? module.tableLayout(element).lines[0] : module.stickyPopoverBox(element);
+  }, code);
+  assert.deepEqual(await boxes(['layout', table]), [['Wymiar'], ['Wartość']]);
+  const [first, second] = strokes.filter((stroke) => stroke.tool === 'sticky');
+  assert.deepEqual([first.text, first.color, Boolean(first.leader), first.collapsed, first.hidden], ['Sprawdzić wymiar B', 'pink', true, undefined, undefined]);
+  assert.deepEqual([second.text, second.color, second.collapsed, second.hidden], ['Tylko dla mnie', 'green', true, true]);
+  assert.match(first.created, /^\d{4}-\d{2}-\d{2}$/);
+
+  // Obraz rysunku w notatce: karteczka 1 jest, ukrytej karteczki 2 nie ma.
+  const pixels = await page.evaluate(async ([id, points]) => {
+    const [image] = await window.lexicards.library.noteImages(id);
+    const bitmap = await createImageBitmap(new Blob([image.bytes], { type: image.type }));
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+    return points.map(([x, y]) => [...ctx.getImageData(Math.round(x), Math.round(y), 1, 1).data.slice(0, 3)]);
+  }, [ids.statements, [[first.x + first.width * 0.5, first.y + first.height - 30], [second.x + 30, second.y + 30]]]);
+  assert.deepEqual(pixels[0], [255, 194, 212], 'karteczka 1 na obrazie (różowa)');
+  assert.notDeepEqual(pixels[1], [196, 240, 176], 'karteczki 2 nie ma na obrazie');
+
+  // Poprawka: szerokość tabeli narożnikiem (+200), koniec strzałki w nowe miejsce.
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('.note-images__open').first().click();
+  await menuItem(page, 'Edytuj rysunek');
+  const again = drawingDialog(page);
+  await again.waitFor();
+  await waitUntil(() => again.locator('[data-testid=drawing-canvas]').evaluate((canvas) => canvas.width > 0), 'Płótno gotowe');
+  await nextFrames(page);
+  const frame2 = await pageFrame(page);
+  await again.locator('[data-testid=drawing-tool-select]').click();
+  await page.mouse.click(...frame2.screen(table.x + 20, table.y + 20));
+  await expectText(again.locator('[data-testid=drawing-selection-count]'), 'Tabela');
+  await page.mouse.move(...frame2.screen(table.x + table.width, table.y + table.height));
+  await page.mouse.down();
+  await page.mouse.move(...frame2.screen(table.x + table.width + 200, table.y + table.height), { steps: 8 });
+  await page.mouse.up();
+  await page.mouse.click(...frame2.screen(first.x + 20, first.y + 20));
+  await expectText(again.locator('[data-testid=drawing-selection-count]'), 'Karteczka 1');
+  await page.mouse.move(...frame2.screen(first.leader.x, first.leader.y));
+  await page.mouse.down();
+  await page.mouse.move(...frame2.screen(first.leader.x - 100, first.leader.y + 50), { steps: 8 });
+  await page.mouse.up();
+  // Sama karteczka przesunięta – koniec strzałki zostaje.
+  await page.mouse.move(...frame2.screen(first.x + 30, first.y + 30));
+  await page.mouse.down();
+  await page.mouse.move(...frame2.screen(first.x + 30, first.y - 70), { steps: 8 });
+  await page.mouse.up();
+  // Zwinięta karteczka: obok ikony jej treść – polecenia zaznaczenia jej nie zasłaniają.
+  await page.keyboard.press('Escape');
+  await again.locator('.drawing__selection').waitFor({ state: 'hidden' });
+  await page.mouse.click(...frame2.screen(second.x + 20, second.y + 20));
+  await expectText(again.locator('[data-testid=drawing-selection-count]'), 'Karteczka 2');
+  const popover = await boxes(['popover', second]);
+  const [popLeft, popTop] = frame2.screen(popover.x, popover.y);
+  const [popRight, popBottom] = frame2.screen(popover.x + popover.width, popover.y + popover.height);
+  const bar = await again.locator('.drawing__selection').boundingBox();
+  assert.ok(bar.y + bar.height <= popTop || bar.y >= popBottom || bar.x + bar.width <= popLeft || bar.x >= popRight,
+    `polecenia obok treści karteczki (${JSON.stringify(bar)}, ${popTop}–${popBottom})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-121-zwinieta-karteczka.png') });
+  await again.locator('[data-testid=drawing-done]').click();
+  await again.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  strokes = await savedStrokes(page, ids.statements);
+  const wider = strokes.find((stroke) => stroke.tool === 'table');
+  assert.ok(Math.abs(wider.width - table.width - 200) < 4, `tabela szersza o 200 (${table.width} → ${wider.width})`);
+  const moved = strokes.find((stroke) => stroke.tool === 'sticky' && stroke.text === 'Sprawdzić wymiar B');
+  assert.ok(Math.abs(moved.leader.x - (first.leader.x - 100)) < 3 && Math.abs(moved.leader.y - (first.leader.y + 50)) < 3, `koniec strzałki ${JSON.stringify(moved.leader)}`);
+  assert.ok(Math.abs(moved.y - (first.y - 100)) < 3, `karteczka wyżej (${first.y} → ${moved.y})`);
+}, { device: IPAD });
 
 test('rysunek na zdjęciu: „Rysuj na zdjęciu” – zdjęcie pod kreskami, sygnatura i miejsce bez zmian; bez rysika rysuje palec; nowy pusty rysunek nie trafia do notatki; kopia zapasowa przenosi kreski', async ({ open, browser, track }) => {
   const page = await open();

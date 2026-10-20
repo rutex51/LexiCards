@@ -16,7 +16,9 @@
 // kąty co 15°, przytrzymany Ctrl – chwilowo zaznaczanie (Auto), środkowy przycisk myszy przesuwa
 // stronę, szyk liniowy i kołowy (jeden element z parametrami, „Rozdziel” – osobne elementy), kilka
 // kartek w jednym oknie (każda – osobny rysunek w notatce), zakończenia odcinka i wymiary kształtu
-// widoczne na stałe (oko przy polu wymiaru).
+// widoczne na stałe (oko przy polu wymiaru). Od 1.21: tabele (to samo okno tabeli co w notatce),
+// karteczki (zwijane do ikony, ze strzałką do miejsca, ukrywane na obrazie w notatce) i okno grubości
+// zakreślacza.
 //
 // Rysik i palec: gdy aplikacja raz zobaczy rysik (pointerType 'pen'), rysuje tylko rysik, a palec
 // przesuwa stronę (dłoń oparta o ekran nie zostawia śladów); bez rysika (iPhone) rysuje palec.
@@ -35,9 +37,9 @@ import {
 } from '../core/arrays.js';
 import {
   DrawingHistory, ELEMENT_TEXT_MAX, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA,
-  HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, INK_COLORS, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
+  HIGHLIGHTER_COLORS, HIGHLIGHTER_RANGE, INK_COLORS, STICKY_COLORS, STICKY_MIN, STICKY_TEXT_MAX, STICKY_TEXT_SIZES, TABLE_TEXT_SIZES, isBox, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
   SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings,
-  defaultToolSettings, dimensionText, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
+  defaultToolSettings, dimensionText, elementBox, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
   isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
   hasContent, rulerDegrees, rulerOffset, rulerPoint, scaleUnitLabel, screenScale, screenScaleValue, selectionBounds, smoothPoint, snapRulerAngle,
   snapToStrokes, splitByPolygon, strokeBounds, strokesAt, strokesInPolygon, strokesInRect, toScaleLength, touchesStroke, translateStroke
@@ -63,6 +65,9 @@ import { openMathHelp } from './math.js';
 import { paintShape, paintTemplate } from './drawing-paint.js';
 import { prepareImage } from './images.js';
 import { symbolField } from './symbols.js';
+import { TEXT_FONT, TEXT_LINE, measureText, textLines } from './canvas-text.js';
+import { measureSticky, measureTable, naturalTableWidth, paintSticky, paintStickyPopover, paintTable, stickyDate, stickyPopoverBox } from './drawing-boxes.js';
+import { openTableEditor } from './table-editor.js';
 
 const PEN_KEY = 'lexicards-pen-seen';
 /** Zakres powiększenia względem „cała strona na ekranie”. */
@@ -211,48 +216,6 @@ export function paintPaper(ctx, drawing) {
 
 // ---------------------------------------------------------------- pola tekstowe i wzory (od 1.13)
 
-const TEXT_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
-/** Wysokość wiersza pola tekstowego względem wielkości czcionki. */
-const TEXT_LINE = 1.25;
-let measureCanvas = null;
-/** Szerokość napisu daną czcionką (płótno pomocnicze – bez rysowania). */
-function measureText(text, font) {
-  measureCanvas ??= document.createElement('canvas');
-  const ctx = measureCanvas.getContext('2d');
-  ctx.font = font;
-  return ctx.measureText(text).width;
-}
-
-/** Wiersze pola tekstowego: Enter zaczyna nowy wiersz, długi wiersz łamie się na słowach (za długie słowo – na znakach). */
-function textLines(text, size, maxWidth) {
-  const font = `${size}px ${TEXT_FONT}`;
-  const fits = (value) => measureText(value, font) <= maxWidth;
-  const lines = [];
-  for (const paragraph of text.split('\n')) {
-    let current = '';
-    for (const word of paragraph.split(' ')) {
-      const candidate = current === '' ? word : `${current} ${word}`;
-      if (current !== '' && !fits(candidate)) {
-        lines.push(current);
-        current = word;
-      } else {
-        current = candidate;
-      }
-      while (!fits(current) && [...current].length > 1) {
-        let head = '';
-        for (const char of current) {
-          if (head !== '' && !fits(head + char)) break;
-          head += char;
-        }
-        lines.push(head);
-        current = current.slice(head.length);
-      }
-    }
-    lines.push(current);
-  }
-  return lines;
-}
-
 const mathLayouts = new Map();
 /** Układ wzoru (zapamiętany – ten sam wzór rysuje się w każdej klatce). */
 function mathLayout(source, size) {
@@ -309,6 +272,9 @@ function measureLabel(shape) {
 function remeasure(stroke) {
   if (isArray(stroke)) return { ...stroke, items: stroke.items.map(remeasure) };
   if (isShape(stroke)) return measureLabel(stroke);
+  // Tabela i karteczka (od 1.21): wysokość z treści.
+  if (stroke.tool === 'table') return { ...stroke, ...measureTable(stroke) };
+  if (stroke.tool === 'sticky') return { ...stroke, ...measureSticky(stroke) };
   if (isElement(stroke)) return { ...stroke, ...measureElement(stroke) };
   return { ...stroke, points: [...stroke.points] };
 }
@@ -360,11 +326,21 @@ function paintDims(ctx, shape, scale) {
  * punktu; zakreślacz – jedna ścieżka o stałej grubości, półprzezroczysta i mnożona z tłem.
  * Pole tekstowe i wzór (od 1.13) – napis i wzór od lewego górnego rogu; kształt – z wypełnieniem
  * i tekstem (od 1.17), zakończeniami odcinka i stałymi wymiarami (od 1.19); szyk (od 1.19) – wszystkie
- * kopie. options: scale – skala rysunku (napisy wymiarów), dims: false – bez stałych wymiarów.
+ * kopie; od 1.21 tabela i karteczka. options: scale – skala rysunku (napisy wymiarów), dims: false – bez
+ * stałych wymiarów, number – numer karteczki, editor – strona edytora (karteczka ukryta na obrazie
+ * z obwódką), image – obraz do notatki (karteczka ukryta na obrazie – pominięta).
  */
 export function paintStroke(ctx, stroke, options = {}) {
   if (isArray(stroke)) {
     for (const item of expandArray(stroke)) paintStroke(ctx, item, options);
+    return;
+  }
+  if (stroke.tool === 'table') {
+    paintTable(ctx, stroke);
+    return;
+  }
+  if (stroke.tool === 'sticky') {
+    if (!(options.image && stroke.hidden)) paintSticky(ctx, stroke, options);
     return;
   }
   if (isShape(stroke)) {
@@ -430,16 +406,25 @@ export function paintStroke(ctx, stroke, options = {}) {
 /**
  * Cała strona: tło (albo zdjęcie), szablon i kreski; media – wczytane obrazy { photo, template };
  * `skip` – kreski pominięte (przesuwane zaznaczenie, poprawiany kształt); `plain` (od 1.19) – kształt
- * bez stałych wymiarów (zaznaczony – w jego miejscu są pola wymiarów).
+ * bez stałych wymiarów (zaznaczony – w jego miejscu są pola wymiarów); mode (od 1.21): editor –
+ * strona edytora, image – obraz do notatki (bez karteczek ukrytych na obrazie).
  */
-export function paintDrawing(ctx, drawing, media = {}, skip = null, plain = null) {
+export function paintDrawing(ctx, drawing, media = {}, skip = null, plain = null, { editor = false, image = false } = {}) {
   paintPaper(ctx, drawing);
   if (media.photo) ctx.drawImage(media.photo, 0, 0, drawing.width, drawing.height);
   paintTemplate(ctx, drawing.template, media.template);
+  let number = 0;
   for (const stroke of drawing.strokes) {
-    if (!skip?.has(stroke)) paintStroke(ctx, stroke, { scale: drawing.scale, dims: stroke !== plain });
+    // Karteczki mają numery w kolejności na rysunku (od 1.21).
+    if (stroke.tool === 'sticky') number += 1;
+    if (!skip?.has(stroke)) {
+      paintStroke(ctx, stroke, { scale: drawing.scale, dims: stroke !== plain, number: stroke.tool === 'sticky' ? number : null, editor, image });
+    }
   }
 }
+
+/** Numer karteczki na rysunku (od 1.21): kolejność wśród karteczek (od 1). */
+const stickyNumber = (drawing, sticky) => drawing.strokes.filter((stroke) => stroke.tool === 'sticky').indexOf(sticky) + 1;
 
 /** Obraz rysunku do notatki: PNG strony albo JPEG, gdy pod kreskami jest zdjęcie. */
 export async function renderDrawingImage(drawing, media = {}) {
@@ -447,7 +432,7 @@ export async function renderDrawingImage(drawing, media = {}) {
   canvas.width = drawing.width;
   canvas.height = drawing.height;
   const ctx = canvas.getContext('2d');
-  paintDrawing(ctx, drawing, media);
+  paintDrawing(ctx, drawing, media, null, null, { image: true });
   const type = drawing.photo ? 'image/jpeg' : 'image/png';
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, 0.9));
   if (!blob) throw new Error('Nie udało się zapisać rysunku.');
@@ -648,8 +633,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const editButton = selectionButton('drawing-selection-edit', 'edit', 'Edytuj', 'Edytuj', () => {
       const [only] = selection;
       if (isTextual(only)) editElement(only.tool, only);
+      else if (isBox(only)) editBox(only);
     });
     editButton.hidden = true;
+    // Od 1.21: karteczka zwinięta do ikony albo rozwinięta – jednym dotknięciem.
+    const collapseButton = selectionButton('drawing-selection-collapse', 'minus', 'Zwiń', 'Zwiń karteczkę do ikony', () => toggleCollapsed());
     // Od 1.17: tekst i wypełnienie zaznaczonego kształtu, „Osadź” – obraz zaznaczenia albo wycinka w notatce.
     const shapeTextButton = selectionButton('drawing-selection-text', 'textBox', 'Tekst', 'Tekst na kształcie – przesuwa się i obraca razem z nim', () => {
       const [only] = selection;
@@ -665,7 +653,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const embedButton = selectionButton('drawing-selection-embed', 'embed', 'Osadź', 'Osadź w notatce jako obraz', () => embedSelection());
     const deleteButton = selectionButton('drawing-selection-delete', 'trash', 'Usuń', 'Usuń (Delete)', () => deleteSelection(), true);
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
-      selectionCount, editButton, shapeTextButton, fillButton, capsButton, copyButton, duplicateButton, arrayButton, explodeButton, embedButton, deleteButton);
+      selectionCount, editButton, collapseButton, shapeTextButton, fillButton, capsButton, copyButton, duplicateButton, arrayButton, explodeButton, embedButton, deleteButton);
     // Pola wymiarów zaznaczonego kształtu (od 1.17): na liniach ramki konstrukcyjnej, wpisywane z klawiatury.
     const dims = h('div', { class: 'drawing__dims', hidden: true, dataset: { testid: 'drawing-dims' } });
     stage.append(base, live, dims, selectionBar);
@@ -727,7 +715,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       clipPage(ctx);
       // Przesuwane zaznaczenie, poprawiany kształt i (od 1.19) przesuwany środek szyku rysuje warstwa bieżąca.
       plainShape = editedShape();
-      paintDrawing(ctx, drawing, media, ['move', 'shape-edit', 'array-center'].includes(active?.kind) ? selection : null, plainShape);
+      paintDrawing(ctx, drawing, media, ['move', 'shape-edit', 'array-center', 'box-edit'].includes(active?.kind) ? selection : null, plainShape, { editor: true });
       ctx.restore();
     };
 
@@ -1307,19 +1295,35 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       clipPage(ctx);
       if (active?.kind === 'stroke') paintStroke(ctx, active.stroke);
       if (active?.kind === 'move') {
+        // Karteczka przesuwana sama (od 1.21) – koniec strzałki zostaje w miejscu.
+        const kept = keptTarget();
+        ctx.save();
         ctx.translate(active.dx, active.dy);
-        for (const stroke of selection) paintStroke(ctx, stroke, { scale: drawing.scale });
+        for (const stroke of selection) {
+          if (stroke !== kept) paintStroke(ctx, stroke, { scale: drawing.scale, editor: true, number: stroke.tool === 'sticky' ? stickyNumber(drawing, stroke) : null });
+        }
+        ctx.restore();
+        if (kept) paintStroke(ctx, movedSticky(kept, active.dx, active.dy), { editor: true, number: stickyNumber(drawing, kept) });
       }
+      if (active?.kind === 'box-edit') paintStroke(ctx, active.preview, { editor: true, number: stickyNumber(drawing, active.original) });
       if (active?.kind === 'shape-new' && active.shape) paintStroke(ctx, active.shape);
       if (active?.kind === 'shape-edit') paintStroke(ctx, active.preview, { dims: false });
       if (active?.kind === 'array-center') paintStroke(ctx, active.preview, { scale: drawing.scale });
       if (guide) paintGuide(ctx);
       ctx.restore();
       if (placing && drawing.template) paintPlacement(ctx);
-      const bounds = selectionBounds([...selection]);
+      const bounds = active?.kind === 'box-edit' ? strokeBounds(active.preview) : selectionBounds([...selection]);
       // Jeden kształt: zamiast ramki – jego punkty konstrukcyjne.
       const handled = editedShape();
       if (handled) paintHandles(ctx, handled);
+      // Zwinięta karteczka (od 1.21): zaznaczona – obok ikony jej treść.
+      const [onlyOne] = selection;
+      const popover = selection.size === 1 && onlyOne?.tool === 'sticky' && onlyOne.collapsed && active?.kind !== 'move' && !snip ? stickyPopoverBox(onlyOne) : null;
+      if (popover) {
+        ctx.save();
+        paintStickyPopover(ctx, onlyOne, stickyNumber(drawing, onlyOne));
+        ctx.restore();
+      }
       // Środek szyku kołowego (od 1.19) – do przeciągnięcia.
       const polar = active?.kind === 'array-center' ? active.preview : selectedPolar();
       if (polar) paintArrayCenter(ctx, polar);
@@ -1335,6 +1339,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         ctx.strokeRect(bounds.minX - pad + dx, bounds.minY - pad + dy, bounds.maxX - bounds.minX + pad * 2, bounds.maxY - bounds.minY + pad * 2);
         ctx.restore();
       }
+      // Tabela i karteczka (od 1.21): narożnik do zmiany wielkości i koniec strzałki karteczki.
+      const box = editedBox();
+      if (box) paintBoxHandles(ctx, box);
       if (snip) {
         // Wycinek (od 1.17): obrys obszaru – fioletowy, kreskowany.
         ctx.save();
@@ -1393,7 +1400,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       if (handled !== plainShape && active?.kind !== 'shape-edit') requestRender();
       // Pola wymiarów najpierw – polecenia zaznaczenia ich nie zasłaniają (np. po obrocie kształtu pole jest nad nim).
       placeDims(handled);
-      placeSelectionBar(snip ? snip.bounds : handled ? { ...bounds, minY: Math.min(bounds.minY, rotateHandle(handled).y - 14 / view.scale) } : bounds, dimsExtent());
+      // Treść zwiniętej karteczki – polecenia nad nią albo pod nią, nie na niej.
+      const barBounds = popover && bounds ? { ...bounds, minY: Math.min(bounds.minY, popover.y), maxY: Math.max(bounds.maxY, popover.y + popover.height) } : bounds;
+      placeSelectionBar(snip ? snip.bounds : handled ? { ...bounds, minY: Math.min(bounds.minY, rotateHandle(handled).y - 14 / view.scale) } : barBounds, dimsExtent());
       updateSelectHint();
     };
     /** Góra i dół widocznych pól wymiarów (px płótna) albo null. */
@@ -1405,21 +1414,33 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     }
     /** Polecenia zaznaczenia nad ramką (albo pod nią, gdy u góry brakuje miejsca); `extra` – pola wymiarów do ominięcia. */
     function placeSelectionBar(bounds, extra = null) {
-      const show = Boolean(bounds) && !['move', 'marquee', 'lasso', 'pick', 'shape-new', 'shape-edit', 'template-move', 'template-scale', 'array-center'].includes(active?.kind) && !placing;
+      const show = Boolean(bounds) && !['move', 'marquee', 'lasso', 'pick', 'shape-new', 'shape-edit', 'template-move', 'template-scale', 'array-center', 'box-edit']
+        .includes(active?.kind) && !placing;
       selectionBar.hidden = !show;
       if (!show) return;
       const items = [...selection];
       const only = items.length === 1 ? items[0] : null;
       selectionCount.textContent = snip ? 'Wycinek' : selectionKind === 'region' ? 'Fragment' : only?.tool === 'text' ? 'Pole tekstowe' : only?.tool === 'math' ? 'Wzór'
+        : only?.tool === 'table' ? 'Tabela' : only?.tool === 'sticky' ? `Karteczka ${stickyNumber(drawing, only)}`
         : isShape(only) ? SHAPE_LABELS[only.shape] : isArray(only) ? `${ARRAY_LABELS[only.kind]} · ${arraySize(only)}`
         : items.some(isElement) ? plural(items.length, 'element', 'elementy', 'elementów') : plural(items.length, 'kreska', 'kreski', 'kresek');
       // Wycinek (od 1.17): tylko kopiuj i osadź – rysunek się nie zmienia.
       const shape = !snip && isShape(only) ? only : null;
-      editButton.hidden = Boolean(snip) || !isTextual(only);
+      editButton.hidden = Boolean(snip) || !(isTextual(only) || isBox(only));
+      const sticky = !snip && only?.tool === 'sticky' ? only : null;
+      collapseButton.hidden = !sticky;
+      if (sticky) {
+        const label = sticky.collapsed ? 'Rozwiń' : 'Zwiń';
+        collapseButton.querySelector('.drawing__selection-label').textContent = label;
+        collapseButton.setAttribute('aria-label', label);
+        collapseButton.title = sticky.collapsed ? 'Rozwiń karteczkę' : 'Zwiń karteczkę do ikony';
+        replaceChildren(collapseButton, icon(sticky.collapsed ? 'plus' : 'minus', { size: 18 }), h('span', { class: 'drawing__selection-label' }, label));
+      }
       shapeTextButton.hidden = !shape;
       fillButton.hidden = !shape || !canFill(shape);
       capsButton.hidden = !shape || !isSegment(shape);
-      arrayButton.hidden = Boolean(snip);
+      // Tabel i karteczek (od 1.21) nie powiela się w szyku.
+      arrayButton.hidden = Boolean(snip) || items.some(isBox);
       arrayButton.setAttribute('aria-label', isArray(only) ? 'Szyk – parametry' : 'Szyk');
       explodeButton.hidden = Boolean(snip) || !isArray(only);
       duplicateButton.hidden = Boolean(snip);
@@ -1545,6 +1566,15 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       type: 'button', class: 'drawing__tool', 'aria-label': 'Wzór', title: 'Wzór (zapis jak w notatce)', dataset: { testid: 'drawing-insert-math' },
       onClick: () => editElement('math')
     }, icon('sigma', { size: 24 }));
+    // Od 1.21: tabela (to samo okno tabeli co w notatce) i karteczka.
+    const tableButton = h('button', {
+      type: 'button', class: 'drawing__tool', 'aria-label': 'Tabela', title: 'Tabela', dataset: { testid: 'drawing-insert-table' },
+      onClick: () => editTable()
+    }, icon('table', { size: 24 }));
+    const stickyButton = h('button', {
+      type: 'button', class: 'drawing__tool', 'aria-label': 'Karteczka', title: 'Karteczka – notatka na rysunku', dataset: { testid: 'drawing-insert-sticky' },
+      onClick: () => editSticky()
+    }, icon('sticky', { size: 24 }));
     const rulerButton = h('button', {
       type: 'button', class: 'drawing__tool', 'aria-label': 'Linijka', title: 'Linijka', 'aria-pressed': 'false', dataset: { testid: 'drawing-ruler' },
       onClick: () => toggleRuler()
@@ -1603,7 +1633,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     // Tło strony (od 1.15 – panel: rodzaj, jasność linii, szablon); na telefonie krótki napis.
     const paperLabel = h('span', { class: 'drawing__wide-label' });
     const paperButton = h('button', {
-      type: 'button', class: 'drawing__chip', 'aria-haspopup': 'dialog', dataset: { testid: 'drawing-paper' }, hidden: Boolean(drawing.photo),
+      type: 'button', class: 'drawing__chip drawing__chip--paper', 'aria-haspopup': 'dialog', dataset: { testid: 'drawing-paper' }, hidden: Boolean(drawing.photo),
       onClick: () => togglePaperPanel()
     }, paperLabel, h('span', { class: 'drawing__narrow-label' }, 'Tło'));
     const guideButton = h('button', {
@@ -1613,6 +1643,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     // Grupy narzędzi zawijają się w całości (na telefonie – w kilku wierszach).
     const toolbar = h('div', { class: 'drawing__toolbar', role: 'toolbar', 'aria-label': 'Narzędzia rysunku' },
       h('div', { class: 'drawing__group' }, penButton, highlighterButton, eraserButton, selectButton, shapeButton, textButton, mathButton),
+      h('div', { class: 'drawing__group' }, tableButton, stickyButton),
       swatches, widths, eraserModes, eraserSizes, selectShapes, selectModes, selectGroup,
       h('div', { class: 'drawing__group' }, rulerButton, guideButton, undoButton, redoButton, paperButton));
 
@@ -1689,7 +1720,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       swatches.hidden = !inking;
       // Pasek pod ikoną zakreślacza w kolorze wybranego zakreślacza.
       highlighterButton.style.setProperty('--highlighter-ink', highlighterHex(tools.highlighterColor));
-      const sizes = highlighter ? HIGHLIGHTER_WIDTHS.map((width) => width / 3) : tools.penWidths.map((width) => (width.min + width.max) / 1.4);
+      const sizes = highlighter ? tools.highlighterWidths.map((width) => width / 3) : tools.penWidths.map((width) => (width.min + width.max) / 1.4);
       const current = highlighter ? tools.highlighterWidth : tools.penWidth;
       replaceChildren(widths, sizes.map((size, index) => h('button', {
         type: 'button', class: 'drawing__width', 'aria-label': ['Cienka', 'Średnia', 'Gruba'][index], title: ['Cienka', 'Średnia', 'Gruba'][index],
@@ -1735,6 +1766,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       redoButton.disabled = !history.canRedo;
       paperLabel.textContent = `Tło: ${PAPER_LABELS[drawing.paper].toLowerCase()}${drawing.template ? ' i szablon' : ''}`;
       paperButton.setAttribute('aria-label', `Tło strony: ${PAPER_LABELS[drawing.paper].toLowerCase()}${drawing.template ? ' i szablon' : ''} – zmień`);
+      paperButton.title = paperLabel.textContent;
       paperButton.setAttribute('aria-expanded', String(!paperPanel.hidden));
     }
     function updateGuidePill() {
@@ -1763,8 +1795,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       refreshSettings = null;
       if (settings.hidden) return;
       if (tool === 'highlighter') {
-        replaceChildren(settings, h('h3', { class: 'drawing__settings-title' }, 'Zakreślacz'),
-          h('p', { class: 'field__hint' }, 'Grubość wybierasz kropkami na pasku, kolor – kółkami. Zakreślacz nie zasłania tuszu pod spodem.'));
+        renderHighlighterSettings();
         return;
       }
       const width = () => tools.penWidths[tools.penWidth];
@@ -1820,6 +1851,56 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         h('p', { class: 'drawing__settings-label' }, 'Podgląd: lekko – mocno – lekko'),
         canvas,
         h('p', { class: 'field__hint' }, 'Palcem i myszą kreska ma stałą grubość (bez nacisku). Ustawienia zostają na tym urządzeniu.'));
+      refreshSettings = refresh;
+      refresh();
+    }
+
+    /**
+     * Ustawienia zakreślacza (od 1.21 – jak pióra): grubość każdej z trzech kropek suwakiem, podgląd
+     * zakreślenia na przykładowym tekście. Grubość zostaje na tym urządzeniu.
+     */
+    function renderHighlighterSettings() {
+      const names = ['Cienka', 'Średnia', 'Gruba'];
+      const value = h('span');
+      const range = h('input', {
+        type: 'range', class: 'drawing__range', min: HIGHLIGHTER_RANGE.min, max: HIGHLIGHTER_RANGE.max, step: 1,
+        'aria-label': 'Grubość zakreślacza', dataset: { testid: 'drawing-highlighter-width' },
+        onInput: (event) => {
+          tools.highlighterWidths[tools.highlighterWidth] = Number(event.target.value);
+          saveTools(tools);
+          refresh();
+          updateToolbar();
+        }
+      });
+      const levels = names.map((name, index) => h('button', {
+        type: 'button', role: 'radio', dataset: { value: String(index), testid: `drawing-highlighter-level-${index}` },
+        onClick: () => { tools.highlighterWidth = index; saveTools(tools); refresh(); updateToolbar(); }
+      }, name));
+      const canvas = h('canvas', { class: 'drawing__preview', width: 656, height: 144, 'aria-hidden': 'true' });
+      function refresh() {
+        const width = tools.highlighterWidths[tools.highlighterWidth];
+        range.value = String(width);
+        range.style.setProperty('--fill-to', `${((width - HIGHLIGHTER_RANGE.min) / (HIGHLIGHTER_RANGE.max - HIGHLIGHTER_RANGE.min)) * 100}%`);
+        value.textContent = String(width);
+        for (const button of levels) button.setAttribute('aria-checked', String(Number(button.dataset.value) === tools.highlighterWidth));
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(2, 0, 0, 2, 0, 0);
+        ctx.clearRect(0, 0, 328, 72);
+        ctx.fillStyle = '#1d1d1f';
+        ctx.font = `22px ${TEXT_FONT}`;
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Ważne pojęcie do zapamiętania', 14, 36);
+        paintStroke(ctx, { tool: 'highlighter', color: highlighterHex(tools.highlighterColor), points: [10, 37, width, 318, 37, width] });
+      }
+      replaceChildren(settings,
+        h('h3', { class: 'drawing__settings-title' }, 'Zakreślacz'),
+        h('p', { class: 'drawing__settings-label' }, 'Kropka na pasku'),
+        h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Kropka na pasku' }, levels),
+        h('p', { class: 'drawing__settings-label' }, h('span', null, 'Grubość'), value),
+        range,
+        h('p', { class: 'drawing__settings-label' }, 'Podgląd'),
+        canvas,
+        h('p', { class: 'field__hint' }, 'Każda z trzech kropek na pasku ma swoją grubość; kolor wybierasz kółkami. Zakreślacz nie zasłania tuszu pod spodem. Ustawienia zostają na tym urządzeniu.'));
       refreshSettings = refresh;
       refresh();
     }
@@ -2437,12 +2518,13 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       measured = null;
       pasteCount = 0;
       paperButton.hidden = Boolean(drawing.photo);
+      // Najpierw pasek tej kartki (może mieć inną wysokość – np. przycisk tła z szablonem), potem układ strony pod nim.
+      updatePagePill();
+      updateToolbar();
       view.zoom = 1;
       view.width = 0;
       resize();
       zoomButton.textContent = '100%';
-      updatePagePill();
-      updateToolbar();
       requestRender();
     }
     /** Nowa kartka za ostatnią: to samo tło (zdjęcie – kratka), jasność linii i skala, bez szablonu. */
@@ -2593,10 +2675,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     /** Zastępuje zaznaczone kreski przesuniętymi – jeden krok cofania. */
     function moveSelection(dx, dy) {
       const moved = new Set();
+      const kept = keptTarget();
       history.begin();
       drawing.strokes.forEach((stroke, index) => {
         if (!selection.has(stroke)) return;
-        drawing.strokes[index] = translateStroke(stroke, dx, dy);
+        drawing.strokes[index] = stroke === kept ? movedSticky(stroke, dx, dy) : translateStroke(stroke, dx, dy);
         moved.add(drawing.strokes[index]);
       });
       commitStep();
@@ -2604,6 +2687,13 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       updateToolbar();
       requestRender();
     }
+    /** Karteczka ze strzałką przesuwana sama (od 1.21) – koniec strzałki zostaje tam, gdzie wskazuje; inaczej null. */
+    function keptTarget() {
+      const [only] = selection;
+      return selection.size === 1 && only?.tool === 'sticky' && only.leader ? only : null;
+    }
+    const movedSticky = (sticky, dx, dy) => ({ ...translateStroke(sticky, dx, dy), leader: sticky.leader });
+
     /** Kopie zaznaczonych kresek obok, zaznaczone. Fragment – kopia samego wnętrza (oryginał zostaje w całości). */
     function duplicateSelection() {
       const items = orderedSelection();
@@ -2661,7 +2751,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         for (let index = 2; index < polygon.length; index += 2) ctx.lineTo(polygon[index], polygon[index + 1]);
         ctx.closePath();
         ctx.clip();
-        paintDrawing(ctx, drawing, media);
+        paintDrawing(ctx, drawing, media, null, null, { image: true });
       });
     }
     /** Wycinek z obrysu: obszar przycięty do strony; poza stroną – nic. */
@@ -3125,24 +3215,26 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
      */
     function placeElement(next) {
       const center = visibleCenter();
+      // Zwinięta karteczka (od 1.21) zajmuje tylko miejsce ikony.
+      const { width, height } = elementBox(next);
       const fit = (value, size, room) => Math.round(Math.min(Math.max(0, value), Math.max(0, room - size)));
-      next.x = fit(center.x - next.width / 2, next.width, drawing.width);
-      const middle = fit(center.y - next.height / 2, next.height, drawing.height);
-      const overlapping = (top) => drawing.strokes.filter((item) => isTextual(item)
-        && next.x < item.x + item.width && item.x < next.x + next.width && top < item.y + item.height && item.y < top + next.height);
+      next.x = fit(center.x - width / 2, width, drawing.width);
+      const middle = fit(center.y - height / 2, height, drawing.height);
+      const overlapping = (top) => drawing.strokes.filter((item) => isTextual(item) || isBox(item)).map(elementBox)
+        .filter((box) => next.x < box.x + box.width && box.x < next.x + width && top < box.y + box.height && box.y < top + height);
       /** Pierwsze wolne miejsce od `start` w dół albo null, gdy do dołu strony go nie ma. */
       const scan = (start) => {
         let y = start;
         for (let guard = 0; guard < 50; guard += 1) {
           const hits = overlapping(y);
           if (hits.length === 0) return y;
-          y = Math.round(Math.max(...hits.map((item) => item.y + item.height)) + PAPER_STEP / 4);
-          if (y + next.height > drawing.height) return null;
+          y = Math.round(Math.max(...hits.map((box) => box.y + box.height)) + PAPER_STEP / 4);
+          if (y + height > drawing.height) return null;
         }
         return null;
       };
       // Pod spodem brak miejsca – od góry widocznej części strony; wszędzie zajęte – na środku.
-      next.y = scan(middle) ?? scan(fit((view.top - view.y) / view.scale, next.height, drawing.height)) ?? middle;
+      next.y = scan(middle) ?? scan(fit((view.top - view.y) / view.scale, height, drawing.height)) ?? middle;
     }
 
     /** Zastępuje pole albo wzór poprawionym (null – usuwa) jednym krokiem cofania. */
@@ -3157,6 +3249,209 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       selectionKind = 'whole';
       updateToolbar();
       requestRender();
+    }
+
+    // ---- tabele i karteczki (od 1.21)
+    /** Poprawka zaznaczonej tabeli albo karteczki. */
+    const editBox = (element) => (element.tool === 'table' ? editTable(element) : editSticky(element));
+    /** Nowy albo poprawiony element zaznaczony – od razu można go przesunąć. */
+    function selectOnly(element) {
+      if (tool !== 'select') setTool('select');
+      selection = new Set([element]);
+      selectionKind = 'whole';
+      updateToolbar();
+      requestRender();
+    }
+    /** Element w miejscu poprzedniego (jeden krok cofania) albo nowy na środku widocznej części strony. */
+    function putBox(element, next) {
+      if (element) {
+        replaceElement(element, next);
+      } else {
+        placeElement(next);
+        if (next.leader) next.leader = defaultLeader(next);
+        history.add(next);
+        changed = true;
+      }
+      selectOnly(next);
+    }
+
+    /** Nowa tabela (element = null) albo poprawka istniejącej – to samo okno tabeli co w notatce. */
+    function editTable(element = null) {
+      if (!element) clearSelection();
+      const known = element ? TABLE_TEXT_SIZES.indexOf(element.size) : -1;
+      const choice = { size: known >= 0 ? known : 1, color: element ? inkChoice(element.color) : tools.penColor };
+      openTableEditor({
+        title: element ? 'Tabela na rysunku' : 'Nowa tabela',
+        submitLabel: element ? 'Zapisz' : 'Wstaw',
+        table: element,
+        allowEmpty: Boolean(element),
+        extra: elementOptions(choice),
+        onSave: (table) => {
+          const next = { tool: 'table', x: element?.x ?? 0, y: element?.y ?? 0, width: 0, height: 0, size: TABLE_TEXT_SIZES[choice.size], color: inkHex(choice.color), ...table };
+          // Ta sama liczba kolumn i wielkość tekstu – szerokość zostaje (tekst się zawija); inaczej – od nowa.
+          const same = element && element.size === next.size && element.rows[0].length === next.rows[0].length;
+          next.width = same ? element.width : naturalTableWidth(next, Math.round(drawing.width * 0.8));
+          Object.assign(next, measureTable(next));
+          putBox(element, next);
+        }
+      });
+    }
+
+    /** Koniec strzałki nowej karteczki: na prawo w dół od niej, na stronie. */
+    function defaultLeader(sticky) {
+      return {
+        x: Math.round(Math.min(drawing.width - 20, sticky.x + sticky.width + 140)),
+        y: Math.round(Math.min(drawing.height - 20, sticky.y + sticky.height + 90))
+      };
+    }
+
+    /** Dzisiejsza data jako rrrr-mm-dd (data dodania karteczki). */
+    const today = () => {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    };
+
+    /**
+     * Nowa karteczka (element = null) albo poprawka: tekst (z symbolami), kolor, wielkość tekstu,
+     * zwinięta do ikony, strzałka do miejsca, widoczna na obrazie rysunku w notatce.
+     */
+    function editSticky(element = null) {
+      if (!element) clearSelection();
+      const known = element ? STICKY_TEXT_SIZES.indexOf(element.size) : -1;
+      const choice = {
+        color: element?.color ?? tools.stickyColor,
+        size: known >= 0 ? known : 1,
+        collapsed: element?.collapsed === true,
+        leader: Boolean(element?.leader),
+        visible: element ? element.hidden !== true : true
+      };
+      let value = element?.text ?? '';
+      let pending = null;
+      const input = textArea({ value, rows: 4, testID: 'drawing-sticky-input', onInput: (text) => { value = text; } });
+      input.maxLength = STICKY_TEXT_MAX;
+      const swatches = STICKY_COLORS.map((color) => h('button', {
+        type: 'button', class: 'drawing__swatch', style: { '--swatch': color.fill }, 'aria-label': color.label, title: color.label,
+        'aria-pressed': String(color.id === choice.color), dataset: { color: color.id, testid: `drawing-sticky-color-${color.id}` },
+        onClick: () => {
+          choice.color = color.id;
+          for (const button of swatches) button.setAttribute('aria-pressed', String(button.dataset.color === color.id));
+        }
+      }));
+      const option = (label, key, testID) => {
+        const row = toggle({ checked: choice[key], label, onChange: (checked) => { choice[key] = checked; } });
+        row.querySelector('input').dataset.testid = testID;
+        return row;
+      };
+      openFormSheet({
+        title: element ? `Karteczka ${stickyNumber(drawing, element)}` : 'Nowa karteczka',
+        submitLabel: element ? 'Zapisz' : 'Wstaw',
+        build: () => [
+          field('Tekst', input, {
+            hint: element ? `Dodana ${stickyDate(element)}.` : 'Karteczka pojawi się na środku widocznej części strony – przesuniesz ją, a narożnikiem zmienisz jej wielkość.'
+          }),
+          symbolField(input, { testID: 'drawing-symbols' }),
+          field('Kolor', h('div', { class: 'drawing__element-colors', role: 'group', 'aria-label': 'Kolor karteczki' }, swatches)),
+          field('Wielkość tekstu', segmented({
+            name: `drawing-sticky-size-${Date.now()}`, label: 'Wielkość tekstu', value: String(choice.size),
+            options: ['Mała', 'Średnia', 'Duża'].map((label, index) => ({ value: String(index), label })),
+            onChange: (size) => { choice.size = Number(size); }
+          })),
+          h('div', { class: 'drawing__sticky-options' },
+            option('Zwinięta – tylko ikona', 'collapsed', 'drawing-sticky-collapsed'),
+            option('Strzałka do miejsca', 'leader', 'drawing-sticky-leader'),
+            option('Widoczna na obrazie w notatce', 'visible', 'drawing-sticky-visible')),
+          h('p', { class: 'field__hint' }, 'Zwinięta karteczka to ikona z numerem – dotknięcie pokazuje jej treść. Koniec strzałki przeciągniesz na rysunku. '
+            + 'Karteczka niewidoczna na obrazie jest tylko w edytorze (z przerywaną obwódką).')
+        ],
+        onSubmit: () => { pending = value; },
+        onClose: () => {
+          if (pending !== null) applySticky(element, pending, choice);
+        }
+      });
+      requestAnimationFrame(() => input.focus());
+    }
+    function applySticky(element, text, choice) {
+      tools.stickyColor = choice.color;
+      saveTools(tools);
+      const next = element ? { ...element } : { tool: 'sticky', x: 0, y: 0, width: 360, height: 260, created: today() };
+      Object.assign(next, { text: text.slice(0, STICKY_TEXT_MAX), color: choice.color, size: STICKY_TEXT_SIZES[choice.size] });
+      delete next.collapsed;
+      delete next.hidden;
+      if (choice.collapsed) next.collapsed = true;
+      if (!choice.visible) next.hidden = true;
+      if (!choice.leader) delete next.leader;
+      else next.leader = element?.leader ?? defaultLeader(next);
+      Object.assign(next, measureSticky(next));
+      putBox(element, next);
+    }
+    function toggleCollapsed() {
+      const [only] = selection;
+      if (selection.size !== 1 || only?.tool !== 'sticky') return;
+      const next = { ...only };
+      if (only.collapsed) delete next.collapsed;
+      else next.collapsed = true;
+      replaceShape(only, next);
+      updateToolbar();
+      requestRender();
+    }
+
+    /** Tabela albo karteczka z uchwytami: jedyna zaznaczona (przy zaznaczaniu) albo poprawiana. */
+    function editedBox() {
+      if (active?.kind === 'box-edit') return active.preview;
+      if (selection.size !== 1 || tool !== 'select' || active?.kind === 'move' || placing) return null;
+      const [only] = selection;
+      return isBox(only) ? only : null;
+    }
+    /** Uchwyty: narożnik (zmiana wielkości; zwinięta karteczka – bez niego) i koniec strzałki karteczki. */
+    function boxHandles(element) {
+      const handles = [];
+      if (!(element.tool === 'sticky' && element.collapsed)) handles.push({ id: 'resize', x: element.x + element.width, y: element.y + element.height });
+      if (element.tool === 'sticky' && element.leader) handles.push({ id: 'target', x: element.leader.x, y: element.leader.y });
+      return handles;
+    }
+    function boxHandleAt(point) {
+      const element = editedBox();
+      if (!element) return null;
+      let best = null;
+      for (const handle of boxHandles(element)) {
+        const distance = Math.hypot(handle.x - point.x, handle.y - point.y) * view.scale;
+        if (distance <= HANDLE_HIT && (!best || distance < best.distance)) best = { ...handle, distance, element };
+      }
+      return best;
+    }
+    function paintBoxHandles(ctx, element) {
+      ctx.save();
+      ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = SELECT_COLORS.whole;
+      ctx.fillStyle = '#ffffff';
+      for (const handle of boxHandles(element)) {
+        const point = toScreen(handle);
+        ctx.beginPath();
+        if (handle.id === 'target') ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+        else ctx.rect(point.x - 7, point.y - 7, 14, 14);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    function startBoxEdit(event, handle) {
+      active = { kind: 'box-edit', ...common(event, toDrawing(event)), handle: handle.id, original: handle.element, preview: handle.element, moved: false };
+      requestRender();
+    }
+    /** Element po przeciągnięciu uchwytu: narożnik – szerokość (tabela) albo wielkość (karteczka), koniec strzałki – nowe miejsce. */
+    function editBoxHandle(original, handle, point) {
+      if (handle === 'target') return { ...original, leader: { x: Math.round(point.x), y: Math.round(point.y) } };
+      if (original.tool === 'table') {
+        const next = { ...original, width: Math.round(Math.max(original.rows[0].length * original.size * 2, point.x - original.x)) };
+        return { ...next, ...measureTable(next) };
+      }
+      const next = {
+        ...original,
+        width: Math.round(Math.max(STICKY_MIN.width, point.x - original.x)),
+        height: Math.round(Math.max(STICKY_MIN.height, point.y - original.y))
+      };
+      return { ...next, ...measureSticky(next) };
     }
 
     function selectAll() {
@@ -3175,7 +3470,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
 
     const usesEraser = (event) => tool === 'eraser' || (event.pointerType === 'pen' && (event.button === 5 || (event.buttons & 32) === 32));
     const pointWidth = (event) => {
-      if (active.stroke.tool === 'highlighter') return HIGHLIGHTER_WIDTHS[tools.highlighterWidth];
+      if (active.stroke.tool === 'highlighter') return tools.highlighterWidths[tools.highlighterWidth];
       return penWidth(active.pressure ? event.pressure : 0.5, tools.penWidths[tools.penWidth], active.pressure ? tools.sensitivity : 'off');
     };
     /** Punkt kreski: przy linijce – rzut na prostą wzdłuż jej krawędzi (i zasięg kreski wzdłuż linijki – długość). */
@@ -3464,6 +3759,13 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           active.preview = measureLabel(moveShapeHandle(active.original, active.handle, point, { lock: locked(event) }));
           requestLive();
           break;
+        case 'box-edit': {
+          if (!active.moved && Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale < TAP_SLOP) break;
+          active.moved = true;
+          active.preview = editBoxHandle(active.original, active.handle, point);
+          requestLive();
+          break;
+        }
         case 'pan':
           view.x = active.startX + event.clientX - active.client.clientX;
           view.y = active.startY + event.clientY - active.client.clientY;
@@ -3570,12 +3872,16 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         stage.classList.remove('drawing__stage--panning');
       } else if (done.kind === 'array-center' && !cancelled && done.moved) {
         replaceArray(done.original, done.preview);
+      } else if (done.kind === 'box-edit' && !cancelled && done.moved) {
+        replaceShape(done.original, done.preview);
       } else if (done.kind === 'move' && !cancelled) {
         const tap = Math.abs(done.dx) * view.scale < TAP_SLOP && Math.abs(done.dy) * view.scale < TAP_SLOP;
         const [only] = selection;
         if (!tap) moveSelection(done.dx, done.dy);
         // Dotknięcie zaznaczonego pola tekstowego albo wzoru – poprawka; kształtu (od 1.17) – tekst na nim; szyku (od 1.19) – parametry.
         else if (selection.size === 1 && isTextual(only) && touchesStroke(only, done.start.x, done.start.y, 0)) editElement(only.tool, only);
+        // Tabela i karteczka (od 1.21) – okno edycji.
+        else if (selection.size === 1 && isBox(only) && touchesStroke(only, done.start.x, done.start.y, 0)) editBox(only);
         else if (selection.size === 1 && isArray(only) && touchesStroke(only, done.start.x, done.start.y, SELECTION_PAD / view.scale)) editArray();
         else if (selection.size === 1 && isShape(only)
           && (shapeContains(only, done.start.x, done.start.y) || touchesShape(only, done.start.x, done.start.y, SELECTION_PAD / view.scale))) editShapeLabel(only);
@@ -3706,7 +4012,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         const [only] = selection;
         const onSelection = (tool === 'select' && selectionHit(point))
           || (tool === 'shape' && selection.size === 1 && isShape(only) && shapeContains(only, point.x, point.y));
-        if (!hit && penSeen && !onSelection && !shapeHandleAt(point) && !guideKnobHit(point) && !arrayCenterHit(point)) {
+        if (!hit && penSeen && !onSelection && !shapeHandleAt(point) && !boxHandleAt(point) && !guideKnobHit(point) && !arrayCenterHit(point)) {
           touches.set(event.pointerId, local(event));
           startGesture('page');
           return;
@@ -3722,11 +4028,14 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         // przechwycenie nie jest konieczne
       }
       const handle = snipping ? null : shapeHandleAt(point);
+      // Narożnik tabeli albo karteczki i koniec strzałki karteczki (od 1.21).
+      const boxHandle = snipping || handle ? null : boxHandleAt(point);
       // Środek zaznaczonego szyku kołowego (od 1.19) – przed linijką i zaznaczeniem.
-      const centerHit = !snipping && !handle && arrayCenterHit(point);
-      const hit = handle || centerHit || snipping ? null : rulerHit(point);
+      const centerHit = !snipping && !handle && !boxHandle && arrayCenterHit(point);
+      const hit = handle || boxHandle || centerHit || snipping ? null : rulerHit(point);
       if (snipping) startSelect(event, true);
       else if (handle) startShapeEdit(event, handle);
+      else if (boxHandle) startBoxEdit(event, boxHandle);
       else if (centerHit) startArrayCenter(event);
       else if (hit === 'handle') startRuler(event, 'ruler-rotate');
       else if (guideKnobHit(point)) startGuideMove(event);

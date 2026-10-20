@@ -1,4 +1,4 @@
-# LexiCards 1.20
+# LexiCards 1.21
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -29,8 +29,9 @@ Wycinek, „Osadź” w notatce, wymiary kształtu z klawiatury, wypełnienie i 
 Wcięcia (Tab), indeksy, wielkość i własny kolor tekstu, podpisy obrazów „Rys. N.”, przeciąganie obrazów w notatce (wersja 1.18): [docs/RELEASE-1.18.md](docs/RELEASE-1.18.md).
 Rysunek: wielkość szablonu, Shift i Ctrl, środkowy przycisk myszy, szyk, kilka kartek, zakończenia odcinka, stałe wymiary (wersja 1.19): [docs/RELEASE-1.19.md](docs/RELEASE-1.19.md).
 Notatki: wyrównanie i interlinia, linki, symbole, data i godzina, PDF, pełne „Usuń formatowanie”, Ctrl+Z po wstawieniu sygnatury; ścieżka nad fiszką (wersja 1.20): [docs/RELEASE-1.20.md](docs/RELEASE-1.20.md).
+Tabele w notatkach („Tab. N.”) i na rysunku, okno grubości zakreślacza, karteczki na rysunku (wersja 1.21): [docs/RELEASE-1.21.md](docs/RELEASE-1.21.md).
 
-## Co potrafi wersja 1.20
+## Co potrafi wersja 1.21
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -72,7 +73,10 @@ Notatki: wyrównanie i interlinia, linki, symbole, data i godzina, PDF, pełne �
   do prawej, wyjustowane) i interlinia (1,0 · 1,15 · 1,5 · 2,0), linki do stron i adresów e-mail
   (Ctrl+K), symbole (%, ‰, °, §, ⌀…; także w polach tekstowych rysunku), data i godzina jednym
   dotknięciem, **PDF** – notatka w układzie A4 w oknie drukowania; „Usuń formatowanie” czyści wszystko
-  oprócz linków, a Ctrl+Z cofa też wstawienie odwołania do obrazu i nowej strony.
+  oprócz linków, a Ctrl+Z cofa też wstawienie odwołania do obrazu i nowej strony. Od 1.21 **tabele** –
+  osobne obiekty notatki jak obrazy („Tabela 1”, `[[Tabela 1]]` w tekście, podpis „Tab. 1.” nad
+  tabelą), wypełniane w oknie tabeli także wklejeniem fragmentu arkusza Excel albo tabeli z Worda;
+  długa tabela dzieli się między strony po wierszach, z nagłówkiem na każdej stronie.
 - Załączniki notatek: PDF, Word, Excel, PowerPoint i inne pliki do 50 MB. Na iPhonie otwierasz je
   przez systemowy arkusz udostępniania (Word, Excel, Książki, „Zachowaj w Plikach”…), na komputerze
   PDF otwiera się w nowej karcie, a pozostałe pliki są pobierane i otwierają się w swoich programach.
@@ -103,7 +107,10 @@ Notatki: wyrównanie i interlinia, linki, symbole, data i godzina, PDF, pełne �
   kąty co 15°), przytrzymany Ctrl – chwilowo zaznaczanie, środkowy przycisk myszy przesuwa stronę,
   **szyk** liniowy i kołowy (jeden element z parametrami, „Rozdziel”), **kilka kartek** w jednym oknie
   (każda – osobny rysunek w notatce), zakończenia odcinka (grot, trójkąt, koło, kwadrat, romb)
-  i wymiary widoczne na rysunku na stałe (oko przy polu wymiaru). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
+  i wymiary widoczne na rysunku na stałe (oko przy polu wymiaru). Od 1.21: **tabele** na rysunku (to
+  samo okno tabeli co w notatce; szerokość narożnikiem), **karteczki** w pięciu kolorach – zwijane do
+  ikony z numerem, ze strzałką do miejsca, z datą dodania, także tylko dla siebie (bez nich na obrazie
+  w notatce) – i okno grubości zakreślacza (do 60). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
@@ -159,7 +166,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.17 – wycinek, „Osadź”, wymiary, wypełnienie i tekst kształtu](docs/RELEASE-1.17.md),
 [wersja 1.18 – wcięcia, indeksy, wielkość i kolor tekstu, podpisy obrazów, przeciąganie obrazów](docs/RELEASE-1.18.md),
 [wersja 1.19 – szablon, Shift i Ctrl, środkowy przycisk, szyk, kartki, zakończenia odcinka, stałe wymiary](docs/RELEASE-1.19.md),
-[wersja 1.20 – wyrównanie i interlinia, linki, symbole, data i godzina, PDF, „Usuń formatowanie”, ścieżka nad fiszką](docs/RELEASE-1.20.md).
+[wersja 1.20 – wyrównanie i interlinia, linki, symbole, data i godzina, PDF, „Usuń formatowanie”, ścieżka nad fiszką](docs/RELEASE-1.20.md),
+[wersja 1.21 – tabele w notatkach i na rysunku, grubość zakreślacza, karteczki](docs/RELEASE-1.21.md).
 
 ## Jak korzystać
 
@@ -302,8 +310,9 @@ tekstu (pole tekstowe i tekst na kształcie) przycisk **Symbole (%, °, §, ⌀�
 
 **Podpisy obrazów** (od 1.18): w menu obrazu **Dodaj podpis** – np. „Wyniki sprzedaży” (do 120
 znaków). Podpis jest wyśrodkowany pod obrazem w podglądzie, w powiększeniu i w „Kopiuj notatkę”.
-Przełącznik **Numeruj obrazy w podglądzie** pod obrazami dodaje numer: „Rys. 2. Wyniki sprzedaży”
-(bez podpisu – „Rys. 2.”); numer to kolejność obrazu w podglądzie notatki.
+Przełącznik **Numeruj obrazy i tabele w podglądzie** (do 1.20 „Numeruj obrazy w podglądzie”) dodaje
+numer: „Rys. 2. Wyniki sprzedaży” (bez podpisu – „Rys. 2.”); numer to kolejność obrazu w podglądzie
+notatki. Tabele mają osobną numerację („Tab. 1.”).
 
 **Sygnatury obrazów:** każdy obraz ma sygnaturę widoczną na miniaturze – „Obraz 1”, „Obraz 2”…
 (nadaną przy dodaniu, więc nie zmienia się przy przesuwaniu obrazów); w menu obrazu **Zmień
@@ -312,6 +321,26 @@ obrazu w podglądzie – **Wstaw do tekstu** w menu obrazu wpisuje ją w miejscu
 i polskie znaki w odwołaniu nie mają znaczenia; po zmianie sygnatury odwołania zmieniają się same.
 Odwołanie do sygnatury, której notatka nie ma, jest w podglądzie czerwone. Obrazy bez odwołania są
 przed tekstem albo po nim – według wyboru przy obrazach.
+
+**Tabele** (od 1.21): w edytorze, między obrazami a załącznikami, jest sekcja **Tabele** – **Dodaj
+tabelę** otwiera okno tabeli: siatka pól (na początek 3 × 3), nad kolumnami strzałki wyrównania
+(do lewej, do środka, do prawej), przyciski **+ Wiersz**, **+ Kolumna**, **− Wiersz**, **− Kolumna**
+(działają przy komórce z kursorem – wiersz pod nią, kolumna na prawo), przełączniki **Pierwszy wiersz –
+nagłówek** (domyślnie włączony) i **Pierwsza kolumna – nagłówki wierszy**. Tab przechodzi do
+następnej komórki, Enter zaczyna nowy wiersz w komórce. **Wklejenie** fragmentu arkusza (Excel –
+zaznaczone komórki) albo tabeli z Worda, OneNote czy strony WWW wypełnia komórki od kursora, a tabela
+powiększa się sama (do 100 wierszy i 12 kolumn); wklejone do pustej tabeli – tabela ma dokładnie
+wielkość wklejonego fragmentu. Tabela to osobny obiekt notatki, jak obraz: kafelek „Tabela 1” (z liczbą
+wierszy i kolumn, np. „5 × 3”) ma menu **Edytuj tabelę**, **Wstaw do tekstu** (`[[Tabela 1]]` w miejscu
+kursora), **Zmień sygnaturę**, **Dodaj podpis**, **Przesuń wcześniej / dalej** i **Usuń tabelę**.
+Sygnatury tabel i obrazów są wspólne (każda jedna w notatce). Podpis stoi **nad tabelą** (jak
+w dokumentach technicznych): z numeracją – „Tab. 1. Koszty stałe”. W podglądzie tabela ma obramowanie,
+nagłówek z tłem i wyrównanie kolumn; szersza niż strona przewija się w bok; dłuższa niż strona dzieli
+się **po wierszach** – na następnej stronie znów jest wiersz nagłówka, a podpis tylko nad pierwszą
+częścią. Tabele bez odwołania stoją za obrazami (przed tekstem albo po nim). „Kopiuj notatkę” daje
+prawdziwą tabelę dla Worda, OneNote i poczty (zwykły tekst – komórki po tabulatorze), PDF – tabelę
+z nagłówkiem powtarzanym na każdej stronie wydruku. Czytanie na głos i słuchanie czytają wiersze
+(komórki po przecinku). Notatka ma najwyżej 30 tabel.
 
 **Notatka po angielsku:** w edytorze nad tekstem jest przełącznik **Polski / Angielski** – każda
 wersja ma osobną treść, obrazy są wspólne. W podglądzie notatki z obiema wersjami przełącznik
@@ -507,6 +536,30 @@ a kreski osobno (gumka nie ściera zdjęcia); obraz zostaje w tym samym miejscu 
 wielkość zdjęcia, najwyżej 2048 px). Rysunek przenosi plik obrazów i załączników kopii zapasowej
 (razem z kreskami i zdjęciem pod spodem); eksport do XLSX i „Kopiuj notatkę” biorą sam obraz.
 
+**Grubość zakreślacza** (od 1.21): drugie dotknięcie aktywnego zakreślacza otwiera okno jak przy
+piórze – **Kropka na pasku** (Cienka, Średnia, Gruba) i suwak **Grubość** (4–60) dla wybranej
+kropki, z podglądem; każda z trzech kropek ma swoją grubość, zapamiętaną na urządzeniu.
+
+**Tabela na rysunku** (od 1.21): przycisk z siatką za narzędziami otwiera to samo okno tabeli co
+w notatce (wklejanie z Excela i Worda, nagłówki, wyrównanie), a pod siatką – **wielkość tekstu**
+(Mała, Średnia, Duża, Bardzo duża) i **kolor** (tekst i linie). **Wstaw** kładzie tabelę na środku
+widocznej części strony (szerokość – według treści) i od razu ją zaznacza: przeciągnięcie przesuwa,
+narożnik (kwadracik w prawym dolnym rogu) zmienia szerokość – tekst w komórkach się zawija, wysokość
+wynika z treści. Dotknięcie zaznaczonej tabeli albo **Edytuj** – poprawka w oknie tabeli. Tabelę
+zaznaczasz, kopiujesz, powielasz, osadzasz i usuwasz jak inne elementy (gumka **Całe kreski** usuwa ją
+w całości, **Fragmenty** – nie przecina). Na zdjęciu (**Rysuj na zdjęciu**) działa tak samo.
+
+**Karteczki** (od 1.21): przycisk z kartką otwiera okno **Nowa karteczka** – tekst (z symbolami),
+**kolor** (żółta, różowa, zielona, niebieska, pomarańczowa; ostatni wybrany zostaje), wielkość
+tekstu oraz przełączniki **Zwinięta – tylko ikona**, **Strzałka do miejsca** i **Widoczna na obrazie
+w notatce**. Karteczka ma cień i zagięty róg, rośnie razem z tekstem, a narożnikiem zmienisz jej
+wielkość. **Strzałka** biegnie od brzegu karteczki do punktu strony w ciemniejszym odcieniu karteczki –
+jej koniec (kółko) przeciągasz w inne miejsce; przesunięcie samej karteczki zostawia koniec strzałki
+na miejscu (zaznaczona razem z innymi elementami – strzałka przesuwa się z nimi). **Zwinięta** karteczka to ikona z numerem (Karteczka 1, 2… – kolejność dodania);
+zaznaczona pokazuje obok treść z nagłówkiem „Karteczka 2 · 20.10.2026” (data dodania). Nad
+zaznaczoną karteczką – **Zwiń** / **Rozwiń**. Karteczka **niewidoczna na obrazie** jest tylko
+w edytorze (z przerywaną obwódką) – obraz rysunku w notatce jej nie ma, ale zostaje do poprawy.
+
 ### Postęp i lekcje utrwalone
 
 Pasek po lewej stronie wiersza lekcji i modułu wypełnia się w miarę, jak pojęcia dostają status
@@ -632,7 +685,8 @@ pojęcia. Słuchanie nie zmienia terminów powtórek.
 
 **Notatka lekcji przed pojęciami** – w ustawieniach słuchania: **Nie** (domyślnie), **PL**, **EN** albo
 **PL + EN**. Przed pojęciami aplikacja czyta notatki lekcji z wybranego materiału (zapowiedź „Notatka
-do lekcji …”, potem tekst zdanie po zdaniu – bez obrazów); przy „PL + EN” najpierw wersję polską,
+do lekcji …”, potem tekst zdanie po zdaniu – bez obrazów; od 1.21 z tabelami: podpis i wiersze, komórki
+po przecinku); przy „PL + EN” najpierw wersję polską,
 potem angielską. Gdy notatka nie ma wybranej wersji, czyta tę, która jest. Przycisk „następne” w trakcie
 notatki przechodzi od razu do pojęć.
 
@@ -666,7 +720,7 @@ w quizach – od wersji 0.6.0 mierzony, dla starszych ocen szacowany.
 - Dane zostają w przeglądarce na danym urządzeniu. Nic nie jest wysyłane do internetu.
 - Telefon i komputer mają osobne biblioteki. Przeniesienie (i kopia zapasowa) to dwa pliki –
   w Ustawieniach, w grupie **Kopia zapasowa i przeniesienie**:
-  1. **Zapisz dane do pliku** – materiały, notatki (tekst i opisy obrazów i załączników), postępy,
+  1. **Zapisz dane do pliku** – materiały, notatki (tekst, tabele i opisy obrazów i załączników), postępy,
      historia i ustawienia, bez samych obrazów i załączników (mały plik `LexiCards-dane-…json`);
   2. **Zapisz obrazy i załączniki** – jeden plik `LexiCards-obrazy-i-zalaczniki-…zip` ze wszystkimi
      obrazami i załącznikami notatek (wiersz pokazuje, ile ich jest i ile zajmują).
@@ -746,7 +800,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 25. **Wersja 1.18: notatki – wcięcia (Tab), indeks górny i dolny, wielkość tekstu, własne kolory tekstu, podpisy obrazów z numeracją „Rys. N.”, przeciąganie obrazów (dwa rzędy z przewijaniem w bok)** – gotowe.
 26. **Wersja 1.19: rysunek – skala szablonu wpisywana i przeciągnięciem narożnika, Shift (proporcje), Ctrl (chwilowe zaznaczanie), przesuwanie środkowym przyciskiem, szyk liniowy i kołowy, kilka kartek, zakończenia odcinka, stałe wymiary** – gotowe.
 27. **Wersja 1.20: notatki – wyrównanie i interlinia, linki (Ctrl+K), symbole, data i godzina, PDF (okno drukowania A4), „Usuń formatowanie” – wszystko oprócz linków, Ctrl+Z po „Wstaw do tekstu” i „Nowa strona”, „Kopiuj” z obrazami w wielkości strony A4; Nauka – ścieżka nad fiszką, ukrywanie grup** – gotowe.
-28. **Wersja 1.21: tabele w notatkach, na rysunku i na zdjęciu („Tab. N.”), okno grubości zakreślacza, karteczki na rysunku** – w przygotowaniu.
+28. **Wersja 1.21: tabele w notatkach, na rysunku i na zdjęciu („Tab. N.”), okno grubości zakreślacza, karteczki na rysunku** – gotowe.
 29. **Wersja 1.22: rysunek – liniuszek promieniowy, kółko przewraca kartki (z animacją), wymiarowanie techniczne z tolerancjami, symbole GD&T, przyciąganie strzałek do krawędzi i narożników** – w przygotowaniu.
 30. **Wersja 1.23: eksport sesji nauki do kalendarza (plik .ics dla Outlooka) – cykliczne, prywatne, z linkami do lekcji** – w przygotowaniu.
 31. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.

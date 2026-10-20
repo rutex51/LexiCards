@@ -28,7 +28,10 @@ export function h(tag, props = null, ...children) {
           if (data !== null && data !== undefined) element.dataset[name] = data;
         }
       } else if (key === 'style' && typeof value === 'object') {
-        for (const [name, style] of Object.entries(value)) element.style.setProperty(name, style);
+        // Nazwy jak w CSS („font-size”, „--zmienna”) albo w JS („fontSize”).
+        for (const [name, style] of Object.entries(value)) {
+          element.style.setProperty(name.startsWith('--') ? name : name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`), style);
+        }
       } else if (key === 'value' || key === 'checked' || key === 'disabled' || key === 'selected') {
         element[key] = value;
       } else if (value === true) {

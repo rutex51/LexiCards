@@ -11,7 +11,9 @@
 //     tekście albo – gdy tak wybrano w notatce – przed nim; każdy zmniejszony najwyżej do wysokości strony;
 //   - blok, którego nie da się podzielić (np. bardzo długa lista zagnieżdżona), dostaje stronę
 //     przewijaną – to jedyny wyjątek od zasady „bez przewijania”;
-//   - wzory zapisane $…$ (od 1.11) są składane przed podziałem i nigdy nie dzielą się między strony.
+//   - wzory zapisane $…$ (od 1.11) są składane przed podziałem i nigdy nie dzielą się między strony;
+//   - tabela (od 1.21) stoi w miejscu odwołania (bez odwołania – za obrazami), z podpisem nad nią;
+//     gdy się nie mieści, dzieli się po wierszach, a wiersz nagłówka powtarza się na następnej stronie.
 // Krótka notatka (jedna strona) wygląda jak dawniej: karta o wysokości treści.
 //
 // Przewracanie: kartka zagina się od chwyconego rogu (geometria w core/page-curl.js). Płaska
@@ -21,6 +23,7 @@
 
 import { normalizeNoteHtml } from '../core/note-format.js';
 import { figureCaption, figureNumbers, findImageByLabel, referenceLabel, withImageLabels } from '../core/note-refs.js';
+import { findTableByLabel, tableCaption, tableHtml, tableNumbers, withTableLabels } from '../core/tables.js';
 import {
   IDENTITY, applyMatrix, constrainCorner, cornerLift, cornerOf, cornerPath, foldGeometry, gripOf, mirror, multiply, turnedCorner
 } from '../core/page-curl.js';
@@ -42,15 +45,26 @@ function reducedMotion() {
 
 /**
  * Treść notatki jako ciąg jednostek: { kind: 'block', node } | { kind: 'item', node, list,
- * listID, number } | { kind: 'break' } | { kind: 'image', index }. `source` – numer jednostki
- * w notatce (do odnalezienia strony po ponownym podziale). images – obrazy z sygnaturami:
- * akapit z samym odwołaniem [[sygnatura]] staje się obrazem, odwołanie bez obrazu zostaje
- * tekstem oznaczonym na czerwono; obrazy bez odwołania są na początku albo na końcu.
+ * listID, number } | { kind: 'break' } | { kind: 'image', index } | { kind: 'table', index, node,
+ * caption, from, to }. `source` – numer jednostki w notatce (do odnalezienia strony po ponownym
+ * podziale). images – obrazy z sygnaturami, tables (od 1.21) – tabele z sygnaturami: akapit z samym
+ * odwołaniem [[sygnatura]] staje się obrazem albo tabelą, odwołanie bez obiektu zostaje tekstem
+ * oznaczonym na czerwono; obrazy i tabele bez odwołania są na początku albo na końcu.
  */
-function contentUnits(html, images, imagesFirst = false, language = 'pl', numberFigures = false) {
+function contentUnits(html, images, imagesFirst = false, language = 'pl', numberFigures = false, tables = []) {
   // Podpis pod obrazem (od 1.18): „Rys. N. podpis” albo sam podpis.
   const numbers = figureNumbers(html, images, imagesFirst);
   const captionOf = (index) => figureCaption(images[index]?.caption, numbers[index], numberFigures);
+  // Tabele (od 1.21): podpis „Tab. N.” nad tabelą; wiersze treści [from, to) – przy podziale między strony.
+  const tableNums = tableNumbers(html, tables, imagesFirst);
+  const tableUnit = (index) => {
+    const holder = document.createElement('template');
+    holder.innerHTML = tableHtml(tables[index]);
+    const node = document.importNode(holder.content.firstChild, true);
+    const rows = node.tBodies[0]?.rows.length ?? 0;
+    return { kind: 'table', index, node, from: 0, to: rows, caption: tableCaption(tables[index].caption, tableNums[index], numberFigures) };
+  };
+  const referencedTables = new Set();
   const template = document.createElement('template');
   template.innerHTML = normalizeNoteHtml(html);
   const root = document.importNode(template.content, true);
@@ -73,6 +87,12 @@ function contentUnits(html, images, imagesFirst = false, language = 'pl', number
         referenced.add(index);
         continue;
       }
+      const table = label === null ? -1 : findTableByLabel(tables, label);
+      if (table >= 0) {
+        units.push(tableUnit(table));
+        referencedTables.add(table);
+        continue;
+      }
       if (label !== null) {
         node.classList.add('note-ref--missing');
         node.title = 'Notatka nie ma obrazu o tej sygnaturze';
@@ -83,6 +103,12 @@ function contentUnits(html, images, imagesFirst = false, language = 'pl', number
   // Wzory $…$ – już po rozpoznaniu odwołań do obrazów (te sprawdzają sam tekst).
   for (const unit of units) if (unit.node) renderMath(unit.node, language);
   const rest = images.map((_, index) => index).filter((index) => !referenced.has(index)).map((index) => ({ kind: 'image', index, caption: captionOf(index) }));
+  for (const [index] of tables.entries()) {
+    if (referencedTables.has(index)) continue;
+    const unit = tableUnit(index);
+    renderMath(unit.node, language);
+    rest.push(unit);
+  }
   const all = imagesFirst ? [...rest, ...units] : [...units, ...rest];
   return all.map((unit, source) => ({ ...unit, source }));
 }
@@ -92,11 +118,12 @@ function contentUnits(html, images, imagesFirst = false, language = 'pl', number
  * z podpisami w miejscach odwołań (pozostałe przed tekstem albo po nim) i podziały stron. images –
  * obrazy z sygnaturami ({ url, label, caption, … }, bez pliku – url null).
  */
-export function noteFlow({ html, images, imagesFirst = false, numberFigures = false, language = 'pl' }) {
+export function noteFlow({ html, images, tables = [], imagesFirst = false, numberFigures = false, language = 'pl' }) {
   const root = h('div', { class: 'note-flow' });
   let text = null;
   let list = null;
-  for (const unit of contentUnits(html, images, imagesFirst, language, numberFigures)) {
+  const labeled = withImageLabels(images);
+  for (const unit of contentUnits(html, labeled, imagesFirst, language, numberFigures, withTableLabels(tables, labeled.map((image) => image.label)))) {
     if (unit.kind === 'break') {
       root.append(h('div', { class: 'note-flow__break', 'aria-hidden': 'true' }));
       text = null;
@@ -121,6 +148,9 @@ export function noteFlow({ html, images, imagesFirst = false, numberFigures = fa
           text.append(list.element);
         }
         list.element.append(unit.node);
+      } else if (unit.kind === 'table') {
+        list = null;
+        text.append(tableBox(unit));
       } else {
         list = null;
         text.append(unit.node);
@@ -154,6 +184,19 @@ function textSlice(element, start, end) {
   return copy;
 }
 
+/**
+ * Tabela na stronie (od 1.21): podpis nad nią (tylko na pierwszej części) i wiersze treści
+ * [unit.from, unit.to) – nagłówek (<thead>) zawsze; przewijana w bok, gdy jest szersza niż strona.
+ */
+function tableBox(unit) {
+  const table = unit.node.cloneNode(true);
+  const body = table.tBodies[0];
+  if (body) [...body.rows].forEach((row, index) => { if (index < unit.from || index >= unit.to) row.remove(); });
+  return h('figure', { class: 'note-page__table-box', dataset: { testid: 'note-table' } },
+    unit.caption && !unit.continued ? h('p', { class: 'note-page__table-caption', dataset: { testid: 'note-table-caption' } }, unit.caption) : null,
+    h('div', { class: 'note-page__table-scroll' }, table));
+}
+
 /** Miejsca, w których można przełamać tekst: początki wyrazów (po odstępie). */
 function wordStarts(text) {
   const starts = [];
@@ -174,8 +217,9 @@ function mathRanges(element) {
   });
 }
 
-/** Czy jednostkę można dzielić między stronami: akapit albo punkt listy bez list zagnieżdżonych. */
+/** Czy jednostkę można dzielić między stronami: akapit, punkt listy bez list zagnieżdżonych, tabela (po wierszach). */
 function splittable(unit) {
+  if (unit.kind === 'table') return unit.to - unit.from > 1;
   if (unit.kind === 'item') return !unit.node.querySelector('ul, ol');
   return unit.kind === 'block' && unit.node.tagName === 'P';
 }
@@ -305,7 +349,7 @@ function paginate(units, images, content, available, language = 'pl') {
         undoText();
       };
     }
-    const node = unit.node.cloneNode(true);
+    const node = unit.kind === 'table' ? tableBox(unit) : unit.node.cloneNode(true);
     text.append(node);
     const previous = list;
     list = null;
@@ -315,6 +359,26 @@ function paginate(units, images, content, available, language = 'pl') {
   /** Największy początek tekstu jednostki, który mieści się na bieżącej stronie: [pierwsza, reszta]. */
   const split = (unit) => {
     if (!splittable(unit)) return null;
+    if (unit.kind === 'table') {
+      // Tabela (od 1.21): najwięcej wierszy, które mieszczą się na stronie; reszta – z nagłówkiem na następnej.
+      let low = 1;
+      let high = unit.to - unit.from - 1;
+      let best = 0;
+      while (low <= high) {
+        const middle = (low + high) >> 1;
+        const undo = append({ ...unit, to: unit.from + middle });
+        const ok = fits();
+        undo();
+        if (ok) {
+          best = middle;
+          low = middle + 1;
+        } else {
+          high = middle - 1;
+        }
+      }
+      if (best === 0) return null;
+      return [{ ...unit, to: unit.from + best }, { ...unit, from: unit.from + best, continued: true }];
+    }
     const full = unit.node.textContent;
     const formulas = mathRanges(unit.node);
     const starts = wordStarts(full).filter((point) => !formulas.some(([from, to]) => point > from && point < to));
@@ -483,10 +547,11 @@ const foldDepth = (geometry) => Math.max(0, ...geometry.folded.map((vertex) =>
  * language – język treści ('pl' | 'en'). Podpis obrazu (caption) jest pod nim, wyśrodkowany.
  */
 export function noteBook({
-  html, images, imagesFirst = false, numberFigures = false, language = 'pl', onOpenImage, onLayout = () => {}, spread: spreadChosen = false,
+  html, images, tables = [], imagesFirst = false, numberFigures = false, language = 'pl', onOpenImage, onLayout = () => {}, spread: spreadChosen = false,
   onSpreadChange = () => {}
 }) {
-  const units = contentUnits(html, withImageLabels(images), imagesFirst, language, numberFigures);
+  const labeled = withImageLabels(images);
+  const units = contentUnits(html, labeled, imagesFirst, language, numberFigures, withTableLabels(tables, labeled.map((image) => image.label)));
   const element = h('div', { class: 'note-book', dataset: { testid: 'note-book' } });
   const indicator = h('span', { class: 'note-pager__indicator', 'aria-live': 'polite', dataset: { testid: 'note-page-indicator' } });
   const spreadButton = h('button', {
@@ -922,9 +987,11 @@ export function noteBook({
     readingParts() {
       const parts = [];
       elements.forEach((pageElement, page) => {
-        for (const block of pageElement.querySelectorAll('.note-page__text h3, .note-page__text p, .note-page__text li')) {
+        for (const block of pageElement.querySelectorAll('.note-page__text h3, .note-page__text p, .note-page__text li, .note-page__text tr')) {
           if (block.classList.contains('note-ref--missing')) continue;
           const copy = block.cloneNode(true);
+          // Wiersz tabeli (od 1.21) – komórki po przecinku.
+          if (block.tagName === 'TR') for (const cell of [...copy.cells].slice(0, -1)) cell.append(', ');
           for (const nested of copy.querySelectorAll('ul, ol')) nested.remove();
           // Wzór czytany słowami („x do kwadratu”), nie znak po znaku.
           for (const math of copy.querySelectorAll('math')) math.replaceWith(` ${math.getAttribute('data-spoken') ?? ''} `);

@@ -30,7 +30,8 @@ js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
 js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspólny dla nauki i quizu
 js/ui/charts.js            wykresy SVG (w czasie, pasek udziałów, miernik) z podpowiedzią i tabelą danych
 js/ui/listen-player.js     odtwarzacz słuchania: kolejne kroki czytane syntezatorem mowy, pauza, dalej, powtórz
-js/ui/notes.js             okno notatki lekcji: podgląd (Kopiuj, PDF), edytor z paskiem formatowania w grupach (wcięcia, indeksy, wielkość, kolory, wyrównanie i interlinia, link, symbole, data), obrazy (podpisy, numeracja, przeciąganie), załączniki, powiększanie
+js/ui/notes.js             okno notatki lekcji: podgląd (Kopiuj, PDF), edytor z paskiem formatowania w grupach (wcięcia, indeksy, wielkość, kolory, wyrównanie i interlinia, link, symbole, data), obrazy (podpisy, numeracja, przeciąganie), tabele, załączniki, powiększanie
+js/ui/table-editor.js      okno tabeli (od 1.21, wspólne dla notatki i rysunku): siatka pól, wiersze i kolumny przy kursorze, nagłówki, wyrównanie, wklejanie z Excela i Worda
 js/ui/note-editing.js      zmiany treści edytora notatki z cofaniem: kopia treści ze znacznikami zaznaczenia, podmiana jednym insertHTML (wartownik), klucze miejsca kursora; wyrównanie i interlinia, „Usuń formatowanie”, wstawienie bloku
 js/ui/note-print.js        druk i PDF notatki: cała notatka w układzie A4 (ścieżka, tytuł, treść), okno drukowania przeglądarki
 js/ui/symbols.js           panel symboli z ostatnio użytymi (notatka) i symbole pod polem tekstu (rysunek)
@@ -39,6 +40,8 @@ js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecord
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
 js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek, kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka), Shift i Ctrl, środkowy przycisk, szyk, kartki, obraz PNG / JPEG
 js/ui/drawing-paint.js     rysunek na płótnie: kształty geometryczne (z zakończeniami odcinka), szablon (boisko liniami, obraz mnożony z tłem)
+js/ui/drawing-boxes.js     tabele i karteczki na rysunku (od 1.21): układ i pomiar (szerokości kolumn, łamanie, wysokość z treści), rysowanie, strzałka, ikona zwiniętej, treść obok ikony
+js/ui/canvas-text.js       tekst na płótnie rysunku: czcionka, wysokość wiersza, pomiar i łamanie wierszy (pola tekstowe, tekst kształtu, tabele, karteczki)
 js/ui/images.js            obrazy w przeglądarce: odczyt, zmniejszanie dużych zdjęć, adresy do wyświetlenia
 js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
@@ -46,7 +49,7 @@ js/core/model.js           kształt rekordów, wartości domyślne, stałe
 js/core/backup.js          kopia zapasowa: plik danych i plik obrazów i załączników – tworzenie, walidacja, przywracanie
 js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (PDF, Word, Excel, PowerPoint…)
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
-js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, skala, przyciąganie linijki, obszar zaznaczania, sprawdzanie danych rysunku
+js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, skala, przyciąganie linijki, obszar zaznaczania, tabele i karteczki (prostokąt, strzałka), sprawdzanie danych rysunku
 js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
 js/core/shapes.js          kształty geometryczne (punkty, obrys, punkty konstrukcyjne, Shift, wymiary z klawiatury i na stałe, wypełnienie, tekst, zakończenia odcinka, sprawdzanie) i liniuszek (najbliższa linia)
 js/core/arrays.js          szyk liniowy i kołowy: kopie elementów, przesunięcie, obrót wokół środka, parametry, sprawdzanie
@@ -62,6 +65,7 @@ js/core/symbols.js         symbole do wstawiania: grupy, nazwy, ostatnio użyte
 js/core/note-import.js     arkusz notatek: rozpoznanie, wiersze → notatki lekcji z obrazami
 js/core/page-curl.js       zaginana kartka notatki: chwyt, zgięcie, odbicie płata, ograniczenia papieru
 js/core/note-refs.js       sygnatury obrazów notatki i odwołania [[sygnatura]] w treści, podpisy i numery „Rys. N.”
+js/core/tables.js          tabele (od 1.21): sprawdzanie, wklejony tekst z tabulatorami i tabela HTML → wiersze, sygnatury „Tabela N”, numery i podpisy „Tab. N.”, HTML (podgląd, schowek), tekst (schowek, arkusz, słuchanie)
 js/core/images.js          format i wymiary obrazu z nagłówka pliku
 js/core/study.js           fiszki: dobór do sesji, treść stron, ocena, postęp, podsumowanie
 js/core/fsrs.js            algorytm powtórek FSRS-6 (przeniesiony z py-fsrs 6.3.2)
@@ -91,7 +95,8 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | `studySessions` | dziennik zakończonych sesji nauki | – |
 | `quizSessions` | historia wyników quizów: rodzaj, kierunek, liczby odpowiedzi, procent, próg, zaliczenie, czas, limit, błędne pojęcia | – |
 | `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki i quizu (od 1.2 okres powtórek lekcji utrwalonych `consolidatedReviewDays` i znacznik `domainColorsGray`), trwająca sesja nauki i trwający quiz | – |
-| `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML (`html` po polsku, od 1.6 `htmlEN` po angielsku), opis obrazów (typ, wymiary, rozmiar, CRC-32, od 1.6 `label` – sygnatura, od 1.18 `caption` – podpis), `imagesFirst` – obrazy bez odwołania w podglądzie przed tekstem (od 1.5), od 1.18 `numberFigures` – numeracja „Rys. N.” w podglądzie i od 1.8 `files` – opis załączników (nazwa, typ, rozmiar, CRC-32, od 1.10 `duration` – czas nagrania w sekundach) – w pamięci | identyfikator = `lessonID` |
+| `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML (`html` po polsku, od 1.6 `htmlEN` po angielsku), opis obrazów (typ, wymiary, rozmiar, CRC-32, od 1.6 `label` – sygnatura, od 1.18 `caption` – podpis), `imagesFirst` – obrazy bez odwołania w podglądzie przed tekstem (od 1.5), od 1.18 `numberFigures` – numeracja „Rys. N.” (od 1.21 też „Tab. N.”) w podglądzie, od 1.21 `tables` – tabele
+(`{ label, caption?, rows, header, headerColumn, align }`) i od 1.8 `files` – opis załączników (nazwa, typ, rozmiar, CRC-32, od 1.10 `duration` – czas nagrania w sekundach) – w pamięci | identyfikator = `lessonID` |
 | `noteImages` | bajty obrazów notatek (`ArrayBuffer`) – czytane z bazy dopiero przy otwarciu notatki; rysunek (od 1.12) ma też `drawing` – kreski i zdjęcie pod nimi, a opis w notatce `drawing: true` | `lessonID` |
 | `noteFiles` | bajty załączników notatek (od 1.8, `ArrayBuffer`, do 50 MB) – czytane dopiero przy otwarciu pliku | `lessonID` |
 
@@ -402,6 +407,28 @@ rzędy (`layoutGrid`, kafelek ≥ 96 px), siatka dostaje klasę `note-images--sc
 kolumny w poziomie (`grid-auto-flow: column`) o szerokości liczonej tak, by widać było kawałek
 następnej kolumny; `ResizeObserver` przelicza ją przy zmianie szerokości okna.
 
+Od 1.21 **tabele** (`js/core/tables.js`, `js/ui/table-editor.js`): notatka ma listę `tables` –
+`{ label, caption?, rows: [[tekst komórki]], header, headerColumn, align: ['left' | 'center' | 'right'] }`
+(`cleanTable`: prostokąt najwyżej `TABLE_MAX_ROWS` = 100 × `TABLE_MAX_COLUMNS` = 12, komórka do 500 znaków,
+krótsze wiersze dopełnione; `NOTE_TABLE_LIMIT` = 30 tabel). Treść tabel nie jest w `html` – tekst ma tylko
+odwołanie `[[Tabela 1]]`, jak przy obrazach. Sygnatury: `withTableLabels(tables, imageLabels)` – kolejna
+wolna „Tabela N”, z pominięciem sygnatur obrazów (wspólna przestrzeń, `findTableByLabel` porównuje
+`labelKey`); zapis notatki (`#writeNote` w bibliotece) i kopia zapasowa przepuszczają listę przez
+`cleanNoteTables`, a zapis bez pola `tables` (np. import) zostawia tabele notatki. Okno tabeli:
+siatka `<textarea>` (`field-sizing: content`, w starszych przeglądarkach wysokość z `scrollHeight`), stan
+`{ rows, header, headerColumn, align }`, przyciski wierszy i kolumn przy komórce z fokusem (`mousedown`
+bez zabrania fokusu); wklejenie – `rowsFromHtml` (tabela z Worda, OneNote, strony; `<br>` w komórce –
+nowy wiersz tekstu) albo `parseTableText` (Excel: tabulatory, cudzysłowy z nowymi wierszami w środku),
+od komórki z kursorem, z dopisaniem wierszy i kolumn. Podgląd: `contentUnits` w `note-book.js` daje
+jednostkę `{ kind: 'table', index, node, caption, from, to }` w miejscu odwołania (tabele bez odwołania –
+za obrazami); podział strony szuka binarnie największej liczby wierszy treści, które mieszczą się na
+stronie, a reszta przechodzi z `<thead>` na następną (podpis – tylko nad pierwszą częścią, `continued`).
+`tableNumbers` liczy „Tab. N.” jak `figureNumbers`, ale osobno. `tableHtml(table, { portable })` – styl
+w komórkach dla Worda i OneNote; `tableText` – komórki po tabulatorze (zwykły tekst schowka),
+`htmlWithTables` – arkusz notatek eksportu (komórka nie ma tabel: podpis i wiersze „a | b | c”),
+`tableSpeech` – słuchanie lekcji (`noteSteps`: w miejscu odwołania, każda tabela raz). W kafelkach
+edytora tabele mają te same polecenia co obrazy (`renameImage` i `editCaption` obsługują oba rodzaje).
+
 Od 1.6 **sygnatury i odwołania** (`js/core/note-refs.js`): każdy obraz ma w notatce `label` –
 brakujący albo powtórzony dostaje kolejną wolną „Obraz N” (`withImageLabels`, przy zapisie, w kopii
 zapasowej i przy odczycie starych notatek), więc sygnatura nie zmienia się przy przesuwaniu obrazów.
@@ -581,6 +608,24 @@ przeciwnego narożnika), pole z procentami – `setTemplatePercent` względem `f
 **Kartki**: edytor ma listę `pages` ({ drawing, history, media, changed, ready }) i bieżące `drawing`,
 `history`, `media`; wynik `{ drawing, image, pages }` – pierwsza kartka (null, gdy bez zmian) i kolejne
 z treścią; edytor notatki wstawia je jako nowe rysunki (`addPages`) za otwartym rysunkiem.
+Od 1.21 (format rysunku 6): **tabela** `{ tool: 'table', x, y, width, height, size, color, rows, header,
+headerColumn, align }` (dane tabeli jak w notatce, `cleanTable`) i **karteczka** `{ tool: 'sticky', x, y,
+width, height, size, color, text, created: 'rrrr-mm-dd', collapsed?, hidden?, leader?: { x, y } }`
+(`STICKY_COLORS` – nazwa koloru; `hidden` – bez niej na obrazie w notatce). `height` jest zmierzona na
+urządzeniu (`measureTable` – wysokość z treści, `measureSticky` – co najmniej tyle, ile zajmuje tekst),
+a rysowanie (`drawing-boxes.js`) liczy układ od nowa: szerokości kolumn – naturalne (najdłuższy wiersz
+komórki) rozciągnięte albo ściśnięte do szerokości tabeli, łamanie wierszy `textLines` z `canvas-text.js`
+(pół piksela zapasu, żeby zaokrąglona szerokość nie łamała słowa). `elementBox` – prostokąt elementu
+(zwinięta karteczka – ikona `STICKY_ICON` = 60); granice, dotknięcie i zaznaczanie obejmują strzałkę
+(`leaderStart` – punkt na brzegu karteczki w stronę celu), `translateStroke` przesuwa też koniec strzałki
+(karteczka przesuwana sama – `keptTarget` – zostawia go na miejscu). Uchwyty zaznaczonej tabeli i karteczki (`box-edit`):
+narożnik – szerokość (tabela) albo wielkość (karteczka), kółko – koniec strzałki. Zwinięta zaznaczona
+karteczka – treść obok ikony na warstwie bieżącej (`stickyPopoverBox`), a polecenia zaznaczenia omijają
+ją. Obraz do notatki pomija karteczki `hidden`; numer karteczki to kolejność wśród karteczek rysunku.
+`makeArray` pomija tabele i karteczki (szyk), gumka fragmentów ich nie przecina. Ustawienia narzędzi:
+`highlighterWidths` (trzy grubości zakreślacza, `HIGHLIGHTER_RANGE` 4–60; `cleanStroke` dopuszcza 60
+tylko dla zakreślacza) i `stickyColor`. Starsza wersja aplikacji pomija tabele i karteczki rysunku (obraz
+w notatce zostaje), a przy poprawce rysunku zapisze go bez nich.
 
 Od 1.6 **wersja angielska**: `htmlEN` obok `html`; w edytorze przełącznik Polski / Angielski zamienia
 treść jednego pola `contenteditable` (stan drugiej wersji jest w pamięci edytora; zmiana języka
@@ -847,7 +892,8 @@ Reguły są w `js/core/quiz.js` (bez przeglądarki), zapis w `Library`, ekrany w
   odtwarzacz czyta notatki lekcji wszystkich pojęć z wybranego zakresu, w kolejności biblioteki.
   `noteSteps()` w `js/core/listen.js` robi z notatki zapowiedź „Notatka do lekcji …” i zdania
   (`sentences()`, wspólne z czytaniem w oknie notatki) – bez podziałów stron, odwołań do obrazów
-  i punktorów; „PL + EN” – wersja angielska z zapowiedzią „English version.”, a brak wybranej
+  i punktorów (od 1.21 tabele: `tableSpeech` – podpis i wiersze w miejscu odwołania, tabele bez
+  odwołania przed tekstem albo po nim, każda raz); „PL + EN” – wersja angielska z zapowiedzią „English version.”, a brak wybranej
   wersji – ta, która jest (`noteVersions()`). W odtwarzaczu notatki są pozycjami przed pojęciami
   (`items`), więc „następne”, „poprzednie” i „powtórz” działają też na notatce, a liczby pojęć,
   postęp i podsumowanie liczą tylko pojęcia. Szacunek czasu dolicza notatki (`estimateNotes()`).

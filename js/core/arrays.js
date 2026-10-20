@@ -219,7 +219,8 @@ export function cleanArrayParams(raw, limit) {
 /** Szyk z elementów `items` (już sprawdzonych) i parametrów – nowy element albo null. */
 export function makeArray(items, params, limit) {
   const clean = cleanArrayParams(params, limit);
-  const source = items.filter((item) => item && !isArray(item)).slice(0, ARRAY_ITEMS_MAX);
+  // Bez szyku w szyku; tabele i karteczki (od 1.21) – też nie.
+  const source = items.filter((item) => item && !isArray(item) && item.tool !== 'table' && item.tool !== 'sticky').slice(0, ARRAY_ITEMS_MAX);
   if (!clean || source.length === 0) return null;
   return { tool: 'array', ...clean, items: source };
 }

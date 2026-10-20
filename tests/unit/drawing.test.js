@@ -117,7 +117,8 @@ test('dane rysunku: pusty rysunek, sprawdzanie złych kresek i liczb, zdjęcie, 
   assert.equal(cleaned.paper, 'plain', 'nieznane tło – gładkie');
   assert.deepEqual(cleaned.strokes, [
     { tool: 'pen', color: '#1d1d1f', points: [1, 2, 3, 4, 5, 6] },
-    { tool: 'highlighter', color: '#ffd60a', points: [1, 2, 40, 3200, 2200, 0.5] }
+    // Zakreślacz od 1.21 może mieć do 60 (okno grubości zakreślacza), pióro – nadal do 40.
+    { tool: 'highlighter', color: '#ffd60a', points: [1, 2, 60, 3200, 2200, 0.5] }
   ]);
   assert.ok(cleaned.photo.bytes instanceof ArrayBuffer);
   assert.equal(cleanDrawing({ width: 0, height: 10 }), null);

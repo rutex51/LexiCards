@@ -16,6 +16,7 @@ import { createdRange, createdWithin } from './created.js';
 import { cleanFileName, fileTypeOf } from './note-files.js';
 import { NOTE_HTML_LIMIT, normalizeNoteHtml } from './note-format.js';
 import { cleanImageCaption, labelKey, withImageLabels } from './note-refs.js';
+import { NOTE_TABLE_LIMIT, cleanNoteTables, withTableLabels } from './tables.js';
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
 import { emptyChanges } from './storage.js';
 import { crc32 } from './zip.js';
@@ -78,6 +79,7 @@ const errors = {
   invalidDecision: () => new LibraryError('invalidDecision', 'Nieznana decyzja – oczekiwano „Umiem” albo „Powtórz”.'),
   noteTooLong: () => new LibraryError('noteTooLong', 'Notatka jest za długa. Podziel ją albo skróć.'),
   tooManyImages: () => new LibraryError('tooManyImages', `Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów.`),
+  tooManyTables: () => new LibraryError('tooManyTables', `Notatka może mieć najwyżej ${NOTE_TABLE_LIMIT} tabel.`),
   imageTooLarge: () => new LibraryError('imageTooLarge', 'Obraz jest za duży (limit to 20 MB).'),
   invalidImage: () => new LibraryError('invalidImage', 'Nie udało się zapisać obrazu – plik jest pusty albo uszkodzony.'),
   tooManyFiles: () => new LibraryError('tooManyFiles', `Notatka może mieć najwyżej ${NOTE_FILE_LIMIT} załączników.`),
@@ -948,7 +950,8 @@ export class Library {
       const note = this.getNote(source.id);
       if (note) {
         this.#writeNote(unit, copy.id, {
-          html: note.html, htmlEN: note.htmlEN ?? '', images, imagesFirst: note.imagesFirst === true, files
+          html: note.html, htmlEN: note.htmlEN ?? '', images, imagesFirst: note.imagesFirst === true, files,
+          numberFigures: note.numberFigures === true, tables: note.tables ?? []
         }, null);
       }
       return copy;
@@ -1116,9 +1119,10 @@ export class Library {
    * (brakująca dostaje „Obraz N”), caption – podpis pod obrazem (od 1.18; pominięty przy
    * istniejącym obrazie – zostaje dotychczasowy). files – załączniki tak samo: { id, name? } zostawia (name –
    * nowa nazwa), { bytes, name, type } dodaje. htmlEN – treść po angielsku, imagesFirst – obrazy
-   * w podglądzie przed tekstem, numberFigures – numeracja podpisów „Rys. N.” (od 1.18); bez pól
-   * htmlEN, imagesFirst, numberFigures i files zostaje to, co jest
-   * w notatce. Notatka bez tekstu, obrazów i załączników jest usuwana.
+   * w podglądzie przed tekstem, numberFigures – numeracja podpisów „Rys. N.” (od 1.18; od 1.21 też
+   * „Tab. N.”), tables – tabele notatki (od 1.21, core/tables.js); bez pól htmlEN, imagesFirst,
+   * numberFigures, files i tables zostaje to, co jest w notatce. Notatka bez tekstu, obrazów, tabel
+   * i załączników jest usuwana.
    * Zwraca zapisaną notatkę albo null.
    */
   saveNote(lessonID, draft) {
@@ -1132,7 +1136,7 @@ export class Library {
     return this.#mutate((unit) => this.#removeNote(unit, lessonID));
   }
 
-  #writeNote(unit, lessonID, { html, htmlEN, images = [], imagesFirst, numberFigures, files }, existing) {
+  #writeNote(unit, lessonID, { html, htmlEN, images = [], imagesFirst, numberFigures, files, tables }, existing) {
     const clean = normalizeNoteHtml(html ?? '');
     const cleanEN = typeof htmlEN === 'string' ? normalizeNoteHtml(htmlEN) : (existing?.htmlEN ?? '');
     if (clean.length > NOTE_HTML_LIMIT || cleanEN.length > NOTE_HTML_LIMIT) throw errors.noteTooLong();
@@ -1158,7 +1162,12 @@ export class Library {
       if (!kept.has(meta.id)) unit.erase('noteImages', meta.id);
     }
     const fileMetas = this.#writeFiles(unit, lessonID, files, existing);
-    if (clean === '' && cleanEN === '' && metas.length === 0 && fileMetas.length === 0) {
+    // Tabele (od 1.21): sygnatury unikalne także wśród sygnatur obrazów.
+    if (Array.isArray(tables) && tables.length > NOTE_TABLE_LIMIT) throw errors.tooManyTables();
+    const imageMetas = withImageLabels(metas);
+    const labels = imageMetas.map((meta) => meta.label);
+    const tableList = Array.isArray(tables) ? cleanNoteTables(tables, labels) : withTableLabels(existing?.tables ?? [], labels);
+    if (clean === '' && cleanEN === '' && metas.length === 0 && fileMetas.length === 0 && tableList.length === 0) {
       if (existing) unit.delete('notes', lessonID);
       return null;
     }
@@ -1168,8 +1177,8 @@ export class Library {
     // Numeracja podpisów obrazów (od 1.18) – tak samo: bez pola zostaje wybór notatki.
     const numbered = typeof numberFigures === 'boolean' ? numberFigures : existing?.numberFigures === true;
     const note = {
-      id: lessonID, lessonID, html: clean, htmlEN: cleanEN, images: withImageLabels(metas), imagesFirst: first,
-      numberFigures: numbered, files: fileMetas, createdAt: existing?.createdAt ?? now, updatedAt: now
+      id: lessonID, lessonID, html: clean, htmlEN: cleanEN, images: imageMetas, imagesFirst: first,
+      numberFigures: numbered, files: fileMetas, tables: tableList, createdAt: existing?.createdAt ?? now, updatedAt: now
     };
     unit.put('notes', note);
     return note;

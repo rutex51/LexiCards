@@ -19,7 +19,10 @@ import {
   referenceLabel, referenceToken, renameReferences, withImageLabels
 } from '../core/note-refs.js';
 import { FILE_NAME_MAX, cleanFileName, fileExtension, fileTypeOf, formatDuration, recordingName, renamedFile } from '../core/note-files.js';
-import { formatClock, formatDay, formatDayTime, formatEnteredDate, joinList, pluralAttachments, pluralImages } from '../core/text.js';
+import {
+  NOTE_TABLE_LIMIT, findTableByLabel, nextTableLabel, tableCaption, tableHtml, tableNumbers, tableSize, tableText, withTableLabels
+} from '../core/tables.js';
+import { formatClock, formatDay, formatDayTime, formatEnteredDate, joinList, pluralAttachments, pluralImages, pluralTables } from '../core/text.js';
 import { attachmentList, fileBadge, fileDescription, openAttachment } from './attachments.js';
 import { enableGridDrag } from './grid-drag.js';
 import { openColorSheet, readCustomColors } from './color-picker.js';
@@ -36,6 +39,7 @@ import { recordingSupported, startRecording } from './recorder.js';
 import { noteBook } from './note-book.js';
 import { speakThen, speechAvailable, stopSpeaking } from './speech.js';
 import { symbolPanel } from './symbols.js';
+import { openTableEditor } from './table-editor.js';
 
 let titleCounter = 0;
 
@@ -112,6 +116,7 @@ export function noteSummary(note) {
   if (text) return text.length > 160 ? `${text.slice(0, 160)}…` : text;
   return joinList([
     note.images.length > 0 ? pluralImages(note.images.length) : null,
+    note.tables?.length > 0 ? pluralTables(note.tables.length) : null,
     note.files?.length > 0 ? pluralAttachments(note.files.length) : null
   ].filter(Boolean));
 }
@@ -181,8 +186,29 @@ export function noteMenuItem(ctx, lesson) {
  */
 async function copyNote(note, images, language = 'pl') {
   const source = language === 'en' ? (note.htmlEN ?? '') : note.html;
-  const text = noteText(source);
   const labeled = withImageLabels(images);
+  // Tabele (od 1.21): w miejscu odwołania, z podpisem nad tabelą; w zwykłym tekście – komórki po tabulatorze.
+  const tables = withTableLabels(note.tables ?? [], labeled.map((image) => image.label));
+  const tableNums = tableNumbers(source, tables, note.imagesFirst === true);
+  const tableBlock = (index) => {
+    const caption = tableCaption(tables[index].caption, tableNums[index], note.numberFigures === true);
+    return (caption ? `<p><strong>${caption.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</strong></p>` : '') + tableHtml(tables[index], { portable: true });
+  };
+  const placedTables = new Set();
+  const inText = new Set();
+  const lines = noteText(source).split('\n').map((line) => {
+    const label = referenceLabel(line);
+    const index = label === null ? -1 : findTableByLabel(tables, label);
+    if (index < 0) return line;
+    inText.add(index);
+    return tableText(tables[index]);
+  });
+  const restTables = tables.map((_, index) => index).filter((index) => !inText.has(index));
+  const text = [
+    ...(note.imagesFirst ? restTables.map((index) => tableText(tables[index])) : []),
+    ...lines,
+    ...(note.imagesFirst ? [] : restTables.map((index) => tableText(tables[index])))
+  ].join('\n');
   // Podpisy pod obrazami (od 1.18) – jak w podglądzie.
   const numbers = figureNumbers(source, labeled, note.imagesFirst === true);
   let total = 0;
@@ -208,13 +234,16 @@ async function copyNote(note, images, language = 'pl') {
   for (const paragraph of holder.content.querySelectorAll('p')) {
     const label = referenceLabel(paragraph.textContent);
     const index = label === null ? -1 : findImageByLabel(labeled, label);
-    if (index < 0) continue;
-    placed.add(index);
+    const table = index >= 0 || label === null ? -1 : findTableByLabel(tables, label);
+    if (index < 0 && table < 0) continue;
+    if (index >= 0) placed.add(index);
+    else placedTables.add(table);
     const replacement = document.createElement('template');
-    replacement.innerHTML = picture(labeled[index]);
+    replacement.innerHTML = index >= 0 ? picture(labeled[index]) : tableBlock(table);
     paragraph.replaceWith(replacement.content);
   }
-  const rest = labeled.map((image, index) => (placed.has(index) ? '' : picture(image))).join('');
+  const rest = labeled.map((image, index) => (placed.has(index) ? '' : picture(image))).join('')
+    + tables.map((table, index) => (placedTables.has(index) ? '' : tableBlock(index))).join('');
   const html = note.imagesFirst ? rest + holder.innerHTML : holder.innerHTML + rest;
   try {
     if (typeof window.ClipboardItem === 'function' && navigator.clipboard?.write) {
@@ -607,7 +636,8 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       language = pickLanguage(note);
       const html = language === 'en' ? (note.htmlEN ?? '') : note.html;
       const attachments = files.length > 0 ? attachmentList(files, (meta) => openAttachment(meta, () => loadFile(meta))) : null;
-      if (isEmptyNoteHtml(html) && stored.length === 0) {
+      const tables = note.tables ?? [];
+      if (isEmptyNoteHtml(html) && stored.length === 0 && tables.length === 0) {
         // Notatka z samymi załącznikami – bez stron.
         book = null;
         setPaged(null);
@@ -619,6 +649,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       book = noteBook({
         html,
         images: stored,
+        tables: note.tables ?? [],
         imagesFirst: note.imagesFirst === true,
         numberFigures: note.numberFigures === true,
         language,
@@ -632,7 +663,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
         attachments,
         book.element,
         h('div', { class: 'note-sheet__footer' },
-          !isEmptyNoteHtml(html)
+          !isEmptyNoteHtml(html) || tables.length > 0
             ? h('button', {
                 type: 'button', class: 'button button--secondary note-sheet__copy', dataset: { testid: 'note-copy' },
                 onClick: () => copyNote(note, stored, language)
@@ -648,6 +679,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
                 path: path.length > 1 ? path.slice(0, -1).join(' › ') : null,
                 html,
                 images: stored,
+                tables,
                 imagesFirst: note.imagesFirst === true,
                 numberFigures: note.numberFigures === true,
                 language
@@ -708,6 +740,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
         htmlEN: note?.htmlEN ?? '',
         language: language ?? 'pl',
         images: stored,
+        tables: note?.tables ?? [],
         imagesFirst: note?.imagesFirst === true,
         numberFigures: note?.numberFigures === true,
         files,
@@ -825,11 +858,15 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
  * Zwraca { element, draft(), dirty(), busy(), focus(), destroy() }.
  */
 function noteEditor({
-  html, htmlEN = '', language = 'pl', images, urls, imagesFirst = false, numberFigures = false, files = [], loadFile = null, titleID = 'note'
+  html, htmlEN = '', language = 'pl', images, tables = [], urls, imagesFirst = false, numberFigures = false, files = [], loadFile = null, titleID = 'note'
 }) {
   const initialTexts = { pl: normalizeNoteHtml(html), en: normalizeNoteHtml(htmlEN) };
+  const labeledImages = withImageLabels(images.map((image) => ({ ...image })));
   const state = {
-    images: withImageLabels(images.map((image) => ({ ...image }))),
+    images: labeledImages,
+    /** Tabele (od 1.21): { label, caption?, rows, header, headerColumn, align } – kopie, zmieniane w miejscu. */
+    tables: withTableLabels(tables.map((table) => ({ ...table, rows: table.rows.map((row) => [...row]), align: [...table.align] })),
+      labeledImages.map((image) => image.label)),
     imagesFirst,
     numberFigures,
     /** Załączniki: zapisane { id, name, type, size, stored: true } albo nowe { name, type, size, bytes }. */
@@ -846,6 +883,8 @@ function noteEditor({
   let added = 0;
   const filesKey = () => state.files.map((file) => `${file.id ?? file.key}:${file.name}`).join('\n');
   const initialFiles = filesKey();
+  const tablesKey = () => JSON.stringify(state.tables);
+  const initialTables = tablesKey();
 
   const area = h('div', {
     class: 'note-text note-editor__area',
@@ -1346,19 +1385,29 @@ function noteEditor({
   /** Odwołanie [[sygnatura]] w osobnej linijce w miejscu kursora (bez kursora – na końcu tekstu). */
   const insertReference = (image) => insertBlock(h('p', null, referenceToken(image.label)));
 
-  /** Zmiana sygnatury obrazu; odwołania w obu wersjach treści dostają nową sygnaturę. */
+  /**
+   * Zmiana sygnatury obrazu albo (od 1.21) tabeli; odwołania w obu wersjach treści dostają nową
+   * sygnaturę. Sygnatura jest jedyna wśród obrazów i tabel notatki.
+   */
   function renameImage(image) {
+    const isTable = state.tables.includes(image);
     let value = image.label;
     const input = textInput({ value, onInput: (text) => { value = text; }, autocapitalize: 'sentences', testID: 'note-image-label' });
     input.maxLength = IMAGE_LABEL_MAX;
     openFormSheet({
-      title: 'Sygnatura obrazu',
-      build: () => field('Sygnatura', input, { hint: `W tekście obraz wstawisz linijką ${referenceToken(image.label)} – po zmianie sygnatury odwołania zmienią się same.` }),
+      title: isTable ? 'Sygnatura tabeli' : 'Sygnatura obrazu',
+      build: () => field('Sygnatura', input, {
+        hint: `W tekście ${isTable ? 'tabelę' : 'obraz'} wstawisz linijką ${referenceToken(image.label)} – po zmianie sygnatury odwołania zmienią się same.`
+      }),
       onSubmit: () => {
         const label = cleanImageLabel(value);
-        if (label === '') throw new Error('Wpisz sygnaturę obrazu.');
-        if (state.images.some((other) => other !== image && labelKey(other.label) === labelKey(label))) {
-          throw new Error('Inny obraz tej notatki ma już tę sygnaturę.');
+        if (label === '') throw new Error(isTable ? 'Wpisz sygnaturę tabeli.' : 'Wpisz sygnaturę obrazu.');
+        const clash = [...state.images, ...state.tables].find((other) => other !== image && labelKey(other.label) === labelKey(label));
+        if (clash) {
+          const tableClash = state.tables.includes(clash);
+          throw new Error(tableClash === isTable
+            ? (isTable ? 'Inna tabela tej notatki ma już tę sygnaturę.' : 'Inny obraz tej notatki ma już tę sygnaturę.')
+            : (tableClash ? 'Tabela tej notatki ma już tę sygnaturę.' : 'Obraz tej notatki ma już tę sygnaturę.'));
         }
         const previous = image.label;
         image.label = label;
@@ -1368,7 +1417,8 @@ function noteEditor({
           area.innerHTML = state.texts[state.language] || '<p><br></p>';
           state.range = null;
         }
-        renderImages();
+        if (isTable) renderTables();
+        else renderImages();
       }
     });
     requestAnimationFrame(() => input.select());
@@ -1379,21 +1429,25 @@ function noteEditor({
    * gdy jest włączona. Pusty podpis go usuwa.
    */
   function editCaption(image) {
+    // Od 1.21 także podpis tabeli – nad tabelą, z numeracją „Tab. N.”.
+    const isTable = state.tables.includes(image);
     let value = image.caption ?? '';
     const input = textInput({ value, onInput: (text) => { value = text; }, autocapitalize: 'sentences', testID: 'note-image-caption' });
     input.maxLength = IMAGE_CAPTION_MAX;
+    const [place, prefix, items] = isTable ? ['nad tabelą', 'Tab.', 'tabel'] : ['pod obrazem', 'Rys.', 'obrazów'];
     openFormSheet({
-      title: 'Podpis pod obrazem',
+      title: isTable ? 'Podpis tabeli' : 'Podpis pod obrazem',
       build: () => field('Podpis', input, {
         hint: state.numberFigures
-          ? 'W podglądzie pod obrazem, z numerem: „Rys. 2. Podpis” (numer – kolejność obrazów w notatce). Pusty podpis go usuwa.'
-          : 'W podglądzie wyśrodkowany pod obrazem. Numerację „Rys. 1.”, „Rys. 2.” włączysz pod obrazami. Pusty podpis go usuwa.'
+          ? `W podglądzie ${place}, z numerem: „${prefix} 2. Podpis” (numer – kolejność ${items} w notatce). Pusty podpis go usuwa.`
+          : `W podglądzie wyśrodkowany ${place}. Numerację „${prefix} 1.”, „${prefix} 2.” włączysz pod tabelami. Pusty podpis go usuwa.`
       }),
       onSubmit: () => {
         const caption = cleanImageCaption(value);
         if (caption) image.caption = caption;
         else delete image.caption;
-        renderImages();
+        if (isTable) renderTables();
+        else renderImages();
       }
     });
     requestAnimationFrame(() => input.select());
@@ -1549,8 +1603,7 @@ function noteEditor({
     }, icon('pen', { size: 22 }), h('span', null, 'Narysuj')));
     replaceChildren(grid, tiles);
     layoutGrid();
-    placement.hidden = state.images.length === 0;
-    numbering.hidden = state.images.length === 0;
+    updatePreviewOptions();
     status.textContent = state.pending > 0 ? 'Przygotowanie obrazu…' : (full ? `Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów.` : '');
   }
 
@@ -1574,7 +1627,8 @@ function noteEditor({
     }
   }
 
-  // Gdzie obrazy są w podglądzie notatki: przed tekstem albo po nim (widać, gdy są obrazy).
+  // Gdzie obrazy (od 1.21 i tabele) bez odwołania są w podglądzie notatki: przed tekstem albo po nim
+  // (widać, gdy są obrazy albo tabele).
   const placement = h('div', { class: 'note-images__placement', dataset: { testid: 'note-image-placement' } },
     h('span', { class: 'note-images__placement-label' }, 'W podglądzie'),
     segmented({
@@ -1588,7 +1642,7 @@ function noteEditor({
   // Numeracja podpisów (od 1.18): „Rys. 1.”, „Rys. 2.”… pod obrazami w kolejności podglądu.
   const numberingToggle = toggle({
     checked: state.numberFigures,
-    label: 'Numeruj obrazy w podglądzie (Rys. 1., Rys. 2.…)',
+    label: 'Numeruj obrazy i tabele w podglądzie (Rys. 1., Tab. 1.…)',
     onChange: (checked) => { state.numberFigures = checked; }
   });
   numberingToggle.querySelector('input').dataset.testid = 'note-number-figures';
@@ -1598,8 +1652,6 @@ function noteEditor({
     h('h3', { class: 'form-group__title' }, 'Obrazy'),
     grid,
     status,
-    placement,
-    numbering,
     h('p', { class: 'field__hint' },
       'Dotknij obrazu, żeby wstawić go do tekstu, zmienić sygnaturę albo podpis, powiększyć, przesunąć albo usunąć – rysunek możesz też poprawić, a na zdjęciu rysować. '
       + 'Kolejność zmienisz, przeciągając obraz (palcem – po chwili przytrzymania). Linijka ',
@@ -1607,6 +1659,105 @@ function noteEditor({
       ' w tekście to miejsce obrazu w notatce; obrazy bez odwołania są przed tekstem albo po nim. Obraz możesz też wkleić do tekstu – trafi tutaj.'),
     fileInput
   );
+
+  // ---- tabele (od 1.21): obiekty jak obrazy – sygnatura „Tabela N”, odwołanie [[sygnatura]], podpis „Tab. N.”
+  const tableGrid = h('div', { class: 'note-images note-tables', dataset: { testid: 'note-tables' } });
+  enableGridDrag(tableGrid, {
+    itemSelector: '.note-tables__item',
+    ignore: '.note-images__remove',
+    onDrop: (order) => {
+      if (order) state.tables = order.map((index) => state.tables[index]);
+      renderTables();
+    }
+  });
+  const allLabels = () => [...state.images, ...state.tables].map((item) => item.label);
+
+  /** Miniatura tabeli: kilka pierwszych wierszy i kolumn. */
+  const tablePreview = (table) => {
+    const { rows, columns } = tableSize(table);
+    return h('span', { class: 'note-tables__preview', 'aria-hidden': 'true' },
+      h('table', null, table.rows.slice(0, 4).map((row, index) => h('tr', { class: index === 0 && table.header ? 'note-tables__head' : null },
+        row.slice(0, 3).map((cell) => h('td', null, cell.split('\n')[0].slice(0, 14)))))),
+      h('span', { class: 'note-tables__size' }, `${rows} × ${columns}`));
+  };
+
+  function addTable() {
+    if (state.tables.length >= NOTE_TABLE_LIMIT) return;
+    openTableEditor({
+      title: 'Nowa tabela', submitLabel: 'Dodaj',
+      onSave: (table) => {
+        state.tables.push({ ...table, label: nextTableLabel(allLabels()) });
+        renderTables();
+      }
+    });
+  }
+
+  function editTable(table) {
+    openTableEditor({
+      title: table.label, table, allowEmpty: true,
+      onSave: (next) => {
+        Object.assign(table, next);
+        renderTables();
+      }
+    });
+  }
+
+  const moveTable = (index, delta) => {
+    const [table] = state.tables.splice(index, 1);
+    state.tables.splice(index + delta, 0, table);
+    renderTables();
+  };
+
+  function renderTables() {
+    const tiles = state.tables.map((table, index) => h('div', { class: 'note-images__item note-tables__item', dataset: { index: String(index), testid: 'note-table-tile' } },
+      h('button', {
+        type: 'button', class: 'note-images__open', 'aria-label': `${table.label} – polecenia`,
+        onClick: () => openMenu({
+          title: table.label,
+          items: [
+            { label: 'Edytuj tabelę', icon: 'table', onSelect: () => editTable(table) },
+            { label: 'Wstaw do tekstu', icon: 'note', onSelect: () => insertReference(table) },
+            { label: 'Zmień sygnaturę', icon: 'tag', onSelect: () => renameImage(table) },
+            { label: table.caption ? 'Zmień podpis' : 'Dodaj podpis', icon: 'textBox', onSelect: () => editCaption(table) },
+            { label: 'Przesuń wcześniej', icon: 'arrowLeft', disabled: index === 0, onSelect: () => moveTable(index, -1) },
+            { label: 'Przesuń dalej', icon: 'arrowRight', disabled: index === state.tables.length - 1, onSelect: () => moveTable(index, 1) },
+            'separator',
+            { label: 'Usuń tabelę', icon: 'trash', destructive: true, onSelect: () => { state.tables.splice(index, 1); renderTables(); } }
+          ]
+        })
+      }, tablePreview(table)),
+      h('button', {
+        type: 'button', class: 'note-images__remove', 'aria-label': `Usuń tabelę ${table.label}`, dataset: { testid: 'note-table-remove' },
+        onClick: () => { state.tables.splice(index, 1); renderTables(); }
+      }, icon('close', { size: 14 })),
+      h('span', { class: 'note-images__label', dataset: { testid: 'note-table-label-text' } }, table.label)));
+    tiles.push(h('button', {
+      type: 'button', class: 'note-images__add', disabled: state.tables.length >= NOTE_TABLE_LIMIT, dataset: { testid: 'note-table-add' },
+      onClick: () => addTable()
+    }, icon('table', { size: 22 }), h('span', null, 'Dodaj tabelę')));
+    replaceChildren(tableGrid, tiles);
+    updatePreviewOptions();
+  }
+
+  const tablesSection = h('section', { class: 'note-editor__tables' },
+    h('h3', { class: 'form-group__title' }, 'Tabele'),
+    tableGrid,
+    h('p', { class: 'field__hint' },
+      'Tabela to osobny obiekt notatki – jak obraz: dotknij jej, żeby edytować, wstawić do tekstu, zmienić sygnaturę albo dodać podpis '
+      + '(nad tabelą, z numeracją „Tab. 1.”). W oknie tabeli możesz wkleić fragment arkusza Excel albo tabelę z Worda. Linijka ',
+      h('code', null, '[[Tabela 1]]'),
+      ' w tekście to miejsce tabeli; tabele bez odwołania są przed tekstem albo po nim, za obrazami.'),
+    // Miejsce obrazów i tabel bez odwołania oraz numeracja „Rys. N.” i „Tab. N.” – wspólne.
+    placement,
+    numbering
+  );
+
+  /** Wybór miejsca i numeracji – gdy notatka ma obrazy albo tabele. */
+  function updatePreviewOptions() {
+    const hidden = state.images.length === 0 && state.tables.length === 0;
+    placement.hidden = hidden;
+    numbering.hidden = hidden;
+  }
 
   // ---- załączniki
   const fileList = h('ul', { class: 'note-attachments', dataset: { testid: 'note-attachments' } });
@@ -1830,6 +1981,7 @@ function noteEditor({
   const element = h('div', { class: 'note-editor' },
     recordingBar,
     imagesSection,
+    tablesSection,
     filesSection,
     h('section', { class: 'note-editor__text' },
       h('div', { class: 'note-editor__text-head' },
@@ -1870,6 +2022,7 @@ function noteEditor({
   });
 
   renderImages();
+  renderTables();
   renderFiles();
   syncEmpty();
 
@@ -1891,6 +2044,9 @@ function noteEditor({
         htmlEN: current.en,
         imagesFirst: state.imagesFirst,
         numberFigures: state.numberFigures,
+        tables: state.tables.map(({ label, caption, rows, header, headerColumn, align }) => ({
+          label, ...(caption ? { caption } : {}), rows, header, headerColumn, align
+        })),
         images: state.images.map((image) => (image.stored
           ? { id: image.id, label: image.label, caption: image.caption ?? null }
           : {
@@ -1907,6 +2063,7 @@ function noteEditor({
       return current.pl !== initialTexts.pl || current.en !== initialTexts.en
         || imagesKey() !== initialImages
         || filesKey() !== initialFiles
+        || tablesKey() !== initialTables
         || state.imagesFirst !== imagesFirst
         || state.numberFigures !== numberFigures
         || state.pending > 0 || state.filesPending > 0 || Boolean(recording);
@@ -1916,7 +2073,7 @@ function noteEditor({
     finishRecording,
     isEmpty: () => {
       const current = texts();
-      return isEmptyNoteHtml(current.pl) && isEmptyNoteHtml(current.en) && state.images.length === 0 && state.files.length === 0;
+      return isEmptyNoteHtml(current.pl) && isEmptyNoteHtml(current.en) && state.images.length === 0 && state.files.length === 0 && state.tables.length === 0;
     },
     /** Język treści w polu ('pl' | 'en'). */
     language: () => state.language,

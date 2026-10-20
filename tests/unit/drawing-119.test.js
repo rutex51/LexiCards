@@ -190,7 +190,7 @@ test('szyk kołowy: obiekty wokół środka (przeciwnie do wskazówek zegara), o
   assert.ok(defaults.cy > 0, 'domyślnie środek pod źródłem');
 });
 
-test('szyk: parametry w granicach (najwyżej 400 kopii), bez szyku w szyku, dane rysunku – sprawdzanie, wersja 5, zapis bez zmian', () => {
+test('szyk: parametry w granicach (najwyżej 400 kopii), bez szyku w szyku, dane rysunku – sprawdzanie, wersja formatu, zapis bez zmian', () => {
   assert.equal(ARRAY_MAX, 400);
   assert.deepEqual(cleanArrayParams({ kind: 'linear', columns: 500, rows: 9, dx: 'x', dy: 1e9 }, 6400), { kind: 'linear', columns: 400, rows: 1, dx: 0, dy: 6400 });
   assert.equal(cleanArrayParams({ kind: 'linear', columns: 100, rows: 10 }, 6400).rows, 4);
@@ -211,8 +211,8 @@ test('szyk: parametry w granicach (najwyżej 400 kopii), bez szyku w szyku, dane
     ]
   };
   const cleaned = cleanDrawing(JSON.parse(JSON.stringify(drawing)));
-  assert.equal(DRAWING_VERSION, 5);
-  assert.equal(cleaned.version, 5);
+  assert.equal(DRAWING_VERSION, 6, 'od 1.21 – tabele i karteczki');
+  assert.equal(cleaned.version, DRAWING_VERSION);
   assert.equal(cleaned.strokes.length, 2, 'pusty szyk pominięty');
   assert.deepEqual(cleaned.strokes[0].items, [pen], 'zła kreska i szyk w szyku pominięte');
   assert.equal(cleaned.strokes[1].rotate, false);
