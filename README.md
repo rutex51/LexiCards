@@ -29,7 +29,7 @@ Wycinek, „Osadź” w notatce, wymiary kształtu z klawiatury, wypełnienie i 
 Wcięcia (Tab), indeksy, wielkość i własny kolor tekstu, podpisy obrazów „Rys. N.”, przeciąganie obrazów w notatce (wersja 1.18): [docs/RELEASE-1.18.md](docs/RELEASE-1.18.md).
 Rysunek: wielkość szablonu, Shift i Ctrl, środkowy przycisk myszy, szyk, kilka kartek, zakończenia odcinka, stałe wymiary (wersja 1.19): [docs/RELEASE-1.19.md](docs/RELEASE-1.19.md).
 Notatki: wyrównanie i interlinia, linki, symbole, data i godzina, PDF, pełne „Usuń formatowanie”, Ctrl+Z po wstawieniu sygnatury; ścieżka nad fiszką (wersja 1.20): [docs/RELEASE-1.20.md](docs/RELEASE-1.20.md).
-Tabele w notatkach („Tab. N.”) i na rysunku, okno grubości zakreślacza, karteczki na rysunku (wersja 1.21): [docs/RELEASE-1.21.md](docs/RELEASE-1.21.md).
+Tabele w notatkach („Tab. N.”) i na rysunku, okno grubości zakreślacza, karteczki na rysunku (wersja 1.21); wybór daty i godziny – kalendarz i bębny (1.21.1): [docs/RELEASE-1.21.md](docs/RELEASE-1.21.md).
 
 ## Co potrafi wersja 1.21
 
@@ -72,7 +72,7 @@ Tabele w notatkach („Tab. N.”) i na rysunku, okno grubości zakreślacza, ka
   w wielkości mieszczącej się na stronie A4). Od 1.20: wyrównanie akapitów (do lewej, do środka,
   do prawej, wyjustowane) i interlinia (1,0 · 1,15 · 1,5 · 2,0), linki do stron i adresów e-mail
   (Ctrl+K), symbole (%, ‰, °, §, ⌀…; także w polach tekstowych rysunku), data i godzina jednym
-  dotknięciem, **PDF** – notatka w układzie A4 w oknie drukowania; „Usuń formatowanie” czyści wszystko
+  dotknięciem (od 1.21.1 inna data – w kalendarzu, godzina – na bębnach), **PDF** – notatka w układzie A4 w oknie drukowania; „Usuń formatowanie” czyści wszystko
   oprócz linków, a Ctrl+Z cofa też wstawienie odwołania do obrazu i nowej strony. Od 1.21 **tabele** –
   osobne obiekty notatki jak obrazy („Tabela 1”, `[[Tabela 1]]` w tekście, podpis „Tab. 1.” nad
   tabelą), wypełniane w oknie tabeli także wklejeniem fragmentu arkusza Excel albo tabeli z Worda;
@@ -167,7 +167,7 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.18 – wcięcia, indeksy, wielkość i kolor tekstu, podpisy obrazów, przeciąganie obrazów](docs/RELEASE-1.18.md),
 [wersja 1.19 – szablon, Shift i Ctrl, środkowy przycisk, szyk, kartki, zakończenia odcinka, stałe wymiary](docs/RELEASE-1.19.md),
 [wersja 1.20 – wyrównanie i interlinia, linki, symbole, data i godzina, PDF, „Usuń formatowanie”, ścieżka nad fiszką](docs/RELEASE-1.20.md),
-[wersja 1.21 – tabele w notatkach i na rysunku, grubość zakreślacza, karteczki](docs/RELEASE-1.21.md).
+[wersja 1.21 – tabele w notatkach i na rysunku, grubość zakreślacza, karteczki; 1.21.1 – wybór daty i godziny](docs/RELEASE-1.21.md).
 
 ## Jak korzystać
 
@@ -305,8 +305,17 @@ Znak trafia w miejsce kursora; panel zostaje otwarty, więc można wstawić kilk
 tekstu (pole tekstowe i tekst na kształcie) przycisk **Symbole (%, °, §, ⌀…)**.
 
 **Data i godzina** (od 1.20, przycisk z kalendarzem): **Dzisiaj** („20.10.2026”), **Teraz**
-(„20.10.2026, 14:35”), **Godzina** („14:35”) albo **Inna data lub godzina…** – pola daty i godziny
-(z jednym pustym – sama data albo sama godzina). Wstawiane jako zwykły tekst.
+(„20.10.2026, 14:35”), **Godzina** („14:35”) albo **Inna data lub godzina…**. Wstawiane jako zwykły
+tekst. Od 1.21.1 **Inna data lub godzina…** to własne okno aplikacji (zamiast pól przeglądarki, na
+Windows w starym wyglądzie): u góry pełna data („wtorek, 20 października 2026, 15:35”) i to, co się
+wstawi; przełącznik **Data i godzina / Data / Godzina**; **kalendarz** od poniedziałku (dziś
+w obwódce, strzałki ‹ › – miesiące, nazwa miesiąca – wybór miesiąca i roku; skróty **Dziś**,
+**Jutro**, **Za tydzień**) i **bębny** godzin i minut jak na iPhonie – obracasz je kółkiem myszy
+(ząbek – jedna liczba), przeciągnięciem, palcem albo strzałkami ↑ ↓ (PageUp / PageDown – o 6 godzin
+albo 10 minut), dotknięcie liczby ją wybiera, a bęben się zapętla (za 59 – 00). Cyfry wpisane na
+bębnie godzin ustawiają godzinę i minuty („1533” – 15:33), Enter wstawia. Skróty: **Teraz**, **Pełna
+godzina**, **+15 min**. W kalendarzu strzałki przechodzą po dniach, PageUp i PageDown – po miesiącach,
+Enter wybiera dzień.
 
 **Podpisy obrazów** (od 1.18): w menu obrazu **Dodaj podpis** – np. „Wyniki sprzedaży” (do 120
 znaków). Podpis jest wyśrodkowany pod obrazem w podglądzie, w powiększeniu i w „Kopiuj notatkę”.
@@ -612,8 +621,11 @@ aplikacji cofnąć już się nie da.
 
 **Data utworzenia:** pod opisem każdego modułu i lekcji jest „Utworzono …”, a w szczegółach pojęcia
 – „Utworzono”. Nad listą modułów (w dziedzinie), lekcji (w module) i pojęć (w lekcji) jest pole
-**Utworzone**: Wszystkie, Dziś, Ostatnie 7 dni, Ostatnie 30 dni, Ten rok albo **Wybrany okres…**
-(pola od – do). Wybór jest pamiętany dla danej listy do zamknięcia aplikacji. W glosariuszu ten sam
+**Utworzone**: Wszystkie, Dziś, Ostatnie 7 dni, Ostatnie 30 dni, Ten rok albo **Wybrany okres…** –
+od 1.21.1 od razu otwiera kalendarz okresu: dotknij pierwszego i ostatniego dnia (pasmo pokazuje
+okres, u góry „5 – 16 października 2026” i liczba dni; dni po dzisiejszym są niedostępne) albo wybierz
+**Ten tydzień**, **Ten miesiąc**, **Poprzedni miesiąc**, **Ten rok**; **Pokaż** filtruje listę. Pod
+listą wyboru jest wtedy przycisk z okresem – dotknięcie otwiera kalendarz ponownie. Wybór jest pamiętany dla danej listy do zamknięcia aplikacji. W glosariuszu ten sam
 filtr jest w **Filtry i sortowanie → Data utworzenia**. Elementy z importu i danych przykładowych
 mają datę importu.
 
@@ -800,7 +812,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 25. **Wersja 1.18: notatki – wcięcia (Tab), indeks górny i dolny, wielkość tekstu, własne kolory tekstu, podpisy obrazów z numeracją „Rys. N.”, przeciąganie obrazów (dwa rzędy z przewijaniem w bok)** – gotowe.
 26. **Wersja 1.19: rysunek – skala szablonu wpisywana i przeciągnięciem narożnika, Shift (proporcje), Ctrl (chwilowe zaznaczanie), przesuwanie środkowym przyciskiem, szyk liniowy i kołowy, kilka kartek, zakończenia odcinka, stałe wymiary** – gotowe.
 27. **Wersja 1.20: notatki – wyrównanie i interlinia, linki (Ctrl+K), symbole, data i godzina, PDF (okno drukowania A4), „Usuń formatowanie” – wszystko oprócz linków, Ctrl+Z po „Wstaw do tekstu” i „Nowa strona”, „Kopiuj” z obrazami w wielkości strony A4; Nauka – ścieżka nad fiszką, ukrywanie grup** – gotowe.
-28. **Wersja 1.21: tabele w notatkach, na rysunku i na zdjęciu („Tab. N.”), okno grubości zakreślacza, karteczki na rysunku** – gotowe.
+28. **Wersja 1.21: tabele w notatkach, na rysunku i na zdjęciu („Tab. N.”), okno grubości zakreślacza, karteczki na rysunku; 1.21.1 – wybór daty (kalendarz) i godziny (bębny) zamiast pól przeglądarki** – gotowe.
 29. **Wersja 1.22: rysunek – liniuszek promieniowy, kółko przewraca kartki (z animacją), wymiarowanie techniczne z tolerancjami, symbole GD&T, przyciąganie strzałek do krawędzi i narożników** – w przygotowaniu.
 30. **Wersja 1.23: eksport sesji nauki do kalendarza (plik .ics dla Outlooka) – cykliczne, prywatne, z linkami do lekcji** – w przygotowaniu.
 31. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.

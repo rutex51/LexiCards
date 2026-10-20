@@ -91,6 +91,7 @@ export const pluralCards = (count) => plural(count, 'fiszka', 'fiszki', 'fiszek'
 export const pluralNotes = (count) => plural(count, 'notatka', 'notatki', 'notatek');
 export const pluralImages = (count) => plural(count, 'obraz', 'obrazy', 'obrazów');
 export const pluralTables = (count) => plural(count, 'tabela', 'tabele', 'tabel');
+export const pluralDays = (count) => plural(count, 'dzień', 'dni', 'dni');
 export const pluralAttachments = (count) => plural(count, 'załącznik', 'załączniki', 'załączników');
 export const pluralFiles = (count) => plural(count, 'plik', 'pliki', 'plików');
 

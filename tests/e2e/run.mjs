@@ -5141,8 +5141,10 @@ test('notatka 1.20: wyrównanie i interlinia (zaznaczone akapity, bez zaznaczeni
   await expectText(page.locator('[data-testid=note-date-now]'), 'Teraz – 20.10.2026, 14:35');
   await page.locator('[data-testid=note-date-other]').click();
   await expectText(sheet(page).locator('.sheet__title'), 'Data i godzina');
-  await sheet(page).locator('[data-testid=note-date-day]').fill('2026-11-05');
-  await sheet(page).locator('[data-testid=note-date-clock]').fill('');
+  // Od 1.21.1 kalendarz zamiast pola daty: „Data” (bez godziny), następny miesiąc, 5 listopada.
+  await sheet(page).locator('.segmented__option', { hasText: /^Data$/ }).click();
+  await sheet(page).locator('[data-testid=date-calendar-next]').click();
+  await sheet(page).locator('[data-testid="date-calendar-day-2026-11-05"]').click();
   await sheetSubmit(page).click();
   await expectText(editor, 'koniec⌀° 20.10.2026 20.10.2026, 14:35 14:35 05.11.2026');
 
@@ -5671,6 +5673,205 @@ test('rysunek 1.21: okno grubości zakreślacza; tabela (okno tabeli, wielkość
   assert.ok(Math.abs(moved.leader.x - (first.leader.x - 100)) < 3 && Math.abs(moved.leader.y - (first.leader.y + 50)) < 3, `koniec strzałki ${JSON.stringify(moved.leader)}`);
   assert.ok(Math.abs(moved.y - (first.y - 100)) < 3, `karteczka wyżej (${first.y} → ${moved.y})`);
 }, { device: IPAD });
+
+// ---------------------------------------------------------------- 1.21.1: wybór daty i godziny
+
+const dateSheet = (page) => page.locator('dialog[data-testid=date-sheet]');
+/** Bęben zatrzymany na wartości (po płynnym obrocie). */
+async function expectDrum(page, which, value) {
+  const drum = dateSheet(page).locator(`[data-testid=date-time-${which}]`);
+  await waitUntil(async () => (await drum.getAttribute('aria-valuenow')) === String(value), `bęben ${which}: ${value}`);
+}
+/** Edytor notatki lekcji „Financial Statements” z tekstem; „Data i godzina → Inna data lub godzina…”. */
+async function openDateSheet(page) {
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate((id) => window.lexicards.library.saveNote(id, { html: '<p>Spotkanie</p>' }), ids.statements);
+  await openNotePreview(page, ids.statements);
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-right]').click();
+  const editor = dialog.locator('[data-testid=note-editor]');
+  await editor.waitFor();
+  await editor.click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type(' ');
+  await dialog.locator('[data-testid=note-format-date]').click();
+  await page.locator('[data-testid=note-date-other]').click();
+  await dateSheet(page).waitFor();
+  await settled(dateSheet(page));
+  return { dialog, editor, ids };
+}
+
+test('data i godzina 1.21.1: kalendarz i bębny – kółko myszy, przeciągnięcie, kliknięcie liczby, cyfry („0745”), strzałki, Enter wstawia; dni klawiaturą, wybór miesiąca i roku, skróty, tryby „Data” i „Godzina” (komputer)', async ({ open }) => {
+  const page = await open();
+  await page.clock.setFixedTime(new Date('2026-10-20T14:35:00'));
+  const { editor } = await openDateSheet(page);
+  const picker = dateSheet(page);
+  const summary = picker.locator('[data-testid=date-summary]');
+  const preview = picker.locator('[data-testid=date-preview]');
+  await expectText(summary, 'wtorek, 20 października 2026, 14:35');
+  await expectText(preview, 'Wstawi się: „20.10.2026, 14:35”');
+  assert.equal(await picker.locator('input[type=date], input[type=time]').count(), 0, 'bez pól daty i godziny przeglądarki');
+  assert.equal(await picker.locator('[data-testid="date-calendar-day-2026-10-20"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await picker.locator('[data-testid="date-calendar-day-2026-10-20"]').getAttribute('aria-current'), 'date');
+  await page.screenshot({ path: path.join(OUTPUT, 'data-1211-okno-komputer.png') });
+
+  // Kółko myszy: dwa ząbki w dół nad godzinami – 16, ząbek w górę nad minutami – 34.
+  const hour = picker.locator('[data-testid=date-time-hour]');
+  const minute = picker.locator('[data-testid=date-time-minute]');
+  const middle = async (locator) => {
+    const box = await locator.boundingBox();
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2, item: box.height / 5 };
+  };
+  const atHour = await middle(hour);
+  await page.mouse.move(atHour.x, atHour.y);
+  await page.mouse.wheel(0, 100);
+  await page.mouse.wheel(0, 100);
+  await expectDrum(page, 'hour', 16);
+  const atMinute = await middle(minute);
+  await page.mouse.move(atMinute.x, atMinute.y);
+  await page.mouse.wheel(0, -100);
+  await expectDrum(page, 'minute', 34);
+  await expectText(preview, '„20.10.2026, 16:34”');
+  // Przeciągnięcie minut myszą o dwie liczby w górę – 36; kliknięcie liczby pod środkiem – 37.
+  await page.mouse.down();
+  await page.mouse.move(atMinute.x, atMinute.y - atMinute.item * 2, { steps: 8 });
+  await page.mouse.up();
+  await expectDrum(page, 'minute', 36);
+  await page.mouse.click(atMinute.x, atMinute.y + atMinute.item);
+  await expectDrum(page, 'minute', 37);
+
+  // Klawiatura: „00” – północ (fokus przechodzi do minut), strzałka w górę na godzinach – 23 (bęben się zapętla);
+  // „0745” – 07:45; strzałka w dół i PageUp na minutach; strzałka w lewo – z powrotem do godzin.
+  await hour.focus();
+  await page.keyboard.type('00');
+  await expectDrum(page, 'hour', 0);
+  assert.equal(await minute.evaluate((drum) => drum === document.activeElement), true, 'po dwóch cyfrach – minuty');
+  await hour.focus();
+  await page.keyboard.press('ArrowUp');
+  await expectDrum(page, 'hour', 23);
+  await page.keyboard.type('0745');
+  await expectDrum(page, 'hour', 7);
+  await expectDrum(page, 'minute', 45);
+  await page.keyboard.press('ArrowDown');
+  await expectDrum(page, 'minute', 46);
+  await page.keyboard.press('PageUp');
+  await expectDrum(page, 'minute', 36);
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowDown');
+  await expectDrum(page, 'hour', 8);
+  await expectText(preview, '„20.10.2026, 08:36”');
+
+  // Kalendarz: kliknięcie dnia, potem strzałki i PageDown przenoszą fokus, Enter wybiera.
+  await picker.locator('[data-testid="date-calendar-day-2026-10-22"]').click();
+  await expectText(summary, 'czwartek, 22 października 2026, 08:36');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('PageDown');
+  await page.keyboard.press('Enter');
+  await expectText(summary, 'poniedziałek, 30 listopada 2026, 08:36');
+  await expectText(picker.locator('[data-testid=date-calendar-title]'), 'Listopad 2026');
+  // Nazwa miesiąca – wybór miesiąca i roku: marzec 2027, 15.
+  await picker.locator('[data-testid=date-calendar-title]').click();
+  await expectText(picker.locator('[data-testid=date-calendar-title]'), '2026');
+  await picker.locator('[data-testid=date-calendar-next]').click();
+  await picker.locator('[data-testid=date-calendar-month-3]').click();
+  await picker.locator('[data-testid="date-calendar-day-2027-03-15"]').click();
+  await expectText(summary, 'poniedziałek, 15 marca 2027, 08:36');
+
+  // Skróty: Jutro, +15 min, Pełna godzina, Teraz.
+  await picker.locator('[data-testid=date-tomorrow]').click();
+  await expectText(summary, 'środa, 21 października 2026, 08:36');
+  await picker.locator('[data-testid=date-plus-15]').click();
+  await expectDrum(page, 'minute', 51);
+  await picker.locator('[data-testid=date-full-hour]').click();
+  await expectDrum(page, 'minute', 0);
+  await expectText(preview, '„21.10.2026, 08:00”');
+  await picker.locator('[data-testid=date-now]').click();
+  await expectDrum(page, 'hour', 14);
+  await expectDrum(page, 'minute', 35);
+  await expectText(summary, 'wtorek, 20 października 2026, 14:35');
+
+  // Tryby: sama godzina (bez kalendarza), sama data (bez bębnów), znowu oba.
+  await picker.locator('.segmented__option', { hasText: /^Godzina$/ }).click();
+  assert.equal(await picker.locator('[data-testid=date-calendar]').isVisible(), false);
+  await expectText(preview, 'Wstawi się: „14:35”');
+  await picker.locator('.segmented__option', { hasText: /^Data$/ }).click();
+  assert.equal(await picker.locator('[data-testid=date-time]').isVisible(), false);
+  await expectText(preview, 'Wstawi się: „20.10.2026”');
+  await picker.locator('.segmented__option', { hasText: /^Data i godzina$/ }).click();
+  await page.screenshot({ path: path.join(OUTPUT, 'data-1211-okno-komputer-2.png') });
+
+  // Wpisane 9:30 i Enter na bębnie – wstawione w miejscu kursora.
+  await hour.focus();
+  await page.keyboard.type('0930');
+  await expectDrum(page, 'minute', 30);
+  await page.keyboard.press('Enter');
+  await picker.waitFor({ state: 'detached' });
+  await expectText(editor, 'Spotkanie 20.10.2026, 09:30');
+}, { device: DESKTOP });
+
+test('data i godzina 1.21.1 na telefonie: okno bez przewijania w bok, bęben przewinięty palcem staje na liczbie, dotknięcie liczby; okres filtra „Utworzone” – dwa dotknięcia, gotowe okresy, dni po dziś niedostępne', async ({ open }) => {
+  const page = await open();
+  await page.clock.setFixedTime(new Date('2026-10-20T14:35:00'));
+  const { editor, ids } = await openDateSheet(page);
+  const picker = dateSheet(page);
+  assert.equal(await overflowX(page), 0, 'okno mieści się na ekranie');
+  await page.screenshot({ path: path.join(OUTPUT, 'data-1211-okno-telefon.png') });
+  // Przewinięcie palcem (przewijanie bębna) o ok. 3,4 liczby – zatrzymuje się na 38.
+  const minute = picker.locator('[data-testid=date-time-minute]');
+  await minute.scrollIntoViewIfNeeded();
+  await minute.evaluate((drum) => { drum.scrollTop += drum.querySelector('.drum__item').offsetHeight * 3.4; });
+  await expectDrum(page, 'minute', 38);
+  // Dotknięcie liczby pod środkiem – 39.
+  const box = await minute.boundingBox();
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2 + box.height / 5);
+  await expectDrum(page, 'minute', 39);
+  await page.screenshot({ path: path.join(OUTPUT, 'data-1211-bebny-telefon.png') });
+  await sheetSubmit(page).click();
+  await picker.waitFor({ state: 'detached' });
+  await expectText(editor, 'Spotkanie 20.10.2026, 14:39');
+
+  // Zapis notatki i zamknięcie okna.
+  await noteDialog(page).locator('[data-testid=note-right]').click();
+  await noteDialog(page).locator('[data-testid=note-book]').waitFor();
+  await noteDialog(page).locator('[data-testid=note-left]').click();
+  await noteDialog(page).waitFor({ state: 'detached' });
+  assert.equal((await storedNote(page, ids.statements)).html, '<p>Spotkanie 20.10.2026, 14:39</p>');
+
+  // Okres w filtrze lekcji modułu: „Wybrany okres…” od razu otwiera kalendarz okresu (ostatni tydzień).
+  await page.goto(`${page.url().split('#')[0]}#/library/module/${ids.module}`);
+  await page.selectOption('[data-testid=lessons-created-preset]', 'range');
+  const rangeSheet = page.locator('dialog[data-testid=range-sheet]');
+  await rangeSheet.waitFor();
+  await settled(rangeSheet);
+  const rangeSummary = rangeSheet.locator('[data-testid=range-summary]');
+  await expectText(rangeSummary, '14 – 20 października 2026');
+  assert.equal(await rangeSheet.locator('[data-testid="range-calendar-day-2026-10-21"]').isDisabled(), true, 'jutro – niedostępne');
+  await rangeSheet.locator('[data-testid="range-calendar-day-2026-10-16"]').click();
+  await expectText(rangeSheet, 'Teraz dotknij ostatniego dnia');
+  await rangeSheet.locator('[data-testid="range-calendar-day-2026-10-05"]').click();
+  await expectText(rangeSummary, '5 – 16 października 2026');
+  await expectText(rangeSheet, '12 dni');
+  assert.deepEqual(await rangeSheet.locator('.calendar__day--between').evaluateAll((days) => days.map((day) => day.textContent)),
+    ['6', '7', '8', '9', '10', '11', '12', '13', '14', '15'], 'pasmo między początkiem a końcem');
+  await page.screenshot({ path: path.join(OUTPUT, 'data-1211-okres-telefon.png') });
+  await rangeSheet.locator('[data-testid=range-previousMonth]').click();
+  await expectText(rangeSummary, '1 – 30 września 2026');
+  await expectText(rangeSheet.locator('[data-testid=range-calendar-title]'), 'Wrzesień 2026');
+  await sheetSubmit(page).click();
+  await rangeSheet.waitFor({ state: 'detached' });
+  const rangeButton = page.locator('[data-testid=lessons-created-range]');
+  await expectText(rangeButton, '1 – 30 września 2026');
+  await expectText(page.locator('.group__title', { hasText: 'Lekcje' }), 'Lekcje – 0 z 3');
+  // Ponowne otwarcie pokazuje wybrany okres; Anuluj nic nie zmienia.
+  await rangeButton.click();
+  await rangeSheet.waitFor();
+  await expectText(rangeSummary, '1 – 30 września 2026');
+  await rangeSheet.locator('.sheet__header .button--plain').click();
+  await rangeSheet.waitFor({ state: 'detached' });
+  await expectText(rangeButton, '1 – 30 września 2026');
+});
 
 test('rysunek na zdjęciu: „Rysuj na zdjęciu” – zdjęcie pod kreskami, sygnatura i miejsce bez zmian; bez rysika rysuje palec; nowy pusty rysunek nie trafia do notatki; kopia zapasowa przenosi kreski', async ({ open, browser, track }) => {
   const page = await open();
@@ -8861,6 +9062,29 @@ test('biblioteka 1.16: lekcje i moduły według daty i nazwy (osobno dla poziom�
   await waitUntil(async () => (await lessons()).join() === 'Financial Statements,Investments,Financial Ratios', 'Po ponownym otwarciu');
 }, { device: DESKTOP });
 
+/** Okres w oknie „Wybrany okres” (od 1.21.1): miesiąc z wyboru miesięcy i roku, dwa dni, „Pokaż”. */
+async function pickRange(page, from, to) {
+  const rangeSheet = page.locator('dialog[data-testid=range-sheet]');
+  await rangeSheet.waitFor();
+  const title = rangeSheet.locator('[data-testid=range-calendar-title]');
+  for (const day of [from, to]) {
+    const cell = rangeSheet.locator(`[data-testid="range-calendar-day-${day}"]`);
+    if ((await cell.count()) === 0) {
+      await title.click();
+      const year = Number(day.slice(0, 4));
+      for (let guard = 0; guard < 30; guard += 1) {
+        const shown = Number((await title.textContent()).trim());
+        if (shown === year) break;
+        await rangeSheet.locator(`[data-testid=range-calendar-${shown > year ? 'prev' : 'next'}]`).click();
+      }
+      await rangeSheet.locator(`[data-testid=range-calendar-month-${Number(day.slice(5, 7))}]`).click();
+    }
+    await cell.click();
+  }
+  await rangeSheet.locator('button[type=submit]').click();
+  await rangeSheet.waitFor({ state: 'detached' });
+}
+
 test('data utworzenia przy modułach i lekcjach; filtr daty w module, w lekcji i w glosariuszu', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
@@ -8887,9 +9111,7 @@ test('data utworzenia przy modułach i lekcjach; filtr daty w module, w lekcji i
   await expectText(page.locator('.group__title', { hasText: 'Lekcje' }), 'Lekcje – 2 z 3');
   // Własny okres: tylko styczeń.
   await page.selectOption('[data-testid=lessons-created-preset]', 'range');
-  await page.fill('[data-testid=lessons-created-from]', '2026-01-01');
-  await page.fill('[data-testid=lessons-created-to]', '2026-01-31');
-  await page.locator('[data-testid=lessons-created-to]').dispatchEvent('change');
+  await pickRange(page, '2026-01-01', '2026-01-31');
   await waitUntil(async () => (await titles()).join() === 'Investments', 'Tylko lekcja ze stycznia');
   // Filtr zostaje po powrocie z lekcji.
   await page.locator('.row', { hasText: 'Investments' }).locator('.row__main').click();
@@ -8922,9 +9144,7 @@ test('data utworzenia przy modułach i lekcjach; filtr daty w module, w lekcji i
   const total = await page.evaluate(() => window.lexicards.library.summary().terms);
   await page.getByRole('button', { name: 'Filtry i sortowanie' }).click();
   await page.selectOption('[data-testid=filter-created-preset]', 'range');
-  await page.fill('[data-testid=filter-created-from]', '2026-01-01');
-  await page.fill('[data-testid=filter-created-to]', '2026-01-31');
-  await page.locator('[data-testid=filter-created-to]').dispatchEvent('change');
+  await pickRange(page, '2026-01-01', '2026-01-31');
   await saveSheet(page);
   await expectText(page.locator('[data-testid=filter-summary]'), 'utworzone od 1 sty 2026 do 31 sty 2026');
   const expected = await page.evaluate((day) => [...window.lexicards.library.maps.terms.values()].filter((term) => term.createdAt === day).length, oldDay);

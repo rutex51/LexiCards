@@ -1,6 +1,8 @@
 // Elementy interfejsu używane na wielu ekranach.
 
+import { rangeText } from '../core/calendar.js';
 import { CREATED_PRESETS, createdLabel, dayValue } from '../core/created.js';
+import { openRangeSheet } from './date-picker.js';
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
 import { routes } from './router.js';
@@ -29,18 +31,24 @@ export function startBubble({ label, disabled = false, testID = null, onClick })
 }
 
 /**
- * Filtr po dacie utworzenia (od 1.9): okres i – dla „Wybrany okres…” – pola „od” i „do”.
- * value: { preset, from, to }; onChange(filter) po każdej zmianie.
+ * Filtr po dacie utworzenia (od 1.9): okres i – dla „Wybrany okres…” – przycisk z okresem, który
+ * (od 1.21.1) otwiera kalendarz okresu. value: { preset, from, to }; onChange(filter) po każdej zmianie.
  */
 export function createdFilterControl({ value, onChange, label = 'Utworzone', testID = 'created-filter' }) {
   const state = { ...value };
   const element = h('div', { class: 'created-filter', dataset: { testid: testID } });
-  const day = (text, key) => h('label', { class: 'created-filter__day' },
-    h('span', { class: 'created-filter__day-label' }, text),
-    h('input', {
-      type: 'date', class: 'created-filter__input', value: state[key], max: dayValue(), dataset: { testid: `${testID}-${key}` },
-      onChange: (event) => { state[key] = event.target.value; onChange({ ...state }); }
-    }));
+  const chooseRange = () => openRangeSheet({
+    from: state.from, to: state.to, max: dayValue(),
+    onApply: ({ from, to }) => {
+      Object.assign(state, { from, to });
+      render();
+      onChange({ ...state });
+    }
+  });
+  const rangeButton = () => h('button', {
+    type: 'button', class: 'created-filter__range', dataset: { testid: `${testID}-range` },
+    'aria-label': `Okres: ${rangeText(state.from, state.to) || 'nie wybrany'} – zmień`, onClick: chooseRange
+  }, icon('calendar', { size: 16 }), h('span', null, rangeText(state.from, state.to) || 'Wybierz okres'));
   const render = () => {
     const select = selectInput({
       value: state.preset,
@@ -57,13 +65,15 @@ export function createdFilterControl({ value, onChange, label = 'Utworzone', tes
         }
         render();
         onChange({ ...state });
+        // „Wybrany okres…” – od razu kalendarz (po anulowaniu zostaje ostatni tydzień).
+        if (preset === 'range') chooseRange();
       }
     });
     select.setAttribute('aria-label', label);
     replaceChildren(element,
       h('span', { class: 'created-filter__label', 'aria-hidden': 'true' }, icon('clock', { size: 16 }), label),
       select,
-      state.preset === 'range' ? h('div', { class: 'created-filter__range' }, day('od', 'from'), day('do', 'to')) : null);
+      state.preset === 'range' ? rangeButton() : null);
   };
   render();
   return element;

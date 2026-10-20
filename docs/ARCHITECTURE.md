@@ -31,6 +31,7 @@ js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspóln
 js/ui/charts.js            wykresy SVG (w czasie, pasek udziałów, miernik) z podpowiedzią i tabelą danych
 js/ui/listen-player.js     odtwarzacz słuchania: kolejne kroki czytane syntezatorem mowy, pauza, dalej, powtórz
 js/ui/notes.js             okno notatki lekcji: podgląd (Kopiuj, PDF), edytor z paskiem formatowania w grupach (wcięcia, indeksy, wielkość, kolory, wyrównanie i interlinia, link, symbole, data), obrazy (podpisy, numeracja, przeciąganie), tabele, załączniki, powiększanie
+js/ui/date-picker.js       wybór daty i godziny (od 1.21.1): kalendarz (dni, miesiące i lata, okres), bębny godzin i minut, okna „Data i godzina” i „Wybrany okres”
 js/ui/table-editor.js      okno tabeli (od 1.21, wspólne dla notatki i rysunku): siatka pól, wiersze i kolumny przy kursorze, nagłówki, wyrównanie, wklejanie z Excela i Worda
 js/ui/note-editing.js      zmiany treści edytora notatki z cofaniem: kopia treści ze znacznikami zaznaczenia, podmiana jednym insertHTML (wartownik), klucze miejsca kursora; wyrównanie i interlinia, „Usuń formatowanie”, wstawienie bloku
 js/ui/note-print.js        druk i PDF notatki: cała notatka w układzie A4 (ścieżka, tytuł, treść), okno drukowania przeglądarki
@@ -65,6 +66,7 @@ js/core/symbols.js         symbole do wstawiania: grupy, nazwy, ostatnio użyte
 js/core/note-import.js     arkusz notatek: rozpoznanie, wiersze → notatki lekcji z obrazami
 js/core/page-curl.js       zaginana kartka notatki: chwyt, zgięcie, odbicie płata, ograniczenia papieru
 js/core/note-refs.js       sygnatury obrazów notatki i odwołania [[sygnatura]] w treści, podpisy i numery „Rys. N.”
+js/core/calendar.js        kalendarz (od 1.21.1): siatka miesiąca od poniedziałku, nazwy po polsku, okres dwoma dotknięciami, gotowe okresy
 js/core/tables.js          tabele (od 1.21): sprawdzanie, wklejony tekst z tabulatorami i tabela HTML → wiersze, sygnatury „Tabela N”, numery i podpisy „Tab. N.”, HTML (podgląd, schowek), tekst (schowek, arkusz, słuchanie)
 js/core/images.js          format i wymiary obrazu z nagłówka pliku
 js/core/study.js           fiszki: dobór do sesji, treść stron, ocena, postęp, podsumowanie
@@ -213,7 +215,8 @@ działa na adapterze pamięciowym i wyświetla ostrzeżenie, że dane znikną po
   opisem, szczegóły pojęcia – w „Utworzono”. Filtr (`js/core/created.js`: okresy dziś, 7 i 30 dni,
   ten rok, własny zakres od – do, dni w czasie lokalnym, „do” obejmuje cały dzień) jest nad listą
   modułów, lekcji i pojęć lekcji (wybór pamiętany w pamięci aplikacji dla danej listy) i w filtrach
-  glosariusza (`glossary({ created })`).
+  glosariusza (`glossary({ created })`). Od 1.21.1 zakres wybiera się w oknie `openRangeSheet`
+  (`js/ui/date-picker.js`) zamiast pól `<input type="date">`.
 - **Kolejność list** (od 1.16, `js/core/sorting.js`): ustawienie `listSort: { domain, module, lesson }`
   (`manual`, `name`, `name-desc`, a dla modułów i lekcji także `newest`, `oldest`; nieznana wartość –
   `manual`). `sortItems` zwraca nową tablicę: nazwy przez `Intl.Collator('pl', { numeric: true,
@@ -386,7 +389,16 @@ całą treść). „Usuń formatowanie” zamienia fragment treści od bloku poc
 w dokument, zdejmuje znaczniki w zakresie (zostaje `href`), bloki objęte zaznaczeniem stają się
 akapitami, a puste akapity zostają (znak zastępczy U+E002). Link: `createLink` / `unlink` /
 `insertHTML` (`normalizeLink` – `www.` i domena dostają `https://`, e-mail – `mailto:`, inne protokoły
-odrzucone). Symbole i data – `insertText`. PDF (`note-print.js`): `noteFlow()` z `note-book.js` składa
+odrzucone). Symbole i data – `insertText`; od 1.21.1 „Inna data lub godzina…” – `openDateTimeSheet`
+z `js/ui/date-picker.js`: kalendarz (`calendar`, siatka 6 tygodni z `monthGrid`, widok miesięcy roku,
+fokus „wędrujący” – jeden dzień z `tabindex=0`, strzałki, PageUp / PageDown, Home / End; tryb `range`
+z pasmem i podglądem końca pod kursorem) i bębny (`timeDrums`): przewijany element z trzema kopiami
+liczb i `scroll-snap`, po zatrzymaniu (`scrollend` albo 140 ms bez przewijania) wartość ze środka
+i powrót do środkowej kopii (zapętlenie bez końca); kółko myszy – krok na ząbek (gładzik – co ok.
+36 px), mysz – przeciąganie (`scroll-snap` wyłączony na czas ruchu, trwający płynny obrót najpierw
+dokończony), palec i rysik – przewijanie przeglądarki, kliknięcie – liczba z położenia (przy
+przechwyceniu wskaźnika kliknięcie trafia w cały bęben); pochylenie liczb nad i pod środkiem
+(`rotateX`) – tylko dla siedmiu widocznych. Tekst do wstawienia – `formatEnteredDate`. PDF (`note-print.js`): `noteFlow()` z `note-book.js` składa
 całą notatkę jednym ciągiem (te same jednostki co strony książki: bloki, listy, obrazy z podpisami,
 podziały stron), element `.note-print` trafia na koniec `<body>`, a `@media print` ukrywa resztę
 strony (strona A4, jasne kolory, obraz najwyżej 225 mm, podział `break-after: page`); po `afterprint`

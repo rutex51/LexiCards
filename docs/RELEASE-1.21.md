@@ -111,3 +111,53 @@ Szczegóły:
   samego Excela nie było.
 - **PDF z tabelą na wielu stronach w Edge i w Safari** – powtarzanie nagłówka na stronach wydruku
   sprawdzone tylko w Chromium (PDF z Chromium – wyżej).
+
+## Uzupełnienie w wersji 1.21.1 – wybór daty i godziny
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Bardziej nowoczesny wybór godziny i daty na Windows (Edge i Chrome pokazują starą listę kolumn); z propozycji – godzina: bębny (wariant B) | Własne okno aplikacji zamiast pól przeglądarki – na wszystkich urządzeniach jednakowe. **Inna data lub godzina…** (notatka → Data i godzina): u góry pełna data („wtorek, 20 października 2026, 15:35”) i „Wstawi się: …”, przełącznik **Data i godzina / Data / Godzina**, **kalendarz** (dni od poniedziałku, dziś w obwódce, ‹ › – miesiące, nazwa miesiąca – wybór miesiąca i roku; **Dziś**, **Jutro**, **Za tydzień**) i **bębny** godzin i minut: kółko myszy (ząbek – jedna liczba), przeciągnięcie myszą, palec, strzałki ↑ ↓, PageUp / PageDown (6 godzin, 10 minut), dotknięcie liczby; bęben się zapętla (za 59 – 00, za 23 – 00). Cyfry na bębnie godzin – „1533” to 15:33, Enter wstawia. Skróty **Teraz**, **Pełna godzina**, **+15 min**. Na komputerze kalendarz i bębny obok siebie, na telefonie jeden pod drugim |
+| (z propozycji) okres w filtrze „Utworzone” | **Wybrany okres…** od razu otwiera kalendarz okresu: pierwszy dzień, ostatni dzień (pasmo między nimi, na komputerze – podgląd pod kursorem), u góry „5 – 16 października 2026” i „12 dni”; dni po dzisiejszym niedostępne; gotowe **Ten tydzień**, **Ten miesiąc**, **Poprzedni miesiąc**, **Ten rok**; **Pokaż** filtruje. Pod listą wyboru jest przycisk z okresem – otwiera kalendarz ponownie. Tak samo w glosariuszu (Filtry i sortowanie) |
+
+Testy wersji 1.21.1:
+
+- **Testy logiki: 328 – wszystkie zaliczone** (324 wcześniejsze + 4 nowe): siatka miesiąca
+  (6 tygodni od poniedziałku, dni sąsiednich miesięcy, zmiana czasu 25.10.2026), przesunięcia dni
+  i miesięcy (przełom roku, rok przestępny), nazwy po polsku („wtorek, 20 października 2026”), okres
+  dwoma dotknięciami (wcześniejszy dzień – zamiana, trzecie dotknięcie – nowy okres, jeden dzień),
+  opis okresu (ten sam miesiąc, przełom miesiąca i roku), liczba dni, gotowe okresy (tydzień od
+  poniedziałku, także w niedzielę; poprzedni miesiąc w styczniu), zapis godziny „09:05”.
+- **Testy w przeglądarce (Chromium): 150 – wszystkie zaliczone w dwóch pełnych przebiegach**
+  (148 wcześniejszych, z nich 2 dostosowane do nowego wyboru, + 2 nowe):
+  - ekran komputera (zegar testu: 20.10.2026, 14:35): w oknie nie ma pól daty i godziny przeglądarki;
+    kółko myszy – dwa ząbki na godzinach (16), ząbek w górę na minutach (34); przeciągnięcie minut
+    myszą o dwie liczby (36), kliknięcie liczby pod środkiem (37); „00” – północ i fokus na minutach;
+    strzałka w górę z 00 – 23; „0745”; strzałka w dół, PageUp, strzałka w lewo; kalendarz – kliknięcie
+    22 października, strzałki i PageDown, Enter – 30 listopada; wybór miesiąca i roku – marzec 2027;
+    skróty Jutro, +15 min, Pełna godzina, Teraz; tryby „Godzina” i „Data” (ukryty kalendarz albo
+    bębny, tekst do wstawienia); „0930” i Enter – „Spotkanie 20.10.2026, 09:30” w notatce;
+  - ekran telefonu: okno bez przewijania w bok; bęben przewinięty o ok. 3,4 liczby zatrzymuje się na
+    liczbie (38), dotknięcie liczby (39), wstawienie i zapis notatki; filtr lekcji modułu – „Wybrany
+    okres…” otwiera kalendarz z ostatnim tygodniem, jutro niedostępne, dwa dotknięcia (koniec przed
+    początkiem – zamiana), pasmo dni 6–15, „12 dni”, „Poprzedni miesiąc” – 1 – 30 września, „Pokaż”,
+    przycisk z okresem, ponowne otwarcie i „Anuluj” bez zmian;
+  - dostosowane: data wpisana ręcznie w teście notatki 1.20 (kalendarz: „Data”, następny miesiąc,
+    5 listopada) i okres stycznia 2026 w module i w glosariuszu (wybór miesiąca i roku, dwa dni).
+  - **Błąd znaleziony testami:** w pierwszym pełnym przebiegu test komputerowy nie przeszedł – gdy
+    płynny obrót bębna się przycinał (klatki opóźnione o ponad 140 ms), bęben „zatrzymywał się” na
+    liczbie w połowie drogi. Teraz, dopóki bęben jedzie do zadanej liczby, pozycja pośrednia nie zmienia
+    wartości (palec przejmuje bęben od razu). Pod sztucznym obciążeniem procesora: przed poprawką 1 z 3
+    zaliczone, po poprawce 3 z 3; potem dwa nowe pełne przebiegi.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium): okno daty i godziny (komputer, telefon), bębny na telefonie, okres w filtrze
+  (telefon).
+
+Czego nie sprawdzono w 1.21.1:
+
+- **Safari na iPhonie i iPadzie** – bębny opierają się na przewijaniu z przyciąganiem (`scroll-snap`),
+  które Safari obsługuje, ale **ruchu palcem, bezwładności po puszczeniu i zatrzymania na liczbie nie
+  sprawdziłem na prawdziwym iPhonie** (w Chromium przewinięcie jest symulowane). Gdyby bęben zatrzymywał
+  się między liczbami albo „uciekał” – daj znać.
+- **Kółko myszy i gładzik na Windows** – w teście kółko daje 100 jednostek na ząbek (jak zwykła mysz);
+  gładzik i myszy z płynnym przewijaniem dają mniejsze kroki – aplikacja sumuje je co ok. 36 px, ale na
+  prawdziwym sprzęcie nie było to sprawdzane.

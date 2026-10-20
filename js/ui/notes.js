@@ -22,10 +22,11 @@ import { FILE_NAME_MAX, cleanFileName, fileExtension, fileTypeOf, formatDuration
 import {
   NOTE_TABLE_LIMIT, findTableByLabel, nextTableLabel, tableCaption, tableHtml, tableNumbers, tableSize, tableText, withTableLabels
 } from '../core/tables.js';
-import { formatClock, formatDay, formatDayTime, formatEnteredDate, joinList, pluralAttachments, pluralImages, pluralTables } from '../core/text.js';
+import { formatClock, formatDay, formatDayTime, joinList, pluralAttachments, pluralImages, pluralTables } from '../core/text.js';
 import { attachmentList, fileBadge, fileDescription, openAttachment } from './attachments.js';
 import { enableGridDrag } from './grid-drag.js';
 import { openColorSheet, readCustomColors } from './color-picker.js';
+import { openDateTimeSheet } from './date-picker.js';
 import { field, iconButton, segmented, textInput, toggle } from './components.js';
 import { confirmDialog, mountDialog, openFormSheet, openMenu, showError, toast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
@@ -1226,28 +1227,9 @@ function noteEditor({
     });
   }
 
+  /** Inna data lub godzina (od 1.21.1 – kalendarz i bębny zamiast pól przeglądarki). */
   function enterDate(now, insert) {
-    const pad = (value) => String(value).padStart(2, '0');
-    let day = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-    let time = formatClock(now);
-    let text = null;
-    const dayInput = textInput({ value: day, onInput: (value) => { day = value; }, type: 'date', testID: 'note-date-day' });
-    const timeInput = textInput({ value: time, onInput: (value) => { time = value; }, type: 'time', testID: 'note-date-clock' });
-    openFormSheet({
-      title: 'Data i godzina',
-      submitLabel: 'Wstaw',
-      build: () => [
-        field('Data', dayInput),
-        field('Godzina', timeInput, { hint: 'Wyczyść jedno z pól, żeby wstawić samą datę albo samą godzinę.' })
-      ],
-      onSubmit: () => {
-        text = formatEnteredDate(day, time);
-        if (!text) throw new Error('Wpisz datę albo godzinę.');
-      },
-      onClose: () => {
-        if (text) insert(text);
-      }
-    });
+    openDateTimeSheet({ now, onInsert: insert });
   }
 
   function updateToolbar() {
