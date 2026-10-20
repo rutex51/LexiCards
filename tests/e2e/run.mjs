@@ -7185,6 +7185,80 @@ test('rysunek 1.24.1: spirala na lewym grzbiecie – dziurki w kartce i zwoje za
   assert.ok(Math.max(...exported[1].slice(0, 3)) < 110, `kreska przy grzbiecie cała (${exported[1]})`);
 }, { device: DESKTOP });
 
+/** Środek ciemnych pikseli płótna zapisanych kresek (ekran, px) albo null. */
+const inkCenter = (page) => page.locator('.drawing__canvas:not(.drawing__canvas--live)').evaluate((canvas) => {
+  const { data, width, height } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+  let [sx, sy, count] = [0, 0, 0];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      if (data[index + 3] === 255 && data[index] < 90 && data[index + 1] < 90 && data[index + 2] < 90) {
+        sx += x;
+        sy += y;
+        count += 1;
+      }
+    }
+  }
+  const box = canvas.getBoundingClientRect();
+  return count > 0 ? { x: box.left + (sx / count) * (box.width / width), y: box.top + (sy / count) * (box.height / height) } : null;
+});
+
+/**
+ * Dwa palce na płótnie (ekran, px): od `from` [[x, y], [x, y]] do `to` w `steps` krokach – jak na
+ * telefonie: zdarzenia palców na przemian, każdy ruch osobno.
+ */
+const twoFingers = (page, from, to, steps = 12) => page.locator('[data-testid=drawing-canvas]').evaluate((canvas, [start, end, count]) => {
+  const fire = (kind, id, [x, y]) => canvas.dispatchEvent(new window.PointerEvent(kind, {
+    bubbles: true, cancelable: true, pointerId: id, pointerType: 'touch', isPrimary: id === 41,
+    clientX: x, clientY: y, buttons: kind === 'pointerup' ? 0 : 1, button: kind === 'pointermove' ? -1 : 0
+  }));
+  const at = (finger, t) => [start[finger][0] + (end[finger][0] - start[finger][0]) * t, start[finger][1] + (end[finger][1] - start[finger][1]) * t];
+  fire('pointerdown', 41, at(0, 0));
+  fire('pointerdown', 42, at(1, 0));
+  for (let step = 1; step <= count; step += 1) {
+    fire('pointermove', 41, at(0, step / count));
+    fire('pointermove', 42, at(1, (step - 0.5) / count));
+    fire('pointermove', 42, at(1, step / count));
+  }
+  fire('pointerup', 41, at(0, 1));
+  fire('pointerup', 42, at(1, 1));
+}, [from, to, steps]);
+
+test('rysunek 1.24.2 na telefonie: dwa palce – powiększenie w miejscu rozsuwanych palców (punkt pod palcami zostaje pod nimi, także gdy palce przy tym idą), przesuwanie dwoma palcami bez skoków', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Palce</p>');
+  const frame = await pageFrame(page);
+  // Znacznik (krzyżyk) w punkcie (1000, 600) strony – poza środkiem strony i ekranu (przy krawędzi strona
+  // i tak nie wychodzi poza brzeg, więc tam punkt pod palcami nie mógłby zostać).
+  const touch = (points) => drawStroke(page, points, { type: 'touch', id: 31 });
+  await touch(segment(frame.at(980, 600), frame.at(1020, 600), 6));
+  await touch(segment(frame.at(1000, 580), frame.at(1000, 620), 6));
+  const mark = await inkCenter(page);
+  const [mx, my] = frame.screen(1000, 600);
+  assert.ok(Math.hypot(mark.x - mx, mark.y - my) < 3, `znacznik na miejscu (${JSON.stringify(mark)})`);
+  // Rozsuwanie palców wokół znacznika (powiększenie 4×) – znacznik zostaje pod środkiem palców.
+  await twoFingers(page, [[mx - 25, my], [mx + 25, my]], [[mx - 100, my], [mx + 100, my]]);
+  await expectText(editor.locator('[data-testid=drawing-zoom]'), '400%');
+  await nextFrames(page);
+  const zoomed = await inkCenter(page);
+  assert.ok(Math.hypot(zoomed.x - mx, zoomed.y - my) < 4, `po powiększeniu znacznik pod palcami (${JSON.stringify(zoomed)} / ${mx}, ${my})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-dwa-palce-powiekszenie-telefon.png') });
+  // Rozsuwanie z jednoczesnym przesunięciem palców (środek idzie o 30, 45 px) – znacznik idzie za palcami.
+  await twoFingers(page, [[mx - 50, my], [mx + 50, my]], [[mx - 30, my + 30], [mx + 90, my + 60]]);
+  await nextFrames(page);
+  const moved = await inkCenter(page);
+  assert.ok(Math.hypot(moved.x - (mx + 30), moved.y - (my + 45)) < 4, `znacznik pod środkiem palców po ruchu (${JSON.stringify(moved)} / ${mx + 30}, ${my + 45})`);
+  // Przesuwanie dwoma palcami (ten sam odstęp) – powiększenie bez zmian, znacznik dokładnie o tyle, ile palce.
+  const zoomBefore = await editor.locator('[data-testid=drawing-zoom]').textContent();
+  await twoFingers(page, [[mx - 30, my + 45], [mx + 90, my + 45]], [[mx - 90, my + 5], [mx + 30, my + 5]]);
+  await nextFrames(page);
+  const panned = await inkCenter(page);
+  assert.equal(await editor.locator('[data-testid=drawing-zoom]').textContent(), zoomBefore, 'przesuwanie nie zmienia powiększenia');
+  assert.ok(Math.hypot(panned.x - (moved.x - 60), panned.y - (moved.y - 40)) < 3, `przesunięcie o (−60, −40) (${JSON.stringify(panned)} / ${JSON.stringify(moved)})`);
+}, { device: PHONE });
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

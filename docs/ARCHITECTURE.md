@@ -486,7 +486,12 @@ kreski i liczby pomija, ogranicza do strony, limity kresek i punktów). Edytor: 
 kreski (rysowane od nowa po zmianie widoku albo cofnięciu) i bieżąca kreska nad nimi; Pointer Events
 (`pointerType`, `pressure`, `getCoalescedEvents`, przycisk gumki rysika `buttons & 32`). Po pierwszym
 zdarzeniu rysika (`localStorage`) palec tylko przesuwa, a dotyk w trakcie kreski rysikiem (dłoń) nie
-rusza strony; dwa palce – powiększenie wokół środka palców. Gumka usuwa całe kreski (odległość od
+rusza strony; dwa palce – powiększenie wokół środka palców. Od 1.24.2 `moveGesture` liczy dwa palce
+od początku gestu (`startGesture`: powiększenie, środek palców na ekranie i punkt strony pod nim):
+powiększenie = początkowe × odstęp palców / początkowy odstęp, a położenie tak, żeby punkt strony
+z początku był pod obecnym środkiem palców (potem `clampView`) – wcześniej przesunięcie od początku
+gestu łączyło się ze skalą z poprzedniej klatki (`setZoom` liczy od bieżącego widoku), więc strona
+uciekała w stronę lewego górnego rogu, a przesuwanie skakało. Gumka usuwa całe kreski (odległość od
 odcinków z ich grubością); kolejne kreski starte jednym pociągnięciem to jeden krok `DrawingHistory`.
 Zakreślacz: `multiply` i przezroczystość 0,45 – tusz pod spodem zostaje ciemny. Ustawienia narzędzi
 (kolory, grubości, czułość, wygładzanie, od 1.12.1 tryb i wielkość gumki) – `localStorage` urządzenia.

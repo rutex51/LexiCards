@@ -32,7 +32,7 @@ Notatki: wyrównanie i interlinia, linki, symbole, data i godzina, PDF, pełne �
 Tabele w notatkach („Tab. N.”) i na rysunku, okno grubości zakreślacza, karteczki na rysunku (wersja 1.21); wybór daty i godziny – kalendarz i bębny (1.21.1): [docs/RELEASE-1.21.md](docs/RELEASE-1.21.md).
 Rysunek: liniuszek promieniowy, przewracanie kartek kółkiem i przyciskami ‹ › z animacją, końce odcinka i strzałki przyciągane do krawędzi i narożników (wersja 1.22); wymiary jak w rysunku technicznym z tolerancjami, ramka tolerancji, baza, chropowatość (1.22.1): [docs/RELEASE-1.22.md](docs/RELEASE-1.22.md).
 Nauka w kalendarzu – plik .ics do Outlooka z powtarzaniem, przypomnieniem, prywatnością i linkami do lekcji (wersja 1.23): [docs/RELEASE-1.23.md](docs/RELEASE-1.23.md).
-Rysunek: figury z odręcznych kształtów (przytrzymane pióro), łamana i wielokąt z punktami w wierzchołkach, kartki przewracane od rogu jak w notatkach, zaznaczenie przed kółkiem liniuszka (wersja 1.24); spirala na grzbiecie kartki (1.24.1): [docs/RELEASE-1.24.md](docs/RELEASE-1.24.md).
+Rysunek: figury z odręcznych kształtów (przytrzymane pióro), łamana i wielokąt z punktami w wierzchołkach, kartki przewracane od rogu jak w notatkach, zaznaczenie przed kółkiem liniuszka (wersja 1.24); spirala na grzbiecie kartki (1.24.1); powiększanie dwoma palcami w miejscu palców (1.24.2): [docs/RELEASE-1.24.md](docs/RELEASE-1.24.md).
 
 ## Co potrafi wersja 1.24
 
@@ -185,7 +185,7 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.21 – tabele w notatkach i na rysunku, grubość zakreślacza, karteczki; 1.21.1 – wybór daty i godziny](docs/RELEASE-1.21.md),
 [wersja 1.22 – liniuszek promieniowy, przewracanie kartek kółkiem, przyciąganie końców do krawędzi i narożników; 1.22.1 – wymiary techniczne, tolerancje, symbole metrologiczne](docs/RELEASE-1.22.md),
 [wersja 1.23 – nauka w kalendarzu (.ics)](docs/RELEASE-1.23.md),
-[wersja 1.24 – figury z odręcznych kształtów, łamana, przewracanie kartek od rogu; 1.24.1 – spirala na grzbiecie kartki](docs/RELEASE-1.24.md).
+[wersja 1.24 – figury z odręcznych kształtów, łamana, przewracanie kartek od rogu; 1.24.1 – spirala na grzbiecie kartki; 1.24.2 – powiększanie dwoma palcami](docs/RELEASE-1.24.md).
 
 ## Jak korzystać
 
@@ -625,7 +625,8 @@ nacisku (Wył., Mała, Średnia, Duża), grubość kreski od–do (przy lekkim i
 kreski i podgląd; ustawienia zostają na urządzeniu. Grubość zależy od nacisku tylko przy rysiku –
 palcem i myszą kreska ma stałą grubość. Gdy aplikacja raz zobaczy rysik, rysuje tylko rysik, a palec
 przesuwa stronę (pigułka „Rysuje tylko rysik · palec przesuwa” w rogu) – dłoń oparta o ekran nie
-zostawia śladów; na iPhonie bez rysika rysuje palec. Dwa palce powiększają i przesuwają, pigułka
+zostawia śladów; na iPhonie bez rysika rysuje palec. Dwa palce powiększają i przesuwają (od 1.24.2
+powiększenie w miejscu rozsuwanych palców – to, co było pod palcami, zostaje pod nimi), pigułka
 z procentami wraca do całej strony; na komputerze kółko przesuwa (od 1.22 przy kilku kartkach
 i całej stronie – przewraca kartkę), Ctrl + kółko powiększa. Gumka
 na końcu rysika (Windows) ściera bez zmiany narzędzia. **Gotowe** dodaje rysunek do obrazów notatki

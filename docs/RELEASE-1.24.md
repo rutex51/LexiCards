@@ -85,3 +85,24 @@ Testy wersji 1.24.1:
 Czego nie sprawdzono: wygląd na ekranie iPada i iPhone'a w Safari (tylko Chromium z ekranem telefonu)
 oraz w trybie ciemnym na prawdziwym urządzeniu (zwoje i dziurki mają stałe kolory, kartka jest biała
 w obu trybach).
+
+## Uzupełnienie w wersji 1.24.2 – powiększanie i przesuwanie dwoma palcami
+
+| Zgłoszenie | Przyczyna i poprawka |
+| --- | --- |
+| Powiększanie dwoma palcami na iPhonie ucieka w lewy górny róg – nie powiększa w miejscu rozsuwanych palców; przesuwanie dwoma palcami nie jest płynne, skacze | Edytor rysunku liczył przesunięcie strony od początku gestu, ale powiększenie – od poprzedniej klatki (w skali, która już się zmieniła). Każda klatka zostawiała błąd proporcjonalny do odległości palców od lewego górnego rogu strony, więc strona uciekała w tamtą stronę, a przy przesuwaniu – gdy odstęp palców choć trochę drgał – skakała. Teraz oba ruchy są liczone od początku gestu: powiększenie według odstępu palców, a punkt strony, który był pod środkiem palców, zostaje pod ich środkiem (także gdy palce przy tym idą). Wyjątek jak dotąd: przy brzegu strony kartka nie wychodzi poza brzeg ekranu (górny brzeg nie zjeżdża pod pasek narzędzi), więc tam punkt może się przesunąć. |
+
+Testy wersji 1.24.2:
+
+- **Testy logiki (Node.js): 347 – wszystkie zaliczone** (bez zmian).
+- **Testy w przeglądarce (Chromium): 164 – wszystkie zaliczone w dwóch pełnych przebiegach**
+  (163 wcześniejsze + 1 nowy): ekran telefonu, zdarzenia dwóch palców na przemian (jak na telefonie):
+  znacznik w punkcie (1000, 600) strony; rozsunięcie palców wokół niego – 400%, znacznik pod środkiem
+  palców (do 4 px); rozsunięcie z jednoczesnym przesunięciem palców – znacznik idzie za środkiem palców;
+  przesunięcie dwoma palcami o (−60, −40) px – powiększenie bez zmian, znacznik dokładnie o tyle samo
+  (do 3 px). Ten sam test na kodzie sprzed poprawki: znacznik ucieka poza ekran (test niezaliczony) –
+  błąd był odtworzony, zanim go poprawiłem.
+- **Lint: bez błędów.**
+
+Czego nie sprawdzono: **Safari na iPhonie** – gest sprawdzony zdarzeniami palców w Chromium, nie na
+prawdziwym ekranie. Do sprawdzenia u Ciebie, czy powiększanie i przesuwanie są teraz płynne.

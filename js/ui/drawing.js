@@ -5084,15 +5084,25 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       }
       const [a, b] = fingers;
       const center = b ? { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 } : { x: a.clientX, y: a.clientY };
-      view.x = gesture.startX + center.x - gesture.center.x;
-      view.y = gesture.startY + center.y - gesture.center.y;
       if (b && gesture.distance > 0) {
-        const zoom = gesture.startZoom * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / gesture.distance;
-        // Powiększenie wokół środka palców.
+        // Dwa palce (od 1.24.2 – liczone od początku gestu, nie od poprzedniej klatki): powiększenie
+        // według odstępu palców, a punkt strony, który był pod środkiem palców na początku, zostaje
+        // pod ich środkiem – także gdy palce przy tym idą (przesuwanie). Dawniej przesunięcie od początku
+        // gestu łączyło się ze skalą z poprzedniej klatki i strona uciekała w stronę lewego górnego rogu.
+        const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, gesture.startZoom * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / gesture.distance));
         const box = live.getBoundingClientRect();
-        setZoom(zoom, center.x - box.left, center.y - box.top);
+        view.zoom = zoom;
+        view.scale = fitScale() * zoom;
+        view.x = center.x - box.left - gesture.point.x * view.scale;
+        view.y = center.y - box.top - gesture.point.y * view.scale;
+        clampView();
+        zoomButton.textContent = `${Math.round(zoom * 100)}%`;
+        refreshRulerPanel?.();
+        requestRender();
         return;
       }
+      view.x = gesture.startX + center.x - gesture.center.x;
+      view.y = gesture.startY + center.y - gesture.center.y;
       clampView();
       requestRender();
     }
