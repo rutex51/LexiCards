@@ -1,4 +1,4 @@
-# LexiCards 1.15
+# LexiCards 1.16
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -24,11 +24,15 @@ Rysunki odręczne w notatce – rysik z naciskiem, zakreślacz, gumka, rysowanie
 Pola tekstowe i wzory na rysunku (wersja 1.13): [docs/RELEASE-1.13.md](docs/RELEASE-1.13.md).
 Skala na linijce, własne kolory, zaznaczanie fragmentów i lasso, kopiuj i wklej na rysunku (wersja 1.14): [docs/RELEASE-1.14.md](docs/RELEASE-1.14.md).
 Jasność tła, szablon pod kreskami (boisko, obraz z pliku), liniuszek, kształty geometryczne (wersja 1.15): [docs/RELEASE-1.15.md](docs/RELEASE-1.15.md).
+Przeciąganie wierszy i kolejność list biblioteki – A–Z, Z–A, według daty (wersja 1.16): [docs/RELEASE-1.16.md](docs/RELEASE-1.16.md).
 
-## Co potrafi wersja 1.15
+## Co potrafi wersja 1.16
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
+  Od 1.16 kolejność ręczną ustawiasz przeciąganiem (uchwyt ≡ – palcem, rysikiem albo myszą),
+  a listę dziedzin, modułów i lekcji możesz ułożyć alfabetycznie (A–Z, Z–A), moduły i lekcje
+  także według daty utworzenia (od najnowszych, od najstarszych) – wybór jest zapamiętany.
   Na listach modułów i lekcji pionowy pasek po lewej i opis „opanowane N%” pokazują, jaka część
   pojęć ma status „Opanowane”.
 - Lekcje i moduły „utrwalone”: ręczne oznaczenie w menu „…” (moduł – razem ze wszystkimi lekcjami;
@@ -131,7 +135,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.12 – rysunki odręczne](docs/RELEASE-1.12.md),
 [wersja 1.13 – pola tekstowe i wzory na rysunku](docs/RELEASE-1.13.md),
 [wersja 1.14 – skala na linijce, własne kolory, fragmenty i lasso, kopiuj i wklej](docs/RELEASE-1.14.md),
-[wersja 1.15 – jasność tła, szablon, liniuszek, kształty](docs/RELEASE-1.15.md).
+[wersja 1.15 – jasność tła, szablon, liniuszek, kształty](docs/RELEASE-1.15.md),
+[wersja 1.16 – przeciąganie wierszy, kolejność list](docs/RELEASE-1.16.md).
 
 ## Jak korzystać
 
@@ -411,6 +416,18 @@ Utrwalone lekcje i moduły są na końcu listy. Gdy wolisz zostawić je na miejs
 przesuwa je razem z pozostałymi. To samo ustawienie włączysz i wyłączysz w trybie **Zmień kolejność**
 – przełącznikiem nad listą (gdy są na niej utrwalone).
 
+**Kolejność list** (od 1.16): przycisk przy tytule listy **Dziedziny**, **Moduły** albo **Lekcje**
+pokazuje bieżącą kolejność (np. **Ręcznie**, **A–Z**) i otwiera menu: **Ręcznie**, **Nazwa A–Z**,
+**Nazwa Z–A**, a przy modułach i lekcjach także **Od najnowszych** i **Od najstarszych** (data
+utworzenia). Nazwy są porównywane po polsku, bez wielkich liter, liczby jak liczby („Test 2” przed
+„Test 10”). Wybór jest zapamiętany osobno dla każdego poziomu (także w kopii zapasowej), a utrwalone
+nadal są na końcu. **Ustaw ręcznie – przeciągnij…** (na dole menu) albo **Zmień kolejność** włącza
+kolejność ręczną i tryb zmiany kolejności: przytrzymaj uchwyt **≡** po prawej stronie wiersza
+i przeciągnij wiersz w nowe miejsce (myszą można chwycić cały wiersz; przy krawędzi ekranu lista sama
+się przewija); strzałki przesuwają o jedno miejsce. Kolejność ręczna zapisuje się od razu i nie
+ginie, gdy na chwilę wybierzesz inną. Kolejność dotyczy list w Bibliotece – kafelki na Starcie
+i wybór materiału w nauce zostają w kolejności ręcznej.
+
 **Przesuwanie wiersza (telefon):** wiersz lekcji albo modułu przesuń palcem w prawo, żeby go
 utrwalić (na utrwalonym – cofnąć utrwalenie), albo w lewo, żeby go usunąć. Pod wierszem widać, co
 się stanie. Lekkie przesunięcie i puszczenie pokazuje pytanie z potwierdzeniem; zdecydowane – ponad
@@ -607,7 +624,8 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 20. **Wersja 1.13: pola tekstowe i wzory na rysunku** – gotowe.
 21. **Wersja 1.14: skala na linijce (SI i imperialne, szacunek ekranu, 1:1), zero linijki na przecięciach i liniach (prostopadle), własne kolory (siatka, suwaki RGB, pipetka), zaznaczanie fragmentów prostokątem i lassem, kopiuj i wklej** – gotowe.
 22. **Wersja 1.15: jasność kratki i linii, szablon pod kreskami (boisko, obraz z pliku), liniuszek z liniami poprzecznymi i przyciąganiem, kształty geometryczne z punktami konstrukcyjnymi** – gotowe.
-23. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
+23. **Wersja 1.16: przeciąganie wierszy przy zmianie kolejności, kolejność list biblioteki – ręcznie, A–Z, Z–A, według daty utworzenia** – gotowe.
+24. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

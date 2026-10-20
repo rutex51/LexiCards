@@ -7043,6 +7043,213 @@ test('„Zmień kolejność”: przełącznik „Utrwalone na końcu listy” na
   await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().consolidatedLast === true), 'Włączone z listy lekcji');
 });
 
+/** Tytuły w grupie listy o danym tytule (np. „Dziedziny”, „Lekcje”). */
+const listTitles = (page, heading) => page.locator('.group', { has: page.locator('.group__title', { hasText: heading }) })
+  .locator('.row__title').allTextContents().then((items) => items.map((item) => item.trim()));
+
+/** Środek uchwytu ≡ wiersza w trybie zmiany kolejności. */
+async function gripCenter(page, name) {
+  const box = await page.locator('.row--reorder', { hasText: name }).locator('.row__grip').boundingBox();
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+const rowBox = (page, name) => page.locator('.row--reorder', { hasText: name }).boundingBox();
+
+test('biblioteka 1.16: kolejność dziedzin A–Z i Z–A (po polsku), zapamiętana i w kopii; „Ustaw ręcznie” – przeciąganie palcem za uchwyt (telefon)', async ({ open, context }) => {
+  const page = await open();
+  await loadSamples(page);
+  await page.evaluate(async () => {
+    const { library } = window.lexicards;
+    for (const name of ['Ćwiczenia', 'Analiza', 'Zoologia', 'Ekonomia 10', 'Ekonomia 2']) await library.createDomain({ name });
+  });
+  await tab(page, 'Biblioteka');
+  const names = () => listTitles(page, 'Dziedziny');
+  const manual = ['Business English', 'Metrology', 'Ćwiczenia', 'Analiza', 'Zoologia', 'Ekonomia 10', 'Ekonomia 2'];
+  const sortButton = page.locator('[data-testid=sort-domain]');
+  await waitUntil(async () => (await names()).join() === manual.join(), 'Domyślnie kolejność ręczna');
+  await expectText(sortButton, 'Ręcznie');
+
+  // Menu: ręcznie (zaznaczone), A–Z, Z–A – bez daty (dziedziny jej nie pokazują) – i „Ustaw ręcznie”.
+  await sortButton.click();
+  const menu = page.locator('dialog.menu[open]');
+  await expectText(menu.locator('.menu__title'), 'Kolejność dziedzin');
+  assert.deepEqual(await menu.locator('[role=menuitemradio]').allTextContents(), ['Ręcznie', 'Nazwa A–Z', 'Nazwa Z–A']);
+  assert.equal(await menu.locator('[data-testid=sort-domain-manual]').getAttribute('aria-checked'), 'true');
+  assert.equal(await menu.locator('[data-testid=sort-domain-name]').getAttribute('aria-checked'), 'false');
+  assert.equal(await menu.locator('[data-testid=sort-domain-arrange]').count(), 1);
+  await page.evaluate(() => document.querySelectorAll('.toast').forEach((toast) => toast.remove()));
+  await menu.evaluate((element) => Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)));
+  await page.screenshot({ path: path.join(OUTPUT, 'kolejnosc-menu-telefon.png') });
+  await menu.locator('[data-testid=sort-domain-name]').click();
+  const alphabetical = ['Analiza', 'Business English', 'Ćwiczenia', 'Ekonomia 2', 'Ekonomia 10', 'Metrology', 'Zoologia'];
+  await waitUntil(async () => (await names()).join() === alphabetical.join(), 'A–Z: Ć po C, „Ekonomia 2” przed „Ekonomia 10”');
+  await expectText(sortButton, 'A–Z');
+  assert.equal(await sortButton.getAttribute('aria-label'), 'Kolejność dziedzin: nazwa a–z');
+  await page.screenshot({ path: path.join(OUTPUT, 'kolejnosc-dziedziny-a-z-telefon.png') });
+
+  // Zapamiętana po ponownym otwarciu; ręczna kolejność bez zmian.
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await waitUntil(async () => (await names()).join() === alphabetical.join(), 'A–Z po ponownym otwarciu');
+  await sortButton.click();
+  await page.locator('dialog.menu[open] [data-testid=sort-domain-name-desc]').click();
+  await waitUntil(async () => (await names()).join() === [...alphabetical].reverse().join(), 'Z–A');
+  await expectText(sortButton, 'Z–A');
+  const stored = await page.evaluate(() => {
+    const { library } = window.lexicards;
+    return { order: library.listDomains().map((domain) => domain.name), sort: library.getSettings().listSort };
+  });
+  assert.deepEqual(stored.order, manual, 'kolejność ręczna zostaje zapisana');
+  assert.deepEqual(stored.sort, { domain: 'name-desc', module: 'manual', lesson: 'manual' });
+  // Wybór wraca z kopią zapasową (jest w ustawieniach).
+  assert.deepEqual((await page.evaluate(() => window.lexicards.library.exportAll({ media: false }))).settings[0].listSort.domain, 'name-desc');
+
+  // „Ustaw ręcznie – przeciągnij…”: kolejność ręczna i tryb zmiany kolejności z uchwytami.
+  await sortButton.click();
+  await page.locator('dialog.menu[open] [data-testid=sort-domain-arrange]').click();
+  await page.getByRole('button', { name: 'Gotowe' }).waitFor();
+  await waitUntil(async () => (await names()).join() === manual.join(), 'Tryb zmiany kolejności – kolejność ręczna');
+  assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().listSort.domain), 'manual');
+  assert.equal(await page.locator('.row--reorder .row__grip').count(), manual.length, 'uchwyt w każdym wierszu');
+  assert.equal(await page.getByRole('button', { name: 'Przesuń wyżej: Analiza' }).isVisible(), true, 'strzałki zostają');
+
+  // Palcem za uchwyt: „Analiza” z czwartego miejsca na pierwsze; w trakcie – uniesiona, inne robią miejsce.
+  const grip = await gripCenter(page, 'Analiza');
+  const first = await rowBox(page, 'Business English');
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+  const touch = await touchAt(context, page, grip.x, grip.y);
+  await touch.move(grip.x, first.y + 6, 10);
+  await waitUntil(() => page.locator('.row--dragging', { hasText: 'Analiza' }).count(), 'Wiersz uniesiony');
+  const lifted = await rowBox(page, 'Analiza');
+  assert.ok(Math.abs(lifted.y - first.y) < 2, `wiersz idzie za palcem (góra ${lifted.y} ≈ ${first.y})`);
+  await page.waitForTimeout(250);
+  const shifted = await rowBox(page, 'Business English');
+  assert.ok(Math.abs(shifted.y - (first.y + lifted.height)) < 2, 'pierwszy wiersz zrobił miejsce');
+  assert.equal(await page.evaluate(() => window.scrollY), scrollBefore, 'strona się nie przewinęła');
+  await page.screenshot({ path: path.join(OUTPUT, 'kolejnosc-przeciaganie-telefon.png') });
+  await touch.end();
+  const dragged = ['Analiza', 'Business English', 'Metrology', 'Ćwiczenia', 'Zoologia', 'Ekonomia 10', 'Ekonomia 2'];
+  await waitUntil(async () => (await names()).join() === dragged.join(), 'Analiza na pierwszym miejscu');
+  assert.equal(await page.locator('.row--dragging').count(), 0);
+  assert.deepEqual(await page.evaluate(() => window.lexicards.library.listDomains().map((domain) => domain.name)), dragged, 'zapisane od razu');
+
+  // Krótko w dół: „Business English” mija tylko „Metrology”.
+  const second = await gripCenter(page, 'Business English');
+  const height = (await rowBox(page, 'Business English')).height;
+  const short = await touchAt(context, page, second.x, second.y);
+  await short.move(second.x, second.y + height * 0.7, 6);
+  await short.end();
+  await waitUntil(async () => (await names()).slice(0, 3).join() === 'Analiza,Metrology,Business English', 'Przesunięcie o jedno miejsce');
+  await page.getByRole('button', { name: 'Gotowe' }).click();
+  await expectText(sortButton, 'Ręcznie');
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await waitUntil(async () => (await names()).slice(0, 3).join() === 'Analiza,Metrology,Business English', 'Po ponownym otwarciu');
+});
+
+test('biblioteka 1.16: lekcje i moduły według daty i nazwy (osobno dla poziomów), utrwalone na końcu; przeciąganie myszą tylko w obrębie grupy (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const base = page.url().split('#')[0];
+  // Daty utworzenia lekcji modułu „Finance” (w pamięci – jak w teście filtra daty).
+  await page.evaluate((moduleID) => {
+    const { library } = window.lexicards;
+    const dates = { 'Financial Statements': [2026, 2, 1], Investments: [2026, 0, 15], 'Financial Ratios': [2026, 4, 10] };
+    for (const lesson of library.listLessons(moduleID)) lesson.createdAt = new Date(...dates[lesson.name], 10).toISOString();
+  }, ids.module);
+  const lessons = () => listTitles(page, 'Lekcje');
+  await page.goto(`${base}#/library/module/${ids.module}`);
+  await waitUntil(async () => (await lessons()).join() === 'Financial Statements,Investments,Financial Ratios', 'Kolejność ręczna');
+
+  const sortButton = page.locator('[data-testid=sort-lesson]');
+  const choose = async (sort) => {
+    await sortButton.click();
+    await page.locator(`dialog.menu[open] [data-testid=sort-lesson-${sort}]`).click();
+  };
+  await sortButton.click();
+  await expectText(page.locator('dialog.menu[open] .menu__title'), 'Kolejność lekcji');
+  assert.deepEqual(await page.locator('dialog.menu[open] [role=menuitemradio]').allTextContents(),
+    ['Ręcznie', 'Nazwa A–Z', 'Nazwa Z–A', 'Od najnowszych', 'Od najstarszych']);
+  await page.locator('dialog.menu[open]').evaluate((element) => Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)));
+  await page.screenshot({ path: path.join(OUTPUT, 'kolejnosc-menu-lekcje-komputer.png') });
+  await page.locator('dialog.menu[open] [data-testid=sort-lesson-newest]').click();
+  await waitUntil(async () => (await lessons()).join() === 'Financial Ratios,Financial Statements,Investments', 'Od najnowszych');
+  await expectText(sortButton, 'Najnowsze');
+  await choose('oldest');
+  await waitUntil(async () => (await lessons()).join() === 'Investments,Financial Statements,Financial Ratios', 'Od najstarszych');
+  await expectText(sortButton, 'Najstarsze');
+  await choose('name');
+  await waitUntil(async () => (await lessons()).join() === 'Financial Ratios,Financial Statements,Investments', 'A–Z');
+
+  // Utrwalone nadal na końcu – po posortowaniu reszty.
+  await page.evaluate(async (moduleID) => {
+    const { library } = window.lexicards;
+    await library.setLessonConsolidated(library.listLessons(moduleID).find((lesson) => lesson.name === 'Financial Ratios').id, true);
+  }, ids.module);
+  await waitUntil(async () => (await lessons()).join() === 'Financial Statements,Investments,Financial Ratios', 'A–Z, utrwalona na końcu');
+  await page.screenshot({ path: path.join(OUTPUT, 'kolejnosc-lekcje-a-z-komputer.png') });
+
+  // Moduły mają własny wybór: dalej ręcznie; Z–A tylko dla modułów.
+  const domainID = await page.evaluate((id) => window.lexicards.library.getModule(id).domainID, ids.module);
+  await page.goto(`${base}#/library/domain/${domainID}`);
+  const modules = () => listTitles(page, 'Moduły');
+  await waitUntil(async () => (await modules()).join() === 'Management,Finance,Negotiations', 'Moduły – ręcznie');
+  await expectText(page.locator('[data-testid=sort-module]'), 'Ręcznie');
+  await page.locator('[data-testid=sort-module]').click();
+  await page.locator('dialog.menu[open] [data-testid=sort-module-name-desc]').click();
+  await waitUntil(async () => (await modules()).join() === 'Negotiations,Management,Finance', 'Moduły Z–A');
+  assert.deepEqual(await page.evaluate(() => window.lexicards.library.getSettings().listSort), { domain: 'manual', module: 'name-desc', lesson: 'name' });
+
+  // „Zmień kolejność lekcji” z menu „…” przełącza na ręczną.
+  await page.goto(`${base}#/library/module/${ids.module}`);
+  await page.getByRole('button', { name: 'Więcej poleceń', exact: true }).click();
+  await menuItem(page, 'Zmień kolejność lekcji');
+  await page.getByRole('button', { name: 'Gotowe' }).waitFor();
+  assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().listSort.lesson), 'manual');
+  await waitUntil(async () => (await lessons()).join() === 'Financial Statements,Investments,Financial Ratios', 'Ręczna, utrwalona na końcu');
+
+  // Myszą za uchwyt: „Investments” na górę.
+  const grip = await gripCenter(page, 'Investments');
+  const first = await rowBox(page, 'Financial Statements');
+  await page.mouse.move(grip.x, grip.y);
+  await page.mouse.down();
+  await page.mouse.move(grip.x, first.y + 4, { steps: 8 });
+  await waitUntil(() => page.locator('.row--dragging', { hasText: 'Investments' }).count(), 'Wiersz uniesiony');
+  await page.screenshot({ path: path.join(OUTPUT, 'kolejnosc-przeciaganie-komputer.png') });
+  await page.mouse.up();
+  await waitUntil(async () => (await lessons()).join() === 'Investments,Financial Statements,Financial Ratios', 'Investments na górze');
+
+  // Myszą za wiersz (bez uchwytu), daleko w dół: zatrzymuje się nad utrwaloną.
+  let box = await rowBox(page, 'Investments');
+  await page.mouse.move(box.x + 60, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 60, box.y + box.height * 4, { steps: 10 });
+  const clamped = await rowBox(page, 'Investments');
+  const consolidated = await rowBox(page, 'Financial Ratios');
+  assert.ok(clamped.y + clamped.height <= consolidated.y + 1, 'nie wchodzi na utrwaloną');
+  await page.mouse.up();
+  await waitUntil(async () => (await lessons()).join() === 'Financial Statements,Investments,Financial Ratios', 'Koniec swojej grupy');
+
+  // Utrwalona sama w grupie – przeciągnięcie w górę nic nie zmienia; kliknięcie wiersza bez ruchu też nie.
+  const lone = await gripCenter(page, 'Financial Ratios');
+  await page.mouse.move(lone.x, lone.y);
+  await page.mouse.down();
+  await page.mouse.move(lone.x, lone.y - 200, { steps: 8 });
+  await page.mouse.up();
+  box = await rowBox(page, 'Financial Statements');
+  await page.mouse.click(box.x + 60, box.y + box.height / 2);
+  await page.waitForTimeout(300);
+  assert.deepEqual(await lessons(), ['Financial Statements', 'Investments', 'Financial Ratios']);
+  assert.equal(await page.evaluate(() => document.querySelectorAll('.row--reorder[style*="translate"]').length), 0, 'wiersze na miejscach');
+
+  await page.getByRole('button', { name: 'Gotowe' }).click();
+  await expectText(sortButton, 'Ręcznie');
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await waitUntil(async () => (await lessons()).join() === 'Financial Statements,Investments,Financial Ratios', 'Po ponownym otwarciu');
+}, { device: DESKTOP });
+
 test('data utworzenia przy modułach i lekcjach; filtr daty w module, w lekcji i w glosariuszu', async ({ open }) => {
   const page = await open();
   await loadSamples(page);

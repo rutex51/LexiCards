@@ -154,16 +154,21 @@ export function openMenu({ title = null, items }) {
       list.appendChild(h('hr', { class: 'menu__separator' }));
       continue;
     }
+    // Pozycja do wyboru jednej z opcji (od 1.16, np. kolejność listy): znacznik przy wybranej.
+    const radio = typeof item.checked === 'boolean';
     list.appendChild(h('button', {
       type: 'button',
-      role: 'menuitem',
+      role: radio ? 'menuitemradio' : 'menuitem',
+      'aria-checked': radio ? String(item.checked) : null,
       class: `menu__item${item.destructive ? ' menu__item--danger' : ''}`,
       disabled: Boolean(item.disabled),
+      dataset: { testid: item.testID },
       onClick: () => {
         dialog.close('select');
         item.onSelect?.();
       }
-    }, item.icon ? icon(item.icon) : null, h('span', null, item.label)));
+    }, radio ? (item.checked ? icon('check') : h('span', { class: 'menu__blank', 'aria-hidden': 'true' })) : item.icon ? icon(item.icon) : null,
+    h('span', null, item.label)));
   }
   const panel = h('div', { class: 'menu__panel', 'aria-labelledby': title ? titleID : null, 'aria-label': title ? null : 'Polecenia' },
     title ? h('h2', { class: 'menu__title', id: titleID }, title) : null,

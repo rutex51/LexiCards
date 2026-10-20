@@ -910,6 +910,66 @@ a.row__main:active,
 .row--reorder .icon-button { align-self: center; }
 .row--reorder .icon-button:last-child { margin-right: 4px; }
 
+/* Przeciąganie wierszy (od 1.16): uchwyt ≡ po prawej, przeciągany wiersz uniesiony nad innymi. */
+.row--reorder {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.row__grip {
+  display: grid;
+  flex: none;
+  place-items: center;
+  align-self: stretch;
+  width: 44px;
+  margin-right: 4px;
+  color: var(--text-3);
+  cursor: grab;
+  touch-action: none;
+}
+
+.group__list--dragging > .row:not(.row--dragging) { transition: transform 0.16s ease; }
+
+.row--dragging {
+  position: relative;
+  z-index: 2;
+  background: var(--surface);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.2);
+  cursor: grabbing;
+}
+
+.row--dragging .row__grip { cursor: grabbing; color: var(--accent); }
+.group__list > li.row--dragging::before { display: none; }
+
+/* Tytuł listy z przyciskiem kolejności (od 1.16). */
+.group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px 8px;
+}
+
+.group__head .group__title { padding: 0; }
+
+.group__action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: var(--accent);
+  font-size: var(--size-sub);
+  font-weight: 500;
+}
+
+.group__action:active { background: var(--pressed); }
+
+.menu__blank { flex: none; width: 24px; height: 24px; }
+
 .badge {
   flex: none;
   display: inline-grid;

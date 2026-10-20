@@ -93,11 +93,12 @@ export function settingsAction() {
   return h('a', { class: 'icon-button only-compact', href: routes.settings(), 'aria-label': 'Ustawienia', title: 'Ustawienia' }, icon('settings'));
 }
 
-/** Zgrupowana lista w stylu ustawień iOS. */
-export function group({ title = null, footer = null, className = '' }, ...rows) {
+/** Zgrupowana lista w stylu ustawień iOS; `action` – przycisk przy tytule (od 1.16: kolejność listy). */
+export function group({ title = null, footer = null, className = '', action = null }, ...rows) {
   const items = rows.flat().filter(Boolean);
+  const heading = title ? h('h2', { class: 'group__title' }, title) : null;
   return h('section', { class: `group ${className}`.trim() },
-    title ? h('h2', { class: 'group__title' }, title) : null,
+    action ? h('div', { class: 'group__head' }, heading, action) : heading,
     items.length > 0 ? h('ul', { class: 'group__list', role: 'list' }, items) : null,
     footer ? h('p', { class: 'group__footer' }, footer) : null
   );
@@ -122,7 +123,10 @@ export function linkRow({ href, leading = null, title, subtitle = null, onMenu =
   );
 }
 
-/** Wiersz w trybie zmiany kolejności: przyciski w górę i w dół. */
+/**
+ * Wiersz w trybie zmiany kolejności: przyciski w górę i w dół oraz (od 1.16) uchwyt ≡ do
+ * przeciągania (js/ui/reorder-drag.js); uchwyt jest tylko dla wskaźnika – klawiaturą strzałki.
+ */
 export function reorderRow({ leading = null, title, isFirst, isLast, onUp, onDown }) {
   const up = iconButton('arrowUp', `Przesuń wyżej: ${title}`, onUp);
   const down = iconButton('arrowDown', `Przesuń niżej: ${title}`, onDown);
@@ -134,7 +138,8 @@ export function reorderRow({ leading = null, title, isFirst, isLast, onUp, onDow
       h('span', { class: 'row__text' }, h('span', { class: 'row__title' }, title))
     ),
     up,
-    down
+    down,
+    h('span', { class: 'row__grip', 'aria-hidden': 'true', title: `Przeciągnij, aby przesunąć: ${title}` }, icon('grip', { size: 22 }))
   );
 }
 

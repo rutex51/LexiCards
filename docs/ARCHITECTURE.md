@@ -21,7 +21,8 @@ js/main.js                 start: baza → biblioteka → nawigacja → ekrany
 js/ui/screens/*.js         ekrany: klasa z metodą view() zwracającą opis ekranu
 js/ui/shell.js             powłoka: pasek nawigacji, zakładki / panel boczny
 js/ui/actions.js           formularze i przepływy wspólne dla wielu ekranów
-js/ui/dialogs.js           arkusze, pytania, menu, komunikaty (element <dialog>)
+js/ui/dialogs.js           arkusze, pytania, menu (także z wyborem jednej pozycji), komunikaty (element <dialog>)
+js/ui/reorder-drag.js      przeciąganie wierszy w trybie zmiany kolejności (uchwyt, w obrębie grupy, przewijanie przy krawędzi)
 js/ui/router.js            adresy po znaku # i historia przeglądarki
 js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
 js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspólny dla nauki i quizu
@@ -61,6 +62,7 @@ js/core/quiz.js            quizy: pytania wyboru, rundy par, test mieszany, odpo
 js/core/stats.js           statystyki: statusy w kierunkach, elementy, szeregi dzienne, zestawienia, czas nauki
 js/core/listen.js          słuchanie: kroki pojęcia (pojęcie, przerwa, odpowiedź, definicja, przykład), szacunek czasu
 js/core/text.js            normalizacja tekstu, tagi, odmiana liczebników
+js/core/sorting.js         kolejność list biblioteki: ręczna, nazwa A–Z i Z–A (po polsku), data utworzenia; nowa kolejność po przeniesieniu
 ```
 
 Zależności biegną tylko w dół: ekrany znają bibliotekę, biblioteka zna adapter zapisu.
@@ -200,6 +202,25 @@ działa na adapterze pamięciowym i wyświetla ostrzeżenie, że dane znikną po
   ten rok, własny zakres od – do, dni w czasie lokalnym, „do” obejmuje cały dzień) jest nad listą
   modułów, lekcji i pojęć lekcji (wybór pamiętany w pamięci aplikacji dla danej listy) i w filtrach
   glosariusza (`glossary({ created })`).
+- **Kolejność list** (od 1.16, `js/core/sorting.js`): ustawienie `listSort: { domain, module, lesson }`
+  (`manual`, `name`, `name-desc`, a dla modułów i lekcji także `newest`, `oldest`; nieznana wartość –
+  `manual`). `sortItems` zwraca nową tablicę: nazwy przez `Intl.Collator('pl', { numeric: true,
+  sensitivity: 'base' })`, data – `createdAt` (ta sama data – po nazwie), przy remisie decyduje
+  `sortOrder`. Ekrany Biblioteki sortują listę, potem dzielą ją na nieutrwalone i utrwalone
+  (`consolidatedLast`), potem filtrują datą. Zapisana kolejność (`sortOrder`) zmienia się tylko
+  w trybie zmiany kolejności, który zawsze pokazuje kolejność ręczną – jego włączenie przy innym
+  wyborze ustawia `manual`. Przycisk przy tytule listy (`group({ action })`) otwiera menu z pozycjami
+  `menuitemradio` (`openMenu` – `checked`). Ustawienie jest w rekordzie ustawień, więc wraca z kopią
+  zapasową. Start, wybór materiału i eksport używają kolejności ręcznej.
+- **Przeciąganie wierszy** (od 1.16, `js/ui/reorder-drag.js`): w trybie zmiany kolejności wiersz ma
+  uchwyt `.row__grip` (`touch-action: none`). `pointerdown` na uchwycie (dotyk, rysik, mysz) albo myszą
+  na wierszu poza przyciskami (po 4 px ruchu – kliknięcie zostaje kliknięciem) mierzy wiersze we
+  współrzędnych strony i przechwytuje wskaźnik. Przeciągany wiersz dostaje `translateY` (ograniczony
+  do swojej grupy – `groupOf`, np. utrwalone), a wiersze między miejscem startu i docelowym – przesunięcie
+  o jego wysokość (z przejściem CSS). Miejsce zmienia się, gdy brzeg przeciąganego wiersza minie środek
+  sąsiada. Przy krawędzi okna (72 px) pętla `requestAnimationFrame` przewija stronę (do 14 px na
+  klatkę). Upuszczenie wywołuje `onMove(from, to)` → `library.reorder(level, movedOrder(…))` i ekran
+  rysuje się od nowa; `pointercancel` przywraca wiersze. Strzałki ↑ ↓ zostają (klawiatura).
 - **Układ**: poniżej 900 px zakładki u dołu, powyżej panel boczny; glosariusz na szerokim
   ekranie jest tabelą. Rozmiar tekstu na iPhonie podąża za ustawieniem systemowym.
 - Stan jest zawsze nazwany tekstem lub ikoną, nie samym kolorem; brak treści to „Brak danych”.

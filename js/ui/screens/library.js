@@ -1,6 +1,7 @@
 // Ekrany Biblioteki: lista dziedzin, dziedzina (moduły), moduł (lekcje).
 
 import { createdRange, createdWithin } from '../../core/created.js';
+import { LIST_SORTS, SORT_LABELS, SORT_SHORT, defaultListSort, listSortOf, movedOrder, sortItems } from '../../core/sorting.js';
 import { pluralLessons, pluralModules, pluralTerms } from '../../core/text.js';
 import {
   copyLesson, deleteNow, moveLesson, moveModule, openDomainForm, openExportSheet, openLessonForm, openModuleForm, openTermForm,
@@ -10,7 +11,7 @@ import {
   createdFilterControl, createdFilterFor, createdLine, domainBadge, emptyState, group, iconButton, linkRow, navButton, primaryButton,
   rememberCreatedFilter, reorderRow, settingsAction
 } from '../components.js';
-import { openMenu, toast } from '../dialogs.js';
+import { openMenu, showError, toast } from '../dialogs.js';
 import { h } from '../dom.js';
 import { icon } from '../icons.js';
 import {
@@ -18,29 +19,74 @@ import {
   setConsolidated
 } from '../mastery.js';
 import { noteButton, noteMenuItem } from '../notes.js';
+import { enableDragReorder } from '../reorder-drag.js';
 import { routes } from '../router.js';
 import { swipeRow } from '../swipe.js';
 
-/** Wiersze w trybie zmiany kolejności; każda zmiana jest od razu zapisywana. */
 /**
- * Wiersze trybu zmiany kolejności. groupOf: elementy różnych grup (np. utrwalone na końcu listy)
- * nie mijają się – przesuwać można tylko w obrębie grupy, a zapisana kolejność to kolejność listy.
+ * Lista w trybie zmiany kolejności: strzałki w wierszach i (od 1.16) przeciąganie uchwytem ≡.
+ * Każda zmiana jest od razu zapisywana. groupOf: elementy różnych grup (np. utrwalone na końcu
+ * listy) nie mijają się – przesuwać można tylko w obrębie grupy, a zapisana kolejność to kolejność listy.
  */
-function reorderRows(ctx, level, items, leadingFor = () => null, groupOf = () => 0) {
-  const move = (index, delta) => {
-    const ids = items.map((item) => item.id);
-    const [moved] = ids.splice(index, 1);
-    ids.splice(index + delta, 0, moved);
-    reorder(ctx, level, ids);
-  };
-  return items.map((item, index) => reorderRow({
+function reorderList(ctx, level, items, { title, leadingFor = () => null, groupOf = () => 0 }) {
+  const ids = items.map((item) => item.id);
+  const move = (from, to) => reorder(ctx, level, movedOrder(ids, from, to));
+  const rows = items.map((item, index) => reorderRow({
     leading: leadingFor(item),
     title: item.name,
     isFirst: index === 0 || groupOf(items[index - 1]) !== groupOf(item),
     isLast: index === items.length - 1 || groupOf(items[index + 1]) !== groupOf(item),
-    onUp: () => move(index, -1),
-    onDown: () => move(index, 1)
+    onUp: () => move(index, index - 1),
+    onDown: () => move(index, index + 1)
   }));
+  const section = group({ title }, rows);
+  const list = section.querySelector('.group__list');
+  if (list) enableDragReorder(list, { groupOf: (index) => groupOf(items[index]), onMove: move });
+  return section;
+}
+
+const LEVEL_NOUNS = { domain: 'dziedzin', module: 'modułów', lesson: 'lekcji' };
+
+/** Elementy listy w kolejności wybranej dla poziomu (od 1.16); w trybie zmiany kolejności – zawsze ręcznej. */
+const sortedFor = (library, level, items, reordering) => sortItems(items, reordering ? 'manual' : listSortOf(library.getSettings(), level));
+
+async function setListSort(ctx, level, sort) {
+  const { library } = ctx;
+  try {
+    await library.updateSettings({ listSort: { ...defaultListSort(), ...library.getSettings().listSort, [level]: sort } });
+  } catch (error) {
+    await showError(error);
+  }
+}
+
+/**
+ * Przycisk kolejności przy tytule listy (od 1.16): ręcznie, nazwa A–Z i Z–A, a moduły i lekcje
+ * także według daty utworzenia; „Ustaw ręcznie” włącza tryb zmiany kolejności (kolejność ręczna).
+ */
+function sortAction(ctx, level, startReordering) {
+  const current = listSortOf(ctx.library.getSettings(), level);
+  const noun = LEVEL_NOUNS[level];
+  return h('button', {
+    type: 'button', class: 'group__action', 'aria-label': `Kolejność ${noun}: ${SORT_LABELS[current].toLowerCase()}`, title: `Kolejność ${noun}`,
+    dataset: { testid: `sort-${level}` },
+    onClick: () => openMenu({
+      title: `Kolejność ${noun}`,
+      items: [
+        ...LIST_SORTS[level].map((sort) => ({
+          label: SORT_LABELS[sort], checked: sort === current, testID: `sort-${level}-${sort}`, onSelect: () => setListSort(ctx, level, sort)
+        })),
+        startReordering ? 'separator' : null,
+        startReordering ? { label: 'Ustaw ręcznie – przeciągnij…', icon: 'reorder', testID: `sort-${level}-arrange`, onSelect: startReordering } : null
+      ]
+    })
+  }, icon('sort', { size: 16 }), h('span', null, SORT_SHORT[current]));
+}
+
+/** Tryb zmiany kolejności dotyczy kolejności ręcznej – włączenie go ją wybiera (gdy była inna). */
+function startReordering(ctx, screen, level) {
+  screen.reordering = true;
+  if (listSortOf(ctx.library.getSettings(), level) !== 'manual') setListSort(ctx, level, 'manual');
+  else ctx.refresh();
 }
 
 /**
@@ -134,8 +180,8 @@ export class DomainsScreen {
   view() {
     const { ctx } = this;
     const { library } = ctx;
-    const domains = library.listDomains();
-    if (domains.length < 2) this.reordering = false;
+    if (library.listDomains().length < 2) this.reordering = false;
+    const domains = sortedFor(library, 'domain', library.listDomains(), this.reordering);
 
     const addMenu = () => openMenu({
       title: 'Dodaj',
@@ -153,7 +199,7 @@ export class DomainsScreen {
     const actions = this.reordering
       ? [navButton('Gotowe', () => { this.reordering = false; ctx.refresh(); }, { strong: true })]
       : [
-          domains.length > 1 ? iconButton('reorder', 'Zmień kolejność dziedzin', () => { this.reordering = true; ctx.refresh(); }) : null,
+          domains.length > 1 ? iconButton('reorder', 'Zmień kolejność dziedzin', () => startReordering(ctx, this, 'domain')) : null,
           iconButton('plus', 'Dodaj', addMenu, { className: 'icon-button--accent' }),
           settingsAction()
         ];
@@ -172,7 +218,7 @@ export class DomainsScreen {
     }
 
     const rows = this.reordering
-      ? reorderRows(ctx, 'domain', domains, (domain) => domainBadge(domain))
+      ? null
       : domains.map((domain) => {
           const counts = library.counts('domain', domain.id);
           return linkRow({
@@ -209,7 +255,9 @@ export class DomainsScreen {
             testID: 'open-glossary'
           })
         ),
-        group({ title: 'Dziedziny' }, rows)
+        this.reordering
+          ? reorderList(ctx, 'domain', domains, { title: 'Dziedziny', leadingFor: (domain) => domainBadge(domain) })
+          : group({ title: 'Dziedziny', action: domains.length > 1 ? sortAction(ctx, 'domain', () => startReordering(ctx, this, 'domain')) : null }, rows)
       ]
     };
   }
@@ -230,8 +278,9 @@ export class DomainScreen {
     const domain = library.getDomain(this.id);
     if (!domain) return missingView('Dziedzina', routes.domains(), 'Biblioteka');
 
-    const modules = consolidatedLast(library, library.listModules(domain.id), (id) => library.isModuleConsolidated(id));
-    if (modules.length < 2) this.reordering = false;
+    if (library.listModules(domain.id).length < 2) this.reordering = false;
+    const modules = consolidatedLast(library, sortedFor(library, 'module', library.listModules(domain.id), this.reordering),
+      (id) => library.isModuleConsolidated(id));
 
     const moreMenu = () => openMenu({
       title: domain.name,
@@ -240,7 +289,7 @@ export class DomainScreen {
         { label: 'Quiz z tej dziedziny', icon: 'quiz', onSelect: () => ctx.navigate(routes.quiz({ level: 'domain', id: domain.id })) },
         { label: 'Statystyki dziedziny', icon: 'stats', onSelect: () => ctx.navigate(routes.stats({ level: 'domain', id: domain.id })) },
         { label: 'Edytuj dziedzinę', icon: 'edit', onSelect: () => openDomainForm(ctx, domain.id) },
-        modules.length > 1 ? { label: 'Zmień kolejność modułów', icon: 'reorder', onSelect: () => { this.reordering = true; ctx.refresh(); } } : null,
+        modules.length > 1 ? { label: 'Zmień kolejność modułów', icon: 'reorder', onSelect: () => startReordering(ctx, this, 'module') } : null,
         { label: 'Eksportuj dziedzinę…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'domain', id: domain.id }) },
         'separator',
         {
@@ -281,7 +330,7 @@ export class DomainScreen {
         reordering: this.reordering
       });
       const rows = this.reordering
-        ? reorderRows(ctx, 'module', modules, () => null, reorderGroup(library, (id) => library.isModuleConsolidated(id)))
+        ? null
         : list.shown.map((module) => {
             const counts = library.counts('module', module.id);
             const progress = masteryOf(ctx, 'module', module.id);
@@ -308,7 +357,10 @@ export class DomainScreen {
             }), progress), 'module', module.id, progress);
           });
       const toggle = this.reordering && consolidatedLastToggle(ctx, 'module', modules.some((item) => library.isModuleConsolidated(item.id)));
-      body = [list.control, toggle || null, group({ title: list.title }, rows), list.empty];
+      const listGroup = this.reordering
+        ? reorderList(ctx, 'module', modules, { title: list.title, groupOf: reorderGroup(library, (id) => library.isModuleConsolidated(id)) })
+        : group({ title: list.title, action: modules.length > 1 ? sortAction(ctx, 'module', () => startReordering(ctx, this, 'module')) : null }, rows);
+      body = [list.control, toggle || null, listGroup, list.empty];
     }
 
     return {
@@ -338,8 +390,9 @@ export class ModuleScreen {
 
     const domain = library.getDomain(module.domainID);
     const backHref = domain ? routes.domain(domain.id) : routes.domains();
-    const lessons = consolidatedLast(library, library.listLessons(module.id), (id) => library.isLessonConsolidated(id));
-    if (lessons.length < 2) this.reordering = false;
+    if (library.listLessons(module.id).length < 2) this.reordering = false;
+    const lessons = consolidatedLast(library, sortedFor(library, 'lesson', library.listLessons(module.id), this.reordering),
+      (id) => library.isLessonConsolidated(id));
 
     const moreMenu = () => openMenu({
       title: module.name,
@@ -350,7 +403,7 @@ export class ModuleScreen {
         consolidationMenuItem(ctx, 'module', module.id),
         { label: 'Edytuj moduł', icon: 'edit', onSelect: () => openModuleForm(ctx, { moduleID: module.id }) },
         { label: 'Przenieś do innej dziedziny', icon: 'move', onSelect: () => moveModule(ctx, module.id) },
-        lessons.length > 1 ? { label: 'Zmień kolejność lekcji', icon: 'reorder', onSelect: () => { this.reordering = true; ctx.refresh(); } } : null,
+        lessons.length > 1 ? { label: 'Zmień kolejność lekcji', icon: 'reorder', onSelect: () => startReordering(ctx, this, 'lesson') } : null,
         { label: 'Eksportuj moduł…', icon: 'download', onSelect: () => openExportSheet(ctx, { kind: 'module', id: module.id }) },
         'separator',
         {
@@ -383,7 +436,7 @@ export class ModuleScreen {
         reordering: this.reordering
       });
       const rows = this.reordering
-        ? reorderRows(ctx, 'lesson', lessons, () => null, reorderGroup(library, (id) => library.isLessonConsolidated(id)))
+        ? null
         : list.shown.map((lesson) => {
             const progress = masteryOf(ctx, 'lesson', lesson.id);
             return swipeActions(ctx, markConsolidated(linkRow({
@@ -413,7 +466,10 @@ export class ModuleScreen {
             }), progress), 'lesson', lesson.id, progress);
           });
       const toggle = this.reordering && consolidatedLastToggle(ctx, 'lesson', lessons.some((item) => library.isLessonConsolidated(item.id)));
-      body = [list.control, toggle || null, group({ title: list.title }, rows), list.empty];
+      const listGroup = this.reordering
+        ? reorderList(ctx, 'lesson', lessons, { title: list.title, groupOf: reorderGroup(library, (id) => library.isLessonConsolidated(id)) })
+        : group({ title: list.title, action: lessons.length > 1 ? sortAction(ctx, 'lesson', () => startReordering(ctx, this, 'lesson')) : null }, rows);
+      body = [list.control, toggle || null, listGroup, list.empty];
     }
 
     return {
