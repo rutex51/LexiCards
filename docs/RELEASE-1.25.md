@@ -55,3 +55,21 @@ nachodził na „Gotowe”.
   Twoich rysunkach; warto otworzyć jeden z nich i sprawdzić liczby.
 - Odchyłki graniczne z tablic ISO 286 (np. ⌀50 H7 → +0,025/0) nie są liczone – mogę to zaproponować
   osobno (trzeba wpisać tablice normy i sprawdzić je z Tobą).
+
+## Uzupełnienie w wersji 1.25.1 – kartka przewracana nad spiralą
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Kartka powinna uciekać poza ekran i przykrywać spiralę; dopiero gdy część kartki przy grzbiecie zbliży się do spirali – spirala płynnym przejściem wychodzi spod kartki | Przewracany płat nie jest już przycinany przy lewej krawędzi strony: przechodzi **nad spiralę** i dalej **poza stronę i ekran**. Zwoje są rysowane nad płaską (jeszcze leżącą) częścią kartki, ale pod płatem. Gdy zgięcie dochodzi do grzbietu (płaska część kartki mniejsza niż ok. 18% strony), płat **płynnie znika** (ok. ¼ s) i spirala wychodzi spod niego. Poprzednia kartka wraca tą samą drogą: z lewej, najpierw przykrywa spiralę, potem kładzie się na stronę. Strona ze zdjęciem – bez spirali (jak było). |
+
+Testy wersji 1.25.1:
+
+- **Testy logiki (Node.js): 351 – wszystkie zaliczone** (bez zmian).
+- **Testy w przeglądarce (Chromium): 167 – wszystkie zaliczone w dwóch pełnych przebiegach**
+  (166 wcześniejszych + 1 nowy): ekran komputera, zatrzymany czas animacji – na początku w miejscu zwoju
+  za krawędzią strony widać zwój, w ok. 60% przewracania – płat (jasny odwrót kartki) nad zwojem i poza
+  stroną, przy końcu – znów zwój; po animacji zwoje na zwykłej warstwie edytora.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium): klatki przewracania – płat nad spiralą, spirala wychodzi spod płata.
+
+Czego nie sprawdzono: płynność w Safari na iPhonie i iPadzie (tylko Chromium).

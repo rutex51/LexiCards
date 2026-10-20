@@ -7435,6 +7435,55 @@ test('rysunek 1.25: ramka tolerancji z odchyłkami (znak z przycisku), po wstawi
   assert.ok(await imageInk(page, ids.statements, [52, 1050, 260, 1080]) > 40, '„Wymiary w cm” na obrazie');
 }, { device: DESKTOP });
 
+test('rysunek 1.25.1: przewracana kartka przechodzi nad spiralę i poza stronę, a gdy zgięcie dochodzi do grzbietu – spirala płynnie wychodzi spod niej (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Spirala</p>');
+  const { at } = await pageFrame(page);
+  await drawStroke(page, segment(at(300, 300), at(700, 300), 12));
+  await editor.locator('[data-testid=drawing-pages]').click();
+  await page.locator('[data-testid=drawing-page-new]').click();
+  await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 2 z 2');
+  await waitUntil(() => page.locator('.drawing__flip').evaluate((element) => element.hidden), 'Animacja skończona');
+  await page.keyboard.press('PageUp');
+  await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 1 z 2');
+  await waitUntil(() => page.locator('.drawing__flip').evaluate((element) => element.hidden), 'Animacja skończona');
+  await page.evaluate(() => {
+    const real = performance.now.bind(performance);
+    window.__freeze = null;
+    performance.now = () => window.__freeze ?? real();
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (callback) => raf(() => callback(performance.now()));
+  });
+  const start = await page.evaluate(() => (window.__freeze = performance.now()));
+  const moment = async (ms) => {
+    await page.evaluate((value) => { window.__freeze = value; }, start + ms);
+    await nextFrames(page);
+  };
+  await page.keyboard.press('PageDown');
+  // Zwój spirali przy wysokości 550 (dziurka w 528) – najdalej za krawędzią w x = −36.
+  await moment(80);
+  const early = await flipPixel(page, ...at(-36, 550));
+  assert.ok(early[3] > 200 && Math.max(...early.slice(0, 3)) < 200, `na początku – zwój (${early})`);
+  // W ok. 60% kartka leży nad spiralą, za lewą krawędzią strony.
+  await moment(560);
+  const covered = await flipPixel(page, ...at(-36, 550));
+  assert.ok(covered[3] === 255 && Math.min(...covered.slice(0, 3)) > 200, `płat nad spiralą (${covered})`);
+  const outside = await flipPixel(page, ...at(-120, 500));
+  assert.ok(outside[3] === 255 && Math.min(...outside.slice(0, 3)) > 200, `płat poza stroną (${outside})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-kartka-nad-spirala.png') });
+  // Zgięcie przy grzbiecie – płat znika, spirala znów widoczna.
+  await moment(840);
+  const revealed = await flipPixel(page, ...at(-36, 550));
+  assert.ok(revealed[3] > 200 && Math.max(...revealed.slice(0, 3)) < 200, `spirala wyszła spod kartki (${revealed})`);
+  await page.evaluate(() => { window.__freeze = null; });
+  await waitUntil(() => page.locator('.drawing__flip').evaluate((element) => element.hidden), 'Animacja skończona');
+  // Po animacji zwoje znów na warstwie bieżącej.
+  const live = await page.locator('[data-testid=drawing-canvas]').evaluate((canvas, [fx, fy]) => [...canvas.getContext('2d').getImageData(Math.round(canvas.width * fx), Math.round(canvas.height * fy), 1, 1).data], at(-36, 550));
+  assert.ok(live[3] > 200, `zwój na warstwie bieżącej (${live})`);
+}, { device: DESKTOP });
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

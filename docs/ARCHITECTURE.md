@@ -787,7 +787,10 @@ zdjęcia – `hasSpiral`): `SPIRAL` – dziurki co kratkę (`spiralHoles`, na ś
 od lewej krawędzi, zwoje wokół osi `axis` tuż za krawędzią. `paintHoles` – na płótnie zapisanych kresek
 po treści (szare, nieprzezroczyste – zdjęcie strony do animacji ma dziurki, pomiar strony w testach bez
 zmian), `paintCoils` – na warstwie bieżącej na początku `renderLive` (nad kreskami, pod resztą) i na
-płótnie animacji po kartce (spirala stoi, kartka obraca się wokół niej): przednia połowa zwoju – od
+płótnie animacji (spirala stoi, kartka obraca się wokół niej; od 1.25.1 `paintTurn(…, between)` rysuje
+zwoje nad płaską częścią kartki, a pod płatem, warstwa bieżąca ich wtedy nie rysuje – `coilsOnFlip`;
+płat nie jest przycinany przy grzbiecie – przechodzi nad spiralę i poza stronę – i znika płynnie, gdy
+płaska część kartki jest mniejsza niż `FLAP_FADE` (0,18) strony – krycie płata `1 − smoothstep`): przednia połowa zwoju – od
 dziurki nad krawędzią (cień `shadowBlur` w pikselach urządzenia, połysk), tylna – pod kartką, widoczna za
 krawędzią; zwój widziany lekko z ukosa (`tilt`). `fitScale` i `clampView` zostawiają miejsce
 `SPIRAL_OUT` z obu stron (strona na środku), a przy powiększeniu przesunięcie w prawo odsłania spiralę.

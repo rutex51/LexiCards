@@ -33,7 +33,7 @@ Tabele w notatkach („Tab. N.”) i na rysunku, okno grubości zakreślacza, ka
 Rysunek: liniuszek promieniowy, przewracanie kartek kółkiem i przyciskami ‹ › z animacją, końce odcinka i strzałki przyciągane do krawędzi i narożników (wersja 1.22); wymiary jak w rysunku technicznym z tolerancjami, ramka tolerancji, baza, chropowatość (1.22.1): [docs/RELEASE-1.22.md](docs/RELEASE-1.22.md).
 Nauka w kalendarzu – plik .ics do Outlooka z powtarzaniem, przypomnieniem, prywatnością i linkami do lekcji (wersja 1.23): [docs/RELEASE-1.23.md](docs/RELEASE-1.23.md).
 Rysunek: figury z odręcznych kształtów (przytrzymane pióro), łamana i wielokąt z punktami w wierzchołkach, kartki przewracane od rogu jak w notatkach, zaznaczenie przed kółkiem liniuszka (wersja 1.24); spirala na grzbiecie kartki (1.24.1); powiększanie dwoma palcami w miejscu palców (1.24.2): [docs/RELEASE-1.24.md](docs/RELEASE-1.24.md).
-Rysunek: wymiary bez jednostki w mm (albo cm, m, calach) z oznaczeniem „Wymiary w mm”, odchyłki w ramce tolerancji, znak +/− przy odchyłkach, tabela pasowań ISO 286 z ostatnio użytymi, zamykanie paneli (wersja 1.25): [docs/RELEASE-1.25.md](docs/RELEASE-1.25.md).
+Rysunek: wymiary bez jednostki w mm (albo cm, m, calach) z oznaczeniem „Wymiary w mm”, odchyłki w ramce tolerancji, znak +/− przy odchyłkach, tabela pasowań ISO 286 z ostatnio użytymi, zamykanie paneli (wersja 1.25); kartka przewracana nad spiralą (1.25.1): [docs/RELEASE-1.25.md](docs/RELEASE-1.25.md).
 
 ## Co potrafi wersja 1.25
 
@@ -189,7 +189,7 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.22 – liniuszek promieniowy, przewracanie kartek kółkiem, przyciąganie końców do krawędzi i narożników; 1.22.1 – wymiary techniczne, tolerancje, symbole metrologiczne](docs/RELEASE-1.22.md),
 [wersja 1.23 – nauka w kalendarzu (.ics)](docs/RELEASE-1.23.md),
 [wersja 1.24 – figury z odręcznych kształtów, łamana, przewracanie kartek od rogu; 1.24.1 – spirala na grzbiecie kartki; 1.24.2 – powiększanie dwoma palcami](docs/RELEASE-1.24.md),
-[wersja 1.25 – jednostki wymiarów, odchyłki w ramce tolerancji, tabela pasowań](docs/RELEASE-1.25.md).
+[wersja 1.25 – jednostki wymiarów, odchyłki w ramce tolerancji, tabela pasowań; 1.25.1 – kartka nad spiralą](docs/RELEASE-1.25.md).
 
 ## Jak korzystać
 
@@ -621,7 +621,9 @@ następna kartka); poprzednia wraca tą samą drogą nad bieżącą. Trwa ok. 0,
 najpierw do widoku całej strony (bez animacji, gdy system prosi o ograniczenie ruchu).
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
-przy przewracaniu kartka obraca się wokół spirali. To tylko wygląd edytora – obraz rysunku w notatce,
+przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę
+i dalej poza ekran, a gdy zgięcie dochodzi do grzbietu, płynnie znika i spirala wychodzi spod niego
+(poprzednia kartka wraca tą samą drogą). To tylko wygląd edytora – obraz rysunku w notatce,
 wycinek i „Osadź” są bez spirali, a kreska narysowana pod dziurką zostaje cała. Strona ze zdjęciem
 („Rysuj na zdjęciu”) – bez spirali.
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno

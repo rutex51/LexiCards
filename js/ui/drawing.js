@@ -774,6 +774,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       ctx.clip();
     };
     let active = null;
+    /** W trakcie przewracania kartki (od 1.25.1) zwoje spirali rysuje płótno animacji – pod płatem kartki. */
+    let coilsOnFlip = false;
     /** Kształt, którego stałe wymiary pominęła ostatnio warstwa zapisanych kresek (są przy nim pola wymiarów). */
     let plainShape = null;
     const renderBase = () => {
@@ -1801,8 +1803,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const renderLive = () => {
       const ctx = live.getContext('2d');
       prepare(ctx);
-      // Zwoje spirali (od 1.24.1) – nad zapisanymi kreskami, pod wszystkim innym na tej warstwie.
-      paintCoils(ctx);
+      // Zwoje spirali (od 1.24.1) – nad zapisanymi kreskami, pod wszystkim innym na tej warstwie
+      // (w trakcie przewracania kartki – na płótnie animacji).
+      if (!coilsOnFlip) paintCoils(ctx);
       ctx.save();
       clipPage(ctx);
       if (active?.kind === 'stroke') paintStroke(ctx, active.recognized?.shape ?? active.stroke);
@@ -3262,6 +3265,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       flipCanvas.width = base.width;
       flipCanvas.height = base.height;
       flipCanvas.hidden = false;
+      coilsOnFlip = true;
+      renderLive();
       // Pierwsza klatka od razu – inaczej przez chwilę widać już nową kartkę.
       stepFlip(flipping.start);
     }
@@ -3285,24 +3290,40 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, flipCanvas.width, flipCanvas.height);
       const { forward, before, after } = flipping;
+      // Spirala zostaje na miejscu (od 1.24.1): nad płaską częścią kartki, pod przewracanym płatem (od 1.25.1).
+      const coils = () => {
+        ctx.save();
+        ctx.setTransform(view.dpr * view.scale, 0, 0, view.dpr * view.scale, view.dpr * view.x, view.dpr * view.y);
+        paintCoils(ctx);
+        ctx.restore();
+      };
       if (forward) {
         // Następna: pod spodem (na płótnie strony) już nowa kartka, stara przewraca się w lewo.
-        paintTurn(ctx, before, easeFlip(t));
+        paintTurn(ctx, before, easeFlip(t), coils);
       } else {
         // Poprzednia: pod spodem stara kartka, nowa wraca z lewej (róg od przewróconego położenia).
         ctx.drawImage(before.image, before.rect.x, before.rect.y);
-        paintTurn(ctx, after, 1 - easeFlip(t));
+        paintTurn(ctx, after, 1 - easeFlip(t), coils);
       }
-      // Spirala zostaje na miejscu – kartka obraca się wokół niej (od 1.24.1).
-      ctx.setTransform(view.dpr * view.scale, 0, 0, view.dpr * view.scale, view.dpr * view.x, view.dpr * view.y);
-      paintCoils(ctx);
       if (t < 1) {
         requestAnimationFrame(stepFlip);
       } else {
         flipping = null;
         flipCanvas.hidden = true;
+        coilsOnFlip = false;
+        renderLive();
       }
     }
+    /** Pole wielokąta [{ x, y }, …]. */
+    const polygonArea = (polygon) => Math.abs(polygon.reduce((sum, point, index) => {
+      const next = polygon[(index + 1) % polygon.length];
+      return sum + point.x * next.y - next.x * point.y;
+    }, 0)) / 2;
+    /**
+     * Płat przewracanej kartki znika (od 1.25.1), gdy zgięcie dochodzi do grzbietu: płaska część kartki
+     * mniejsza niż ta część strony – płat coraz bardziej przezroczysty, spirala wychodzi spod niego.
+     */
+    const FLAP_FADE = 0.18;
     /** Ścieżka wielokąta [{ x, y }, …]. */
     function polygonPath(ctx, polygon) {
       ctx.beginPath();
@@ -3334,10 +3355,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     /**
      * Kartka `page` ({ image, rect }) w trakcie przewracania (progress 0 – płasko, 1 – przewrócona):
      * róg dolny prawy idzie łukiem w lewo, płaska część zostaje, zagięty płat (odwrót – jasny papier,
-     * przez który lekko prześwituje rysunek w lustrze) leży odbity względem zgięcia i znika za grzbietem
-     * (lewą krawędzią strony); cień pada na stronę pod spodem.
+     * przez który lekko prześwituje rysunek w lustrze) leży odbity względem zgięcia; cień pada na stronę
+     * pod spodem. Od 1.25.1 płat przechodzi nad spiralę i poza ekran, a znika płynnie, gdy zgięcie
+     * dochodzi do grzbietu; `between` – rysowane nad płaską częścią, pod płatem (zwoje spirali).
      */
-    function paintTurn(ctx, page, progress) {
+    function paintTurn(ctx, page, progress, between = () => {}) {
       const { image, rect } = page;
       const [width, height] = [rect.w, rect.h];
       const corner = cornerOf('bottom', width, height);
@@ -3348,6 +3370,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       if (!geometry) {
         if (progress < 0.5) ctx.drawImage(image, 0, 0);
         ctx.restore();
+        between();
         return;
       }
       const extent = Math.max(width, height) * 2;
@@ -3366,12 +3389,19 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       ctx.clip();
       foldBand(ctx, geometry.point, geometry.normal, width * (0.04 + 0.2 * lift), CAST_STOPS, lift * 1.6, extent);
       ctx.restore();
-      // Płat: tylko nad stroną w poziomie (za grzbietem kartka znika), w pionie może wyjść poza nią.
+      ctx.restore();
+      // Między płaską częścią a płatem – zwoje spirali (kartka obraca się wokół nich).
+      between();
+      // Płat (od 1.25.1 bez przycinania przy grzbiecie): przewraca się nad spiralę i dalej poza ekran,
+      // a gdy zgięcie dochodzi do grzbietu – płynnie znika (spirala wychodzi spod niego).
+      const flatShare = polygonArea(geometry.flat) / (width * height);
+      const vanish = Math.min(1, Math.max(0, (FLAP_FADE - flatShare) / FLAP_FADE));
+      const fade = 1 - vanish * vanish * (3 - 2 * vanish);
+      if (fade <= 0.001) return;
       ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, -height, width, height * 3);
-      ctx.clip();
+      ctx.translate(rect.x, rect.y);
       ctx.save();
+      ctx.globalAlpha = fade;
       ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
       ctx.shadowBlur = 6 * view.dpr;
       ctx.shadowOffsetY = 2 * view.dpr;
@@ -3382,13 +3412,12 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       polygonPath(ctx, geometry.flap);
       ctx.clip();
       ctx.save();
-      ctx.globalAlpha = 0.12;
+      ctx.globalAlpha = 0.12 * fade;
       ctx.transform(...geometry.reflection);
       ctx.drawImage(image, 0, 0);
       ctx.restore();
       const depth = Math.max(1, ...geometry.folded.map((vertex) => (vertex.x - geometry.point.x) * geometry.normal.x + (vertex.y - geometry.point.y) * geometry.normal.y));
-      foldBand(ctx, geometry.point, away, depth + 1, LIGHT_STOPS, lift * 2.5, extent);
-      ctx.restore();
+      foldBand(ctx, geometry.point, away, depth + 1, LIGHT_STOPS, lift * 2.5 * fade, extent);
       ctx.restore();
     }
 
