@@ -31,7 +31,8 @@ js/ui/notes.js             okno notatki lekcji: podgląd, edytor z paskiem forma
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
-js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, obraz PNG / JPEG
+js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, tło i szablon, liniuszek, kształty, obraz PNG / JPEG
+js/ui/drawing-paint.js     rysunek na płótnie: kształty geometryczne, szablon (boisko liniami, obraz mnożony z tłem)
 js/ui/images.js            obrazy w przeglądarce: odczyt, zmniejszanie dużych zdjęć, adresy do wyświetlenia
 js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
@@ -41,6 +42,8 @@ js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
 js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, skala, przyciąganie linijki, obszar zaznaczania, sprawdzanie danych rysunku
 js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
+js/core/shapes.js          kształty geometryczne (punkty, obrys, punkty konstrukcyjne, sprawdzanie) i liniuszek (najbliższa linia)
+js/core/templates.js       tło rysunku: poziomy jasności, szablon – boisko (105 × 68 m), dopasowanie, środek, wielkość, sprawdzanie
 js/core/zip.js             odczyt i zapis archiwów ZIP (także kawałkami przez Blob – duże pliki)
 js/core/xlsx.js            odczyt i zapis skoroszytów XLSX
 js/core/csv.js             kodowanie, separator, odczyt i zapis CSV
@@ -417,6 +420,33 @@ poza stroną bez zmiany) i lupa 15 × 15 pikseli na warstwie bieżącej; `rememb
 ostatnie. Ustawienia narzędzi mają też `customColors`, `selectShape`, `selectMode`, `rulerSnap`.
 Komunikaty edytora (np. „Skopiowano”) są w pigułce w rogu – zwykłe komunikaty aplikacji leżą pod
 oknem rysunku.
+Od 1.15 (format rysunku 3): **kształty** w `strokes` – `{ tool: 'shape', shape, color, size, x, y, w, h,
+angle, skew, adjust }` (`js/core/shapes.js`): punkt (u, v) ramki to (u·w − skew·v·h, v·h) obrócony
+o `angle` wokół środka (x, y), więc pochylenie przesuwa górną krawędź względem dolnej, a elipsa jest
+rysowana czterema krzywymi Béziera przekształconymi tak samo (dokładnie, ze stałą grubością linii).
+Kształt jest elementem (`isElement`): obrys (`shapeOutline`, elipsa – 48 punktów) służy do trafienia
+gumką i dotknięciem, zaznaczania w całości (`elementCorners`), granic i przyciągania zera linijki
+(`shapeAsStroke`); dotknięcie pustego środka – `shapeContains`. Punkty konstrukcyjne (`shapeHandles`,
+`moveShapeHandle`) są liczone od kształtu sprzed przeciągnięcia: narożnik i środek boku – przeciwny
+punkt zostaje, pochylenie – dolna krawędź zostaje (blisko zera – 0), obrót – wokół środka (co 15°
+z przyciąganiem do 2°), `adjust` – wierzchołek trójkąta (przyciągany do 0, ½, 1) i wcięcie trapezu;
+w trakcie przeciągania warstwa zapisanych kresek pomija kształt, a bieżąca rysuje podgląd; koniec –
+jeden krok historii. **Tło**: `paperLevel` (0–4) wybiera kolor linii i kratki (`PAPER_COLORS`);
+**szablon** `template: { source: 'pitch' | 'image', x, y, w, h, level, type?, width?, height?, bytes? }`
+(`js/core/templates.js`) jest rysowany po zdjęciu, a przed kreskami: boisko – liniami z `PITCH`
+(105 × 68 m), obraz – `drawImage` z `multiply` (biel znika) i kryciem `TEMPLATE_ALPHA[level]`.
+Ustawianie (`placing`) przechwytuje wskaźnik na płótnie (przesuwanie), panel zmienia wielkość wokół
+środka (`scaleTemplate`), dopasowuje (`fitTemplate`) i wyśrodkowuje; „Anuluj” przywraca szablon,
+obraz i skalę sprzed ustawiania. Skala z boiska: 105 m na szerokość szablonu (`pitchScale`). Obraz
+szablonu z pliku przechodzi przez `prepareImage` (jak obrazy notatki) i jest zapisany w rysunku,
+a w kopii zapasowej – jako `rysunki/<id>-szablon.<typ>` (w spisie `drawing.template`); szablon bez
+pliku przy przywracaniu jest pomijany. **Liniuszek** (tylko w edytorze, ustawienia w `tools.guide`):
+rodziny linii `{ x, y, angle, spacing }` – główne i poprzeczne (kąt względem głównych, odstęp mierzony
+wzdłuż głównych); `nearestGuideLine` – rzut punktu na najbliższą linię. Kreska jest najpierw zwykła;
+po odsunięciu o 10 px od początku, gdy początek leży do 12 px od linii, a kierunek różni się od niej
+najwyżej o 20°, wszystkie dotychczasowe punkty trafiają na tę linię, a następne są na nią rzutowane
+(jak przy krawędzi linijki – z długością w skali). Kółko liniuszka przesuwa punkt rodziny
+(przyskok do węzłów kratki do 8 px).
 
 Od 1.6 **wersja angielska**: `htmlEN` obok `html`; w edytorze przełącznik Polski / Angielski zamienia
 treść jednego pola `contenteditable` (stan drugiej wersji jest w pamięci edytora; zmiana języka
@@ -808,7 +838,8 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
   nieudanych zmian, glosariusz, odczyt i zapis plików, import i eksport, nauka z fiszkami,
   FSRS (zgodność z py-fsrs i zapis powtórek), quizy, statystyki, kopia zapasowa (oba pliki),
   załączniki, rysunki (nacisk, wygładzanie, gumka, historia, dane, zapis i kopia, pola tekstowe i wzory,
-  skala, przyciąganie linijki, obszar zaznaczania, własne kolory),
+  skala, przyciąganie linijki, obszar zaznaczania, własne kolory, kształty z punktami konstrukcyjnymi,
+  liniuszek, jasność tła i szablon),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

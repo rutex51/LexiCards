@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  DrawingHistory, PAGE_HEIGHT, PAGE_WIDTH, PEN_WIDTHS, addPoint, cleanDrawing, cleanScale, cleanToolSettings, defaultToolSettings,
+  DRAWING_VERSION, DrawingHistory, PAGE_HEIGHT, PAGE_WIDTH, PEN_WIDTHS, addPoint, cleanDrawing, cleanScale, cleanToolSettings, defaultToolSettings,
   formatLength, formatNumber, formatRatio, hexToRgb, hslToHex, isClockwise, lineAngleDifference, perpendicularAngle, pointInPolygon,
   rectPolygon, rememberColor, rgbToHex, screenScale, screenScaleValue, snapToStrokes, splitByPolygon, strokesInPolygon,
   drawingWithoutPhotoBytes, emptyDrawing, eraseAt, eraseFromStroke, hasContent, isElement, nextDrawingLabel, penWidth, rulerDegrees,
@@ -279,7 +279,7 @@ test('pola tekstowe i wzory: sprawdzanie danych (puste, złe liczby i kolory odr
       { ...textBox(), text: 'x'.repeat(5000) }
     ]
   });
-  assert.equal(cleaned.version, 2);
+  assert.equal(cleaned.version, DRAWING_VERSION);
   assert.equal(cleaned.strokes.length, 3);
   assert.deepEqual([cleaned.strokes[0].color, cleaned.strokes[0].size, cleaned.strokes[0].maxWidth], ['#1d1d1f', 200, 1600]);
   assert.deepEqual(Object.keys(cleaned.strokes[1]).sort(), ['color', 'height', 'size', 'source', 'tool', 'width', 'x', 'y']);

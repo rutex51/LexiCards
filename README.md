@@ -1,4 +1,4 @@
-# LexiCards 1.14
+# LexiCards 1.15
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -23,8 +23,9 @@ Równania w notatkach – zapis tekstem, wzory w podglądzie, ściągawka (wersj
 Rysunki odręczne w notatce – rysik z naciskiem, zakreślacz, gumka, rysowanie na zdjęciu (wersja 1.12): [docs/RELEASE-1.12.md](docs/RELEASE-1.12.md).
 Pola tekstowe i wzory na rysunku (wersja 1.13): [docs/RELEASE-1.13.md](docs/RELEASE-1.13.md).
 Skala na linijce, własne kolory, zaznaczanie fragmentów i lasso, kopiuj i wklej na rysunku (wersja 1.14): [docs/RELEASE-1.14.md](docs/RELEASE-1.14.md).
+Jasność tła, szablon pod kreskami (boisko, obraz z pliku), liniuszek, kształty geometryczne (wersja 1.15): [docs/RELEASE-1.15.md](docs/RELEASE-1.15.md).
 
-## Co potrafi wersja 1.14
+## Co potrafi wersja 1.15
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -74,7 +75,12 @@ Skala na linijce, własne kolory, zaznaczanie fragmentów i lasso, kopiuj i wkle
   m, km albo cale, stopy, jardy, mile; szacunek skali na ekranie, skala 1:1), zero przyciągane do
   przecięć i linii (prostopadle), pióro – własne kolory (siatka, suwaki RGB, pipetka; trzy ostatnie
   zapamiętane), zaznaczanie – fragmenty (prostokąt od prawej, lasso zgodnie ze wskazówkami zegara)
-  i lasso, a zaznaczenie – kopiuj i wklej, także między rysunkami. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
+  i lasso, a zaznaczenie – kopiuj i wklej, także między rysunkami. Od 1.15: jasność kratki i linii
+  w pięciu stopniach, szablon pod kreskami (boisko piłkarskie albo obraz z pliku – pomniejsz,
+  powiększ, dopasuj, wyśrodkuj, jasność; potem nieruchomy jak kratka), liniuszek – równoległe
+  i poprzeczne linie pod wybranym kątem, do których przyciąga się kreska – i kształty geometryczne
+  (odcinek, strzałka, prostokąt, elipsa, trójkąt, romb, trapez) poprawiane punktami konstrukcyjnymi:
+  szerokość, wysokość, pochylenie, obrót. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
@@ -124,7 +130,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.11 – równania w notatkach](docs/RELEASE-1.11.md),
 [wersja 1.12 – rysunki odręczne](docs/RELEASE-1.12.md),
 [wersja 1.13 – pola tekstowe i wzory na rysunku](docs/RELEASE-1.13.md),
-[wersja 1.14 – skala na linijce, własne kolory, fragmenty i lasso, kopiuj i wklej](docs/RELEASE-1.14.md).
+[wersja 1.14 – skala na linijce, własne kolory, fragmenty i lasso, kopiuj i wklej](docs/RELEASE-1.14.md),
+[wersja 1.15 – jasność tła, szablon, liniuszek, kształty](docs/RELEASE-1.15.md).
 
 ## Jak korzystać
 
@@ -334,6 +341,29 @@ Zdjęcie pod kreskami nie jest cięte, pole tekstowe i wzór – tylko w całoś
 zdjęte bez zmian nie zostawia śladu (kreski są całe, bez kroku cofania). **Kopiuj** nad zaznaczeniem
 (i Ctrl+C), **Wklej** na pasku zaznaczania (i Ctrl+V), Ctrl+X – wytnij; schowek działa między
 rysunkami i po ponownym otwarciu aplikacji (na tym urządzeniu).
+**Tło i szablon** (od 1.15): przycisk **Tło** otwiera panel **Tło strony** – rodzaj (gładkie, linie,
+kratka) i **Jasność linii** w pięciu stopniach. **Szablon pod kreskami (kalka)**: **Boisko piłkarskie**
+(105 × 68 m według przepisów) albo **Z pliku…** (PNG, JPEG, WebP, GIF – dowolny wzór linii; biel
+obrazu znika). Po wstawieniu panel ustawiania: **−** i **+** (po 10%), **Dopasuj** (cała strona),
+**Wyśrodkuj**, przeciągnięcie na stronie przesuwa szablon, **Jasność szablonu** w pięciu stopniach,
+przy boisku – **Skala rysunku według boiska** (linijka mierzy w metrach). Po **Gotowe** szablon się
+nie przesuwa – jak kratka; **Ustaw wielkość i miejsce** albo **Usuń szablon** w panelu tła. Szablon
+z pliku zapisuje się z rysunkiem i w kopii zapasowej.
+**Liniuszek** (od 1.15): przycisk obok linijki pokazuje równoległe linie przez całą stronę. Kreska
+zaczęta przy linii i prowadzona wzdłuż niej biegnie prosto po linii (w innym kierunku – zwykła
+kreska), z długością w pigułce. Pigułka „Liniuszek …” otwiera ustawienia: odstęp linii (¼–6 kratek),
+kąt (−90° do 90°), **Linie poprzeczne** z odstępem i kątem względem linii (np. 75° – liniatura do
+pisma pochyłego), przyciąganie. Kółko na stronie przesuwa liniuszek (przyskakuje do węzłów kratki).
+Liniuszek nie trafia do rysunku.
+**Kształty** (od 1.15): narzędzie **kształty** – Odcinek, Strzałka, Prostokąt, Elipsa, Trójkąt, Romb,
+Trapez (wybór w panelu pod paskiem). Przeciągnięcie tworzy kształt w prostokącie przeciągnięcia
+(prawie równe boki – kwadrat, koło; odcinek co 45° przyciągany), dotknięcie – kształt domyślnej
+wielkości; kolor i grubość – pióra. Punkty konstrukcyjne zaznaczonego kształtu: narożniki
+(szerokość i wysokość), środki boków (jeden wymiar), romb na górnej krawędzi (pochylenie –
+równoległobok, pochylona elipsa), kółko nad kształtem (obrót, co 15° lekko przyskakuje), pomarańczowy
+punkt (wierzchołek trójkąta, wcięcie trapezu), a odcinek i strzałka – dwa końce. Kształt zaznaczasz,
+przesuwasz, kopiujesz i usuwasz jak inne elementy (gumka całych kresek go usuwa, gumka fragmentów nie
+przecina); zero linijki przyciąga się też do jego boków i narożników.
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno
 **Nowe pole tekstowe** – tekst (Enter zaczyna nowy wiersz, długi wiersz łamie się sam), wielkość
 (Mała, Średnia, Duża) i kolor; przycisk **Σ** – okno **Nowy wzór**: zapis jak we wzorze w notatce,
@@ -576,7 +606,8 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 19. **Wersja 1.12: rysunki odręczne w notatce – rysik z naciskiem, zakreślacz, gumka całych kresek i fragmentów, zaznaczanie prostokątem, linijka z kątem, rysowanie na zdjęciu (etap 1)** – gotowe.
 20. **Wersja 1.13: pola tekstowe i wzory na rysunku** – gotowe.
 21. **Wersja 1.14: skala na linijce (SI i imperialne, szacunek ekranu, 1:1), zero linijki na przecięciach i liniach (prostopadle), własne kolory (siatka, suwaki RGB, pipetka), zaznaczanie fragmentów prostokątem i lassem, kopiuj i wklej** – gotowe.
-22. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
+22. **Wersja 1.15: jasność kratki i linii, szablon pod kreskami (boisko, obraz z pliku), liniuszek z liniami poprzecznymi i przyciąganiem, kształty geometryczne z punktami konstrukcyjnymi** – gotowe.
+23. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

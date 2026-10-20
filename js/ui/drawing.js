@@ -6,6 +6,9 @@
 // skala rysunku i liczby na linijce, zero linijki przyciągane do przecięć i linii (prostopadle),
 // własne kolory (siatka, suwaki RGB, pipetka), zaznaczanie fragmentów prostokątem i lassem
 // (kierunek obrysu decyduje: całe kreski albo tylko wnętrze), kopiuj i wklej (też między rysunkami).
+// Od 1.15: jasność linii i kratki, szablon pod kreskami (boisko albo obraz z pliku, ustawiany na
+// stronie i potem nieruchomy), liniuszek – równoległe linie (i poprzeczne), do których przyciąga
+// się kreska – oraz kształty geometryczne z punktami konstrukcyjnymi.
 //
 // Rysik i palec: gdy aplikacja raz zobaczy rysik (pointerType 'pen'), rysuje tylko rysik, a palec
 // przesuwa stronę (dłoń oparta o ekran nie zostawia śladów); bez rysika (iPhone) rysuje palec.
@@ -29,12 +32,22 @@ import {
   strokesAt, strokesInPolygon, strokesInRect, touchesStroke, translateStroke
 } from '../core/drawing.js';
 import { layoutMath } from '../core/math-layout.js';
+import {
+  SHAPES, SHAPE_LABELS, guideLinesIn, isSegment, isShape, moveShapeHandle, nearestGuideLine, shapeContains, shapeFromDrag, shapeHandles,
+  shapePoint, touchesShape
+} from '../core/shapes.js';
+import {
+  DEFAULT_PAPER_LEVEL, DEFAULT_TEMPLATE_LEVEL, LEVEL_LABELS, PAPER_COLORS, TEMPLATE_ALPHA, TEMPLATE_LABELS, centerTemplate,
+  fitTemplate, pitchScale, scaleTemplate
+} from '../core/templates.js';
 import { plural } from '../core/text.js';
 import { field, segmented, textArea, toggle } from './components.js';
 import { confirmDialog, mountDialog, openFormSheet, showError } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
 import { openMathHelp } from './math.js';
+import { paintShape, paintTemplate } from './drawing-paint.js';
+import { prepareImage } from './images.js';
 
 const TOOLS_KEY = 'lexicards-drawing-tools';
 const PEN_KEY = 'lexicards-pen-seen';
@@ -64,7 +77,7 @@ const LASSO_STEP = 4;
 /** Zaznaczanie: całe kreski – niebieskie, fragmenty (tylko wnętrze obszaru) – zielone, kreskowane. */
 const SELECT_COLORS = { whole: '#0058be', region: '#1d8a3a' };
 const SELECT_FILLS = { whole: 'rgba(0, 88, 190, 0.07)', region: 'rgba(29, 138, 58, 0.09)' };
-const SHAPE_LABELS = { rect: 'Prostokąt', lasso: 'Lasso' };
+const OUTLINE_LABELS = { rect: 'Prostokąt', lasso: 'Lasso' };
 const SELECT_MODE_TITLES = {
   auto: 'Według kierunku: prostokąt od lewej i lasso przeciwnie do wskazówek zegara – całe kreski; od prawej i zgodnie ze wskazówkami – fragmenty',
   whole: 'Zawsze całe kreski (leżące w całości w środku)',
@@ -79,6 +92,18 @@ const SELECT_HINTS = {
 /** Schowek rysunku (od 1.14) – też między rysunkami i po ponownym otwarciu aplikacji (na tym urządzeniu). */
 const CLIPBOARD_KEY = 'lexicards-drawing-clipboard';
 const CLIPBOARD_LIMIT = 1500000;
+/** Liniuszek (od 1.15): jak blisko linii musi się zacząć kreska (px ekranu), jak zgodny kierunek (radiany), kółko do przesuwania. */
+const GUIDE_SNAP = 12;
+const GUIDE_ANGLE = (20 * Math.PI) / 180;
+const GUIDE_DECIDE = 10;
+const GUIDE_KNOB = 11;
+const GUIDE_COLOR = 'rgba(0, 88, 190, 0.42)';
+const SHAPE_ICONS = {
+  line: 'shapeLine', arrow: 'shapeArrow', rect: 'shapeRect', ellipse: 'shapeEllipse', triangle: 'shapeTriangle', diamond: 'shapeDiamond', trapezoid: 'shapeTrapezoid'
+};
+/** Kształty: uchwyty (px ekranu) – promień trafienia, odległość uchwytu obrotu od kształtu. */
+const HANDLE_HIT = 18;
+const ROTATE_GAP = 30;
 
 function loadTools() {
   try {
@@ -116,7 +141,7 @@ function rememberPen() {
 const inkHex = (id) => (isHexColor(id) ? id : (INK_COLORS.find((color) => color.id === id) ?? INK_COLORS[0]).hex);
 const highlighterHex = (id) => (isHexColor(id) ? id : (HIGHLIGHTER_COLORS.find((color) => color.id === id) ?? HIGHLIGHTER_COLORS[0]).hex);
 
-/** Obraz (zdjęcie pod kreskami) z bajtów – do rysowania na płótnie. */
+/** Obraz (zdjęcie pod kreskami albo szablon z pliku) z bajtów – do rysowania na płótnie. */
 async function loadPicture(photo) {
   if (!photo?.bytes) return null;
   const url = URL.createObjectURL(new Blob([photo.bytes], { type: photo.type }));
@@ -135,13 +160,13 @@ async function loadPicture(photo) {
 
 // ---------------------------------------------------------------- rysowanie na płótnie
 
-/** Tło strony: białe, w linie albo w kratkę (w jednostkach rysunku). */
+/** Tło strony: białe, w linie albo w kratkę (w jednostkach rysunku); jasność linii – od 1.15. */
 export function paintPaper(ctx, drawing) {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, drawing.width, drawing.height);
   if (drawing.paper === 'plain' || drawing.photo) return;
   ctx.save();
-  ctx.strokeStyle = drawing.paper === 'grid' ? '#e4e5ec' : '#d8e0ee';
+  ctx.strokeStyle = PAPER_COLORS[drawing.paper][drawing.paperLevel ?? DEFAULT_PAPER_LEVEL];
   ctx.lineWidth = 1.2;
   ctx.beginPath();
   for (let y = PAPER_STEP; y < drawing.height; y += PAPER_STEP) {
@@ -250,6 +275,10 @@ function paintElement(ctx, element) {
  * Pole tekstowe i wzór (od 1.13) – napis i wzór od lewego górnego rogu.
  */
 export function paintStroke(ctx, stroke) {
+  if (isShape(stroke)) {
+    paintShape(ctx, stroke);
+    return;
+  }
   if (isElement(stroke)) {
     paintElement(ctx, stroke);
     return;
@@ -304,22 +333,26 @@ export function paintStroke(ctx, stroke) {
   ctx.restore();
 }
 
-/** Cała strona: tło (albo zdjęcie) i kreski; `skip` – kreski pominięte (przesuwane zaznaczenie). */
-export function paintDrawing(ctx, drawing, picture = null, skip = null) {
+/**
+ * Cała strona: tło (albo zdjęcie), szablon i kreski; media – wczytane obrazy { photo, template };
+ * `skip` – kreski pominięte (przesuwane zaznaczenie, poprawiany kształt).
+ */
+export function paintDrawing(ctx, drawing, media = {}, skip = null) {
   paintPaper(ctx, drawing);
-  if (picture) ctx.drawImage(picture, 0, 0, drawing.width, drawing.height);
+  if (media.photo) ctx.drawImage(media.photo, 0, 0, drawing.width, drawing.height);
+  paintTemplate(ctx, drawing.template, media.template);
   for (const stroke of drawing.strokes) {
     if (!skip?.has(stroke)) paintStroke(ctx, stroke);
   }
 }
 
 /** Obraz rysunku do notatki: PNG strony albo JPEG, gdy pod kreskami jest zdjęcie. */
-export async function renderDrawingImage(drawing, picture = null) {
+export async function renderDrawingImage(drawing, media = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = drawing.width;
   canvas.height = drawing.height;
   const ctx = canvas.getContext('2d');
-  paintDrawing(ctx, drawing, picture);
+  paintDrawing(ctx, drawing, media);
   const type = drawing.photo ? 'image/jpeg' : 'image/png';
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, 0.9));
   if (!blob) throw new Error('Nie udało się zapisać rysunku.');
@@ -442,14 +475,15 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       ? {
         ...source,
         scale: cleanScale(source.scale),
-        strokes: source.strokes.map((stroke) => (isElement(stroke) ? { ...stroke, ...measureElement(stroke) } : { ...stroke, points: [...stroke.points] }))
+        paperLevel: source.paperLevel ?? DEFAULT_PAPER_LEVEL,
+        strokes: source.strokes.map((stroke) => (isShape(stroke) ? stroke
+          : isElement(stroke) ? { ...stroke, ...measureElement(stroke) } : { ...stroke, points: [...stroke.points] }))
       }
       : emptyDrawing({ photo });
     const history = new DrawingHistory(drawing.strokes);
     const tools = loadTools();
     /** Narzędzie: 'pen', 'highlighter', 'eraser' albo 'select' (zaznaczanie prostokątem albo lassem). */
     let tool = 'pen';
-    let picture = null;
     let penSeen = penSeenBefore();
     let changed = false;
     let dialog;
@@ -475,6 +509,12 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     /** Kolejne wklejenia tego samego schowka – każde trochę niżej i w prawo. */
     let pasteCount = 0;
     const pixelsPerInch = screenPixelsPerInch();
+    /** Wczytane obrazy: zdjęcie pod kreskami i (od 1.15) szablon z pliku. */
+    const media = { photo: null, template: null };
+    /** Ustawianie szablonu na stronie (od 1.15): { before } – szablon sprzed ustawiania (Anuluj) albo null. */
+    let placing = null;
+    /** Liniuszek (od 1.15): { x, y } – punkt jednej z linii (kółko do przesuwania) albo null (schowany). */
+    let guide = null;
 
     // Widok: skala (px ekranu na jednostkę rysunku) i przesunięcie strony; zoom – względem „cała strona”;
     // top – miejsce u góry płótna zajęte przez pasek narzędzi (pasek leży nad płótnem).
@@ -490,7 +530,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     }, icon(iconName, { size: 18 }), h('span', { class: 'drawing__selection-label' }, label));
     const editButton = selectionButton('drawing-selection-edit', 'edit', 'Edytuj', 'Edytuj', () => {
       const [only] = selection;
-      if (isElement(only)) editElement(only.tool, only);
+      if (isElement(only) && !isShape(only)) editElement(only.tool, only);
     });
     editButton.hidden = true;
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
@@ -554,8 +594,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       ctx.restore();
       ctx.save();
       clipPage(ctx);
-      // Przesuwane zaznaczenie rysuje warstwa bieżąca.
-      paintDrawing(ctx, drawing, picture, active?.kind === 'move' ? selection : null);
+      // Przesuwane zaznaczenie i poprawiany kształt rysuje warstwa bieżąca.
+      paintDrawing(ctx, drawing, media, active?.kind === 'move' || active?.kind === 'shape-edit' ? selection : null);
       ctx.restore();
     };
 
@@ -816,6 +856,141 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       return gesture.rect.x1 < gesture.rect.x0 ? 'region' : 'whole';
     };
 
+    // ---- kształty (od 1.15): zaznaczony kształt i jego punkty konstrukcyjne
+    /** Kształt z widocznymi punktami konstrukcyjnymi: jedyny zaznaczony (przy zaznaczaniu i kształtach) albo poprawiany. */
+    function editedShape() {
+      if (active?.kind === 'shape-edit') return active.preview;
+      if (selection.size !== 1 || (tool !== 'select' && tool !== 'shape') || ['move', 'shape-new'].includes(active?.kind) || placing) return null;
+      const [only] = selection;
+      return isShape(only) ? only : null;
+    }
+    const rotateHandle = (shape) => shapeHandles(shape, ROTATE_GAP / view.scale).find((handle) => handle.id === 'rotate') ?? shapePoint(shape, 0, -0.5);
+    /** Punkt konstrukcyjny zaznaczonego kształtu pod punktem strony (najbliższy) albo null. */
+    function shapeHandleAt(point) {
+      const shape = editedShape();
+      if (!shape) return null;
+      let best = null;
+      for (const handle of shapeHandles(shape, ROTATE_GAP / view.scale)) {
+        const distance = Math.hypot(handle.x - point.x, handle.y - point.y) * view.scale;
+        // Wierzchołek trójkąta leży na środku górnego boku – wtedy wygrywa z uchwytem wysokości.
+        const rank = distance - (handle.kind === 'adjust' ? 10 : 0);
+        if (distance <= HANDLE_HIT && (!best || rank < best.rank)) best = { ...handle, distance, rank, shape };
+      }
+      return best;
+    }
+    function paintHandles(ctx, shape) {
+      const handles = shapeHandles(shape, ROTATE_GAP / view.scale);
+      ctx.save();
+      ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+      ctx.strokeStyle = SELECT_COLORS.whole;
+      ctx.lineWidth = 1;
+      if (!isSegment(shape)) {
+        // Ramka kształtu (przy pochyleniu – równoległobok) i ramię uchwytu obrotu.
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]].forEach(([u, v], index) => {
+          const point = toScreen(shapePoint(shape, u, v));
+          if (index === 0) ctx.moveTo(point.x, point.y);
+          else ctx.lineTo(point.x, point.y);
+        });
+        ctx.closePath();
+        const rotate = toScreen(rotateHandle(shape));
+        const axis = toScreen({ x: shape.x + (Math.sin(shape.angle) * shape.h) / 2, y: shape.y - (Math.cos(shape.angle) * shape.h) / 2 });
+        ctx.moveTo(axis.x, axis.y);
+        ctx.lineTo(rotate.x, rotate.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      for (const handle of handles) {
+        const point = toScreen(handle);
+        ctx.beginPath();
+        if (handle.kind === 'skew' || handle.kind === 'adjust') {
+          ctx.moveTo(point.x, point.y - 7);
+          ctx.lineTo(point.x + 7, point.y);
+          ctx.lineTo(point.x, point.y + 7);
+          ctx.lineTo(point.x - 7, point.y);
+          ctx.closePath();
+        } else {
+          ctx.arc(point.x, point.y, handle.kind === 'rotate' ? 8 : 6, 0, Math.PI * 2);
+        }
+        ctx.fillStyle = handle.kind === 'adjust' ? '#ff9f0a' : handle.kind === 'skew' ? '#d6e6fa' : '#ffffff';
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        if (handle.kind === 'rotate') {
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 3.5, -Math.PI * 0.9, Math.PI * 0.4);
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    // ---- liniuszek (od 1.15): równoległe linie przez całą stronę, poprzeczne, kółko do przesuwania
+    /** Rodziny linii: główne i (gdy włączone) poprzeczne – kąty jak na linijce (przeciwnie do wskazówek zegara). */
+    function guideFamilies() {
+      const settings = tools.guide;
+      const angle = (-settings.angle * Math.PI) / 180;
+      const families = [{ kind: 'main', x: guide.x, y: guide.y, angle, spacing: settings.spacing * PAPER_STEP }];
+      if (settings.cross) {
+        // Odstęp poprzecznych mierzony wzdłuż linii głównych.
+        const between = (settings.crossAngle * Math.PI) / 180;
+        families.push({ kind: 'cross', x: guide.x, y: guide.y, angle: angle - between, spacing: settings.crossSpacing * PAPER_STEP * Math.abs(Math.sin(between)) });
+      }
+      return families;
+    }
+    function paintGuide(ctx) {
+      const reach = Math.hypot(drawing.width, drawing.height);
+      ctx.save();
+      ctx.lineWidth = 1 / view.scale;
+      ctx.strokeStyle = GUIDE_COLOR;
+      for (const family of guideFamilies()) {
+        const [dx, dy] = [Math.cos(family.angle) * reach, Math.sin(family.angle) * reach];
+        ctx.setLineDash(family.kind === 'cross' ? [6 / view.scale, 4 / view.scale] : []);
+        ctx.beginPath();
+        for (const line of guideLinesIn(family, drawing.width, drawing.height)) {
+          ctx.moveTo(line.x - dx, line.y - dy);
+          ctx.lineTo(line.x + dx, line.y + dy);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    const guideKnobHit = (point) => Boolean(guide) && Math.hypot(point.x - guide.x, point.y - guide.y) * view.scale <= GUIDE_KNOB + 8;
+    function paintGuideKnob(ctx) {
+      const point = toScreen(guide);
+      ctx.save();
+      ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, GUIDE_KNOB, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+      ctx.fill();
+      ctx.strokeStyle = ZERO_COLOR;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.beginPath();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        ctx.moveTo(point.x, point.y);
+        ctx.lineTo(point.x + dx * 6, point.y + dy * 6);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // ---- szablon w trakcie ustawiania: ramka na stronie (przeciągnięcie przesuwa szablon)
+    function paintPlacement(ctx) {
+      const template = drawing.template;
+      ctx.save();
+      ctx.setLineDash([8 / view.scale, 5 / view.scale]);
+      ctx.lineWidth = 1.5 / view.scale;
+      ctx.strokeStyle = ZERO_COLOR;
+      ctx.fillStyle = 'rgba(0, 88, 190, 0.05)';
+      ctx.fillRect(template.x, template.y, template.w, template.h);
+      ctx.strokeRect(template.x, template.y, template.w, template.h);
+      ctx.restore();
+    }
+
     const eraserRadius = () => (tools.eraserMode === 'pixel' ? ERASER_SIZES[tools.eraserSize] / 2 : ERASER_RADIUS) / view.scale;
     const renderLive = () => {
       const ctx = live.getContext('2d');
@@ -827,9 +1002,16 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         ctx.translate(active.dx, active.dy);
         for (const stroke of selection) paintStroke(ctx, stroke);
       }
+      if (active?.kind === 'shape-new' && active.shape) paintShape(ctx, active.shape);
+      if (active?.kind === 'shape-edit') paintShape(ctx, active.preview);
+      if (guide) paintGuide(ctx);
       ctx.restore();
+      if (placing && drawing.template) paintPlacement(ctx);
       const bounds = selectionBounds([...selection]);
-      if (bounds) {
+      // Jeden kształt: zamiast ramki – jego punkty konstrukcyjne.
+      const handled = editedShape();
+      if (handled) paintHandles(ctx, handled);
+      if (bounds && !handled) {
         const pad = SELECTION_PAD / view.scale;
         const [dx, dy] = active?.kind === 'move' ? [active.dx, active.dy] : [0, 0];
         ctx.save();
@@ -863,6 +1045,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         ctx.stroke();
         ctx.restore();
       }
+      if (guide) paintGuideKnob(ctx);
       if (ruler) paintRuler(ctx);
       if (active?.kind === 'stroke' && active.edge && active.edge.to >= active.edge.from) paintLength(ctx, active.edge);
       const cursor = active?.kind === 'erase' ? active.last : (tool === 'eraser' ? hover : null);
@@ -879,19 +1062,20 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       }
       const loupe = active?.kind === 'pick' ? active.client : pickHover;
       if (picking && loupe) paintLoupe(ctx, loupe);
-      placeSelectionBar(bounds);
+      placeSelectionBar(handled ? { ...bounds, minY: Math.min(bounds.minY, rotateHandle(handled).y - 14 / view.scale) } : bounds);
       updateSelectHint();
     };
     /** Polecenia zaznaczenia nad ramką (albo pod nią, gdy u góry brakuje miejsca). */
     function placeSelectionBar(bounds) {
-      const show = Boolean(bounds) && !['move', 'marquee', 'lasso', 'pick'].includes(active?.kind);
+      const show = Boolean(bounds) && !['move', 'marquee', 'lasso', 'pick', 'shape-new', 'shape-edit', 'template-move'].includes(active?.kind) && !placing;
       selectionBar.hidden = !show;
       if (!show) return;
       const items = [...selection];
       const only = items.length === 1 ? items[0] : null;
       selectionCount.textContent = selectionKind === 'region' ? 'Fragment' : only?.tool === 'text' ? 'Pole tekstowe' : only?.tool === 'math' ? 'Wzór'
+        : isShape(only) ? SHAPE_LABELS[only.shape]
         : items.some(isElement) ? plural(items.length, 'element', 'elementy', 'elementów') : plural(items.length, 'kreska', 'kreski', 'kresek');
-      editButton.hidden = !isElement(only);
+      editButton.hidden = !isElement(only) || isShape(only);
       const top = toScreen({ x: 0, y: bounds.minY }).y - SELECTION_PAD;
       const bottom = toScreen({ x: 0, y: bounds.maxY }).y + SELECTION_PAD;
       const middle = toScreen({ x: (bounds.minX + bounds.maxX) / 2, y: 0 }).x;
@@ -962,9 +1146,16 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       type: 'button', class: 'drawing__tool', 'aria-label': label, title: label, 'aria-pressed': 'false',
       dataset: { tool: id, testid: `drawing-tool-${id}` },
       onClick: () => {
-        // Drugie dotknięcie aktywnego pióra albo zakreślacza – ustawienia.
+        // Drugie dotknięcie aktywnego pióra albo zakreślacza – ustawienia; kształty – wybór kształtu.
         if (tool === id && (id === 'pen' || id === 'highlighter')) {
           toggleSettings();
+          return;
+        }
+        if (id === 'shape') {
+          const open = tool !== 'shape' || shapePanel.hidden;
+          if (tool !== 'shape') setTool('shape');
+          closeSettings();
+          if (open) toggleShapePanel();
           return;
         }
         setTool(id);
@@ -983,6 +1174,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const eraserButton = toolButton('eraser', 'Gumka', 'eraser');
     const selectButton = toolButton('select', 'Zaznaczanie – prostokąt', 'marquee');
     selectButton.dataset.shape = 'rect';
+    // Kształty (od 1.15): ikona – wybrany kształt.
+    const shapeButton = toolButton('shape', 'Kształty', 'shapeRect');
+    shapeButton.dataset.kind = 'rect';
     const textButton = h('button', {
       type: 'button', class: 'drawing__tool', 'aria-label': 'Pole tekstowe', title: 'Pole tekstowe', dataset: { testid: 'drawing-insert-text' },
       onClick: () => editElement('text')
@@ -1011,7 +1205,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     // Zaznaczanie (od 1.14): kształt – prostokąt albo lasso – i tryb (kierunek, całe kreski, fragmenty).
     const selectShapes = h('div', { class: 'drawing__group', role: 'radiogroup', 'aria-label': 'Kształt zaznaczenia' },
       SELECT_SHAPES.map((shape) => h('button', {
-        type: 'button', class: 'drawing__tool', role: 'radio', 'aria-label': SHAPE_LABELS[shape], title: SHAPE_LABELS[shape],
+        type: 'button', class: 'drawing__tool', role: 'radio', 'aria-label': OUTLINE_LABELS[shape], title: OUTLINE_LABELS[shape],
         dataset: { shape, testid: `drawing-select-${shape}` },
         onClick: () => { tools.selectShape = shape; saveTools(tools); updateToolbar(); requestLive(); }
       }, icon(shape === 'lasso' ? 'lasso' : 'marquee', { size: 24 }))));
@@ -1036,20 +1230,21 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       type: 'button', class: 'drawing__tool', 'aria-label': 'Ponów', title: 'Ponów (Ctrl+Shift+Z)', dataset: { testid: 'drawing-redo' },
       onClick: () => stepHistory(true)
     }, icon('redo', { size: 24 }));
+    // Tło strony (od 1.15 – panel: rodzaj, jasność linii, szablon); na telefonie krótki napis.
+    const paperLabel = h('span', { class: 'drawing__wide-label' });
     const paperButton = h('button', {
-      type: 'button', class: 'drawing__chip', dataset: { testid: 'drawing-paper' }, hidden: Boolean(drawing.photo),
-      onClick: () => {
-        drawing.paper = PAPERS[(PAPERS.indexOf(drawing.paper) + 1) % PAPERS.length];
-        changed = true;
-        updateToolbar();
-        requestRender();
-      }
-    });
+      type: 'button', class: 'drawing__chip', 'aria-haspopup': 'dialog', dataset: { testid: 'drawing-paper' }, hidden: Boolean(drawing.photo),
+      onClick: () => togglePaperPanel()
+    }, paperLabel, h('span', { class: 'drawing__narrow-label' }, 'Tło'));
+    const guideButton = h('button', {
+      type: 'button', class: 'drawing__tool', 'aria-label': 'Liniuszek', title: 'Liniuszek – równoległe linie, do których przyciąga się kreska',
+      'aria-pressed': 'false', dataset: { testid: 'drawing-guide' }, onClick: () => toggleGuide()
+    }, icon('guide', { size: 24 }));
     // Grupy narzędzi zawijają się w całości (na telefonie – w kilku wierszach).
     const toolbar = h('div', { class: 'drawing__toolbar', role: 'toolbar', 'aria-label': 'Narzędzia rysunku' },
-      h('div', { class: 'drawing__group' }, penButton, highlighterButton, eraserButton, selectButton, textButton, mathButton),
+      h('div', { class: 'drawing__group' }, penButton, highlighterButton, eraserButton, selectButton, shapeButton, textButton, mathButton),
       swatches, widths, eraserModes, eraserSizes, selectShapes, selectModes, selectGroup,
-      h('div', { class: 'drawing__group' }, rulerButton, undoButton, redoButton, paperButton));
+      h('div', { class: 'drawing__group' }, rulerButton, guideButton, undoButton, redoButton, paperButton));
 
     const zoomButton = h('button', {
       type: 'button', class: 'drawing__pill', title: 'Cała strona', dataset: { testid: 'drawing-zoom' },
@@ -1070,7 +1265,13 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       type: 'button', class: 'drawing__pill drawing__pill--symbol', hidden: true, 'aria-label': 'Linijka prostopadle do linii pod zerem',
       title: 'Prostopadle do linii pod zerem', dataset: { testid: 'drawing-ruler-perpendicular' }, onClick: () => perpendicularRuler()
     }, '⊥');
-    const status = h('div', { class: 'drawing__status' }, notice, penPill, selectHint, lengthPill, rulerPill, perpendicularButton, zoomButton);
+    // Liniuszek: kąt i odstęp; dotknięcie – ustawienia (od 1.15).
+    const guideText = h('span');
+    const guidePill = h('button', {
+      type: 'button', class: 'drawing__pill', hidden: true, 'aria-haspopup': 'dialog', title: 'Liniuszek – ustawienia',
+      dataset: { testid: 'drawing-guide-pill' }, onClick: () => toggleGuidePanel()
+    }, guideText, icon('chevronDown', { size: 14 }));
+    const status = h('div', { class: 'drawing__status' }, notice, penPill, selectHint, lengthPill, guidePill, rulerPill, perpendicularButton, zoomButton);
     let noticeTimer = 0;
     /** Krótki komunikat w edytorze (komunikaty aplikacji są pod oknem rysunku). */
     function flash(message) {
@@ -1085,10 +1286,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       'aria-pressed': String(pressed), dataset: { testid: testID }, onClick
     });
     function updateToolbar() {
-      for (const button of [penButton, highlighterButton, eraserButton, selectButton]) {
+      for (const button of [penButton, highlighterButton, eraserButton, selectButton, shapeButton]) {
         button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
       }
-      const inking = tool === 'pen' || tool === 'highlighter';
+      // Kształty (od 1.15) mają kolor i grubość pióra.
+      const inking = tool === 'pen' || tool === 'highlighter' || tool === 'shape';
       const highlighter = tool === 'highlighter';
       const palette = highlighter ? HIGHLIGHTER_COLORS : INK_COLORS;
       const chosen = highlighter ? tools.highlighterColor : tools.penColor;
@@ -1138,27 +1340,43 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       if (selectButton.dataset.shape !== tools.selectShape) {
         selectButton.dataset.shape = tools.selectShape;
         replaceChildren(selectButton, icon(tools.selectShape === 'lasso' ? 'lasso' : 'marquee', { size: 24 }));
-        const label = `Zaznaczanie – ${SHAPE_LABELS[tools.selectShape].toLowerCase()}`;
+        const label = `Zaznaczanie – ${OUTLINE_LABELS[tools.selectShape].toLowerCase()}`;
         selectButton.setAttribute('aria-label', label);
         selectButton.title = label;
       }
+      if (shapeButton.dataset.kind !== tools.shape) {
+        shapeButton.dataset.kind = tools.shape;
+        replaceChildren(shapeButton, icon(SHAPE_ICONS[tools.shape], { size: 24 }));
+        shapeButton.setAttribute('aria-label', `Kształty – ${SHAPE_LABELS[tools.shape].toLowerCase()}`);
+        shapeButton.title = `Kształty – ${SHAPE_LABELS[tools.shape].toLowerCase()}`;
+      }
       rulerButton.setAttribute('aria-pressed', String(Boolean(ruler)));
+      guideButton.setAttribute('aria-pressed', String(Boolean(guide)));
       updateRulerPill();
+      updateGuidePill();
       // Fragment zaznaczony (kreski przecięte na chwilę) nie jest jeszcze krokiem do cofnięcia.
       undoButton.disabled = !(regionPending ? history.done.length > 0 : history.canUndo);
       redoButton.disabled = !history.canRedo;
-      paperButton.textContent = `Tło: ${PAPER_LABELS[drawing.paper].toLowerCase()}`;
-      paperButton.setAttribute('aria-label', `Tło strony: ${PAPER_LABELS[drawing.paper].toLowerCase()} – zmień`);
+      paperLabel.textContent = `Tło: ${PAPER_LABELS[drawing.paper].toLowerCase()}${drawing.template ? ' i szablon' : ''}`;
+      paperButton.setAttribute('aria-label', `Tło strony: ${PAPER_LABELS[drawing.paper].toLowerCase()}${drawing.template ? ' i szablon' : ''} – zmień`);
+      paperButton.setAttribute('aria-expanded', String(!paperPanel.hidden));
+    }
+    function updateGuidePill() {
+      guidePill.hidden = !guide;
+      if (!guide) return;
+      const settings = tools.guide;
+      guideText.textContent = `Liniuszek ${((settings.angle % 180) + 180) % 180}° · co ${formatLength(settings.spacing * PAPER_STEP, drawing.scale)}`
+        + (settings.cross ? ' · poprzeczne' : '');
     }
     function updateRulerPill() {
       rulerPill.hidden = !ruler;
       perpendicularButton.hidden = !ruler;
-      lengthPill.hidden = !ruler || !(measured > 0);
+      lengthPill.hidden = !(ruler || guide) || !(measured > 0);
+      if (measured > 0) lengthPill.textContent = `Kreska: ${formatLength(measured, drawing.scale)}`;
       if (!ruler) return;
       const { snap } = ruler;
       const where = !snap ? '' : snap.kind === 'crossing' ? ' · na przecięciu' : snap.perpendicular ? ' · prostopadle' : ' · na linii';
       rulerText.textContent = `Linijka ${rulerDegrees(ruler.angle)}°${where}`;
-      if (measured > 0) lengthPill.textContent = `Kreska: ${formatLength(measured, drawing.scale)}`;
     }
 
     // ---- ustawienia pióra (drugie dotknięcie aktywnego pióra albo zakreślacza)
@@ -1366,6 +1584,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       drawing.scale = scale;
       changed = true;
       updateRulerPill();
+      // Odstępy liniuszka są podane także w skali rysunku.
+      updateGuidePill();
+      refreshGuidePanel?.();
       requestLive();
     }
     function renderRulerPanel() {
@@ -1434,7 +1655,302 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       refresh();
     }
 
-    const topBar = h('div', { class: 'drawing__top' }, toolbar, settings, colorPanel, rulerPanel);
+    // ---- tło strony (od 1.15): rodzaj, jasność linii, szablon pod kreskami (kalka) i jego ustawianie
+    const paperPanel = h('div', { class: 'drawing__settings', hidden: true, role: 'dialog', 'aria-label': 'Tło strony', dataset: { testid: 'drawing-paper-panel' } });
+    const templateInput = h('input', {
+      type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', hidden: true, dataset: { testid: 'drawing-template-input' },
+      onChange: (event) => {
+        const [file] = event.target.files;
+        event.target.value = '';
+        if (file) importTemplate(file);
+      }
+    });
+    function togglePaperPanel() {
+      const open = paperPanel.hidden;
+      closeSettings();
+      if (open) {
+        paperPanel.hidden = false;
+        renderPaperPanel();
+      }
+      updateToolbar();
+    }
+    /** Pięć poziomów jasności: próbki linii od najjaśniejszej. */
+    const levelButtons = (current, color, testID, onPick) => h('div', { class: 'drawing__levels', role: 'radiogroup', 'aria-label': 'Jasność' },
+      LEVEL_LABELS.map((label, index) => h('button', {
+        type: 'button', class: 'drawing__level', role: 'radio', 'aria-label': label, title: label, 'aria-checked': String(index === current),
+        style: { '--line': color(index) }, dataset: { testid: `${testID}-${index}` }, onClick: () => onPick(index)
+      })));
+    const chip = (label, testID, onClick, extra = '') => h('button', { type: 'button', class: `drawing__chip${extra}`, dataset: { testid: testID }, onClick }, label);
+    function afterBackground() {
+      changed = true;
+      updateToolbar();
+      requestRender();
+      renderPaperPanel();
+    }
+    function renderPaperPanel() {
+      if (paperPanel.hidden) return;
+      if (placing) {
+        renderPlacement();
+        return;
+      }
+      const parts = [h('h3', { class: 'drawing__settings-title' }, 'Tło strony')];
+      if (!drawing.photo) {
+        parts.push(h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Rodzaj tła' }, PAPERS.map((paper) => h('button', {
+          type: 'button', role: 'radio', 'aria-checked': String(drawing.paper === paper), dataset: { testid: `drawing-paper-${paper}` },
+          onClick: () => {
+            drawing.paper = paper;
+            afterBackground();
+          }
+        }, PAPER_LABELS[paper]))));
+        if (drawing.paper !== 'plain') {
+          parts.push(
+            h('p', { class: 'drawing__settings-label' }, h('span', null, 'Jasność linii'), h('span', null, LEVEL_LABELS[drawing.paperLevel].toLowerCase())),
+            levelButtons(drawing.paperLevel, (index) => PAPER_COLORS[drawing.paper][index], 'drawing-paper-level', (index) => {
+              drawing.paperLevel = index;
+              afterBackground();
+            }));
+        }
+      }
+      parts.push(h('p', { class: 'drawing__settings-label' }, 'Szablon pod kreskami (kalka)'));
+      const template = drawing.template;
+      if (!template) {
+        parts.push(
+          h('div', { class: 'drawing__template-actions' },
+            chip('Boisko piłkarskie', 'drawing-template-pitch', () => insertTemplate(fitTemplate({ source: 'pitch', level: DEFAULT_TEMPLATE_LEVEL }, drawing.width, drawing.height), null)),
+            chip('Z pliku…', 'drawing-template-file', () => templateInput.click())),
+          h('p', { class: 'field__hint' }, 'Kalka leży pod kreskami: boisko albo dowolny wzór linii z obrazu (PNG, JPEG, WebP). Po wstawieniu ustawiasz '
+            + 'jej wielkość i miejsce, potem się nie przesuwa – jak kratka. Biel obrazu znika, linie zostają.'));
+      } else {
+        const missing = template.source === 'image' && !media.template;
+        parts.push(
+          h('p', { class: 'drawing__template-name', dataset: { testid: 'drawing-template-name' } }, `${TEMPLATE_LABELS[template.source]}${missing ? ' – brak pliku obrazu' : ''}`),
+          h('p', { class: 'drawing__settings-label' }, h('span', null, 'Jasność szablonu'), h('span', null, LEVEL_LABELS[template.level].toLowerCase())),
+          levelButtons(template.level, (index) => `rgba(29, 29, 31, ${TEMPLATE_ALPHA[index]})`, 'drawing-template-level', (index) => {
+            drawing.template = { ...drawing.template, level: index };
+            afterBackground();
+          }),
+          h('div', { class: 'drawing__template-actions' },
+            chip('Ustaw wielkość i miejsce', 'drawing-template-place', () => startPlacement()),
+            chip('Usuń szablon', 'drawing-template-remove', () => {
+              delete drawing.template;
+              media.template = null;
+              afterBackground();
+            }, ' drawing__chip--danger')));
+      }
+      parts.push(templateInput);
+      replaceChildren(paperPanel, ...parts);
+    }
+    /** Nowy szablon na stronie – od razu ustawianie (wielkość i miejsce). */
+    function insertTemplate(template, image) {
+      placing = { before: drawing.template ?? null, beforeImage: media.template, beforeScale: drawing.scale, pitchScale: false };
+      drawing.template = template;
+      media.template = image;
+      changed = true;
+      // Boisko na rysunku bez własnej skali – skala w metrach od razu (linijka mierzy boisko).
+      if (template.source === 'pitch' && drawing.scale.value === 1 && drawing.scale.unit === 'cm') placing.pitchScale = true;
+      applyPitchScale();
+      paperPanel.hidden = false;
+      renderPaperPanel();
+      updateToolbar();
+      requestRender();
+    }
+    function startPlacement() {
+      const template = drawing.template;
+      const scaled = template.source === 'pitch' && drawing.scale.unit === 'm' && Math.abs(drawing.scale.value - pitchScale(template, PAPER_STEP)) < 0.01;
+      placing = { before: template, beforeImage: media.template, beforeScale: drawing.scale, pitchScale: scaled };
+      renderPaperPanel();
+      requestRender();
+    }
+    /** Skala rysunku według boiska (105 m na szerokość szablonu) – gdy włączona przy ustawianiu boiska. */
+    function applyPitchScale() {
+      if (!placing || drawing.template?.source !== 'pitch') return;
+      drawing.scale = placing.pitchScale
+        ? cleanScale({ value: Number(pitchScale(drawing.template, PAPER_STEP).toPrecision(3)), unit: 'm' })
+        : placing.beforeScale;
+      updateRulerPill();
+      updateGuidePill();
+    }
+    /** Koniec ustawiania: szablon zostaje (keep) albo wraca poprzedni (Anuluj). */
+    function finishPlacement(keep) {
+      if (!placing) return;
+      const { before, beforeImage, beforeScale } = placing;
+      placing = null;
+      if (!keep) {
+        if (before) drawing.template = before;
+        else delete drawing.template;
+        media.template = beforeImage;
+        drawing.scale = beforeScale;
+      }
+      renderPaperPanel();
+      updateToolbar();
+      requestRender();
+    }
+    function renderPlacement() {
+      const template = drawing.template;
+      const fitted = fitTemplate(template, drawing.width, drawing.height);
+      const set = (next) => {
+        drawing.template = next;
+        changed = true;
+        applyPitchScale();
+        renderPlacement();
+        requestRender();
+      };
+      const parts = [
+        h('h3', { class: 'drawing__settings-title' }, `${TEMPLATE_LABELS[template.source]}: wielkość i miejsce`),
+        h('div', { class: 'drawing__placement' },
+          h('button', { type: 'button', class: 'drawing__chip drawing__chip--square', 'aria-label': 'Pomniejsz', dataset: { testid: 'drawing-template-smaller' },
+            onClick: () => set(scaleTemplate(template, 1 / 1.1, drawing.width, drawing.height)) }, icon('minus', { size: 18 })),
+          h('span', { class: 'drawing__placement-size', dataset: { testid: 'drawing-template-size' } }, `${Math.round((template.w / fitted.w) * 100)}%`),
+          h('button', { type: 'button', class: 'drawing__chip drawing__chip--square', 'aria-label': 'Powiększ', dataset: { testid: 'drawing-template-larger' },
+            onClick: () => set(scaleTemplate(template, 1.1, drawing.width, drawing.height)) }, icon('plus', { size: 18 })),
+          chip('Dopasuj', 'drawing-template-fit', () => set(fitted)),
+          chip('Wyśrodkuj', 'drawing-template-center', () => set(centerTemplate(template, drawing.width, drawing.height)))),
+        h('p', { class: 'drawing__settings-label' }, h('span', null, 'Jasność szablonu'), h('span', null, LEVEL_LABELS[template.level].toLowerCase())),
+        levelButtons(template.level, (index) => `rgba(29, 29, 31, ${TEMPLATE_ALPHA[index]})`, 'drawing-template-level', (index) => set({ ...template, level: index }))
+      ];
+      if (template.source === 'pitch') {
+        const scaleToggle = toggle({
+          checked: placing.pitchScale, label: `Skala rysunku według boiska (105 m): 1 kratka = ${formatNumber(pitchScale(template, PAPER_STEP))} m`,
+          onChange: (checked) => {
+            placing.pitchScale = checked;
+            applyPitchScale();
+            requestLive();
+          }
+        });
+        scaleToggle.querySelector('input').dataset.testid = 'drawing-template-scale';
+        parts.push(h('div', { class: 'drawing__settings-switch' }, scaleToggle));
+      }
+      parts.push(
+        h('p', { class: 'field__hint' }, 'Przeciągnij szablon na stronie palcem, rysikiem albo myszą (dwa palce nadal powiększają stronę). Po „Gotowe” szablon się nie przesuwa.'),
+        h('div', { class: 'drawing__color-footer' },
+          h('span', { class: 'drawing__color-code' }),
+          chip('Anuluj', 'drawing-template-cancel', () => finishPlacement(false)),
+          chip('Gotowe', 'drawing-template-done', () => finishPlacement(true), ' drawing__chip--accent')));
+      replaceChildren(paperPanel, ...parts);
+    }
+    async function importTemplate(file) {
+      try {
+        const prepared = await prepareImage(file, { name: file.name });
+        const image = await loadPicture(prepared);
+        if (!image) throw new Error('Nie udało się odczytać obrazu szablonu.');
+        insertTemplate(fitTemplate({
+          source: 'image', type: prepared.type, width: prepared.width, height: prepared.height, bytes: prepared.bytes, level: DEFAULT_TEMPLATE_LEVEL
+        }, drawing.width, drawing.height), image);
+      } catch (error) {
+        flash(error?.message || 'Nie udało się wczytać szablonu.');
+      }
+    }
+
+    // ---- kształty (od 1.15): wybór kształtu
+    const shapePanel = h('div', { class: 'drawing__settings', hidden: true, role: 'dialog', 'aria-label': 'Kształty', dataset: { testid: 'drawing-shape-panel' } });
+    function toggleShapePanel() {
+      const open = shapePanel.hidden;
+      closeSettings();
+      if (!open) return;
+      shapePanel.hidden = false;
+      replaceChildren(shapePanel,
+        h('h3', { class: 'drawing__settings-title' }, 'Kształty'),
+        h('div', { class: 'drawing__shape-kinds', role: 'radiogroup', 'aria-label': 'Kształt' }, SHAPES.map((kind) => h('button', {
+          type: 'button', class: 'drawing__shape-kind', role: 'radio', 'aria-checked': String(kind === tools.shape), dataset: { testid: `drawing-shape-${kind}` },
+          onClick: () => {
+            tools.shape = kind;
+            saveTools(tools);
+            closeSettings();
+            updateToolbar();
+          }
+        }, icon(SHAPE_ICONS[kind], { size: 26 }), h('span', null, SHAPE_LABELS[kind])))),
+        h('p', { class: 'field__hint' }, 'Przeciągnij po stronie – kształt powstaje w prostokącie przeciągnięcia (odcinek i strzałka – od początku do końca); '
+          + 'dotknięcie – kształt w tym miejscu. Kolor i grubość – jak pióra. Punkty zaznaczonego kształtu: narożniki i boki – szerokość i wysokość, '
+          + 'romb na górnej krawędzi – pochylenie, kółko nad kształtem – obrót, pomarańczowy punkt – wierzchołek trójkąta albo wcięcie trapezu.'));
+      updateToolbar();
+    }
+
+    // ---- liniuszek (od 1.15): odstęp i kąt linii, linie poprzeczne, przyciąganie
+    const guidePanel = h('div', { class: 'drawing__settings', hidden: true, role: 'dialog', 'aria-label': 'Liniuszek', dataset: { testid: 'drawing-guide-panel' } });
+    let refreshGuidePanel = null;
+    function toggleGuidePanel() {
+      const open = guidePanel.hidden;
+      closeSettings();
+      if (!open) return;
+      guidePanel.hidden = false;
+      renderGuidePanel();
+    }
+    function renderGuidePanel() {
+      const settings = tools.guide;
+      const range = (key, min, max, step, label) => h('input', {
+        type: 'range', class: 'drawing__range', min, max, step, 'aria-label': label, dataset: { testid: `drawing-guide-${key}` },
+        onInput: (event) => {
+          settings[key] = Number(event.target.value);
+          changedGuide();
+        }
+      });
+      const ranges = {
+        spacing: range('spacing', 0.25, 6, 0.25, 'Odstęp linii'),
+        angle: range('angle', -90, 90, 1, 'Kąt linii'),
+        crossSpacing: range('crossSpacing', 0.25, 12, 0.25, 'Odstęp linii poprzecznych'),
+        crossAngle: range('crossAngle', 10, 170, 1, 'Kąt linii poprzecznych')
+      };
+      const texts = Object.fromEntries(Object.keys(ranges).map((key) => [key, h('span')]));
+      const squares = (value) => (Number.isInteger(value) ? plural(value, 'kratka', 'kratki', 'kratek') : `${formatNumber(value)} kratki`);
+      const quick = (key, values, unit = '°') => h('div', { class: 'drawing__quick' }, values.map((value) => chip(`${value}${unit}`, `drawing-guide-${key}-${value}`, () => {
+        settings[key] = value;
+        changedGuide();
+      })));
+      const crossToggle = toggle({ checked: settings.cross, label: 'Linie poprzeczne', onChange: (checked) => { settings.cross = checked; changedGuide(); } });
+      crossToggle.querySelector('input').dataset.testid = 'drawing-guide-cross';
+      const snapToggle = toggle({ checked: settings.snap, label: 'Przyciąganie kreski do linii', onChange: (checked) => { settings.snap = checked; changedGuide(); } });
+      snapToggle.querySelector('input').dataset.testid = 'drawing-guide-snap';
+      const crossBlock = h('div', null,
+        h('p', { class: 'drawing__settings-label' }, h('span', null, 'Odstęp poprzecznych'), texts.crossSpacing), ranges.crossSpacing,
+        h('p', { class: 'drawing__settings-label' }, h('span', null, 'Kąt poprzecznych względem linii'), texts.crossAngle), ranges.crossAngle,
+        quick('crossAngle', [60, 75, 90]));
+      function refresh() {
+        for (const [key, input] of Object.entries(ranges)) {
+          input.value = String(settings[key]);
+          input.style.setProperty('--fill-to', `${((settings[key] - Number(input.min)) / (Number(input.max) - Number(input.min))) * 100}%`);
+        }
+        texts.spacing.textContent = `${squares(settings.spacing)} · ${formatLength(settings.spacing * PAPER_STEP, drawing.scale)}`;
+        texts.angle.textContent = `${settings.angle}°`;
+        texts.crossSpacing.textContent = `${squares(settings.crossSpacing)} · ${formatLength(settings.crossSpacing * PAPER_STEP, drawing.scale)}`;
+        texts.crossAngle.textContent = settings.crossAngle === 90 ? '90° – prostopadle' : `${settings.crossAngle}°`;
+        crossBlock.hidden = !settings.cross;
+      }
+      function changedGuide() {
+        saveTools(tools);
+        refresh();
+        updateGuidePill();
+        requestLive();
+      }
+      replaceChildren(guidePanel,
+        h('h3', { class: 'drawing__settings-title' }, 'Liniuszek'),
+        h('p', { class: 'drawing__settings-label' }, h('span', null, 'Odstęp linii'), texts.spacing), ranges.spacing,
+        h('p', { class: 'drawing__settings-label' }, h('span', null, 'Kąt linii'), texts.angle), ranges.angle,
+        quick('angle', [0, 45, 90]),
+        h('div', { class: 'drawing__settings-switch' }, crossToggle),
+        crossBlock,
+        h('div', { class: 'drawing__settings-switch' }, snapToggle),
+        h('p', { class: 'field__hint' }, 'Kreska zaczęta przy linii i prowadzona wzdłuż niej biegnie prosto po linii (także po poprzecznej); '
+          + 'w innym kierunku – zwykła kreska. Kółko na stronie przesuwa liniuszek (przyskakuje do węzłów kratki). Liniuszek nie trafia do rysunku.'));
+      refreshGuidePanel = refresh;
+      refresh();
+    }
+    function toggleGuide() {
+      if (guide) {
+        guide = null;
+        guidePanel.hidden = true;
+        refreshGuidePanel = null;
+      } else {
+        // Kółko na środku widocznej części strony, w węźle kratki.
+        const center = visibleCenter();
+        const node = (value, size) => Math.min(size, Math.max(0, Math.round(value / PAPER_STEP) * PAPER_STEP));
+        guide = { x: node(center.x, drawing.width), y: node(center.y, drawing.height) };
+      }
+      measured = null;
+      updateToolbar();
+      requestLive();
+    }
+
+    const topBar = h('div', { class: 'drawing__top' }, toolbar, settings, colorPanel, rulerPanel, paperPanel, shapePanel, guidePanel);
     function toggleSettings() {
       const open = settings.hidden;
       closeSettings();
@@ -1451,8 +1967,14 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       pickHover = null;
       rulerPanel.hidden = true;
       refreshRulerPanel = null;
+      shapePanel.hidden = true;
+      guidePanel.hidden = true;
+      refreshGuidePanel = null;
+      // Zamknięcie panelu tła w trakcie ustawiania szablonu – szablon zostaje tam, gdzie jest.
+      if (placing) finishPlacement(true);
+      paperPanel.hidden = true;
     }
-    const panelOpen = () => !settings.hidden || !colorPanel.hidden || !rulerPanel.hidden;
+    const panelOpen = () => [settings, colorPanel, rulerPanel, paperPanel, shapePanel, guidePanel].some((panel) => !panel.hidden);
 
     function afterHistory() {
       changed = true;
@@ -1634,7 +2156,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const dx = Math.min(drawing.width, Math.max(0, center.x)) - (bounds.minX + bounds.maxX) / 2 + shift;
       const dy = Math.min(drawing.height, Math.max(0, center.y)) - (bounds.minY + bounds.maxY) / 2 + shift;
       // Pola tekstowe i wzory mierzone od nowa (czcionki tego urządzenia).
-      const pasted = content.strokes.map((stroke) => translateStroke(isElement(stroke) ? { ...stroke, ...measureElement(stroke) } : stroke, dx, dy));
+      const pasted = content.strokes.map((stroke) => translateStroke(isElement(stroke) && !isShape(stroke) ? { ...stroke, ...measureElement(stroke) } : stroke, dx, dy));
       history.begin();
       drawing.strokes.push(...pasted);
       commitStep();
@@ -1757,7 +2279,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const fit = (value, size, room) => Math.round(Math.min(Math.max(0, value), Math.max(0, room - size)));
       next.x = fit(center.x - next.width / 2, next.width, drawing.width);
       const middle = fit(center.y - next.height / 2, next.height, drawing.height);
-      const overlapping = (top) => drawing.strokes.filter((item) => isElement(item)
+      const overlapping = (top) => drawing.strokes.filter((item) => isElement(item) && !isShape(item)
         && next.x < item.x + item.width && item.x < next.x + next.width && top < item.y + item.height && item.y < top + next.height);
       /** Pierwsze wolne miejsce od `start` w dół albo null, gdy do dołu strony go nie ma. */
       const scan = (start) => {
@@ -1831,12 +2353,51 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           active.edge = { ruler: { ...ruler }, across: (across < 0 ? -1 : 1) * half, along: 0, from: Infinity, to: -Infinity };
         }
       }
+      // Liniuszek (od 1.15): kierunek kreski wiadomo dopiero po kilku pikselach – wtedy decyzja.
+      if (!active.edge && guide && tools.guide.snap) active.guidePending = { start: toDrawing(event), raw: [] };
       extendStroke(event);
+    }
+    /**
+     * Kreska odsunięta od początku o kilka px: gdy zaczęła się przy linii liniuszka i biegnie wzdłuż
+     * niej (do 20°), cała – od początku – leży na tej linii, a dalsze punkty są na nią rzutowane.
+     */
+    function decideGuide(raw) {
+      const pending = active.guidePending;
+      const { start } = pending;
+      if (Math.hypot(raw.x - start.x, raw.y - start.y) * view.scale < GUIDE_DECIDE) return false;
+      active.guidePending = null;
+      const direction = Math.atan2(raw.y - start.y, raw.x - start.x);
+      let best = null;
+      for (const family of guideFamilies()) {
+        const line = nearestGuideLine(family, start.x, start.y);
+        const off = lineAngleDifference(direction, family.angle);
+        if (line.distance * view.scale > GUIDE_SNAP || off > GUIDE_ANGLE) continue;
+        if (!best || off < best.off) best = { line, off };
+      }
+      if (!best) return false;
+      const edge = { ruler: { x: best.line.x, y: best.line.y, angle: best.line.angle }, across: 0, along: 0, from: Infinity, to: -Infinity, guide: true };
+      active.edge = edge;
+      active.stroke.points = [];
+      active.last = null;
+      for (const point of pending.raw) {
+        const { along } = rulerOffset(edge.ruler, point.x, point.y);
+        edge.along = along;
+        edge.from = Math.min(edge.from, along);
+        edge.to = Math.max(edge.to, along);
+        const next = { ...rulerPoint(edge.ruler, along, 0), w: point.w };
+        addPoint(active.stroke, next);
+        active.last = next;
+      }
+      return true;
     }
     function extendStroke(event) {
       const events = event.getCoalescedEvents?.() ?? [];
       for (const item of events.length > 0 ? events : [event]) {
         const raw = { ...strokePoint(item), w: pointWidth(item) };
+        if (active.guidePending) {
+          active.guidePending.raw.push(raw);
+          if (decideGuide(raw)) continue;
+        }
         const point = smoothPoint(active.last, raw, active.stroke.tool === 'pen' && !active.edge ? tools.smoothing : 0);
         addPoint(active.stroke, point);
         active.last = point;
@@ -1905,6 +2466,50 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       pickAt(event);
       requestLive();
     }
+    /** Styl nowego kształtu: kolor pióra i średnia grubość wybranej grubości pióra. */
+    const shapeStyle = () => {
+      const width = tools.penWidths[tools.penWidth];
+      return { color: inkHex(tools.penColor), size: Math.round(((width.min + width.max) / 2) * 10) / 10 };
+    };
+    const common = (event, point) => ({ id: event.pointerId, touch: event.pointerType === 'touch', start: point, client: local(event) });
+    /** Kształty: przeciągnięcie zaznaczonego kształtu przesuwa go, gdzie indziej – nowy kształt. */
+    function startShape(event) {
+      const point = toDrawing(event);
+      const [only] = selection;
+      if (selection.size === 1 && isShape(only) && (shapeContains(only, point.x, point.y) || touchesShape(only, point.x, point.y, HANDLE_HIT / view.scale))) {
+        active = { kind: 'move', ...common(event, point), dx: 0, dy: 0 };
+        requestRender();
+        return;
+      }
+      const hadSelection = selection.size > 0;
+      clearSelection();
+      active = { kind: 'shape-new', ...common(event, point), shape: null, moved: false, hadSelection };
+    }
+    function startShapeEdit(event, handle) {
+      active = { kind: 'shape-edit', ...common(event, toDrawing(event)), handle: handle.id, original: handle.shape, preview: handle.shape };
+      requestRender();
+    }
+    function startGuideMove(event) {
+      active = { kind: 'guide-move', ...common(event, toDrawing(event)), origin: { ...guide } };
+    }
+    function startTemplateMove(event) {
+      try {
+        live.setPointerCapture(event.pointerId);
+      } catch {
+        // przechwycenie nie jest konieczne
+      }
+      active = { kind: 'template-move', ...common(event, toDrawing(event)), origin: { x: drawing.template.x, y: drawing.template.y } };
+    }
+    /** Poprawiony kształt zamiast poprzedniego – jeden krok cofania; zostaje zaznaczony. */
+    function replaceShape(original, next) {
+      const index = drawing.strokes.indexOf(original);
+      if (index < 0) return;
+      history.begin();
+      drawing.strokes[index] = next;
+      commitStep();
+      selection = new Set([next]);
+      selectionKind = 'whole';
+    }
     function moveActive(event) {
       const point = toDrawing(event);
       switch (active.kind) {
@@ -1951,6 +2556,34 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           pickAt(event);
           requestLive();
           break;
+        case 'shape-new':
+          if (Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale >= TAP_SLOP) active.moved = true;
+          if (active.moved) active.shape = shapeFromDrag(tools.shape, active.start, point, shapeStyle(), { tap: 0 });
+          requestLive();
+          break;
+        case 'shape-edit':
+          active.preview = moveShapeHandle(active.original, active.handle, point);
+          requestLive();
+          break;
+        case 'guide-move': {
+          // Kółko liniuszka przyskakuje do węzłów kratki (do 8 px).
+          const snap = (value) => {
+            const node = Math.round(value / PAPER_STEP) * PAPER_STEP;
+            return Math.abs(node - value) * view.scale <= 8 ? node : value;
+          };
+          guide = { x: snap(active.origin.x + point.x - active.start.x), y: snap(active.origin.y + point.y - active.start.y) };
+          requestLive();
+          break;
+        }
+        case 'template-move':
+          drawing.template = {
+            ...drawing.template,
+            x: Math.round((active.origin.x + point.x - active.start.x) * 10) / 10,
+            y: Math.round((active.origin.y + point.y - active.start.y) * 10) / 10
+          };
+          changed = true;
+          requestRender();
+          break;
         default:
           break;
       }
@@ -1963,7 +2596,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       if ((Math.max(...xs) - Math.min(...xs)) * view.scale < TAP_SLOP && (Math.max(...ys) - Math.min(...ys)) * view.scale < TAP_SLOP) {
         // Dotknięcie kreski zaznacza ją (najwyższą w tym miejscu).
         const [top] = strokesAt(drawing.strokes, done.start.x, done.start.y, SELECTION_PAD / view.scale);
-        selection = new Set(top === undefined ? [] : [drawing.strokes[top]]);
+        // Dotknięcie pustego środka kształtu też go zaznacza (najwyższego).
+        const inside = drawing.strokes.findLastIndex((stroke) => isShape(stroke) && shapeContains(stroke, done.start.x, done.start.y));
+        const index = top ?? (inside >= 0 ? inside : undefined);
+        selection = new Set(index === undefined ? [] : [drawing.strokes[index]]);
         selectionKind = 'whole';
         return;
       }
@@ -1992,12 +2628,23 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         if (selection.size > 0) selection = new Set(drawing.strokes.filter((stroke) => selection.has(stroke)));
       } else if ((done.kind === 'marquee' || done.kind === 'lasso') && !cancelled) {
         finishOutline(done);
+      } else if (done.kind === 'shape-new' && !cancelled) {
+        // Dotknięcie przy zaznaczonym kształcie tylko je zdejmuje; inaczej – kształt (dotknięcie – domyślnej wielkości).
+        if (done.moved || !done.hadSelection) {
+          const shape = done.shape ?? shapeFromDrag(tools.shape, done.start, done.start, shapeStyle());
+          history.add(shape);
+          changed = true;
+          selection = new Set([shape]);
+          selectionKind = 'whole';
+        }
+      } else if (done.kind === 'shape-edit' && !cancelled) {
+        if (done.preview !== done.original) replaceShape(done.original, done.preview);
       } else if (done.kind === 'move' && !cancelled) {
         const tap = Math.abs(done.dx) * view.scale < TAP_SLOP && Math.abs(done.dy) * view.scale < TAP_SLOP;
         const [only] = selection;
         if (!tap) moveSelection(done.dx, done.dy);
         // Dotknięcie zaznaczonego pola tekstowego albo wzoru – poprawka.
-        else if (selection.size === 1 && isElement(only) && touchesStroke(only, done.start.x, done.start.y, 0)) editElement(only.tool, only);
+        else if (selection.size === 1 && isElement(only) && !isShape(only) && touchesStroke(only, done.start.x, done.start.y, 0)) editElement(only.tool, only);
       }
       // Palce, które zostały na ekranie, przesuwają dalej od miejsca, w którym są teraz.
       if (gesture && touches.size > 0) startGesture(gesture.kind);
@@ -2067,7 +2714,12 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         if (!active && touches.size === 0) startPick(event);
         return;
       }
-      closeSettings();
+      // Ustawianie szablonu: wskaźnik przesuwa szablon; drugi palec – powiększanie strony.
+      if (placing && !(event.pointerType === 'touch' && (gesture || active?.touch))) {
+        if (!active) startTemplateMove(event);
+        return;
+      }
+      if (!placing) closeSettings();
       const point = toDrawing(event);
       if (event.pointerType === 'touch') {
         // Kolejny palec dołącza do trwającego gestu.
@@ -2099,7 +2751,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           startGesture('ruler');
           return;
         }
-        if (!hit && penSeen && !(tool === 'select' && selectionHit(point))) {
+        // Palec przy rysiku: punkty kształtu, kółko liniuszka i zaznaczenie – tak; poza nimi przesuwa stronę.
+        const [only] = selection;
+        const onSelection = (tool === 'select' && selectionHit(point))
+          || (tool === 'shape' && selection.size === 1 && isShape(only) && shapeContains(only, point.x, point.y));
+        if (!hit && penSeen && !onSelection && !shapeHandleAt(point) && !guideKnobHit(point)) {
           touches.set(event.pointerId, local(event));
           startGesture('page');
           return;
@@ -2114,11 +2770,15 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       } catch {
         // przechwycenie nie jest konieczne
       }
-      const hit = rulerHit(point);
-      if (hit === 'handle') startRuler(event, 'ruler-rotate');
+      const handle = shapeHandleAt(point);
+      const hit = handle ? null : rulerHit(point);
+      if (handle) startShapeEdit(event, handle);
+      else if (hit === 'handle') startRuler(event, 'ruler-rotate');
+      else if (guideKnobHit(point)) startGuideMove(event);
       else if (hit === 'body' && event.pointerType !== 'pen') startRuler(event, 'ruler-move');
       else if (usesEraser(event)) startErase(event);
       else if (tool === 'select') startSelect(event);
+      else if (tool === 'shape') startShape(event);
       else startStroke(event);
       if (active?.touch) active.client = local(event);
     });
@@ -2188,8 +2848,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         doneButton.disabled = true;
         try {
           // Zdjęcie pod kreskami musi być wczytane, zanim powstanie obraz rysunku.
-          await pictureReady;
-          result = { drawing, image: await renderDrawingImage(drawing, picture) };
+          await Promise.all([pictureReady, templateReady]);
+          result = { drawing, image: await renderDrawingImage(drawing, media) };
         } catch (error) {
           saving = false;
           doneButton.disabled = false;
@@ -2270,7 +2930,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     updateToolbar();
     observer.observe(stage);
     const pictureReady = loadPicture(drawing.photo).then((loaded) => {
-      picture = loaded;
+      media.photo = loaded;
+      requestRender();
+    });
+    const templateReady = loadPicture(drawing.template).then((loaded) => {
+      media.template = loaded;
       requestRender();
     });
   });

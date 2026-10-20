@@ -303,8 +303,9 @@ function mediaPath(store, meta) {
 }
 
 /**
- * Kreski rysunku (od 1.12) w archiwum: rysunki/<id>.json i zdjęcie pod kreskami
- * rysunki/<id>-zdjecie.jpeg. Zwraca opis do spisu treści: { path, photo } (photo – ścieżka albo null).
+ * Kreski rysunku (od 1.12) w archiwum: rysunki/<id>.json, zdjęcie pod kreskami
+ * rysunki/<id>-zdjecie.jpeg i (od 1.15) szablon z pliku rysunki/<id>-szablon.png. Zwraca opis do
+ * spisu treści: { path, photo, template? } (photo – ścieżka albo null).
  */
 async function addDrawing(writer, id, drawing) {
   const path = `rysunki/${id}.json`;
@@ -314,7 +315,12 @@ async function addDrawing(writer, id, drawing) {
     photo = `rysunki/${id}-zdjecie.${IMAGE_EXTENSIONS[drawing.photo.type] ?? 'bin'}`;
     await writer.add({ name: photo, data: new Uint8Array(drawing.photo.bytes), stored: true });
   }
-  return { path, photo };
+  let template = null;
+  if (drawing.template?.bytes) {
+    template = `rysunki/${id}-szablon.${IMAGE_EXTENSIONS[drawing.template.type] ?? 'bin'}`;
+    await writer.add({ name: template, data: new Uint8Array(drawing.template.bytes), stored: true });
+  }
+  return { path, photo, ...(template ? { template } : {}) };
 }
 
 /** Kreski rysunku z archiwum (z jego zdjęciem) albo null, gdy ich nie ma albo są uszkodzone. */
@@ -328,6 +334,12 @@ async function readDrawing(archive, description) {
       const photo = archive.entries.get(description.photo);
       if (!photo) return null;
       raw.photo = { ...raw.photo, bytes: await archive.read(photo) };
+    }
+    // Szablon bez pliku w archiwum – rysunek bez szablonu (kreski zostają).
+    if (raw?.template?.source === 'image') {
+      const template = typeof description.template === 'string' ? archive.entries.get(description.template) : null;
+      if (template) raw.template = { ...raw.template, bytes: await archive.read(template) };
+      else delete raw.template;
     }
     return cleanDrawing(raw);
   } catch (error) {

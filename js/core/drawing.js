@@ -3,7 +3,8 @@
 // wygładzanie, gumka całych kresek i fragmentów (od 1.12.1), zaznaczanie i przesuwanie kresek,
 // linijka, historia cofania, sprawdzanie danych (zapis, kopia zapasowa). Od 1.14: skala rysunku
 // i liczby na linijce, przyciąganie zera linijki do przecięć i linii, zaznaczanie fragmentów
-// prostokątem albo lassem (kreski cięte na brzegu obszaru), własne kolory.
+// prostokątem albo lassem (kreski cięte na brzegu obszaru), własne kolory. Od 1.15: kształty
+// geometryczne (core/shapes.js), jasność tła i szablon pod kreskami (core/templates.js).
 //
 // Rysunek: { version: 2, width, height, paper: 'plain' | 'lines' | 'grid', strokes, photo? }
 //   width, height – wielkość strony w jednostkach rysunku (strona bez zdjęcia: 1600 × 1100);
@@ -13,10 +14,17 @@
 //   i wzory { tool: 'math', color, x, y, size, source, width, height } – (x, y) to lewy górny róg,
 //   width i height – zmierzone przy wstawieniu (zaznaczanie, gumka), size – wysokość czcionki;
 //   photo – { type, width, height, bytes } – zdjęcie pod kreskami („Rysuj na zdjęciu”);
-//   od 1.14 scale – { value, unit } – ile w rzeczywistości ma jedna kratka (linijka, długość kreski).
+//   od 1.14 scale – { value, unit } – ile w rzeczywistości ma jedna kratka (linijka, długość kreski);
+//   od 1.15 w strokes także kształty { tool: 'shape', … } (core/shapes.js), paperLevel – jasność
+//   linii i kratki (0–4), template – szablon pod kreskami (core/templates.js) albo brak.
 
-/** 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13). */
-export const DRAWING_VERSION = 2;
+import {
+  SHAPES, arrowHead, cleanShape, isShape, shapeAsStroke, shapeBounds, shapeOutline, touchesShape
+} from './shapes.js';
+import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
+
+/** 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13), 3 – kształty, jasność tła, szablon (1.15). */
+export const DRAWING_VERSION = 3;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -153,8 +161,8 @@ export const TEXT_SIZE_LABELS = Object.freeze(['Mała', 'Średnia', 'Duża']);
 /** Najdłuższy tekst pola i zapis wzoru. */
 export const ELEMENT_TEXT_MAX = 2000;
 
-/** Czy to pole tekstowe albo wzór (a nie kreska z punktami). */
-export const isElement = (stroke) => stroke?.tool === 'text' || stroke?.tool === 'math';
+/** Czy to pole tekstowe, wzór albo (od 1.15) kształt – a nie kreska z punktami. */
+export const isElement = (stroke) => stroke?.tool === 'text' || stroke?.tool === 'math' || stroke?.tool === 'shape';
 
 /** Gumka (od 1.12.1): całe kreski albo fragmenty; wielkość gumki fragmentów – średnica na ekranie (px). */
 export const ERASER_MODES = Object.freeze(['stroke', 'pixel']);
@@ -178,7 +186,31 @@ export function defaultToolSettings() {
     customColors: [],
     selectShape: 'rect',
     selectMode: 'auto',
-    rulerSnap: true
+    rulerSnap: true,
+    shape: 'rect',
+    guide: defaultGuide()
+  };
+}
+
+/**
+ * Liniuszek (od 1.15): odstęp linii w kratkach, kąt linii w stopniach (0 – poziomo, przeciwnie do
+ * ruchu wskazówek zegara), linie poprzeczne – odstęp wzdłuż linii i kąt względem linii (90 – prosto),
+ * przyciąganie pióra do linii.
+ */
+export const defaultGuide = () => ({ spacing: 1, angle: 0, cross: false, crossSpacing: 1, crossAngle: 90, snap: true });
+export const GUIDE_LIMITS = Object.freeze({ spacing: [0.25, 6], crossSpacing: [0.25, 12], angle: [-90, 90], crossAngle: [10, 170] });
+
+function cleanGuide(raw) {
+  const base = defaultGuide();
+  if (!raw || typeof raw !== 'object') return base;
+  const number = (key, step) => (finite(raw[key]) ? clamp(Math.round(raw[key] / step) * step, ...GUIDE_LIMITS[key]) : base[key]);
+  return {
+    spacing: number('spacing', 0.25),
+    angle: number('angle', 1),
+    cross: typeof raw.cross === 'boolean' ? raw.cross : base.cross,
+    crossSpacing: number('crossSpacing', 0.25),
+    crossAngle: number('crossAngle', 1),
+    snap: typeof raw.snap === 'boolean' ? raw.snap : base.snap
   };
 }
 
@@ -214,7 +246,9 @@ export function cleanToolSettings(raw) {
       ? [...new Set(raw.customColors.filter(isHexColor).map((color) => color.toLowerCase()))].slice(0, CUSTOM_COLOR_LIMIT) : base.customColors,
     selectShape: SELECT_SHAPES.includes(raw.selectShape) ? raw.selectShape : base.selectShape,
     selectMode: SELECT_MODES.includes(raw.selectMode) ? raw.selectMode : base.selectMode,
-    rulerSnap: typeof raw.rulerSnap === 'boolean' ? raw.rulerSnap : base.rulerSnap
+    rulerSnap: typeof raw.rulerSnap === 'boolean' ? raw.rulerSnap : base.rulerSnap,
+    shape: SHAPES.includes(raw.shape) ? raw.shape : base.shape,
+    guide: cleanGuide(raw.guide)
   };
 }
 
@@ -267,6 +301,7 @@ function segmentDistance(px, py, ax, ay, bx, by) {
 
 /** Czy gumka o promieniu `radius` w punkcie (x, y) dotyka kreski (z jej grubością). */
 export function touchesStroke(stroke, x, y, radius) {
+  if (isShape(stroke)) return touchesShape(stroke, x, y, radius);
   if (isElement(stroke)) {
     return x >= stroke.x - radius && x <= stroke.x + stroke.width + radius && y >= stroke.y - radius && y <= stroke.y + stroke.height + radius;
   }
@@ -296,6 +331,11 @@ const boundsCache = new WeakMap();
 export function strokeBounds(stroke) {
   let bounds = boundsCache.get(stroke);
   if (bounds) return bounds;
+  if (isShape(stroke)) {
+    bounds = shapeBounds(stroke);
+    boundsCache.set(stroke, bounds);
+    return bounds;
+  }
   if (isElement(stroke)) {
     bounds = { minX: stroke.x, minY: stroke.y, maxX: stroke.x + stroke.width, maxY: stroke.y + stroke.height };
     boundsCache.set(stroke, bounds);
@@ -397,7 +437,7 @@ export function strokesInRect(strokes, rect) {
   const found = [];
   strokes.forEach((stroke, index) => {
     if (isElement(stroke)) {
-      if (stroke.x >= left && stroke.x + stroke.width <= right && stroke.y >= top && stroke.y + stroke.height <= bottom) found.push(index);
+      if (elementCorners(stroke).every(([x, y]) => x >= left && x <= right && y >= top && y <= bottom)) found.push(index);
       return;
     }
     const { points } = stroke;
@@ -407,6 +447,21 @@ export function strokesInRect(strokes, rect) {
     if (points.length > 0) found.push(index);
   });
   return found;
+}
+
+/**
+ * Punkty, które muszą leżeć w obszarze, żeby pole tekstowe, wzór albo kształt był zaznaczony:
+ * narożniki pola i wzoru, punkty obrysu kształtu (i grot strzałki).
+ */
+function elementCorners(element) {
+  if (!isShape(element)) {
+    return [[element.x, element.y], [element.x + element.width, element.y], [element.x + element.width, element.y + element.height], [element.x, element.y + element.height]];
+  }
+  const { points } = shapeOutline(element);
+  const corners = [];
+  for (let index = 0; index < points.length; index += 2) corners.push([points[index], points[index + 1]]);
+  if (element.shape === 'arrow') for (const point of arrowHead(element)) corners.push([point.x, point.y]);
+  return corners;
 }
 
 /** Granice kilku kresek (zaznaczenie) albo null. */
@@ -498,7 +553,9 @@ function segmentsNear(stroke, x, y, radius) {
  * Zwraca { x, y, kind: 'crossing' | 'line', angle? } albo null. Pola tekstowe i wzory się nie liczą.
  */
 export function snapToStrokes(strokes, x, y, radius) {
+  // Kształty (od 1.15) – jak kreski wzdłuż ich obrysu; pola tekstowe i wzory się nie liczą.
   const near = strokes
+    .map((stroke) => (isShape(stroke) ? shapeAsStroke(stroke) : stroke))
     .filter((stroke) => {
       if (isElement(stroke) || stroke.points.length < 6) return false;
       const bounds = strokeBounds(stroke);
@@ -578,8 +635,7 @@ export function isClockwise(polygon) {
 }
 
 /** Czy pole tekstowe albo wzór leży w całości w wielokącie. */
-const elementInPolygon = (element, polygon) => [[element.x, element.y], [element.x + element.width, element.y],
-  [element.x + element.width, element.y + element.height], [element.x, element.y + element.height]].every(([x, y]) => pointInPolygon(x, y, polygon));
+const elementInPolygon = (element, polygon) => elementCorners(element).every(([x, y]) => pointInPolygon(x, y, polygon));
 
 /** Numery kresek, pól i wzorów leżących w całości w wielokącie (lasso – całe kreski). */
 export function strokesInPolygon(strokes, polygon) {
@@ -754,6 +810,7 @@ export function emptyDrawing({ photo = null, paper = 'grid' } = {}) {
     width: photo ? Math.max(16, Math.round(photo.width * scale)) : PAGE_WIDTH,
     height: photo ? Math.max(16, Math.round(photo.height * scale)) : PAGE_HEIGHT,
     paper: photo ? 'plain' : paper,
+    paperLevel: DEFAULT_PAPER_LEVEL,
     strokes: [],
     scale: defaultScale(),
     ...(photo ? { photo } : {})
@@ -788,6 +845,7 @@ export function cleanDrawing(raw) {
     }
     if (points.length >= 3) strokes.push({ tool: stroke.tool, color: stroke.color.toLowerCase(), points });
   }
+  const template = cleanTemplate(raw.template, width, height, photoBytes);
   let photo = null;
   if (raw.photo && typeof raw.photo === 'object' && /^image\//.test(raw.photo.type ?? '')) {
     const bytes = photoBytes(raw.photo.bytes);
@@ -803,14 +861,17 @@ export function cleanDrawing(raw) {
     width,
     height,
     paper: PAPERS.includes(raw.paper) ? raw.paper : 'plain',
+    paperLevel: cleanLevel(raw.paperLevel, DEFAULT_PAPER_LEVEL),
     strokes,
     scale: cleanScale(raw.scale),
+    ...(template ? { template } : {}),
     ...(photo ? { photo } : {})
   };
 }
 
-/** Sprawdzone pole tekstowe albo wzór (zapis, kopia zapasowa) albo null. */
+/** Sprawdzone pole tekstowe, wzór albo kształt (zapis, kopia zapasowa) albo null. */
 function cleanElement(raw, pageWidth, pageHeight) {
+  if (raw.tool === 'shape') return cleanShape(raw, pageWidth, pageHeight, (color) => HEX.test(color ?? ''));
   const content = raw.tool === 'text' ? raw.text : raw.source;
   if (typeof content !== 'string' || content.trim() === '' || !HEX.test(raw.color ?? '')) return null;
   if (![raw.x, raw.y, raw.size, raw.width, raw.height].every(finite)) return null;
@@ -836,12 +897,16 @@ function photoBytes(bytes) {
   return null;
 }
 
-/** Rysunek bez bajtów zdjęcia (do pliku JSON w kopii – zdjęcie idzie osobnym plikiem). */
+/** Rysunek bez bajtów zdjęcia i szablonu (do pliku JSON w kopii – zdjęcie i szablon idą osobnymi plikami). */
 export function drawingWithoutPhotoBytes(drawing) {
-  if (!drawing?.photo) return drawing;
-  const photo = { ...drawing.photo };
-  delete photo.bytes;
-  return { ...drawing, photo };
+  if (!drawing?.photo && !drawing?.template?.bytes) return drawing;
+  const copy = { ...drawing };
+  for (const key of ['photo', 'template']) {
+    if (!copy[key]) continue;
+    copy[key] = { ...copy[key] };
+    delete copy[key].bytes;
+  }
+  return copy;
 }
 
 /** Czy rysunek ma coś do pokazania (kreski albo zdjęcie). */

@@ -116,6 +116,16 @@ const ICONS = {
     { d: 'M12 4c4.7 0 8.5 2.5 8.5 5.6s-3.8 5.6-8.5 5.6-8.5-2.5-8.5-5.6S7.3 4 12 4z', 'stroke-dasharray': '2.4 2.3' },
     p('M7.4 14.2c-1.3 1.2-1.4 2.6-.3 3.5 1.2 1 1.1 2.3-.2 3.3')
   ],
+  // Kształty, liniuszek i tło strony (od 1.15).
+  shapeLine: [p('M5 19L19 5'), dot(5, 19, 1.8), dot(19, 5, 1.8)],
+  shapeArrow: [p('M5 19L18.5 5.5'), p('M11 5.2h7.8V13')],
+  shapeRect: [p('M4 6.5h16v11H4z')],
+  shapeEllipse: [{ tag: 'ellipse', cx: 12, cy: 12, rx: 8.5, ry: 6 }],
+  shapeTriangle: [p('M12 4.5l8.5 15h-17z')],
+  shapeDiamond: [p('M12 3.5l8.5 8.5-8.5 8.5L3.5 12z')],
+  shapeTrapezoid: [p('M7.5 6.5h9l4 11h-17z')],
+  guide: [p('M3.5 6.5h17'), p('M3.5 12h17'), p('M3.5 17.5h17'), { d: 'M8 4l-3 16M14 4l-3 16M20 4l-3 16', 'stroke-dasharray': '1.6 2', 'stroke-width': 1.2 }],
+  paper: [p('M5 4h14v16H5z'), { d: 'M5 9.3h14M5 14.6h14M9.7 4v16M14.3 4v16', 'stroke-width': 1.1 }],
   duplicate: [
     p('M9.5 9h9a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 8 19.5v-9A1.5 1.5 0 0 1 9.5 9z'),
     p('M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5'), p('M14 12.3v5.4'), p('M11.3 15h5.4')

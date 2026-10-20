@@ -5750,6 +5750,69 @@ button.drawing__pill .icon { color: var(--text-2); }
   font-size: var(--size-sub);
 }
 
+/* Tło strony (od 1.15): pięć poziomów jasności – próbki kratki w kolorze linii. */
+.drawing__levels {
+  display: flex;
+  gap: 6px;
+}
+
+.drawing__level {
+  flex: 1 1 0;
+  height: 36px;
+  border-radius: 9px;
+  background:
+    linear-gradient(var(--line), var(--line)) center / 100% 1.5px no-repeat,
+    linear-gradient(var(--line), var(--line)) center / 1.5px 100% no-repeat,
+    #ffffff;
+  box-shadow: inset 0 0 0 1px var(--separator);
+}
+
+.drawing__level[aria-checked="true"] { box-shadow: inset 0 0 0 1px var(--separator), 0 0 0 2px var(--elevated), 0 0 0 4px var(--accent); }
+
+.drawing__template-actions,
+.drawing__placement,
+.drawing__quick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.drawing__template-actions .drawing__chip,
+.drawing__placement .drawing__chip,
+.drawing__quick .drawing__chip { margin-left: 0; }
+
+.drawing__template-name { font-weight: 600; }
+.drawing__chip--danger { color: var(--danger); }
+.drawing__chip--square { display: inline-grid; place-items: center; width: 38px; padding: 0; }
+
+.drawing__placement-size {
+  min-width: 3.4em;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Kształty (od 1.15): siatka rodzajów z ikoną i nazwą. */
+.drawing__shape-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 6px;
+}
+
+.drawing__shape-kind {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px 4px 6px;
+  border-radius: 12px;
+  color: var(--text);
+  font-size: var(--size-foot);
+}
+
+.drawing__shape-kind[aria-checked="true"] { background: var(--fill); font-weight: 600; }
+
 /* Linijka i skala: „1 kratka = [liczba] [jednostka]”, szacunek skali na ekranie, przyciąganie. */
 .drawing__scale {
   display: flex;
