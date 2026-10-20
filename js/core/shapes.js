@@ -1,14 +1,20 @@
 // Kształty geometryczne na rysunku (od 1.15) i liniuszek – bez przeglądarki: punkty kształtu,
 // obrys (zaznaczanie, gumka, przyciąganie linijki), punkty konstrukcyjne i ich przesuwanie,
-// sprawdzanie danych; liniuszek – najbliższa linia z rodziny równoległych linii.
+// sprawdzanie danych; liniuszek – najbliższa linia z rodziny równoległych linii. Od 1.17:
+// wypełnienie, tekst na kształcie i wymiary wpisywane z klawiatury (szerokość, wysokość, kąt
+// pochylenia; odcinek – długość i kąt).
 //
-// Kształt { tool: 'shape', shape, color, size, x, y, w, h, angle, skew, adjust }:
+// Kształt { tool: 'shape', shape, color, size, x, y, w, h, angle, skew, adjust, fill?, label? }:
 //   shape – 'line' | 'arrow' | 'rect' | 'ellipse' | 'triangle' | 'diamond' | 'trapezoid';
 //   (x, y) – środek; w, h – szerokość i wysokość (odcinek i strzałka: w – długość, h = 0);
 //   angle – obrót (radiany); skew – pochylenie: o ile górna krawędź jest przesunięta w prawo
 //   względem dolnej, w stosunku do wysokości (tangens kąta pochylenia); size – grubość linii;
 //   adjust – trójkąt: wierzchołek nad dolną krawędzią (0 – nad lewym rogiem, ½ – środek, 1 – nad
-//   prawym), trapez: wcięcie górnej krawędzi z każdej strony (0 – prostokąt, do 0,45).
+//   prawym), trapez: wcięcie górnej krawędzi z każdej strony (0 – prostokąt, do 0,45);
+//   od 1.17 fill – 'light' (kolor kształtu, przejrzysty) albo 'solid' (pełny), brak – bez wypełnienia
+//   (odcinek i strzałka go nie mają); label – tekst na kształcie { text, size, color, width, height }:
+//   na środku kształtu (odcinek – nad linią), obrócony razem z nim, ale nigdy do góry nogami,
+//   łamany do szerokości kształtu; width i height – zmierzone przy wpisaniu (granice, dotknięcie).
 
 export const SHAPES = Object.freeze(['line', 'arrow', 'rect', 'ellipse', 'triangle', 'diamond', 'trapezoid']);
 export const SHAPE_LABELS = Object.freeze({
@@ -20,6 +26,15 @@ export const isShape = (stroke) => stroke?.tool === 'shape';
 export const SKEW_LIMIT = 2.5;
 export const MIN_SHAPE = 4;
 const DEFAULT_ADJUST = { triangle: 0.5, trapezoid: 0.25 };
+/** Wypełnienie kształtu (od 1.17): brak, jasne (kolor kształtu, przejrzysty) albo pełne. */
+export const SHAPE_FILLS = Object.freeze(['none', 'light', 'solid']);
+export const SHAPE_FILL_LABELS = Object.freeze({ none: 'Brak', light: 'Jasne', solid: 'Pełne' });
+export const FILL_ALPHA = Object.freeze({ light: 0.22, solid: 1 });
+export const canFill = (shape) => !isSegment(shape);
+/** Najdłuższy tekst na kształcie. */
+export const LABEL_TEXT_MAX = 500;
+/** Największy kąt pochylenia wpisywany z klawiatury (stopnie) – odpowiada SKEW_LIMIT. */
+export const SKEW_DEGREES_LIMIT = Math.floor((Math.atan(SKEW_LIMIT) * 180) / Math.PI);
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
@@ -114,7 +129,52 @@ export function shapeBounds(shape) {
     }
   }
   const half = shape.size / 2;
+  for (const point of labelCorners(shape)) {
+    xs.push(point.x);
+    ys.push(point.y);
+  }
   return { minX: Math.min(...xs) - half, minY: Math.min(...ys) - half, maxX: Math.max(...xs) + half, maxY: Math.max(...ys) + half };
+}
+
+// ---------------------------------------------------------------- tekst na kształcie (od 1.17)
+
+/** Najszerszy wiersz tekstu na kształcie (czcionka `size`): szerokość kształtu z marginesem, odcinek – jego długość. */
+export function labelMaxWidth(shape, size) {
+  return isSegment(shape) ? Math.max(size * 3, shape.w) : Math.max(size * 2, shape.w * 0.86 - shape.size);
+}
+
+/**
+ * Środek, kąt i wielkość tekstu na kształcie: środek kształtu, a odcinka – nad środkiem linii.
+ * Tekst obraca się z kształtem, ale nie leży do góry nogami (kąt czytelny: od −90° do 90°).
+ */
+export function labelFrame(shape) {
+  const { label } = shape;
+  const [cos, sin] = [Math.cos(shape.angle), Math.sin(shape.angle)];
+  const flip = cos < -1e-9 || (Math.abs(cos) < 1e-9 && sin > 0);
+  const angle = flip ? Math.atan2(-sin, -cos) : shape.angle;
+  if (!isSegment(shape)) return { x: shape.x, y: shape.y, angle, width: label.width, height: label.height };
+  const lift = label.height / 2 + shape.size / 2 + label.size * 0.25;
+  return { x: shape.x + Math.sin(angle) * lift, y: shape.y - Math.cos(angle) * lift, angle, width: label.width, height: label.height };
+}
+
+/** Narożniki prostokąta tekstu na kształcie (punkty strony); bez tekstu – brak. */
+function labelCorners(shape) {
+  if (!shape.label) return [];
+  const frame = labelFrame(shape);
+  const [cos, sin] = [Math.cos(frame.angle), Math.sin(frame.angle)];
+  return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => {
+    const [lx, ly] = [(a * frame.width) / 2, (b * frame.height) / 2];
+    return { x: frame.x + lx * cos - ly * sin, y: frame.y + lx * sin + ly * cos };
+  });
+}
+
+/** Czy koło (x, y, radius) dotyka tekstu na kształcie. */
+function touchesLabel(shape, x, y, radius) {
+  if (!shape.label) return false;
+  const frame = labelFrame(shape);
+  const [cos, sin] = [Math.cos(frame.angle), Math.sin(frame.angle)];
+  const [dx, dy] = [x - frame.x, y - frame.y];
+  return Math.abs(dx * cos + dy * sin) <= frame.width / 2 + radius && Math.abs(-dx * sin + dy * cos) <= frame.height / 2 + radius;
 }
 
 /** Odległość punktu od odcinka (a–b). */
@@ -125,8 +185,12 @@ function segmentDistance(px, py, ax, ay, bx, by) {
   return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
 }
 
-/** Czy koło (x, y, radius) dotyka linii kształtu (wnętrze się nie liczy – kształt nie jest wypełniony). */
+/**
+ * Czy koło (x, y, radius) dotyka linii kształtu albo tekstu na nim; wnętrze liczy się tylko
+ * u kształtu wypełnionego (od 1.17).
+ */
 export function touchesShape(shape, x, y, radius) {
+  if (touchesLabel(shape, x, y, radius) || (shape.fill && shapeContains(shape, x, y))) return true;
   const { points, closed } = shapeOutline(shape);
   const reach = radius + shape.size / 2;
   const count = points.length / 2;
@@ -173,6 +237,7 @@ export const translateShape = (shape, dx, dy) => ({ ...shape, x: round(shape.x +
 export function shapeFromDrag(kind, from, to, style, { defaultSize = 176, tap = 6 } = {}) {
   const [dx, dy] = [to.x - from.x, to.y - from.y];
   const base = { tool: 'shape', shape: kind, color: style.color, size: style.size, angle: 0, skew: 0, adjust: DEFAULT_ADJUST[kind] ?? 0 };
+  if ((style.fill === 'light' || style.fill === 'solid') && canFill(base)) base.fill = style.fill;
   if (Math.hypot(dx, dy) < tap) {
     return isSegment(base)
       ? { ...base, x: from.x, y: from.y, w: defaultSize, h: 0 }
@@ -276,12 +341,62 @@ export function moveShapeHandle(shape, id, point) {
   return { ...shape, w: round(w), h: round(h), x: round(center.x), y: round(center.y) };
 }
 
+// ---------------------------------------------------------------- wymiary z klawiatury (od 1.17)
+
+/** Kąt pochylenia w stopniach: dodatni – górna krawędź przesunięta w prawo (kształt pochylony w prawo). */
+export const skewDegrees = (shape) => (Math.atan(shape.skew) * 180) / Math.PI;
+
+/**
+ * Kształt o wpisanych wymiarach – szerokości, wysokości (jednostki strony) i kącie pochylenia
+ * (stopnie) – wokół tego samego środka; brakująca wartość zostaje bez zmian.
+ */
+export function resizeShape(shape, { w = shape.w, h = shape.h, skew = null } = {}) {
+  if (isSegment(shape)) return { ...shape, w: round(Math.max(MIN_SHAPE, w)) };
+  const degrees = skew === null ? null : clamp(skew, -SKEW_DEGREES_LIMIT, SKEW_DEGREES_LIMIT);
+  return {
+    ...shape,
+    w: round(Math.max(MIN_SHAPE, w)),
+    h: round(Math.max(MIN_SHAPE, h)),
+    skew: degrees === null ? shape.skew : Math.round(Math.tan((degrees * Math.PI) / 180) * 1000) / 1000
+  };
+}
+
+/** Kierunek odcinka w stopniach jak na linijce – przeciwnie do ruchu wskazówek zegara od poziomu, od −180° do 180°. */
+export function segmentDegrees(shape) {
+  // + 0: bez „−0” przy odcinku poziomym.
+  const degrees = (-shape.angle * 180) / Math.PI + 0;
+  return degrees <= -180 ? degrees + 360 : degrees > 180 ? degrees - 360 : degrees;
+}
+
+/** Odcinek o wpisanej długości (jednostki strony) i kierunku (stopnie) – początek zostaje na miejscu. */
+export function setSegment(shape, { length = shape.w, degrees = segmentDegrees(shape) } = {}) {
+  const start = shapePoint(shape, -0.5, 0);
+  const raw = (-degrees * Math.PI) / 180;
+  const angle = Math.atan2(Math.sin(raw), Math.cos(raw)) || 0;
+  const w = Math.max(MIN_SHAPE, length);
+  return { ...shape, w: round(w), angle, x: round(start.x + (Math.cos(angle) * w) / 2), y: round(start.y + (Math.sin(angle) * w) / 2) };
+}
+
+/** Sprawdzony tekst na kształcie albo null. */
+function cleanLabel(raw, isColor, limit) {
+  if (!raw || typeof raw !== 'object' || typeof raw.text !== 'string' || raw.text.trim() === '' || !isColor(raw.color)) return null;
+  if (![raw.size, raw.width, raw.height].every(finite)) return null;
+  return {
+    text: raw.text.slice(0, LABEL_TEXT_MAX),
+    size: clamp(raw.size, 8, 200),
+    color: raw.color.toLowerCase(),
+    width: clamp(raw.width, 1, limit),
+    height: clamp(raw.height, 1, limit)
+  };
+}
+
 /** Sprawdzony kształt (zapis, kopia zapasowa) albo null. */
 export function cleanShape(raw, pageWidth, pageHeight, isColor) {
   if (!raw || !SHAPES.includes(raw.shape) || !isColor(raw.color)) return null;
   if (![raw.x, raw.y, raw.w, raw.h, raw.angle, raw.size].every(finite)) return null;
   const segment = raw.shape === 'line' || raw.shape === 'arrow';
   const limit = Math.max(pageWidth, pageHeight) * 4;
+  const label = cleanLabel(raw.label, isColor, limit);
   return {
     tool: 'shape',
     shape: raw.shape,
@@ -295,7 +410,9 @@ export function cleanShape(raw, pageWidth, pageHeight, isColor) {
     angle: raw.angle > Math.PI || raw.angle <= -Math.PI ? Math.atan2(Math.sin(raw.angle), Math.cos(raw.angle)) : raw.angle,
     skew: segment || !finite(raw.skew) ? 0 : clamp(raw.skew, -SKEW_LIMIT, SKEW_LIMIT),
     adjust: raw.shape === 'triangle' ? clamp(finite(raw.adjust) ? raw.adjust : 0.5, 0, 1)
-      : raw.shape === 'trapezoid' ? clamp(finite(raw.adjust) ? raw.adjust : 0.25, 0, 0.45) : 0
+      : raw.shape === 'trapezoid' ? clamp(finite(raw.adjust) ? raw.adjust : 0.25, 0, 0.45) : 0,
+    ...(!segment && (raw.fill === 'light' || raw.fill === 'solid') ? { fill: raw.fill } : {}),
+    ...(label ? { label } : {})
   };
 }
 

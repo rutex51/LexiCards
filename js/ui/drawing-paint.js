@@ -1,10 +1,11 @@
-// Rysowanie na płótnie rzeczy dodanych w 1.15: kształty geometryczne (core/shapes.js) i szablon
-// pod kreskami – boisko piłkarskie rysowane liniami albo obraz z pliku (core/templates.js).
+// Rysowanie na płótnie rzeczy dodanych w 1.15: kształty geometryczne (core/shapes.js; od 1.17
+// z wypełnieniem) i szablon pod kreskami – boisko piłkarskie rysowane liniami albo obraz z pliku
+// (core/templates.js).
 
-import { shapePath } from '../core/shapes.js';
+import { FILL_ALPHA, shapePath } from '../core/shapes.js';
 import { PITCH, TEMPLATE_ALPHA } from '../core/templates.js';
 
-/** Kształt: łamana albo krzywe Béziera (elipsa) o stałej grubości; strzałka – z grotem. */
+/** Kształt: łamana albo krzywe Béziera (elipsa) o stałej grubości; strzałka – z grotem; wypełnienie pod linią. */
 export function paintShape(ctx, shape) {
   const path = shapePath(shape);
   ctx.save();
@@ -20,6 +21,12 @@ export function paintShape(ctx, shape) {
     for (const point of path.lines) ctx.lineTo(point.x, point.y);
   }
   if (path.closed) ctx.closePath();
+  if (shape.fill && path.closed) {
+    ctx.globalAlpha = FILL_ALPHA[shape.fill] ?? 1;
+    ctx.fillStyle = shape.color;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
   if (path.head) {
     const end = path.lines.at(-1);
     for (const point of path.head) {

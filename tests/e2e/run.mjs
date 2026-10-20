@@ -3348,6 +3348,12 @@ test('rysunek 1.13: pole tekstowe i wzór – wstawienie (wielkość, kolor), je
   assert.equal(await page.locator('[data-testid=math-try]').inputValue(), '\\frac{a+b}{2} = x^2');
   await page.locator('[data-testid=math-try]').fill('\\sqrt{x} + 1');
   await sheetSubmit(page).click();
+  // Poprawka trafia na płótno po zamknięciu okna – dopiero potem następne dotknięcie (zdarzenia
+  // syntetyczne nie czekają na zamknięcie okna jak kliknięcie).
+  await waitUntil(async () => {
+    const box = await colorBox(page, 'blue');
+    return box && Math.abs((box.x1 - box.x0) - (moved.x1 - moved.x0)) > 0.005;
+  }, 'Poprawiony wzór na płótnie');
   await expectText(selectionCount, 'Wzór');
 
   // „Edytuj” pola tekstowego (zaznaczonego dotknięciem).
@@ -4006,6 +4012,299 @@ test('rysunek 1.15: kształty – prostokąt przeciągnięciem, punkty konstrukc
   assert.deepEqual([line.h, line.angle], [0, 0], 'odcinek poziomo');
   assert.ok(shapes.every((shape) => shape.color === '#1d1d1f' && shape.size > 0), 'kolor i grubość pióra');
 }, { device: IPAD });
+
+/**
+ * Obraz notatki z biblioteki (od 1.17 – osadzony fragment rysunku): typ, wymiary, krycie lewego górnego
+ * rogu, piksele linii kratki w wierszu przy górnej krawędzi (10% wysokości) i ciemne piksele (kreski).
+ */
+const noteImageStats = (page, lessonID, label) => page.evaluate(async ([id, name]) => {
+  const image = (await window.lexicards.library.noteImages(id)).find((item) => item.label === name);
+  const bitmap = await createImageBitmap(new Blob([image.bytes], { type: image.type }));
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0);
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const row = Math.round(canvas.height * 0.1);
+  let tinted = 0;
+  for (let x = 0; x < canvas.width; x += 1) {
+    const index = (row * canvas.width + x) * 4;
+    if (data[index + 3] > 200 && data[index] > 150 && data[index] < 245) tinted += 1;
+  }
+  let dark = 0;
+  for (let index = 0; index < data.length; index += 4) if (data[index + 3] > 200 && data[index] < 80) dark += 1;
+  return { type: image.type, drawing: Boolean(image.drawing), width: canvas.width, height: canvas.height, corner: data[3], tinted, dark };
+}, [lessonID, label]);
+
+test('rysunek 1.17: wycinek – prawym przyciskiem myszy (prostokąt) i w trybie „Wycinek” rysikiem (lasso); kopiuj – obraz w schowku; „Osadź” – wycinek z kratką i zaznaczenie bez kratki jako obrazy notatki za rysunkiem (iPad)', async ({ open, context }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin });
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Wycinek</p>');
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  const box = await editor.locator('[data-testid=drawing-canvas]').boundingBox();
+  const at = (x, y) => [box.x + box.width * x, box.y + box.height * y];
+
+  await drawStroke(page, segment([0.3, 0.5], [0.7, 0.5], 20));
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  // Prawy przycisk myszy: prostokąt wycinka (bez menu przeglądarki), polecenia – kopiuj i osadź.
+  await page.mouse.move(...at(0.4, 0.4));
+  await page.mouse.down({ button: 'right' });
+  for (let step = 1; step <= 8; step += 1) await page.mouse.move(...at(0.4 + step * 0.025, 0.4 + step * 0.025));
+  await page.mouse.up({ button: 'right' });
+  await expectText(selectionCount, 'Wycinek');
+  for (const [id, visible] of [['copy', true], ['embed', true], ['duplicate', false], ['delete', false], ['text', false], ['fill', false]]) {
+    assert.equal(await editor.locator(`[data-testid=drawing-selection-${id}]`).isVisible(), visible, `wycinek: ${id}`);
+  }
+  assert.equal(await page.evaluate(() => window.lexicards.library.noteImages !== undefined), true);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-wycinek-ipad.png') });
+  // Kopiuj – obraz PNG w schowku systemu, w proporcjach obszaru.
+  await editor.locator('[data-testid=drawing-selection-copy]').click();
+  await expectText(notice, 'Skopiowano wycinek jako obraz');
+  const copied = await page.evaluate(async () => {
+    const [item] = await navigator.clipboard.read();
+    const bitmap = await createImageBitmap(await item.getType('image/png'));
+    return { types: item.types, width: bitmap.width, height: bitmap.height };
+  });
+  assert.ok(copied.types.includes('image/png'), `typy w schowku: ${copied.types}`);
+  const ratio = box.width / box.height;
+  assert.ok(Math.abs(copied.width / copied.height - ratio) < 0.05, `proporcje wycinka ${copied.width}×${copied.height} ≈ ${ratio}`);
+  // Osadź – nowy obraz notatki.
+  await editor.locator('[data-testid=drawing-selection-embed]').click();
+  await expectText(notice, 'Osadzono w notatce jako „Obraz 1”');
+  await page.keyboard.press('Escape');
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Esc zdejmuje wycinek');
+  assert.equal(await editor.isVisible(), true, 'edytor zostaje otwarty');
+
+  // Tryb „Wycinek” (bez prawego przycisku – iPad): lasso rysikiem.
+  await editor.locator('[data-testid=drawing-select-mode-snip]').click();
+  await editor.locator('[data-testid=drawing-select-lasso]').click();
+  await expectText(editor.locator('[data-testid=drawing-select-hint]'), 'Wycinek');
+  const loop = Array.from({ length: 29 }, (_, index) => {
+    const t = (index / 28) * Math.PI * 2;
+    return [0.5 + 0.08 * Math.cos(t), 0.5 + 0.1 * Math.sin(t), 0.5];
+  });
+  await drawStroke(page, loop);
+  await expectText(selectionCount, 'Wycinek');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-wycinek-lasso-ipad.png') });
+  await editor.locator('[data-testid=drawing-selection-embed]').click();
+  await expectText(notice, '„Obraz 2”');
+  // Zaznaczenie całych kresek – „Osadź”: same kreski na białym tle, bez kratki.
+  await editor.locator('[data-testid=drawing-select-mode-auto]').click();
+  await editor.locator('[data-testid=drawing-select-rect]').click();
+  await drawStroke(page, segment([0.25, 0.42], [0.75, 0.58], 8));
+  await expectText(selectionCount, '1 kreska');
+  assert.equal(await editor.locator('[data-testid=drawing-selection-embed]').isVisible(), true);
+  await editor.locator('[data-testid=drawing-selection-embed]').click();
+  await expectText(notice, '„Obraz 3”');
+  assert.equal(await dialog.locator('[data-testid=note-image-label-text]').count(), 3, 'obrazy w notatce od razu');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  assert.deepEqual(await dialog.locator('[data-testid=note-image-label-text]').allTextContents(), ['Rysunek 1', 'Obraz 1', 'Obraz 2', 'Obraz 3'],
+    'nowy rysunek przed osadzonymi z niego obrazami');
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const rectSnip = await noteImageStats(page, ids.statements, 'Obraz 1');
+  const lassoSnip = await noteImageStats(page, ids.statements, 'Obraz 2');
+  const strokes = await noteImageStats(page, ids.statements, 'Obraz 3');
+  assert.deepEqual([rectSnip.type, rectSnip.drawing, rectSnip.corner], ['image/png', false, 255], 'wycinek prostokątem – obraz, nie rysunek');
+  assert.ok(rectSnip.tinted >= 4 && rectSnip.dark > 0, `wycinek z kratką (${rectSnip.tinted}) i kreską (${rectSnip.dark})`);
+  assert.ok(Math.abs(rectSnip.width / rectSnip.height - ratio) < 0.05, 'wymiary obrazu jak obszaru');
+  assert.ok(rectSnip.width >= copied.width * 0.95, 'obraz w notatce nie mniejszy niż w schowku');
+  assert.equal(lassoSnip.corner, 0, 'poza lassem – przezroczyście');
+  assert.ok(lassoSnip.dark > 0);
+  assert.equal(strokes.corner, 255, 'zaznaczenie – białe tło');
+  assert.equal(strokes.tinted, 0, 'zaznaczenie – bez kratki');
+  assert.ok(strokes.dark > 0 && strokes.width > strokes.height * 4, `cała kreska (${strokes.width}×${strokes.height})`);
+}, { device: IPAD });
+
+test('rysunek 1.17: kształt – wymiary w polach przy ramce (szerokość, wysokość, kąt pochylenia; dotknięcie rombu – pole pochylenia; odcinek – długość i kąt; Esc i zero), wypełnienie (menu i panel), tekst na kształcie przesuwa się i obraca z nim; zapis (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Wymiary</p>');
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+  const panel = editor.locator('[data-testid=drawing-shape-panel]');
+  const dim = (key) => editor.locator(`[data-testid=drawing-dim-${key}]`);
+  const box = await editor.locator('[data-testid=drawing-canvas]').boundingBox();
+  const enter = async (key, value) => {
+    await dim(key).fill(value);
+    await dim(key).press('Enter');
+  };
+
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-shape-rect]').click();
+  await drawStroke(page, segment([0.3, 0.3], [0.45, 0.5], 10));
+  await expectText(selectionCount, 'Prostokąt');
+  for (const [key, visible] of [['width', true], ['height', true], ['skew', true], ['length', false], ['angle', false]]) {
+    assert.equal(await dim(key).isVisible(), visible, `pole ${key}`);
+  }
+  assert.equal(await dim('skew').inputValue(), '0');
+  // Pola przy liniach ramki: szerokość pod dolną, wysokość przy prawej, kąt pochylenia przy lewej.
+  const [width, height, skew] = await Promise.all(['width', 'height', 'skew'].map((key) => dim(key).boundingBox()));
+  const middle = width.x + width.width / 2;
+  assert.ok(Math.abs(middle - (box.x + box.width * 0.375)) < 30, 'szerokość pod środkiem dolnej linii');
+  assert.ok(width.y > box.y + box.height * 0.5, 'szerokość pod kształtem');
+  assert.ok(height.x > box.x + box.width * 0.45 && skew.x + skew.width < box.x + box.width * 0.3, 'wysokość z prawej, pochylenie z lewej');
+
+  await enter('width', '5');
+  await enter('height', '3');
+  await enter('skew', '15');
+  await waitUntil(async () => (await dim('width').inputValue()) === '5' && (await dim('skew').inputValue()) === '15', 'Szerokość 5 cm, pochylenie 15°');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-wymiary-ipad.png') });
+  // Esc w polu – wartość wraca, edytor otwarty; zero – komunikat i bez zmiany.
+  await dim('width').fill('9');
+  await dim('width').press('Escape');
+  await waitUntil(async () => (await dim('width').inputValue()) === '5', 'Esc – wartość wraca');
+  assert.equal(await editor.isVisible(), true, 'Esc w polu nie zamyka edytora');
+  await enter('height', '0');
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Wpisz wymiar większy od zera');
+  await waitUntil(async () => (await dim('height').inputValue()) === '3', 'Wysokość bez zmian');
+  // Dotknięcie rombu pochylenia (bez przeciągania) – kursor w polu kąta pochylenia; 20°.
+  const scale = await page.locator('.drawing__canvas:not(.drawing__canvas--live)').evaluate((canvas) => {
+    const row = canvas.getContext('2d').getImageData(0, Math.round(canvas.height * 0.95), canvas.width, 1).data;
+    const opaque = [];
+    for (let x = 0; x < canvas.width; x += 1) if (row[x * 4 + 3] === 255) opaque.push(x);
+    return ((opaque.at(-1) - opaque[0] + 1) / 1600) * (canvas.getBoundingClientRect().width / canvas.width);
+  });
+  const skewHandle = [0.375 + ((0.3 * 220 + 0.5 * 0.268 * 132) * scale) / box.width, 0.4 - (66 * scale) / box.height];
+  await drawStroke(page, [[...skewHandle, 0.5]]);
+  await waitUntil(() => page.evaluate(() => document.activeElement?.dataset.testid === 'drawing-dim-skew'), 'Kursor w polu pochylenia');
+  await enter('skew', '20');
+  await waitUntil(async () => (await dim('skew').inputValue()) === '20', 'Pochylenie 20°');
+
+  // Wypełnienie z polecenia zaznaczenia: pełne, potem jasne (środek – szary, nie biały).
+  const center = [0.375, 0.4];
+  await editor.locator('[data-testid=drawing-selection-fill]').click();
+  const menu = page.locator('dialog.menu[open]');
+  assert.equal(await menu.locator('[data-testid=drawing-fill-none]').getAttribute('aria-checked'), 'true');
+  await menu.locator('[data-testid=drawing-fill-solid]').click();
+  await waitUntil(() => darkAt(page, ...center), 'Pełne wypełnienie');
+  await editor.locator('[data-testid=drawing-selection-fill]').click();
+  await page.locator('dialog.menu[open] [data-testid=drawing-fill-light]').click();
+  await waitUntil(async () => { const [red] = await pixelAt(page, ...center); return red > 150 && red < 235; }, 'Jasne wypełnienie');
+
+  // Tekst na kształcie: czerwony, na środku; przesunięcie kształtu przenosi tekst.
+  await editor.locator('[data-testid=drawing-selection-text]').click();
+  await expectText(page.locator('dialog.sheet[open] .sheet__title').last(), 'Tekst na kształcie');
+  await page.locator('[data-testid=drawing-shape-text-input]').fill('Bramka');
+  await page.locator('[data-testid=drawing-element-color-red]').click();
+  await sheetSubmit(page).click();
+  const text = await waitUntil(() => colorBox(page, 'red'), 'Czerwony tekst na kształcie');
+  assert.ok(Math.abs((text.x0 + text.x1) / 2 - center[0]) < 0.02 && Math.abs((text.y0 + text.y1) / 2 - center[1]) < 0.03, `tekst na środku kształtu (${JSON.stringify(text)})`);
+  await drawStroke(page, segment(center, [0.575, 0.6], 10));
+  const moved = await waitUntil(async () => {
+    const found = await colorBox(page, 'red');
+    return found && Math.abs((found.x0 + found.x1) / 2 - 0.575) < 0.02 && Math.abs((found.y0 + found.y1) / 2 - 0.6) < 0.03 ? found : null;
+  }, 'Tekst przesunięty razem z kształtem');
+  // Dotknięcie zaznaczonego kształtu – poprawka tekstu.
+  await drawStroke(page, [[0.575, 0.6, 0.5]]);
+  await expectText(page.locator('dialog.sheet[open] .sheet__title').last(), 'Tekst na kształcie');
+  assert.equal(await page.locator('[data-testid=drawing-shape-text-input]').inputValue(), 'Bramka');
+  await page.locator('[data-testid=drawing-shape-text-input]').fill('Bramka A');
+  await sheetSubmit(page).click();
+  await waitUntil(async () => { const found = await colorBox(page, 'red'); return found && found.x1 - found.x0 > (moved.x1 - moved.x0) * 1.1; }, 'Dłuższy tekst');
+  // Obrót o 90° kółkiem nad kształtem – tekst obraca się razem z nim (wyższy niż szerszy).
+  const rotateY = 0.6 - (66 * scale + 30) / box.height;
+  await drawStroke(page, segment([0.575, rotateY], [0.575 + 0.15, 0.6], 10));
+  await waitUntil(async () => {
+    const found = await colorBox(page, 'red');
+    return found && (found.y1 - found.y0) * box.height > (found.x1 - found.x0) * box.width * 2;
+  }, 'Tekst obrócony z kształtem');
+  // Po obrocie pole pochylenia jest nad kształtem – polecenia zaznaczenia go nie zasłaniają.
+  const bar = await editor.locator('.drawing__selection').boundingBox();
+  for (const key of ['width', 'height', 'skew']) {
+    const field = await editor.locator('.drawing__dim', { has: page.locator(`[data-testid=drawing-dim-${key}]`) }).boundingBox();
+    const overlap = field.x < bar.x + bar.width && bar.x < field.x + field.width && field.y < bar.y + bar.height && bar.y < field.y + field.height;
+    assert.equal(overlap, false, `polecenia nie zasłaniają pola ${key}`);
+  }
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-ksztalt-tekst-ipad.png') });
+
+  // Odcinek: długość i kąt.
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-shape-line]').click();
+  await drawStroke(page, segment([0.12, 0.85], [0.3, 0.85], 10));
+  await expectText(selectionCount, 'Odcinek');
+  for (const [key, visible] of [['width', false], ['skew', false], ['length', true], ['angle', true]]) {
+    assert.equal(await dim(key).isVisible(), visible, `odcinek: pole ${key}`);
+  }
+  assert.equal(await dim('angle').inputValue(), '0');
+  await enter('angle', '30');
+  await enter('length', '4');
+  await waitUntil(async () => (await dim('length').inputValue()) === '4' && (await dim('angle').inputValue()) === '30', 'Odcinek 4 cm pod kątem 30°');
+
+  // Wypełnienie nowych kształtów w panelu – pełne; dotknięcie zdejmuje zaznaczenie, następne – kształt.
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-fill-default-solid]').click();
+  assert.equal(await panel.locator('[data-testid=drawing-fill-default-solid]').getAttribute('aria-checked'), 'true');
+  await panel.locator('[data-testid=drawing-shape-ellipse]').click();
+  await drawStroke(page, [[0.85, 0.3, 0.5]]);
+  await drawStroke(page, [[0.85, 0.3, 0.5]]);
+  await expectText(selectionCount, 'Elipsa');
+  await waitUntil(() => darkAt(page, 0.85, 0.3), 'Elipsa wypełniona');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const shapes = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing.strokes, ids.statements);
+  assert.deepEqual(shapes.map((shape) => shape.shape), ['rect', 'line', 'ellipse']);
+  const [rect, line, ellipse] = shapes;
+  assert.deepEqual([rect.w, rect.h, rect.skew, rect.fill, rect.label.text, rect.label.color], [220, 132, 0.364, 'light', 'Bramka A', '#d70015']);
+  assert.ok(Math.abs(Math.abs(rect.angle) - Math.PI / 2) < 0.01, `obrót o 90° (${rect.angle})`);
+  assert.ok(rect.label.width > 0 && rect.label.height > 0, 'tekst zmierzony');
+  assert.equal(line.w, 176);
+  assert.ok(Math.abs(line.angle + Math.PI / 6) < 1e-6, `kąt odcinka 30° (${line.angle})`);
+  assert.equal('fill' in line, false);
+  assert.equal(ellipse.fill, 'solid');
+}, { device: IPAD });
+
+test('rysunek 1.17 na telefonie: tryb „Wycinek” palcem i „Osadź”; pola wymiarów kształtu i polecenia zaznaczenia mieszczą się na ekranie', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+  await drawStroke(page, segment([0.3, 0.5], [0.7, 0.5], 12), { type: 'touch', id: 5 });
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await editor.locator('[data-testid=drawing-select-mode-snip]').click();
+  // Na telefonie „Fragm.” – cztery tryby i pasek w trzech wierszach.
+  await expectText(editor.locator('[data-testid=drawing-select-mode-region]'), 'Fragm.');
+  const toolbar = await editor.locator('.drawing__toolbar').boundingBox();
+  assert.ok(toolbar.height < 150, `pasek zaznaczania w trzech wierszach (${toolbar.height} px)`);
+  await drawStroke(page, segment([0.35, 0.4], [0.65, 0.6], 8), { type: 'touch', id: 6 });
+  await expectText(selectionCount, 'Wycinek');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-wycinek-telefon.png') });
+  await editor.locator('[data-testid=drawing-selection-embed]').click();
+  await expectText(editor.locator('[data-testid=drawing-notice]'), '„Obraz 1”');
+
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await editor.locator('[data-testid=drawing-shape-rect]').click();
+  // Strona na telefonie zajmuje środek płótna (pod paskiem) – prostokąt na niej.
+  await drawStroke(page, segment([0.3, 0.58], [0.55, 0.68], 8), { type: 'touch', id: 7 });
+  await expectText(selectionCount, 'Prostokąt');
+  const toolbarBottom = toolbar.y + toolbar.height;
+  for (const key of ['width', 'height', 'skew']) {
+    const field = await editor.locator('.drawing__dim', { has: page.locator(`[data-testid=drawing-dim-${key}]`) }).boundingBox();
+    assert.ok(field.x >= 0 && field.x + field.width <= 390, `pole ${key} w szerokości ekranu (${field.x}, ${field.width})`);
+    assert.ok(field.height >= 26, 'pole dość duże do dotknięcia');
+  }
+  const bar = await editor.locator('.drawing__selection').boundingBox();
+  assert.ok(bar.x >= 0 && bar.x + bar.width <= 390, `polecenia zaznaczenia w szerokości ekranu (${bar.x}, ${bar.width})`);
+  assert.ok(bar.y >= toolbarBottom, 'polecenia zaznaczenia pod paskiem narzędzi');
+  assert.equal(await editor.locator('[data-testid=drawing-selection-fill]').isVisible(), true);
+  assert.equal(await editor.locator('[data-testid=drawing-selection-text]').isVisible(), true);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-wymiary-telefon.png') });
+  assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  assert.deepEqual(await dialog.locator('[data-testid=note-image-label-text]').allTextContents(), ['Rysunek 1', 'Obraz 1']);
+});
 
 test('rysunek 1.12.1 na telefonie (bez rysika): palec przesuwa linijkę i rysuje prosto przy jej krawędzi, zaznacza i przesuwa kreskę; pasek narzędzi mieści się', async ({ open }) => {
   const page = await open();

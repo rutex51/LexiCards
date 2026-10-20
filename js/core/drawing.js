@@ -16,15 +16,19 @@
 //   photo – { type, width, height, bytes } – zdjęcie pod kreskami („Rysuj na zdjęciu”);
 //   od 1.14 scale – { value, unit } – ile w rzeczywistości ma jedna kratka (linijka, długość kreski);
 //   od 1.15 w strokes także kształty { tool: 'shape', … } (core/shapes.js), paperLevel – jasność
-//   linii i kratki (0–4), template – szablon pod kreskami (core/templates.js) albo brak.
+//   linii i kratki (0–4), template – szablon pod kreskami (core/templates.js) albo brak;
+//   od 1.17 kształt może mieć wypełnienie (fill) i tekst (label).
 
 import {
-  SHAPES, arrowHead, cleanShape, isShape, shapeAsStroke, shapeBounds, shapeOutline, touchesShape
+  SHAPES, SHAPE_FILLS, arrowHead, cleanShape, isShape, shapeAsStroke, shapeBounds, shapeOutline, touchesShape
 } from './shapes.js';
 import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
 
-/** 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13), 3 – kształty, jasność tła, szablon (1.15). */
-export const DRAWING_VERSION = 3;
+/**
+ * 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13), 3 – kształty, jasność tła, szablon (1.15),
+ * 4 – wypełnienie i tekst kształtu (1.17).
+ */
+export const DRAWING_VERSION = 4;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -100,6 +104,19 @@ export function formatLength(units, scale) {
   return `${formatNumber((units / PAPER_STEP) * value)} ${unitOf(unit).label}`;
 }
 
+/** Od 1.17 (wymiary kształtu z klawiatury): długość w skali rysunku, z powrotem w jednostkach strony i skrót jednostki. */
+export const toScaleLength = (units, scale) => (units / PAPER_STEP) * cleanScale(scale).value;
+export const fromScaleLength = (length, scale) => (length / cleanScale(scale).value) * PAPER_STEP;
+export const scaleUnitLabel = (scale) => unitOf(cleanScale(scale).unit).label;
+
+/** Liczba wpisana po polsku albo z kropką („4,5”, „ -12.5 cm”, „15°”) albo null. */
+export function parseDecimal(text) {
+  const match = String(text ?? '').replace(/\s/g, '').replace(',', '.').match(/^[-+−]?\d*\.?\d+/);
+  if (!match) return null;
+  const value = Number(match[0].replace('−', '-'));
+  return Number.isFinite(value) ? value : null;
+}
+
 /**
  * Szacunek skali na ekranie: kratka ma na ekranie `squarePx` pikseli CSS, a ekran ma ok.
  * `pxPerInch` pikseli CSS na cal. Zwraca { millimeters – kratka na ekranie, ratio – N w skali 1:N }.
@@ -150,10 +167,13 @@ export function rememberColor(colors, hex) {
   return [value, ...colors.filter((color) => color !== value)].slice(0, CUSTOM_COLOR_LIMIT);
 }
 
-/** Zaznaczanie (od 1.14): prostokąt albo lasso; tryb – według kierunku, całe kreski albo fragmenty. */
+/**
+ * Zaznaczanie (od 1.14): prostokąt albo lasso; tryb – według kierunku, całe kreski albo fragmenty,
+ * a od 1.17 wycinek – obraz wszystkiego w obszarze (z tłem, kratką i częściami kresek).
+ */
 export const SELECT_SHAPES = Object.freeze(['rect', 'lasso']);
-export const SELECT_MODES = Object.freeze(['auto', 'whole', 'region']);
-export const SELECT_MODE_LABELS = Object.freeze({ auto: 'Auto', whole: 'Całe', region: 'Fragmenty' });
+export const SELECT_MODES = Object.freeze(['auto', 'whole', 'region', 'snip']);
+export const SELECT_MODE_LABELS = Object.freeze({ auto: 'Auto', whole: 'Całe', region: 'Fragmenty', snip: 'Wycinek' });
 
 /** Pola tekstowe i wzory (od 1.13): wielkość czcionki w jednostkach strony (kratka ma 44). */
 export const TEXT_SIZES = Object.freeze([28, 40, 56]);
@@ -188,6 +208,7 @@ export function defaultToolSettings() {
     selectMode: 'auto',
     rulerSnap: true,
     shape: 'rect',
+    shapeFill: 'none',
     guide: defaultGuide()
   };
 }
@@ -248,6 +269,7 @@ export function cleanToolSettings(raw) {
     selectMode: SELECT_MODES.includes(raw.selectMode) ? raw.selectMode : base.selectMode,
     rulerSnap: typeof raw.rulerSnap === 'boolean' ? raw.rulerSnap : base.rulerSnap,
     shape: SHAPES.includes(raw.shape) ? raw.shape : base.shape,
+    shapeFill: SHAPE_FILLS.includes(raw.shapeFill) ? raw.shapeFill : base.shapeFill,
     guide: cleanGuide(raw.guide)
   };
 }

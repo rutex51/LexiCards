@@ -32,7 +32,7 @@ js/ui/notes.js             okno notatki lekcji: podgląd, edytor z paskiem forma
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
-js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, tło i szablon, liniuszek, kształty, obraz PNG / JPEG
+js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon, liniuszek, kształty (pola wymiarów, wypełnienie, tekst), obraz PNG / JPEG
 js/ui/drawing-paint.js     rysunek na płótnie: kształty geometryczne, szablon (boisko liniami, obraz mnożony z tłem)
 js/ui/images.js            obrazy w przeglądarce: odczyt, zmniejszanie dużych zdjęć, adresy do wyświetlenia
 js/core/library.js         model w pamięci + wszystkie operacje na danych
@@ -43,7 +43,7 @@ js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
 js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, skala, przyciąganie linijki, obszar zaznaczania, sprawdzanie danych rysunku
 js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
-js/core/shapes.js          kształty geometryczne (punkty, obrys, punkty konstrukcyjne, sprawdzanie) i liniuszek (najbliższa linia)
+js/core/shapes.js          kształty geometryczne (punkty, obrys, punkty konstrukcyjne, wymiary z klawiatury, wypełnienie, tekst, sprawdzanie) i liniuszek (najbliższa linia)
 js/core/templates.js       tło rysunku: poziomy jasności, szablon – boisko (105 × 68 m), dopasowanie, środek, wielkość, sprawdzanie
 js/core/zip.js             odczyt i zapis archiwów ZIP (także kawałkami przez Blob – duże pliki)
 js/core/xlsx.js            odczyt i zapis skoroszytów XLSX
@@ -468,6 +468,27 @@ po odsunięciu o 10 px od początku, gdy początek leży do 12 px od linii, a ki
 najwyżej o 20°, wszystkie dotychczasowe punkty trafiają na tę linię, a następne są na nią rzutowane
 (jak przy krawędzi linijki – z długością w skali). Kółko liniuszka przesuwa punkt rodziny
 (przyskok do węzłów kratki do 8 px).
+Od 1.17 (format rysunku 4): kształt może mieć **wypełnienie** `fill: 'light' | 'solid'` (kolor kształtu,
+krycie `FILL_ALPHA`; odcinek i strzałka – bez) – wnętrze wypełnionego kształtu liczy się przy trafieniu
+(`touchesShape`) – i **tekst** `label: { text, size, color, width, height }`: `labelFrame` – środek
+kształtu (odcinek – nad linią), kąt kształtu sprowadzony do czytelnego (−90°…90°), wiersze łamane do
+`labelMaxWidth` (szerokość kształtu z marginesem). `width` i `height` mierzy edytor (`measureLabel`)
+przy wpisaniu, otwarciu, wklejeniu i każdej zmianie kształtu; granice kształtu (`shapeBounds`) i
+dotknięcie obejmują tekst. **Pola wymiarów** (HTML nad płótnem, `placeDims`): szerokość, wysokość
+i kąt pochylenia przy środkach linii ramki (odsunięte wzdłuż normalnej boku o pół pola + 16 px),
+odcinek – długość i kąt; wartości w skali rysunku (`toScaleLength`, `fromScaleLength`) i stopniach;
+zmiana – `resizeShape` (wokół środka, pochylenie = tan kąta) albo `setSegment` (początek na miejscu),
+jeden krok historii. Dotknięcie punktu konstrukcyjnego bez ruchu (< 5 px) ustawia fokus w polu
+(`HANDLE_FIELDS`). **Wycinek**: prawy przycisk (`button === 2`, mysz albo rysik) przy zaznaczaniu albo
+tryb `snip` – obrys nie zaznacza kresek, tylko zapamiętuje obszar `snip = { polygon, bounds, kind }`
+(przycięty do strony). Obraz wycinka (`snipCanvas`) to `paintDrawing` przycięty ścieżką obrysu, 2 px
+na jednostkę (najdłuższy bok ≤ 2048); poza lassem – przezroczyście. **Kopiuj** – `ClipboardItem`
+z obietnicą PNG (schowek otwierany od razu w chwili dotknięcia). **Osadź** – `onEmbed({ blob, width,
+height })` przekazane przez edytor notatki: obraz przechodzi przez `prepareImage` i trafia do obrazów
+notatki („Obraz N” z `withImageLabels`) zaraz za rysunkiem; inne obrazy zostają tymi samymi obiektami
+(edytor notatki odnajduje po nich rysunek po zamknięciu edytora), a nowy rysunek wstawia się przed
+obrazy z niego osadzone. Zaznaczenie (całe albo fragmenty) – obraz samych elementów na białym tle
+(`strokesCanvas`).
 
 Od 1.6 **wersja angielska**: `htmlEN` obok `html`; w edytorze przełącznik Polski / Angielski zamienia
 treść jednego pola `contenteditable` (stan drugiej wersji jest w pamięci edytora; zmiana języka
@@ -860,7 +881,7 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
   FSRS (zgodność z py-fsrs i zapis powtórek), quizy, statystyki, kopia zapasowa (oba pliki),
   załączniki, rysunki (nacisk, wygładzanie, gumka, historia, dane, zapis i kopia, pola tekstowe i wzory,
   skala, przyciąganie linijki, obszar zaznaczania, własne kolory, kształty z punktami konstrukcyjnymi,
-  liniuszek, jasność tła i szablon),
+  liniuszek, jasność tła i szablon, wypełnienie i tekst kształtu, wymiary z klawiatury),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

@@ -1037,12 +1037,44 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     ...result.image, name: null, drawing: result.drawing, stored: false, url: urls.add(result.image), label
   });
 
+  /**
+   * „Osadź” w edytorze rysunku (od 1.17): fragment rysunku albo wycinek jako nowy obraz notatki
+   * („Obraz N”) – zaraz za rysunkiem `anchor` (kolejne – za poprzednimi); przy nowym rysunku
+   * (anchor null) – na końcu, a rysunek trafi przed nie. Inne obrazy zostają tymi samymi obiektami.
+   */
+  function embedder(anchor) {
+    const embedded = [];
+    const embed = async ({ blob }) => {
+      // Nowy rysunek też potrzebuje miejsca na liście obrazów.
+      if (state.images.length + state.pending + (anchor ? 0 : 1) >= NOTE_IMAGE_LIMIT) {
+        throw new Error(`Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów.`);
+      }
+      const prepared = await prepareImage(blob, { name: null });
+      const entry = { ...prepared, stored: false, url: urls.add(prepared), label: null };
+      const last = [anchor, ...embedded].findLast((image) => image && state.images.includes(image));
+      const index = last ? state.images.indexOf(last) + 1 : state.images.length;
+      const next = [...state.images];
+      next.splice(index, 0, entry);
+      entry.label = withImageLabels(next)[index].label;
+      state.images = next;
+      embedded.push(entry);
+      renderImages();
+      return entry.label;
+    };
+    return { embed, embedded };
+  }
+
   async function drawNew() {
     if (state.images.length + state.pending >= NOTE_IMAGE_LIMIT) return;
     const label = nextDrawingLabel(state.images.map((image) => image.label));
-    const result = await openDrawingEditor({ title: label });
+    const { embed, embedded } = embedder(null);
+    const result = await openDrawingEditor({ title: label, onEmbed: embed });
     if (!result) return;
-    state.images = withImageLabels([...state.images, drawnImage(result, label)]);
+    // Rysunek przed osadzonymi z niego obrazami.
+    const first = embedded.find((image) => state.images.includes(image));
+    const next = [...state.images];
+    next.splice(first ? next.indexOf(first) : next.length, 0, drawnImage(result, label));
+    state.images = withImageLabels(next);
     renderImages();
   }
 
@@ -1063,7 +1095,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
       }
       options = { photo: { bytes: image.bytes, type: image.type, width: picture.naturalWidth, height: picture.naturalHeight }, title: image.label };
     }
-    const result = await openDrawingEditor(options);
+    const result = await openDrawingEditor({ ...options, onEmbed: embedder(image).embed });
     const position = state.images.indexOf(image);
     if (!result || position < 0) return;
     state.images[position] = drawnImage(result, image.label);

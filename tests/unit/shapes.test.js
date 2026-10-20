@@ -2,20 +2,23 @@
 // obrót, wierzchołek trójkąta, końce odcinka), liniuszek (najbliższa linia, linie na stronie),
 // tło (poziomy jasności, szablon: boisko, dopasowanie, środek, powiększanie) i dane rysunku
 // z kształtami i szablonem (sprawdzanie, zaznaczanie, gumka, kopia zapasowa z plikiem szablonu).
+// Od 1.17: wypełnienie, tekst na kształcie, wymiary wpisywane z klawiatury, tryb „Wycinek”.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  MIN_SHAPE, arrowHead, cleanShape, guideLinesIn, moveShapeHandle, nearestGuideLine, shapeBounds, shapeContains, shapeFromDrag,
-  shapeHandles, shapeOutline, shapePoint, touchesShape
+  MIN_SHAPE, SKEW_DEGREES_LIMIT, arrowHead, cleanShape, guideLinesIn, labelFrame, labelMaxWidth, moveShapeHandle, nearestGuideLine,
+  resizeShape, segmentDegrees, setSegment, shapeBounds, shapeContains, shapeFromDrag, shapeHandles, shapeOutline, shapePoint, skewDegrees,
+  touchesShape
 } from '../../js/core/shapes.js';
 import {
   DEFAULT_TEMPLATE_LEVEL, PITCH, centerTemplate, cleanTemplate, fitTemplate, pitchScale, scaleTemplate
 } from '../../js/core/templates.js';
 import {
-  DRAWING_VERSION, addPoint, cleanDrawing, cleanToolSettings, emptyDrawing, eraseAt, isElement, selectionBounds, snapToStrokes,
-  splitByPolygon, strokesAt, strokesInPolygon, strokesInRect, translateStroke
+  DRAWING_VERSION, SELECT_MODES, SELECT_MODE_LABELS, addPoint, cleanDrawing, cleanToolSettings, emptyDrawing, eraseAt, fromScaleLength,
+  isElement, parseDecimal, scaleUnitLabel, selectionBounds, snapToStrokes, splitByPolygon, strokesAt, strokesInPolygon, strokesInRect,
+  toScaleLength, translateStroke
 } from '../../js/core/drawing.js';
 import { createBackup, createMediaArchive, openMediaArchive, restoreBackup, restoreMedia } from '../../js/core/backup.js';
 import { makeBranch, makeLibrary } from './helpers.js';
@@ -127,7 +130,7 @@ test('kształty w rysunku: sprawdzanie danych, zaznaczanie prostokątem i lassem
     ]
   });
   assert.equal(cleaned.version, DRAWING_VERSION);
-  assert.equal(DRAWING_VERSION, 3);
+  assert.equal(DRAWING_VERSION, 4, 'od 1.17 – wypełnienie i tekst kształtu');
   assert.equal(cleaned.strokes.length, 3);
   assert.deepEqual([cleaned.strokes[0].color, cleaned.strokes[0].size, cleaned.strokes[0].skew], ['#abcdef', 40, 2.5]);
   near(cleaned.strokes[0].angle, Math.PI);
@@ -211,8 +214,10 @@ test('kopia zapasowa: kształt, jasność tła i szablon z pliku (osobny plik w 
   const { library } = await makeLibrary();
   const { lesson } = await makeBranch(library);
   const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13]).buffer;
+  // Od 1.17 także kształt z wypełnieniem i tekstem.
+  const labeled = rect({ x: 400, fill: 'light', label: { text: 'Bramka', size: 40, color: '#d70015', width: 120, height: 50 } });
   const withImage = {
-    ...emptyDrawing(), paperLevel: 3, strokes: [rect({ skew: 0.4, angle: 0.3 })],
+    ...emptyDrawing(), paperLevel: 3, strokes: [rect({ skew: 0.4, angle: 0.3 }), labeled],
     template: { source: 'image', type: 'image/png', width: 40, height: 20, x: 10, y: 20, w: 400, h: 200, level: 4, bytes: png }
   };
   const withPitch = { ...emptyDrawing(), template: fitTemplate({ source: 'pitch', level: 1 }, 1600, 1100) };
@@ -233,8 +238,96 @@ test('kopia zapasowa: kształt, jasność tła i szablon z pliku (osobny plik w 
   await restoreMedia(fresh, archive.blob);
   const [first, second] = await fresh.noteImages(lesson.id);
   assert.equal(first.drawing.paperLevel, 3);
-  assert.deepEqual(first.drawing.strokes, [rect({ skew: 0.4, angle: 0.3 })]);
+  assert.deepEqual(first.drawing.strokes, [rect({ skew: 0.4, angle: 0.3 }), labeled]);
   assert.deepEqual([...new Uint8Array(first.drawing.template.bytes)], [...new Uint8Array(png)]);
   assert.deepEqual({ ...first.drawing.template, bytes: null }, { ...withImage.template, bytes: null });
   assert.deepEqual(second.drawing.template, withPitch.template);
+});
+
+test('kształty 1.17: wypełnienie – nowy kształt z wypełnieniem (odcinek bez), wnętrze wypełnionego się liczy, sprawdzanie danych, ustawienie narzędzia', () => {
+  const style = { color: '#0040dd', size: 3, fill: 'light' };
+  const filled = shapeFromDrag('rect', { x: 100, y: 100 }, { x: 200, y: 160 }, style);
+  assert.equal(filled.fill, 'light');
+  assert.equal('fill' in shapeFromDrag('line', { x: 0, y: 0 }, { x: 100, y: 0 }, style), false, 'odcinek bez wypełnienia');
+  assert.equal('fill' in shapeFromDrag('rect', { x: 0, y: 0 }, { x: 50, y: 50 }, { ...style, fill: 'none' }), false);
+  // Środek wypełnionego kształtu – trafienie (gumka całych kresek, dotknięcie); pustego – nie.
+  assert.equal(touchesShape(rect({ fill: 'solid' }), 200, 100, 1), true);
+  assert.equal(touchesShape(rect(), 200, 100, 1), false);
+  assert.deepEqual(strokesAt([rect({ fill: 'light' })], 200, 100, 3), [0]);
+  const cleaned = cleanDrawing({ ...emptyDrawing(), strokes: [rect({ fill: 'solid' }), rect({ fill: 'kratka' }), rect({ shape: 'arrow', h: 0, fill: 'solid' })] });
+  assert.deepEqual(cleaned.strokes.map((shape) => shape.fill ?? null), ['solid', null, null]);
+  assert.equal(cleanToolSettings({ shapeFill: 'solid' }).shapeFill, 'solid');
+  assert.equal(cleanToolSettings({ shapeFill: 'kropki' }).shapeFill, 'none');
+  assert.equal(cleanToolSettings(null).shapeFill, 'none');
+});
+
+test('kształty 1.17: tekst na kształcie – środek kształtu, nad odcinkiem, nie do góry nogami; granice, dotknięcie tekstu, przesunięcie, sprawdzanie danych', () => {
+  const label = { text: 'Bramka', size: 28, color: '#1d1d1f', width: 90, height: 35 };
+  const box = rect({ label });
+  assert.deepEqual(labelFrame(box), { x: 200, y: 100, angle: 0, width: 90, height: 35 });
+  // Obrócony o 180° – tekst czytelny (kąt 0), środek ten sam.
+  const turned = labelFrame(rect({ label, angle: Math.PI }));
+  near(Math.cos(turned.angle), 1, 'czytelny');
+  // Odcinek: tekst nad linią (połowa wysokości tekstu + połowa grubości linii + odstęp).
+  const line = rect({ shape: 'line', h: 0, label, size: 4 });
+  const above = labelFrame(line);
+  assert.deepEqual([above.x, above.y], [200, 100 - (17.5 + 2 + 7)]);
+  // Odcinek w dół strony (90° zgodnie ze wskazówkami) – tekst czytany od dołu do góry, po lewej stronie linii.
+  const down = labelFrame(rect({ shape: 'line', h: 0, label, size: 4, angle: Math.PI / 2 }));
+  near(down.angle, -Math.PI / 2);
+  near(down.x, 200 - 26.5);
+  near(down.y, 100);
+  // Granice obejmują tekst wystający poza kształt; dotknięcie tekstu trafia w kształt.
+  assert.deepEqual(shapeBounds(rect({ w: 60, label })), { minX: 153, minY: 68, maxX: 247, maxY: 132 });
+  assert.deepEqual(shapeBounds(line).minY, 100 - 26.5 - 17.5 - 2);
+  assert.equal(touchesShape(line, 200, 80, 1), true, 'tekst nad odcinkiem');
+  assert.equal(touchesShape(rect(), 200, 100, 1), false);
+  assert.equal(touchesShape(box, 200, 100, 1), true, 'tekst na środku prostokąta');
+  assert.equal(labelMaxWidth(box, 28), 100 * 0.86 - 4);
+  assert.equal(labelMaxWidth(line, 28), 100);
+  assert.equal(labelMaxWidth(rect({ w: 20 }), 28), 56, 'wąski kształt – co najmniej dwie wielkości czcionki');
+  const moved = translateStroke(box, 10, 20);
+  assert.deepEqual([moved.x, moved.y, moved.label], [210, 120, label], 'tekst idzie razem z kształtem');
+  // Sprawdzanie danych: pusty tekst i zły kolor – bez tekstu; długi – przycięty.
+  const cleaned = cleanDrawing({
+    ...emptyDrawing(),
+    strokes: [rect({ label: { ...label, color: '#FFFFFF', text: 'x'.repeat(900) } }), rect({ label: { ...label, text: '  ' } }), rect({ label: { ...label, color: 'biały' } })]
+  });
+  assert.deepEqual([cleaned.strokes[0].label.color, cleaned.strokes[0].label.text.length], ['#ffffff', 500]);
+  assert.deepEqual(cleaned.strokes.slice(1).map((shape) => 'label' in shape), [false, false]);
+});
+
+test('kształty 1.17: wymiary z klawiatury – szerokość, wysokość, pochylenie w stopniach wokół środka; odcinek – długość i kąt od początku; skala, wpisane liczby, tryb „Wycinek”', () => {
+  const sized = resizeShape(rect({ skew: 0.5 }), { w: 150, h: 80 });
+  assert.deepEqual([sized.x, sized.y, sized.w, sized.h, sized.skew], [200, 100, 150, 80, 0.5], 'środek zostaje');
+  const leaning = resizeShape(rect(), { skew: 15 });
+  assert.equal(leaning.skew, 0.268);
+  near(skewDegrees(leaning), 15, 'kąt pochylenia', 0.01);
+  assert.equal(resizeShape(rect(), { skew: -90 }).skew, Math.round(Math.tan((-SKEW_DEGREES_LIMIT * Math.PI) / 180) * 1000) / 1000, 'najwyżej 68°');
+  assert.equal(SKEW_DEGREES_LIMIT, 68);
+  assert.deepEqual([resizeShape(rect(), { w: 1, h: -5 }).w, resizeShape(rect(), { w: 1, h: -5 }).h], [MIN_SHAPE, MIN_SHAPE]);
+  // Odcinek: kąt jak na linijce (przeciwnie do wskazówek zegara), początek na miejscu.
+  const line = rect({ shape: 'line', h: 0, x: 150, y: 100, w: 100 });
+  assert.equal(segmentDegrees(line), 0);
+  const steep = setSegment(line, { degrees: 90 });
+  const start = shapePoint(steep, -0.5, 0);
+  near(start.x, 100);
+  near(start.y, 100);
+  near(steep.angle, -Math.PI / 2);
+  near(segmentDegrees(steep), 90);
+  const longer = setSegment(steep, { length: 200 });
+  assert.equal(longer.w, 200);
+  near(shapePoint(longer, 0.5, 0).y, -100, 'koniec 200 w górę od początku');
+  near(segmentDegrees(setSegment(line, { degrees: 270 })), -90);
+  assert.equal(setSegment(line, { degrees: 0 }).angle, 0);
+  // Skala rysunku: 1 kratka (44) = 2,5 m.
+  const scale = { value: 2.5, unit: 'm' };
+  assert.equal(toScaleLength(88, scale), 5);
+  assert.equal(fromScaleLength(5, scale), 88);
+  assert.equal(scaleUnitLabel(scale), 'm');
+  assert.equal(scaleUnitLabel(null), 'cm');
+  assert.deepEqual(['4,5', ' 12.5 cm', '−15°', '', 'abc'].map(parseDecimal), [4.5, 12.5, -15, null, null]);
+  assert.deepEqual(SELECT_MODES, ['auto', 'whole', 'region', 'snip']);
+  assert.equal(SELECT_MODE_LABELS.snip, 'Wycinek');
+  assert.equal(cleanToolSettings({ selectMode: 'snip' }).selectMode, 'snip');
 });

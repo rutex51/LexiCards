@@ -1,4 +1,4 @@
-# LexiCards 1.16
+# LexiCards 1.17
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -25,8 +25,9 @@ Pola tekstowe i wzory na rysunku (wersja 1.13): [docs/RELEASE-1.13.md](docs/RELE
 Skala na linijce, własne kolory, zaznaczanie fragmentów i lasso, kopiuj i wklej na rysunku (wersja 1.14): [docs/RELEASE-1.14.md](docs/RELEASE-1.14.md).
 Jasność tła, szablon pod kreskami (boisko, obraz z pliku), liniuszek, kształty geometryczne (wersja 1.15): [docs/RELEASE-1.15.md](docs/RELEASE-1.15.md).
 Przeciąganie wierszy i kolejność list biblioteki – A–Z, Z–A, według daty (wersja 1.16): [docs/RELEASE-1.16.md](docs/RELEASE-1.16.md).
+Wycinek, „Osadź” w notatce, wymiary kształtu z klawiatury, wypełnienie i tekst kształtu (wersja 1.17): [docs/RELEASE-1.17.md](docs/RELEASE-1.17.md).
 
-## Co potrafi wersja 1.16
+## Co potrafi wersja 1.17
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -84,7 +85,10 @@ Przeciąganie wierszy i kolejność list biblioteki – A–Z, Z–A, według da
   powiększ, dopasuj, wyśrodkuj, jasność; potem nieruchomy jak kratka), liniuszek – równoległe
   i poprzeczne linie pod wybranym kątem, do których przyciąga się kreska – i kształty geometryczne
   (odcinek, strzałka, prostokąt, elipsa, trójkąt, romb, trapez) poprawiane punktami konstrukcyjnymi:
-  szerokość, wysokość, pochylenie, obrót. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
+  szerokość, wysokość, pochylenie, obrót. Od 1.17: wycinek (prawy przycisk albo tryb „Wycinek” –
+  obraz obszaru z tłem i kratką), **Osadź** – zaznaczenie albo wycinek jako obraz notatki, wymiary
+  i kąt pochylenia kształtu wpisywane w polach przy jego ramce, wypełnienie kształtu i tekst na
+  kształcie. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
@@ -136,7 +140,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.13 – pola tekstowe i wzory na rysunku](docs/RELEASE-1.13.md),
 [wersja 1.14 – skala na linijce, własne kolory, fragmenty i lasso, kopiuj i wklej](docs/RELEASE-1.14.md),
 [wersja 1.15 – jasność tła, szablon, liniuszek, kształty](docs/RELEASE-1.15.md),
-[wersja 1.16 – przeciąganie wierszy, kolejność list](docs/RELEASE-1.16.md).
+[wersja 1.16 – przeciąganie wierszy, kolejność list](docs/RELEASE-1.16.md),
+[wersja 1.17 – wycinek, „Osadź”, wymiary, wypełnienie i tekst kształtu](docs/RELEASE-1.17.md).
 
 ## Jak korzystać
 
@@ -369,6 +374,20 @@ równoległobok, pochylona elipsa), kółko nad kształtem (obrót, co 15° lekk
 punkt (wierzchołek trójkąta, wcięcie trapezu), a odcinek i strzałka – dwa końce. Kształt zaznaczasz,
 przesuwasz, kopiujesz i usuwasz jak inne elementy (gumka całych kresek go usuwa, gumka fragmentów nie
 przecina); zero linijki przyciąga się też do jego boków i narożników.
+**Wymiary, wypełnienie i tekst kształtu** (od 1.17): przy zaznaczonym kształcie są pola –
+**szerokość** pod dolną linią ramki, **wysokość** przy prawej, **kąt pochylenia** przy lewej (odcinek
+i strzałka: **długość** i **kąt**). Długości są w skali rysunku; wpisz liczbę i Enter – kształt zmienia
+się wokół środka (odcinek – od początku), Esc – bez zmiany. Dotknięcie rombu pochylenia albo punktu
+boku bez przeciągania ustawia kursor w odpowiednim polu. **Wypełnienie** (Brak, Jasne, Pełne – w kolorze
+kształtu): w panelu kształtów dla nowych, polecenie **Wypełnienie** nad zaznaczonym. **Tekst** nad
+zaznaczonym kształtem (albo dotknięcie zaznaczonego kształtu) – tekst na środku kształtu (odcinka –
+nad nim), który przesuwa się, obraca i zmienia szerokość razem z nim.
+**Wycinek i Osadź** (od 1.17): przy zaznaczaniu przeciągnięcie **prawym przyciskiem myszy** (albo
+z przyciskiem na rysiku) – a na iPadzie i iPhonie w trybie **Wycinek** – robi wycinek: obraz wszystkiego
+w prostokącie albo lassie, z tłem, kratką, szablonem i częściami kresek. **Kopiuj** wkłada go do
+schowka jako obraz (wkleisz go w notatce albo w innej aplikacji). **Osadź** – nad wycinkiem i nad
+każdym zaznaczeniem – dodaje obraz do obrazów notatki („Obraz N”, zaraz za rysunkiem): wycinek z tłem,
+a zaznaczone elementy – same, na białym tle.
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno
 **Nowe pole tekstowe** – tekst (Enter zaczyna nowy wiersz, długi wiersz łamie się sam), wielkość
 (Mała, Średnia, Duża) i kolor; przycisk **Σ** – okno **Nowy wzór**: zapis jak we wzorze w notatce,
@@ -625,7 +644,8 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 21. **Wersja 1.14: skala na linijce (SI i imperialne, szacunek ekranu, 1:1), zero linijki na przecięciach i liniach (prostopadle), własne kolory (siatka, suwaki RGB, pipetka), zaznaczanie fragmentów prostokątem i lassem, kopiuj i wklej** – gotowe.
 22. **Wersja 1.15: jasność kratki i linii, szablon pod kreskami (boisko, obraz z pliku), liniuszek z liniami poprzecznymi i przyciąganiem, kształty geometryczne z punktami konstrukcyjnymi** – gotowe.
 23. **Wersja 1.16: przeciąganie wierszy przy zmianie kolejności, kolejność list biblioteki – ręcznie, A–Z, Z–A, według daty utworzenia** – gotowe.
-24. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
+24. **Wersja 1.17: wycinek (prawy przycisk, tryb „Wycinek”), „Osadź” – fragment rysunku jako obraz notatki, wymiary i kąt pochylenia kształtu z klawiatury, wypełnienie i tekst kształtu** – gotowe.
+25. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).
