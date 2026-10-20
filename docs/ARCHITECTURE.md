@@ -39,7 +39,7 @@ js/ui/symbols.js           panel symboli z ostatnio użytymi (notatka) i symbole
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
-js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek, kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka), Shift i Ctrl, środkowy przycisk, szyk, kartki, obraz PNG / JPEG
+js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek (równoległy, od 1.22 promieniowy), kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka, od 1.22 przyciąganie końców i magnes), Shift i Ctrl, środkowy przycisk, szyk, kartki (od 1.22 kółko, ‹ › i animacja przewracania), obraz PNG / JPEG
 js/ui/drawing-paint.js     rysunek na płótnie: kształty geometryczne (z zakończeniami odcinka), szablon (boisko liniami, obraz mnożony z tłem)
 js/ui/drawing-boxes.js     tabele i karteczki na rysunku (od 1.21): układ i pomiar (szerokości kolumn, łamanie, wysokość z treści), rysowanie, strzałka, ikona zwiniętej, treść obok ikony
 js/ui/canvas-text.js       tekst na płótnie rysunku: czcionka, wysokość wiersza, pomiar i łamanie wierszy (pola tekstowe, tekst kształtu, tabele, karteczki)
@@ -52,7 +52,8 @@ js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
 js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, skala, przyciąganie linijki, obszar zaznaczania, tabele i karteczki (prostokąt, strzałka), sprawdzanie danych rysunku
 js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
-js/core/shapes.js          kształty geometryczne (punkty, obrys, punkty konstrukcyjne, Shift, wymiary z klawiatury i na stałe, wypełnienie, tekst, zakończenia odcinka, sprawdzanie) i liniuszek (najbliższa linia)
+js/core/shapes.js          kształty geometryczne (punkty, obrys, punkty konstrukcyjne, Shift, wymiary z klawiatury i na stałe, wypełnienie, tekst, zakończenia odcinka, sprawdzanie) i liniuszek (najbliższa linia; od 1.22 najbliższy okrąg i promień, okręgi na stronie, kierunki promieni)
+js/core/attach.js          przyciąganie i przyklejanie końców (od 1.22): narożniki i boki elementów, najbliższy punkt, identyfikatory, końce za elementem, odklejanie, kopie, sprawdzanie przyklejeń
 js/core/arrays.js          szyk liniowy i kołowy: kopie elementów, przesunięcie, obrót wokół środka, parametry, sprawdzanie
 js/core/templates.js       tło rysunku: poziomy jasności, szablon – boisko (105 × 68 m), dopasowanie, środek, wielkość (też w % i narożnikiem), sprawdzanie
 js/core/zip.js             odczyt i zapis archiwów ZIP (także kawałkami przez Blob – duże pliki)
@@ -573,7 +574,14 @@ wzdłuż głównych); `nearestGuideLine` – rzut punktu na najbliższą linię.
 po odsunięciu o 10 px od początku, gdy początek leży do 12 px od linii, a kierunek różni się od niej
 najwyżej o 20°, wszystkie dotychczasowe punkty trafiają na tę linię, a następne są na nią rzutowane
 (jak przy krawędzi linijki – z długością w skali). Kółko liniuszka przesuwa punkt rodziny
-(przyskok do węzłów kratki do 8 px).
+(przyskok do węzłów kratki do 8 px). Od 1.22 `tools.guide.kind: 'lines' | 'radial'`; promieniowy –
+`radialFamily()` `{ x, y, spacing, step, angle }` (środek w kółku, `ringSpacing` w kratkach, `rayStep`
+z `RAY_STEPS` – dzielniki 360°, `rayAngle` −90…90 – na ekranie kąt ujemny) i `nearestRing`,
+`nearestRay`, `ringsIn` (okręgi przecinające stronę, najwyżej 2000), `rayAngles` z `js/core/shapes.js`.
+`decideGuide` po tych samych progach (10 px, 12 px, 20°) wybiera okrąg (kierunek kreski – styczna
+w punkcie początku) albo promień; krawędź kreski `active.edge` jest wtedy `{ circle: { x, y, r } }`
+i `onEdge` rzutuje punkty na okrąg (kąt ciągły – bez skoku przy ±180°, `along` = kąt × promień, więc
+pigułka pokazuje długość łuku) albo `{ ruler }` jak przy linii.
 Od 1.17 (format rysunku 4): kształt może mieć **wypełnienie** `fill: 'light' | 'solid'` (kolor kształtu,
 krycie `FILL_ALPHA`; odcinek i strzałka – bez) – wnętrze wypełnionego kształtu liczy się przy trafieniu
 (`touchesShape`) – i **tekst** `label: { text, size, color, width, height }`: `labelFrame` – środek
@@ -638,6 +646,36 @@ ją. Obraz do notatki pomija karteczki `hidden`; numer karteczki to kolejność 
 `highlighterWidths` (trzy grubości zakreślacza, `HIGHLIGHTER_RANGE` 4–60; `cleanStroke` dopuszcza 60
 tylko dla zakreślacza) i `stickyColor`. Starsza wersja aplikacji pomija tabele i karteczki rysunku (obraz
 w notatce zostaje), a przy poprawce rysunku zapisze go bez nich.
+Od 1.22 (format rysunku 7): element może mieć **identyfikator** `id` (`[a-z0-9]{6,16}`, nadawany przy
+pierwszym przyklejeniu – `newElementId`), a odcinek i strzałka – **przyklejone końce** `attach: { start?,
+end? }`, karteczka – `attach: { leader? }`. Odnośnik: `{ id, kind: 'corner', index }`, `{ id, kind: 'edge',
+index, t }` (bok i miejsce na nim 0…1) albo dla elipsy `{ id, kind: 'edge', angle }` (kąt parametru).
+`js/core/attach.js` nie zna edytora (prostokąt elementu `boxOf` – `elementBox` – przekazuje edytor):
+`snapGeometry` – narożniki i boki (kształt z `shapeOutline`, odcinek – dwa końce, środek i sam odcinek,
+elipsa – cztery punkty i obwód, element z ramką – prostokąt); `findSnap(strokes, point, radius)` –
+narożnik do 1,4 × promienia ma pierwszeństwo, inaczej najbliższy bok (na elipsie – punkt obwodu
+dociągany kilkoma krokami); `attachPoint` – punkt odnośnika na bieżącym elemencie. Edytor przyciąga
+(`EDGE_SNAP` = 14 px ekranu, bez Alt i przy `tools.edgeSnap`) w czynnościach `shape-new` (początek
+i koniec – `segmentBetween`), `shape-edit` (koniec odcinka) i `box-edit` (koniec strzałki karteczki),
+z kwadracikiem (narożnik) albo kółkiem (bok) na warstwie bieżącej, a po puszczeniu `linkEnds` /
+`replaceLinked` zapisuje odnośniki (`withLink`; koniec puszczony bez przyciągnięcia – odklejony).
+Każdy krok historii (`commitStep`) kończy `resolveAttachments` – po `history.begin()`, więc przesunięte
+końce należą do tego samego kroku cofania; mapa stary → nowy poprawia zaznaczenie. W trakcie ruchu
+`followersOf` daje podgląd elementów, które idą za przesuwanym albo zmienianym (warstwa zapisanych
+kresek je pomija). `moveSelection` odkleja końce od elementów spoza zaznaczenia (`keepLinksTo`),
+powielenie i wklejenie – `relinkCopies` (nowe identyfikatory, przyklejenia tylko między kopiami), szyk
+– `withoutLinks`. Sprawdzanie (`cleanElement` → `keepLinks`) przepuszcza tylko poprawne `id`
+i odnośniki do istniejących końców. Starsza wersja aplikacji pomija `id` i `attach` (rysunek bez
+zmian), a przy poprawce rysunku zapisze końce tam, gdzie są – bez przyklejenia.
+**Przewracanie kartek** (od 1.22): `flipTo(index)` – zdjęcie płótna zapisanych kresek przed i po
+`showPage` (`snapshotBase`) i osobne płótno `drawing__flip` nad stroną; `stepFlip` (520 ms, krzywa
+cubic in-out, pierwsza klatka od razu) i `paintCurl` – kartka nad linią zgięcia płasko, część spod
+zgięcia odbita do góry (jasny odwrót z przebijającym rysunkiem i cieniem), cień na kartce pod spodem;
+następna – zgięcie od dołu do góry, poprzednia – stara kartka pod spodem, nowa opada z góry. Kolejne
+przejście w trakcie animacji kończy ją od razu; `prefers-reduced-motion: reduce` – bez animacji. Kółko:
+`wheelTurn { sum, last, locked }` – nowy ruch po 220 ms przerwy, próg 50 (cała strona) albo 150
+(powiększona, gdy widok już się nie przesuwa), jedno przewrócenie na ruch. Przyciski `drawing-page-prev`
+i `drawing-page-next` przy pigułce kartek – od dwóch kartek.
 
 Od 1.6 **wersja angielska**: `htmlEN` obok `html`; w edytorze przełącznik Polski / Angielski zamienia
 treść jednego pola `contenteditable` (stan drugiej wersji jest w pamięci edytora; zmiana języka
@@ -1035,7 +1073,8 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
   załączniki, rysunki (nacisk, wygładzanie, gumka, historia, dane, zapis i kopia, pola tekstowe i wzory,
   skala, przyciąganie linijki, obszar zaznaczania, własne kolory, kształty z punktami konstrukcyjnymi,
   liniuszek, jasność tła i szablon, wypełnienie i tekst kształtu, wymiary z klawiatury, zakończenia
-  odcinka, Shift, stałe wymiary, szyk liniowy i kołowy, wielkość szablonu w % i z narożnika),
+  odcinka, Shift, stałe wymiary, szyk liniowy i kołowy, wielkość szablonu w % i z narożnika, od 1.22
+  liniuszek promieniowy, przyciąganie do narożników i krawędzi, przyklejone końce),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

@@ -24,21 +24,23 @@
 //   (tabela jak w notatce – core/tables.js; height zmierzona) i karteczki { tool: 'sticky', x, y, width,
 //   height, size, color: nazwa koloru karteczki, text, created: 'rrrr-mm-dd', collapsed?, hidden?,
 //   leader? } – collapsed: zwinięta do ikony, hidden: bez niej na obrazie rysunku w notatce,
-//   leader { x, y }: strzałka od karteczki do punktu strony.
+//   leader { x, y }: strzałka od karteczki do punktu strony; od 1.22 element może mieć id, a odcinek,
+//   strzałka i karteczka – przyklejone końce attach { start?, end?, leader? } (core/attach.js).
 
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import {
   SEGMENT_CAPS, SHAPES, SHAPE_FILLS, capPoints, cleanShape, isShape, segmentDegrees, shapeAsStroke, shapeBounds, shapeOutline, skewDegrees, touchesShape
 } from './shapes.js';
+import { keepLinks } from './attach.js';
 import { cleanTable } from './tables.js';
 import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
 
 /**
  * 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13), 3 – kształty, jasność tła, szablon (1.15),
  * 4 – wypełnienie i tekst kształtu (1.17), 5 – zakończenia odcinka, stałe wymiary i szyki (1.19),
- * 6 – tabele i karteczki (1.21).
+ * 6 – tabele i karteczki (1.21), 7 – identyfikatory elementów i przyklejone końce odcinków (1.22).
  */
-export const DRAWING_VERSION = 6;
+export const DRAWING_VERSION = 7;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -278,7 +280,9 @@ export function defaultToolSettings() {
     arrowCaps: { start: 'none', end: 'arrow' },
     arrayKind: 'linear',
     // Od 1.21: kolor ostatnio dodanej karteczki.
-    stickyColor: 'yellow'
+    stickyColor: 'yellow',
+    // Od 1.22: końce odcinków i strzałek przyciągane do krawędzi i narożników (magnes).
+    edgeSnap: true
   };
 }
 
@@ -291,10 +295,19 @@ function cleanCaps(raw, fallback) {
 /**
  * Liniuszek (od 1.15): odstęp linii w kratkach, kąt linii w stopniach (0 – poziomo, przeciwnie do
  * ruchu wskazówek zegara), linie poprzeczne – odstęp wzdłuż linii i kąt względem linii (90 – prosto),
- * przyciąganie pióra do linii.
+ * przyciąganie pióra do linii. Od 1.22 rodzaj: 'lines' – równoległe linie, 'radial' – okręgi wokół
+ * środka co ringSpacing kratek i (rays) promienie co rayStep stopni, obrócone o rayAngle.
  */
-export const defaultGuide = () => ({ spacing: 1, angle: 0, cross: false, crossSpacing: 1, crossAngle: 90, snap: true });
-export const GUIDE_LIMITS = Object.freeze({ spacing: [0.25, 6], crossSpacing: [0.25, 12], angle: [-90, 90], crossAngle: [10, 170] });
+export const defaultGuide = () => ({
+  kind: 'lines', spacing: 1, angle: 0, cross: false, crossSpacing: 1, crossAngle: 90, snap: true,
+  ringSpacing: 1, rays: true, rayStep: 30, rayAngle: 0
+});
+export const GUIDE_KINDS = Object.freeze(['lines', 'radial']);
+/** Co ile stopni promienie liniuszka promieniowego (dzielniki 360°). */
+export const RAY_STEPS = Object.freeze([5, 10, 15, 20, 30, 45, 60, 90]);
+export const GUIDE_LIMITS = Object.freeze({
+  spacing: [0.25, 6], crossSpacing: [0.25, 12], angle: [-90, 90], crossAngle: [10, 170], ringSpacing: [0.25, 6], rayAngle: [-90, 90]
+});
 
 function cleanGuide(raw) {
   const base = defaultGuide();
@@ -306,7 +319,12 @@ function cleanGuide(raw) {
     cross: typeof raw.cross === 'boolean' ? raw.cross : base.cross,
     crossSpacing: number('crossSpacing', 0.25),
     crossAngle: number('crossAngle', 1),
-    snap: typeof raw.snap === 'boolean' ? raw.snap : base.snap
+    snap: typeof raw.snap === 'boolean' ? raw.snap : base.snap,
+    kind: GUIDE_KINDS.includes(raw.kind) ? raw.kind : base.kind,
+    ringSpacing: number('ringSpacing', 0.25),
+    rays: typeof raw.rays === 'boolean' ? raw.rays : base.rays,
+    rayStep: RAY_STEPS.includes(raw.rayStep) ? raw.rayStep : base.rayStep,
+    rayAngle: number('rayAngle', 1)
   };
 }
 
@@ -353,7 +371,8 @@ export function cleanToolSettings(raw) {
     lineCaps: cleanCaps(raw.lineCaps, base.lineCaps),
     arrowCaps: cleanCaps(raw.arrowCaps, base.arrowCaps),
     arrayKind: ARRAY_KINDS.includes(raw.arrayKind) ? raw.arrayKind : base.arrayKind,
-    stickyColor: STICKY_COLORS.some((color) => color.id === raw.stickyColor) ? raw.stickyColor : base.stickyColor
+    stickyColor: STICKY_COLORS.some((color) => color.id === raw.stickyColor) ? raw.stickyColor : base.stickyColor,
+    edgeSnap: typeof raw.edgeSnap === 'boolean' ? raw.edgeSnap : base.edgeSnap
   };
 }
 
@@ -1032,8 +1051,13 @@ function cleanStroke(stroke, width, height, arrays) {
   return points.length >= 3 ? { tool: stroke.tool, color: stroke.color.toLowerCase(), points } : null;
 }
 
-/** Sprawdzone pole tekstowe, wzór albo kształt (zapis, kopia zapasowa) albo null. */
+/** Sprawdzone pole tekstowe, wzór, kształt, tabela albo karteczka – od 1.22 z identyfikatorem i przyklejonymi końcami. */
 function cleanElement(raw, pageWidth, pageHeight) {
+  return keepLinks(cleanElementData(raw, pageWidth, pageHeight), raw);
+}
+
+/** Sprawdzone pole tekstowe, wzór albo kształt (zapis, kopia zapasowa) albo null. */
+function cleanElementData(raw, pageWidth, pageHeight) {
   if (raw.tool === 'shape') return cleanShape(raw, pageWidth, pageHeight, (color) => HEX.test(color ?? ''));
   if (raw.tool === 'table' || raw.tool === 'sticky') return cleanBox(raw, pageWidth, pageHeight);
   const content = raw.tool === 'text' ? raw.text : raw.source;

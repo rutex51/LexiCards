@@ -18,12 +18,14 @@
 // kartek w jednym oknie (każda – osobny rysunek w notatce), zakończenia odcinka i wymiary kształtu
 // widoczne na stałe (oko przy polu wymiaru). Od 1.21: tabele (to samo okno tabeli co w notatce),
 // karteczki (zwijane do ikony, ze strzałką do miejsca, ukrywane na obrazie w notatce) i okno grubości
-// zakreślacza.
+// zakreślacza. Od 1.22: liniuszek promieniowy (okręgi i promienie ze środka, obrót), przewracanie
+// kartek kółkiem myszy i przyciskami ‹ › z animacją oraz końce odcinka, strzałki i strzałki karteczki
+// przyciągane do krawędzi i narożników innych elementów i przyklejane do nich (core/attach.js).
 //
 // Rysik i palec: gdy aplikacja raz zobaczy rysik (pointerType 'pen'), rysuje tylko rysik, a palec
 // przesuwa stronę (dłoń oparta o ekran nie zostawia śladów); bez rysika (iPhone) rysuje palec.
-// Dwa palce zawsze powiększają i przesuwają. Myszą rysuje się jak piórem; kółko przewija,
-// Ctrl + kółko powiększa. Gumka na końcu pióra (Windows) ściera bez zmiany narzędzia.
+// Dwa palce zawsze powiększają i przesuwają. Myszą rysuje się jak piórem; kółko przewija (od 1.22
+// przy kilku kartkach i całej stronie – przewraca kartkę), Ctrl + kółko powiększa. Gumka na końcu pióra (Windows) ściera bez zmiany narzędzia.
 // Linijkę przesuwa palec albo mysz, obracają ją dwa palce albo uchwyt; kreska zaczęta przy
 // krawędzi linijki biegnie prosto wzdłuż niej.
 //
@@ -36,8 +38,11 @@ import {
   ARRAY_LABELS, ARRAY_MAX, arrayDefaults, arraySize, cleanArrayParams, expandArray, isArray, itemsBounds, makeArray, polarRadius, withPolarRadius
 } from '../core/arrays.js';
 import {
+  endPoint, findSnap, followersOf, keepLinksTo, newElementId, relinkCopies, resolveAttachments, segmentBetween, withLink
+} from '../core/attach.js';
+import {
   DrawingHistory, ELEMENT_TEXT_MAX, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA,
-  HIGHLIGHTER_COLORS, HIGHLIGHTER_RANGE, INK_COLORS, STICKY_COLORS, STICKY_MIN, STICKY_TEXT_MAX, STICKY_TEXT_SIZES, TABLE_TEXT_SIZES, isBox, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
+  HIGHLIGHTER_COLORS, HIGHLIGHTER_RANGE, INK_COLORS, RAY_STEPS, STICKY_COLORS, STICKY_MIN, STICKY_TEXT_MAX, STICKY_TEXT_SIZES, TABLE_TEXT_SIZES, isBox, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
   SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings,
   defaultToolSettings, dimensionText, elementBox, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
   isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
@@ -47,7 +52,8 @@ import {
 import { layoutMath } from '../core/math-layout.js';
 import {
   DIM_FONT, DIM_GAP, LABEL_TEXT_MAX, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_FILLS, SHAPE_FILL_LABELS, SHAPE_LABELS, SKEW_DEGREES_LIMIT,
-  canFill, dimCenter, dimPlaces, guideLinesIn, isSegment, isShape, labelFrame, labelMaxWidth, moveShapeHandle, nearestGuideLine, resizeShape,
+  canFill, dimCenter, dimPlaces, guideLinesIn, isSegment, isShape, labelFrame, labelMaxWidth, moveShapeHandle, nearestGuideLine, nearestRay,
+  nearestRing, rayAngles, resizeShape, ringsIn,
   segmentCaps, segmentDegrees, setSegment, shapeContains, shapeFromDrag, shapeHandles, shapePoint, shownDims, skewDegrees, touchesShape,
   withCaps, withDims
 } from '../core/shapes.js';
@@ -126,6 +132,8 @@ const SHAPE_ICONS = {
 };
 /** Kształty: uchwyty (px ekranu) – promień trafienia, odległość uchwytu obrotu od kształtu. */
 const HANDLE_HIT = 18;
+/** Promień przyciągania końca do krawędzi albo narożnika (od 1.22) – ok. 3–4 mm na ekranie (px). */
+const EDGE_SNAP = 14;
 const ROTATE_GAP = 30;
 /** Ctrl (od 1.19): po ilu ms przytrzymania klawisza narzędzie zmienia się na zaznaczanie. */
 const CTRL_DELAY = 200;
@@ -602,6 +610,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     /** Pipetka (od 1.14): dotknięcie płótna pobiera kolor; lupa pod palcem, rysikiem albo kursorem. */
     let picking = false;
     let pickHover = null;
+    /** Miejsce przyciągnięcia pod myszą przy narzędziu kształtów – odcinek albo strzałka (od 1.22). */
+    let edgeHover = null;
     /** Długość ostatniej kreski wzdłuż linijki (jednostki strony) albo null. */
     let measured = null;
     /** Kolejne wklejenia tego samego schowka – każde trochę niżej i w prawo. */
@@ -646,6 +656,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const fillButton = selectionButton('drawing-selection-fill', 'fill', 'Wypełnienie', 'Wypełnienie kształtu', () => chooseFill());
     // Od 1.19: zakończenia odcinka, szyk (nowy albo zmiana parametrów) i rozdzielenie szyku.
     const capsButton = selectionButton('drawing-selection-caps', 'capArrow', 'Końce', 'Zakończenia odcinka: grot, trójkąt, koło, kwadrat, romb', () => chooseCaps());
+    // Od 1.22: magnes – przyciąganie końców do krawędzi i narożników (wł./wył., zapamiętane na urządzeniu).
+    const magnetButton = selectionButton('drawing-selection-magnet', 'magnet', 'Przyciąganie',
+      'Przyciąganie końców do krawędzi i narożników – wł./wył. (z Alt – chwilowo swobodnie)', () => toggleEdgeSnap());
     const arrayButton = selectionButton('drawing-selection-array', 'array', 'Szyk', 'Powiel w szyku – liniowym albo kołowym', () => editArray());
     const explodeButton = selectionButton('drawing-selection-explode', 'explode', 'Rozdziel', 'Rozdziel szyk – każda kopia osobno', () => explodeArray());
     const copyButton = selectionButton('drawing-selection-copy', 'copy', 'Kopiuj', 'Kopiuj (Ctrl+C) – wklejasz przyciskiem „Wklej” albo Ctrl+V, także w innym rysunku', () => copySelection());
@@ -653,10 +666,12 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const embedButton = selectionButton('drawing-selection-embed', 'embed', 'Osadź', 'Osadź w notatce jako obraz', () => embedSelection());
     const deleteButton = selectionButton('drawing-selection-delete', 'trash', 'Usuń', 'Usuń (Delete)', () => deleteSelection(), true);
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
-      selectionCount, editButton, collapseButton, shapeTextButton, fillButton, capsButton, copyButton, duplicateButton, arrayButton, explodeButton, embedButton, deleteButton);
+      selectionCount, editButton, collapseButton, shapeTextButton, fillButton, capsButton, magnetButton, copyButton, duplicateButton, arrayButton, explodeButton, embedButton, deleteButton);
     // Pola wymiarów zaznaczonego kształtu (od 1.17): na liniach ramki konstrukcyjnej, wpisywane z klawiatury.
     const dims = h('div', { class: 'drawing__dims', hidden: true, dataset: { testid: 'drawing-dims' } });
-    stage.append(base, live, dims, selectionBar);
+    // Od 1.22: animacja przewracania kartki (zdjęcia stron nad płótnem, tylko w trakcie).
+    const flipCanvas = h('canvas', { class: 'drawing__flip', hidden: true, 'aria-hidden': 'true' });
+    stage.append(base, live, flipCanvas, dims, selectionBar);
 
     const fitScale = () => Math.min((view.width - STAGE_MARGIN * 2) / drawing.width, (view.height - view.top - STAGE_MARGIN) / drawing.height);
     /** Strona mniejsza niż ekran – na środku (pod paskiem narzędzi); większa – nie ucieka poza krawędź. */
@@ -715,7 +730,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       clipPage(ctx);
       // Przesuwane zaznaczenie, poprawiany kształt i (od 1.19) przesuwany środek szyku rysuje warstwa bieżąca.
       plainShape = editedShape();
-      paintDrawing(ctx, drawing, media, ['move', 'shape-edit', 'array-center', 'box-edit'].includes(active?.kind) ? selection : null, plainShape, { editor: true });
+      const moving = ['move', 'shape-edit', 'array-center', 'box-edit'].includes(active?.kind) ? selection : null;
+      // Przyklejone końce (od 1.22) idą za przesuwanym kształtem – rysuje je warstwa bieżąca.
+      const followers = activeFollowers();
+      paintDrawing(ctx, drawing, media, followers ? new Set([...(moving ?? []), ...followers.keys()]) : moving, plainShape, { editor: true });
       ctx.restore();
     };
 
@@ -899,10 +917,13 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         ctx.restore();
       }
     };
-    /** Długość kreski wzdłuż linijki (w skali rysunku) obok rysika, po zewnętrznej stronie krawędzi. */
+    /** Długość kreski wzdłuż linijki (w skali rysunku) obok rysika, po zewnętrznej stronie krawędzi; przy okręgu (od 1.22) – na zewnątrz łuku. */
     const paintLength = (ctx, edge) => {
       const side = edge.across < 0 ? -1 : 1;
-      const point = toScreen(rulerPoint(edge.ruler, edge.along, edge.across + (side * 24) / view.scale));
+      const outside = edge.circle ? edge.circle.r + 24 / view.scale : 0;
+      const point = edge.circle
+        ? toScreen({ x: edge.circle.x + Math.cos(edge.last) * outside, y: edge.circle.y + Math.sin(edge.last) * outside })
+        : toScreen(rulerPoint(edge.ruler, edge.along, edge.across + (side * 24) / view.scale));
       const text = formatLength(edge.to - edge.from, drawing.scale);
       ctx.save();
       ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
@@ -985,6 +1006,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     let ctrlHold = null;
     let ctrlTimer = 0;
     let shiftDown = false;
+    /** Przytrzymany Alt (od 1.22): końce bez przyciągania do krawędzi i narożników. */
+    let altDown = false;
     /** Tryb zaznaczania: z przytrzymanym Ctrl – Auto (albo wybrany w tym czasie), inaczej – z ustawień. */
     const selectMode = () => ctrlHold?.mode ?? tools.selectMode;
     function beginCtrlHold() {
@@ -1211,9 +1234,20 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       requestRender();
     }
 
-    // ---- liniuszek (od 1.15): równoległe linie przez całą stronę, poprzeczne, kółko do przesuwania
+    // ---- liniuszek (od 1.15): równoległe linie przez całą stronę, poprzeczne, kółko do przesuwania;
+    // od 1.22 promieniowy – okręgi wokół kółka i promienie z niego
+    const radialGuide = () => tools.guide.kind === 'radial';
+    /** Liniuszek promieniowy: środek w kółku, okręgi co odstęp, promienie co krok – kąty przeciwnie do wskazówek zegara. */
+    function radialFamily() {
+      const settings = tools.guide;
+      return {
+        x: guide.x, y: guide.y, spacing: settings.ringSpacing * PAPER_STEP,
+        step: (settings.rayStep * Math.PI) / 180, angle: (-settings.rayAngle * Math.PI) / 180
+      };
+    }
     /** Rodziny linii: główne i (gdy włączone) poprzeczne – kąty jak na linijce (przeciwnie do wskazówek zegara). */
     function guideFamilies() {
+      if (radialGuide()) return [];
       const settings = tools.guide;
       const angle = (-settings.angle * Math.PI) / 180;
       const families = [{ kind: 'main', x: guide.x, y: guide.y, angle, spacing: settings.spacing * PAPER_STEP }];
@@ -1229,6 +1263,24 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       ctx.save();
       ctx.lineWidth = 1 / view.scale;
       ctx.strokeStyle = GUIDE_COLOR;
+      if (radialGuide()) {
+        const radial = radialFamily();
+        ctx.beginPath();
+        for (const radius of ringsIn(radial, drawing.width, drawing.height)) {
+          ctx.moveTo(radial.x + radius, radial.y);
+          ctx.arc(radial.x, radial.y, radius, 0, Math.PI * 2);
+        }
+        ctx.stroke();
+        if (tools.guide.rays) {
+          ctx.setLineDash([6 / view.scale, 4 / view.scale]);
+          ctx.beginPath();
+          for (const angle of rayAngles(radial)) {
+            ctx.moveTo(radial.x, radial.y);
+            ctx.lineTo(radial.x + Math.cos(angle) * reach * 2, radial.y + Math.sin(angle) * reach * 2);
+          }
+          ctx.stroke();
+        }
+      }
       for (const family of guideFamilies()) {
         const [dx, dy] = [Math.cos(family.angle) * reach, Math.sin(family.angle) * reach];
         ctx.setLineDash(family.kind === 'cross' ? [6 / view.scale, 4 / view.scale] : []);
@@ -1306,6 +1358,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         if (kept) paintStroke(ctx, movedSticky(kept, active.dx, active.dy), { editor: true, number: stickyNumber(drawing, kept) });
       }
       if (active?.kind === 'box-edit') paintStroke(ctx, active.preview, { editor: true, number: stickyNumber(drawing, active.original) });
+      // Przyklejone końce idące za przesuwanym albo zmienianym kształtem (od 1.22).
+      for (const [original, preview] of activeFollowers() ?? []) {
+        paintStroke(ctx, preview, { scale: drawing.scale, editor: true, number: original.tool === 'sticky' ? stickyNumber(drawing, original) : null });
+      }
       if (active?.kind === 'shape-new' && active.shape) paintStroke(ctx, active.shape);
       if (active?.kind === 'shape-edit') paintStroke(ctx, active.preview, { dims: false });
       if (active?.kind === 'array-center') paintStroke(ctx, active.preview, { scale: drawing.scale });
@@ -1380,6 +1436,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         ctx.restore();
       }
       if (guide) paintGuideKnob(ctx);
+      // Miejsca przyciągnięcia końców (od 1.22): w trakcie rysowania i przeciągania, a z myszą – też przed.
+      const snaps = active?.kind === 'shape-new' ? [active.startSnap, active.endSnap]
+        : active?.kind === 'shape-edit' || active?.kind === 'box-edit' ? [active.snap]
+          : !active && tool === 'shape' ? [edgeHover] : [];
+      for (const snap of snaps) if (snap) paintSnapMarker(ctx, snap);
       if (ruler) paintRuler(ctx);
       if (active?.kind === 'stroke' && active.edge && active.edge.to >= active.edge.from) paintLength(ctx, active.edge);
       const cursor = active?.kind === 'erase' ? active.last : (tool === 'eraser' ? hover : null);
@@ -1439,6 +1500,14 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       shapeTextButton.hidden = !shape;
       fillButton.hidden = !shape || !canFill(shape);
       capsButton.hidden = !shape || !isSegment(shape);
+      // Magnes (od 1.22): przy odcinku, strzałce i karteczce ze strzałką.
+      const withEnds = Boolean(shape && isSegment(shape)) || Boolean(sticky?.leader);
+      magnetButton.hidden = !withEnds;
+      if (withEnds) {
+        const label = tools.edgeSnap ? 'Przyciąganie wł.' : 'Przyciąganie wył.';
+        magnetButton.setAttribute('aria-pressed', String(tools.edgeSnap));
+        magnetButton.querySelector('.drawing__selection-label').textContent = label;
+      }
       // Tabel i karteczek (od 1.21) nie powiela się w szyku.
       arrayButton.hidden = Boolean(snip) || items.some(isBox);
       arrayButton.setAttribute('aria-label', isArray(only) ? 'Szyk – parametry' : 'Szyk');
@@ -1678,7 +1747,14 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       type: 'button', class: 'drawing__pill', 'aria-haspopup': 'menu', title: 'Kartki – nowa kartka, przejście do innej, usunięcie',
       dataset: { testid: 'drawing-pages' }, onClick: () => openPageMenu()
     }, icon('paper', { size: 14 }), pageText, icon('chevronDown', { size: 14 }));
-    const status = h('div', { class: 'drawing__status' }, notice, penPill, selectHint, lengthPill, guidePill, rulerPill, perpendicularButton, pagePill, zoomButton);
+    // Od 1.22: poprzednia i następna kartka jednym dotknięciem (na iPadzie palce przesuwają stronę, kółka nie ma).
+    const pageStep = (step, label, name, testID) => h('button', {
+      type: 'button', class: 'drawing__pill drawing__pill--icon', 'aria-label': label, title: `${label} (${step < 0 ? 'PageUp' : 'PageDown'} albo kółko myszy)`,
+      hidden: true, dataset: { testid: testID }, onClick: () => flipTo(pageIndex + step)
+    }, icon(name, { size: 16 }));
+    const pagePrev = pageStep(-1, 'Poprzednia kartka', 'chevronLeft', 'drawing-page-prev');
+    const pageNext = pageStep(1, 'Następna kartka', 'chevronRight', 'drawing-page-next');
+    const status = h('div', { class: 'drawing__status' }, notice, penPill, selectHint, lengthPill, guidePill, rulerPill, perpendicularButton, pagePrev, pagePill, pageNext, zoomButton);
     let noticeTimer = 0;
     /** Krótki komunikat w edytorze (komunikaty aplikacji są pod oknem rysunku). */
     function flash(message) {
@@ -1773,8 +1849,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       guidePill.hidden = !guide;
       if (!guide) return;
       const settings = tools.guide;
-      guideText.textContent = `Liniuszek ${((settings.angle % 180) + 180) % 180}° · co ${formatLength(settings.spacing * PAPER_STEP, drawing.scale)}`
-        + (settings.cross ? ' · poprzeczne' : '');
+      guideText.textContent = radialGuide()
+        ? `Promieniowy · okręgi co ${formatLength(settings.ringSpacing * PAPER_STEP, drawing.scale)}${settings.rays ? ` · promienie co ${settings.rayStep}°` : ''}`
+        : `Liniuszek ${((settings.angle % 180) + 180) % 180}° · co ${formatLength(settings.spacing * PAPER_STEP, drawing.scale)}`
+          + (settings.cross ? ' · poprzeczne' : '');
     }
     function updateRulerPill() {
       rulerPill.hidden = !ruler;
@@ -2319,6 +2397,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           renderShapePanel();
         }) : null,
         h('div', { class: 'drawing__settings-switch' }, lockToggle()),
+        h('div', { class: 'drawing__settings-switch' }, edgeSnapToggle()),
         h('p', { class: 'field__hint' }, 'Przeciągnij po stronie – kształt powstaje w prostokącie przeciągnięcia (odcinek i strzałka – od początku do końca); '
           + 'dotknięcie – kształt w tym miejscu. Kolor i grubość – jak pióra; wypełnienie jasne jest przejrzyste. Punkty zaznaczonego kształtu: '
           + 'narożniki i boki – szerokość i wysokość, romb na górnej krawędzi – pochylenie, kółko nad kształtem – obrót, pomarańczowy punkt – '
@@ -2326,6 +2405,19 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           + 'na rysunku), tekst – przyciskiem „Tekst” albo dotknięciem zaznaczonego kształtu. Z klawiszem Shift (albo z włączonymi '
           + 'proporcjami): kwadrat, koło, odcinek co 15°, narożnik bez zmiany proporcji.'));
       updateToolbar();
+    }
+    /** Przyciąganie końców odcinka i strzałki do krawędzi i narożników (od 1.22) – na urządzeniu; Alt – chwilowo swobodnie. */
+    function edgeSnapToggle() {
+      const snap = toggle({
+        checked: tools.edgeSnap, label: 'Końce odcinka i strzałki przyciągane do krawędzi i narożników (z Alt – swobodnie)',
+        onChange: (checked) => {
+          tools.edgeSnap = checked;
+          saveTools(tools);
+          updateToolbar();
+        }
+      });
+      snap.querySelector('input').dataset.testid = 'drawing-edge-snap';
+      return snap;
     }
     /** Proporcje jak z Shift (od 1.19) – na iPadzie i iPhonie bez klawiatury. */
     function lockToggle() {
@@ -2385,32 +2477,83 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         spacing: range('spacing', 0.25, 6, 0.25, 'Odstęp linii'),
         angle: range('angle', -90, 90, 1, 'Kąt linii'),
         crossSpacing: range('crossSpacing', 0.25, 12, 0.25, 'Odstęp linii poprzecznych'),
-        crossAngle: range('crossAngle', 10, 170, 1, 'Kąt linii poprzecznych')
+        crossAngle: range('crossAngle', 10, 170, 1, 'Kąt linii poprzecznych'),
+        ringSpacing: range('ringSpacing', 0.25, 6, 0.25, 'Odstęp okręgów'),
+        rayAngle: range('rayAngle', -90, 90, 1, 'Obrót promieni')
       };
-      const texts = Object.fromEntries(Object.keys(ranges).map((key) => [key, h('span')]));
+      // Krok promieni (od 1.22) – tylko dzielniki 360°, suwak po kolejnych wartościach.
+      const rayStep = h('input', {
+        type: 'range', class: 'drawing__range', min: 0, max: RAY_STEPS.length - 1, step: 1, 'aria-label': 'Promienie co (stopnie)',
+        dataset: { testid: 'drawing-guide-rayStep' },
+        onInput: (event) => {
+          settings.rayStep = RAY_STEPS[Number(event.target.value)];
+          changedGuide();
+        }
+      });
+      const texts = Object.fromEntries([...Object.keys(ranges), 'rayStep'].map((key) => [key, h('span')]));
       const squares = (value) => (Number.isInteger(value) ? plural(value, 'kratka', 'kratki', 'kratek') : `${formatNumber(value)} kratki`);
       const quick = (key, values, unit = '°') => h('div', { class: 'drawing__quick' }, values.map((value) => chip(`${value}${unit}`, `drawing-guide-${key}-${value}`, () => {
         settings[key] = value;
         changedGuide();
       })));
-      const crossToggle = toggle({ checked: settings.cross, label: 'Linie poprzeczne', onChange: (checked) => { settings.cross = checked; changedGuide(); } });
-      crossToggle.querySelector('input').dataset.testid = 'drawing-guide-cross';
-      const snapToggle = toggle({ checked: settings.snap, label: 'Przyciąganie kreski do linii', onChange: (checked) => { settings.snap = checked; changedGuide(); } });
-      snapToggle.querySelector('input').dataset.testid = 'drawing-guide-snap';
+      const switchRow = (label, key, testID, extra = () => {}) => {
+        const row = toggle({ checked: settings[key], label, onChange: (checked) => { settings[key] = checked; extra(); changedGuide(); } });
+        row.querySelector('input').dataset.testid = testID;
+        return h('div', { class: 'drawing__settings-switch' }, row);
+      };
+      const kind = segmented({
+        name: `drawing-guide-kind-${Date.now()}`, label: 'Rodzaj liniuszka', value: settings.kind,
+        options: [{ value: 'lines', label: 'Równoległy' }, { value: 'radial', label: 'Promieniowy' }],
+        onChange: (value) => {
+          settings.kind = value;
+          changedGuide();
+        }
+      });
+      kind.dataset.testid = 'drawing-guide-kind';
       const crossBlock = h('div', null,
         h('p', { class: 'drawing__settings-label' }, h('span', null, 'Odstęp poprzecznych'), texts.crossSpacing), ranges.crossSpacing,
         h('p', { class: 'drawing__settings-label' }, h('span', null, 'Kąt poprzecznych względem linii'), texts.crossAngle), ranges.crossAngle,
         quick('crossAngle', [60, 75, 90]));
+      const linesBlock = h('div', null,
+        h('p', { class: 'drawing__settings-label' }, h('span', null, 'Odstęp linii'), texts.spacing), ranges.spacing,
+        h('p', { class: 'drawing__settings-label' }, h('span', null, 'Kąt linii'), texts.angle), ranges.angle,
+        quick('angle', [0, 45, 90]),
+        switchRow('Linie poprzeczne', 'cross', 'drawing-guide-cross'),
+        crossBlock);
+      const rayBlock = h('div', null,
+        h('p', { class: 'drawing__settings-label' }, h('span', null, 'Promienie co'), texts.rayStep), rayStep,
+        quick('rayStep', [15, 30, 45]),
+        h('p', { class: 'drawing__settings-label' }, h('span', null, 'Obrót'), texts.rayAngle), ranges.rayAngle,
+        quick('rayAngle', [0, 15, 45]));
+      const radialBlock = h('div', null,
+        h('p', { class: 'drawing__settings-label' }, h('span', null, 'Odstęp okręgów'), texts.ringSpacing), ranges.ringSpacing,
+        switchRow('Promienie ze środka', 'rays', 'drawing-guide-rays'),
+        rayBlock);
+      const hint = h('p', { class: 'field__hint' });
       function refresh() {
         for (const [key, input] of Object.entries(ranges)) {
           input.value = String(settings[key]);
           input.style.setProperty('--fill-to', `${((settings[key] - Number(input.min)) / (Number(input.max) - Number(input.min))) * 100}%`);
         }
+        const stepIndex = Math.max(0, RAY_STEPS.indexOf(settings.rayStep));
+        rayStep.value = String(stepIndex);
+        rayStep.style.setProperty('--fill-to', `${(stepIndex / (RAY_STEPS.length - 1)) * 100}%`);
         texts.spacing.textContent = `${squares(settings.spacing)} · ${formatLength(settings.spacing * PAPER_STEP, drawing.scale)}`;
         texts.angle.textContent = `${settings.angle}°`;
         texts.crossSpacing.textContent = `${squares(settings.crossSpacing)} · ${formatLength(settings.crossSpacing * PAPER_STEP, drawing.scale)}`;
         texts.crossAngle.textContent = settings.crossAngle === 90 ? '90° – prostopadle' : `${settings.crossAngle}°`;
+        texts.ringSpacing.textContent = `${squares(settings.ringSpacing)} · ${formatLength(settings.ringSpacing * PAPER_STEP, drawing.scale)}`;
+        texts.rayStep.textContent = `${settings.rayStep}° · ${plural(360 / settings.rayStep, 'promień', 'promienie', 'promieni')}`;
+        texts.rayAngle.textContent = `${settings.rayAngle}°`;
         crossBlock.hidden = !settings.cross;
+        linesBlock.hidden = settings.kind === 'radial';
+        radialBlock.hidden = settings.kind !== 'radial';
+        rayBlock.hidden = !settings.rays;
+        hint.textContent = settings.kind === 'radial'
+          ? 'Kreska zaczęta przy okręgu i prowadzona wzdłuż niego biegnie po łuku, przy promieniu i wzdłuż niego – prosto po promieniu; '
+            + 'w innym kierunku – zwykła kreska. Kółko na stronie to środek (przesuwasz je; przyskakuje do węzłów kratki). Liniuszek nie trafia do rysunku.'
+          : 'Kreska zaczęta przy linii i prowadzona wzdłuż niej biegnie prosto po linii (także po poprzecznej); '
+            + 'w innym kierunku – zwykła kreska. Kółko na stronie przesuwa liniuszek (przyskakuje do węzłów kratki). Liniuszek nie trafia do rysunku.';
       }
       function changedGuide() {
         saveTools(tools);
@@ -2420,14 +2563,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       }
       replaceChildren(guidePanel,
         h('h3', { class: 'drawing__settings-title' }, 'Liniuszek'),
-        h('p', { class: 'drawing__settings-label' }, h('span', null, 'Odstęp linii'), texts.spacing), ranges.spacing,
-        h('p', { class: 'drawing__settings-label' }, h('span', null, 'Kąt linii'), texts.angle), ranges.angle,
-        quick('angle', [0, 45, 90]),
-        h('div', { class: 'drawing__settings-switch' }, crossToggle),
-        crossBlock,
-        h('div', { class: 'drawing__settings-switch' }, snapToggle),
-        h('p', { class: 'field__hint' }, 'Kreska zaczęta przy linii i prowadzona wzdłuż niej biegnie prosto po linii (także po poprzecznej); '
-          + 'w innym kierunku – zwykła kreska. Kółko na stronie przesuwa liniuszek (przyskakuje do węzłów kratki). Liniuszek nie trafia do rysunku.'));
+        kind,
+        linesBlock,
+        radialBlock,
+        switchRow('Przyciąganie kreski do linii', 'snap', 'drawing-guide-snap'),
+        hint);
       refreshGuidePanel = refresh;
       refresh();
     }
@@ -2504,6 +2644,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const pageTitle = () => (pageIndex === 0 ? title : `${title} · kartka ${pageIndex + 1}`);
     function updatePagePill() {
       pageText.textContent = `Kartka ${pageIndex + 1} z ${pages.length}`;
+      pagePrev.hidden = pages.length < 2;
+      pageNext.hidden = pages.length < 2;
+      pagePrev.disabled = pageIndex === 0;
+      pageNext.disabled = pageIndex === pages.length - 1;
       headerTitle.textContent = pageTitle();
       live.setAttribute('aria-label', `Płótno rysunku: ${pageTitle()}`);
     }
@@ -2527,6 +2671,119 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       zoomButton.textContent = '100%';
       requestRender();
     }
+    /**
+     * Przejście na kartkę `index` z animacją (od 1.22): kartka unosi się od dolnej krawędzi i przewraca
+     * do góry (następna), a poprzednia opada z góry – jak w notesie zszytym u góry. Zdjęcia stron
+     * (płótno zapisanych kresek przed zmianą i po niej) rysuje osobne płótno nad stroną; bez animacji,
+     * gdy system prosi o ograniczenie ruchu.
+     */
+    const FLIP_MS = 520;
+    let flipping = null;
+    function flipTo(index) {
+      if (index === pageIndex || index < 0 || index >= pages.length || active) return;
+      // Kolejne dotknięcie w trakcie animacji – poprzednia kończy się od razu.
+      if (flipping) {
+        flipping = null;
+        flipCanvas.hidden = true;
+      }
+      const motion = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches && base.width > 0;
+      const before = motion ? snapshotBase() : null;
+      const forward = index > pageIndex;
+      showPage(index);
+      if (!motion) return;
+      renderBase();
+      flipping = { forward, before, after: snapshotBase(), page: pageRect(), start: performance.now() };
+      flipCanvas.width = base.width;
+      flipCanvas.height = base.height;
+      flipCanvas.hidden = false;
+      // Pierwsza klatka od razu – inaczej przez chwilę widać już nową kartkę.
+      stepFlip(flipping.start);
+    }
+    function snapshotBase() {
+      const copy = document.createElement('canvas');
+      copy.width = base.width;
+      copy.height = base.height;
+      copy.getContext('2d').drawImage(base, 0, 0);
+      return copy;
+    }
+    /** Strona na płótnie (piksele urządzenia). */
+    const pageRect = () => ({ x: view.x * view.dpr, y: view.y * view.dpr, w: drawing.width * view.scale * view.dpr, h: drawing.height * view.scale * view.dpr });
+    function stepFlip(now) {
+      if (!flipping) return;
+      const t = Math.min(1, (now - flipping.start) / FLIP_MS);
+      const eased = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+      const ctx = flipCanvas.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, flipCanvas.width, flipCanvas.height);
+      const { page } = flipping;
+      if (flipping.forward) {
+        // Następna: stara kartka unosi się – zgięcie od dołu do góry.
+        paintCurl(ctx, flipping.before, page, page.y + page.h * (1 - eased), 1 - Math.max(0, (t - 0.7) / 0.3));
+      } else {
+        // Poprzednia: pod spodem stara kartka, nowa opada z góry – zgięcie od góry do dołu.
+        ctx.drawImage(flipping.before, 0, 0);
+        paintCurl(ctx, flipping.after, page, page.y + page.h * eased, Math.min(1, t / 0.3));
+      }
+      if (t < 1) {
+        requestAnimationFrame(stepFlip);
+      } else {
+        flipping = null;
+        flipCanvas.hidden = true;
+      }
+    }
+    /**
+     * Kartka `image` zgięta na wysokości `fold`: nad zgięciem leży płasko, część spod zgięcia jest
+     * odbita do góry (odwrót kartki – jasny papier z przebijającym rysunkiem i cieniem przy zgięciu),
+     * a pod zgięciem pada cień na kartkę pod spodem. flapAlpha – przezroczystość odwiniętej części.
+     */
+    function paintCurl(ctx, image, page, fold, flapAlpha) {
+      const bottom = page.y + page.h;
+      const margin = 30 * view.dpr;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(page.x - margin, page.y - margin, page.w + margin * 2, Math.max(0, fold - page.y + margin));
+      ctx.clip();
+      ctx.drawImage(image, 0, 0);
+      ctx.restore();
+      const flap = bottom - fold;
+      if (flap <= 0.5) return;
+      // Cień odwiniętej części na kartce pod spodem.
+      const shadow = Math.min(flap, 36 * view.dpr);
+      const below = ctx.createLinearGradient(0, fold, 0, fold + shadow);
+      below.addColorStop(0, 'rgba(0, 0, 0, 0.22)');
+      below.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = below;
+      ctx.fillRect(page.x, fold, page.w, shadow);
+      ctx.save();
+      ctx.globalAlpha = flapAlpha;
+      ctx.beginPath();
+      ctx.rect(page.x, fold - flap, page.w, flap);
+      ctx.clip();
+      ctx.fillStyle = '#f7f7f8';
+      ctx.fillRect(page.x, fold - flap, page.w, flap);
+      ctx.save();
+      ctx.globalAlpha = flapAlpha * 0.12;
+      ctx.translate(0, fold * 2);
+      ctx.scale(1, -1);
+      ctx.drawImage(image, 0, 0);
+      ctx.restore();
+      const shade = ctx.createLinearGradient(0, fold, 0, fold - Math.min(flap, 140 * view.dpr));
+      shade.addColorStop(0, 'rgba(0, 0, 0, 0.16)');
+      shade.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = shade;
+      ctx.fillRect(page.x, fold - flap, page.w, flap);
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = flapAlpha * 0.35;
+      ctx.strokeStyle = '#8e8e93';
+      ctx.lineWidth = view.dpr;
+      ctx.beginPath();
+      ctx.moveTo(page.x, fold - flap);
+      ctx.lineTo(page.x + page.w, fold - flap);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     /** Nowa kartka za ostatnią: to samo tło (zdjęcie – kratka), jasność linii i skala, bez szablonu. */
     function addPage() {
       if (pages.length >= PAGE_LIMIT) {
@@ -2557,7 +2814,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           pages.length > 1 ? 'separator' : null,
           ...(pages.length > 1 ? pages.map((_, index) => ({
             label: index === 0 ? `Kartka 1 – ${title}` : `Kartka ${index + 1}`, checked: index === pageIndex, testID: `drawing-page-${index + 1}`,
-            onSelect: () => showPage(index)
+            onSelect: () => flipTo(index)
           })) : []),
           pageIndex > 0 ? 'separator' : null,
           pageIndex > 0 ? { label: 'Usuń tę kartkę', icon: 'trash', destructive: true, testID: 'drawing-page-delete', onSelect: () => deletePage() } : null
@@ -2635,6 +2892,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     /** Koniec zmiany: krok cofania (razem z przecięciem kresek zaznaczonego fragmentu). */
     function commitStep() {
       regionPending = false;
+      // Przyklejone końce (od 1.22) – w miejscach na swoich kształtach, w tym samym kroku cofania.
+      history.begin();
+      const replaced = resolveAttachments(drawing.strokes, elementBox);
+      if (replaced.size > 0 && selection.size > 0) selection = new Set([...selection].map((stroke) => replaced.get(stroke) ?? stroke));
       if (history.commit()) changed = true;
     }
     const selectionHit = (point) => {
@@ -2676,10 +2937,14 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     function moveSelection(dx, dy) {
       const moved = new Set();
       const kept = keptTarget();
+      // Przesunięty bez elementu, do którego był przyklejony (od 1.22), odkleja się od niego; karteczka
+      // przesuwana sama zostawia koniec strzałki na miejscu – ten zostaje przyklejony.
+      const ids = new Set([...selection].map((stroke) => stroke.id).filter(Boolean));
       history.begin();
       drawing.strokes.forEach((stroke, index) => {
         if (!selection.has(stroke)) return;
-        drawing.strokes[index] = stroke === kept ? movedSticky(stroke, dx, dy) : translateStroke(stroke, dx, dy);
+        const next = stroke === kept ? movedSticky(stroke, dx, dy) : translateStroke(stroke, dx, dy);
+        drawing.strokes[index] = next.attach && stroke !== kept ? keepLinksTo(next, ids) : next;
         moved.add(drawing.strokes[index]);
       });
       commitStep();
@@ -2700,7 +2965,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       if (items.length === 0) return;
       dropRegion();
       history.begin();
-      const copies = items.map((stroke) => translateStroke(stroke, DUPLICATE_OFFSET, DUPLICATE_OFFSET));
+      // Kopie (od 1.22) z nowymi identyfikatorami – przyklejone między sobą zostają przyklejone.
+      const copies = relinkCopies(items.map((stroke) => translateStroke(stroke, DUPLICATE_OFFSET, DUPLICATE_OFFSET)), drawing.strokes);
       drawing.strokes.push(...copies);
       commitStep();
       selection = new Set(copies);
@@ -3094,7 +3360,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const dx = Math.min(drawing.width, Math.max(0, center.x)) - (bounds.minX + bounds.maxX) / 2 + shift;
       const dy = Math.min(drawing.height, Math.max(0, center.y)) - (bounds.minY + bounds.maxY) / 2 + shift;
       // Pola tekstowe i wzory mierzone od nowa (czcionki tego urządzenia).
-      const pasted = content.strokes.map((stroke) => translateStroke(remeasure(stroke), dx, dy));
+      const pasted = relinkCopies(content.strokes.map((stroke) => translateStroke(remeasure(stroke), dx, dy)), drawing.strokes);
       history.begin();
       drawing.strokes.push(...pasted);
       commitStep();
@@ -3473,17 +3739,31 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       if (active.stroke.tool === 'highlighter') return tools.highlighterWidths[tools.highlighterWidth];
       return penWidth(active.pressure ? event.pressure : 0.5, tools.penWidths[tools.penWidth], active.pressure ? tools.sensitivity : 'off');
     };
-    /** Punkt kreski: przy linijce – rzut na prostą wzdłuż jej krawędzi (i zasięg kreski wzdłuż linijki – długość). */
-    const strokePoint = (event) => {
-      const point = toDrawing(event);
-      const { edge } = active;
+    /**
+     * Punkt kreski: przy linijce – rzut na prostą wzdłuż jej krawędzi (i zasięg kreski wzdłuż linijki –
+     * długość); od 1.22 przy okręgu liniuszka promieniowego – rzut na okrąg (długość – po łuku).
+     */
+    const strokePoint = (event) => onEdge(active.edge, toDrawing(event));
+    function onEdge(edge, point) {
       if (!edge) return point;
+      if (edge.circle) {
+        const { x, y, r } = edge.circle;
+        let angle = Math.atan2(point.y - y, point.x - x);
+        // Kąt ciągły (bez skoku przy ±180°) – długość łuku od początku kreski.
+        if (edge.last !== undefined) angle = edge.last + Math.atan2(Math.sin(angle - edge.last), Math.cos(angle - edge.last));
+        edge.last = angle;
+        const along = angle * r;
+        edge.along = along;
+        edge.from = Math.min(edge.from, along);
+        edge.to = Math.max(edge.to, along);
+        return { x: x + Math.cos(angle) * r, y: y + Math.sin(angle) * r };
+      }
       const { along } = rulerOffset(edge.ruler, point.x, point.y);
       edge.along = along;
       edge.from = Math.min(edge.from, along);
       edge.to = Math.max(edge.to, along);
       return rulerPoint(edge.ruler, along, edge.across);
-    };
+    }
     function startStroke(event) {
       const highlighter = tool === 'highlighter';
       const stroke = { tool: highlighter ? 'highlighter' : 'pen', color: highlighter ? highlighterHex(tools.highlighterColor) : inkHex(tools.penColor), points: [] };
@@ -3518,17 +3798,30 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         if (line.distance * view.scale > GUIDE_SNAP || off > GUIDE_ANGLE) continue;
         if (!best || off < best.off) best = { line, off };
       }
+      // Liniuszek promieniowy (od 1.22): wzdłuż okręgu – łuk, wzdłuż promienia – prosto po promieniu.
+      if (radialGuide()) {
+        const radial = radialFamily();
+        const ring = nearestRing(radial, start.x, start.y);
+        const tangent = Math.atan2(start.y - radial.y, start.x - radial.x) + Math.PI / 2;
+        const ringOff = lineAngleDifference(direction, tangent);
+        if (ring.distance * view.scale <= GUIDE_SNAP && ringOff <= GUIDE_ANGLE) best = { circle: { x: radial.x, y: radial.y, r: ring.radius }, off: ringOff };
+        if (tools.guide.rays) {
+          const ray = nearestRay(radial, start.x, start.y);
+          const rayOff = lineAngleDifference(direction, ray.angle);
+          if (ray.distance * view.scale <= GUIDE_SNAP && rayOff <= GUIDE_ANGLE && (!best || rayOff < best.off)) {
+            best = { line: { x: radial.x, y: radial.y, angle: ray.angle }, off: rayOff };
+          }
+        }
+      }
       if (!best) return false;
-      const edge = { ruler: { x: best.line.x, y: best.line.y, angle: best.line.angle }, across: 0, along: 0, from: Infinity, to: -Infinity, guide: true };
+      const edge = best.circle
+        ? { circle: best.circle, along: 0, from: Infinity, to: -Infinity, guide: true }
+        : { ruler: { x: best.line.x, y: best.line.y, angle: best.line.angle }, across: 0, along: 0, from: Infinity, to: -Infinity, guide: true };
       active.edge = edge;
       active.stroke.points = [];
       active.last = null;
       for (const point of pending.raw) {
-        const { along } = rulerOffset(edge.ruler, point.x, point.y);
-        edge.along = along;
-        edge.from = Math.min(edge.from, along);
-        edge.to = Math.max(edge.to, along);
-        const next = { ...rulerPoint(edge.ruler, along, 0), w: point.w };
+        const next = { ...onEdge(edge, point), w: point.w };
         addPoint(active.stroke, next);
         active.last = next;
       }
@@ -3629,6 +3922,12 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const hadSelection = selection.size > 0;
       clearSelection();
       active = { kind: 'shape-new', ...common(event, point), shape: null, moved: false, hadSelection };
+      // Odcinek i strzałka (od 1.22): początek przyciągnięty do narożnika albo krawędzi.
+      const snap = isSegment({ shape: tools.shape }) ? edgeSnapAt(point, event) : null;
+      if (snap) {
+        active.start = { x: snap.x, y: snap.y };
+        active.startSnap = snap;
+      }
     }
     function startShapeEdit(event, handle) {
       active = { kind: 'shape-edit', ...common(event, toDrawing(event)), handle: handle.id, original: handle.shape, preview: handle.shape, moved: false };
@@ -3679,6 +3978,77 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     }
     /** Shift albo „Proporcje” (od 1.19): kwadrat, koło, kąty co 15°, narożnik bez zmiany proporcji. */
     const locked = (event) => tools.shapeLock || Boolean(event?.shiftKey) || shiftDown;
+
+    // ---- przyciąganie końców (od 1.22): do narożników i krawędzi kształtów i ramek; Alt – swobodnie
+    const snapsEdges = (event) => tools.edgeSnap && !event?.altKey && !altDown;
+    /** Miejsce przyciągnięcia końca w punkcie (null – bez przyciągania albo nic w pobliżu). */
+    function edgeSnapAt(point, event, exclude = new Set()) {
+      if (!snapsEdges(event)) return null;
+      return findSnap(drawing.strokes, point, EDGE_SNAP / view.scale, { exclude, boxOf: elementBox });
+    }
+    /** Identyfikator elementu – nadany w bieżącym kroku cofania, gdy go nie miał (ids – już nadane w tym kroku). */
+    function ensureId(target, ids) {
+      if (ids.has(target)) return ids.get(target);
+      const id = target.id ?? newElementId(drawing.strokes);
+      if (!target.id) {
+        const index = drawing.strokes.indexOf(target);
+        if (index >= 0) drawing.strokes[index] = { ...target, id };
+      }
+      ids.set(target, id);
+      return id;
+    }
+    /** Element z przyklejonymi (snap) albo odklejonymi (null) końcami – links: [[koniec, snap]]; w kroku cofania. */
+    function linkEnds(stroke, links) {
+      const ids = new Map();
+      let next = stroke;
+      for (const [end, snap] of links) next = withLink(next, end, snap ? { ...snap.ref, id: ensureId(snap.target, ids) } : null);
+      return next;
+    }
+    /** Zastępuje element poprawionym z przyklejonymi albo odklejonymi końcami – jeden krok cofania. */
+    function replaceLinked(original, next, links) {
+      const index = drawing.strokes.indexOf(original);
+      if (index < 0) return;
+      history.begin();
+      drawing.strokes[index] = linkEnds(next, links);
+      commitStep();
+      selection = new Set([drawing.strokes[index]]);
+      selectionKind = 'whole';
+    }
+    /** Znacznik miejsca przyciągnięcia: kwadrat – narożnik, kółko – krawędź. */
+    function paintSnapMarker(ctx, snap) {
+      const point = toScreen(snap);
+      ctx.save();
+      ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = ZERO_COLOR;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.beginPath();
+      if (snap.kind === 'corner') ctx.rect(point.x - 6, point.y - 6, 12, 12);
+      else ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+    /** Przyklejone końce idące za przesuwanym albo zmienianym elementem: mapa przyklejony → podgląd (albo null). */
+    function activeFollowers() {
+      let previews = null;
+      if (active?.kind === 'move') previews = new Map([...selection].filter((stroke) => stroke.id).map((stroke) => [stroke, translateStroke(stroke, active.dx, active.dy)]));
+      else if ((active?.kind === 'shape-edit' || active?.kind === 'box-edit') && active.original.id) previews = new Map([[active.original, active.preview ?? active.original]]);
+      if (!previews || previews.size === 0) return null;
+      const followers = followersOf(drawing.strokes, previews, elementBox);
+      // Zaznaczone przesuwają się razem z zaznaczeniem.
+      for (const stroke of selection) followers.delete(stroke);
+      return followers.size > 0 ? followers : null;
+    }
+    function toggleEdgeSnap() {
+      tools.edgeSnap = !tools.edgeSnap;
+      saveTools(tools);
+      flash(tools.edgeSnap ? 'Przyciąganie końców do krawędzi i narożników – włączone.' : 'Przyciąganie końców – wyłączone: końce zostają tam, gdzie je puścisz.');
+      updateToolbar();
+      if (!shapePanel.hidden) renderShapePanel();
+      // Napis magnesu w pasku zaznaczenia.
+      requestLive();
+    }
     /** Kształt w trakcie przeciągania od nowa – po wciśnięciu albo puszczeniu Shift bez ruchu wskaźnika. */
     function refreshShapeDrag() {
       if (active?.kind === 'shape-new' && active.moved && active.point) {
@@ -3749,6 +4119,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           active.point = point;
           if (Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale >= TAP_SLOP) active.moved = true;
           if (active.moved) active.shape = shapeFromDrag(tools.shape, active.start, point, shapeStyle(), { tap: 0, lock: locked(event) });
+          // Koniec odcinka przyciągnięty (od 1.22) – dokładnie w tym miejscu, bez przyciągania kąta.
+          active.endSnap = active.moved && isSegment({ shape: tools.shape }) ? edgeSnapAt(point, event) : null;
+          if (active.endSnap) active.shape = segmentBetween(active.shape, active.start, active.endSnap);
           requestLive();
           break;
         case 'shape-edit':
@@ -3756,13 +4129,23 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           // Drobny ruch to jeszcze dotknięcie (pole wymiaru), nie przeciąganie punktu.
           if (!active.moved && Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale < TAP_SLOP) break;
           active.moved = true;
-          active.preview = measureLabel(moveShapeHandle(active.original, active.handle, point, { lock: locked(event) }));
+          active.snap = isSegment(active.original) && (active.handle === 'start' || active.handle === 'end')
+            ? edgeSnapAt(point, event, new Set([active.original])) : null;
+          if (active.snap) {
+            const other = endPoint(active.original, active.handle === 'start' ? 'end' : 'start');
+            const [a, b] = active.handle === 'start' ? [active.snap, other] : [other, active.snap];
+            active.preview = measureLabel(segmentBetween(active.original, a, b));
+          } else {
+            active.preview = measureLabel(moveShapeHandle(active.original, active.handle, point, { lock: locked(event) }));
+          }
           requestLive();
           break;
         case 'box-edit': {
           if (!active.moved && Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale < TAP_SLOP) break;
           active.moved = true;
-          active.preview = editBoxHandle(active.original, active.handle, point);
+          // Koniec strzałki karteczki (od 1.22) – też przyciągany.
+          active.snap = active.handle === 'target' ? edgeSnapAt(point, event, new Set([active.original])) : null;
+          active.preview = editBoxHandle(active.original, active.handle, active.snap ?? point);
           requestLive();
           break;
         }
@@ -3860,20 +4243,33 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         // Dotknięcie przy zaznaczonym kształcie tylko je zdejmuje; inaczej – kształt (dotknięcie – domyślnej wielkości).
         if (done.moved || !done.hadSelection) {
           const shape = done.shape ?? shapeFromDrag(tools.shape, done.start, done.start, shapeStyle(), { lock: locked() });
-          history.add(shape);
+          // Końce przyciągnięte (od 1.22) – przyklejone do kształtu (idą za nim).
+          const links = isSegment(shape) ? [['start', done.startSnap], ['end', done.moved ? done.endSnap : null]].filter(([, snap]) => snap) : [];
+          let added = shape;
+          if (links.length > 0) {
+            history.begin();
+            added = linkEnds(shape, links);
+            drawing.strokes.push(added);
+            commitStep();
+          } else {
+            history.add(shape);
+          }
           changed = true;
-          selection = new Set([shape]);
+          selection = new Set([added]);
           selectionKind = 'whole';
         }
       } else if (done.kind === 'shape-edit' && !cancelled) {
-        if (done.moved) replaceShape(done.original, done.preview);
+        // Przeciągnięty koniec odcinka: przyklejony w nowym miejscu albo odklejony.
+        if (done.moved && isSegment(done.original) && (done.handle === 'start' || done.handle === 'end')) replaceLinked(done.original, done.preview, [[done.handle, done.snap]]);
+        else if (done.moved) replaceShape(done.original, done.preview);
         else focusField = HANDLE_FIELDS[done.handle] ?? null;
       } else if (done.kind === 'pan') {
         stage.classList.remove('drawing__stage--panning');
       } else if (done.kind === 'array-center' && !cancelled && done.moved) {
         replaceArray(done.original, done.preview);
       } else if (done.kind === 'box-edit' && !cancelled && done.moved) {
-        replaceShape(done.original, done.preview);
+        if (done.handle === 'target') replaceLinked(done.original, done.preview, [['leader', done.snap]]);
+        else replaceShape(done.original, done.preview);
       } else if (done.kind === 'move' && !cancelled) {
         const tap = Math.abs(done.dx) * view.scale < TAP_SLOP && Math.abs(done.dy) * view.scale < TAP_SLOP;
         const [only] = selection;
@@ -4062,6 +4458,12 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         } else if (tool === 'eraser') {
           hover = toDrawing(event);
           requestLive();
+        } else if (tool === 'shape' && isSegment({ shape: tools.shape })) {
+          const snap = edgeSnapAt(toDrawing(event), event);
+          if (snap || edgeHover) {
+            edgeHover = snap;
+            requestLive();
+          }
         }
         return;
       }
@@ -4085,9 +4487,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     // Prawy przycisk na płótnie robi wycinek – bez menu przeglądarki.
     live.addEventListener('contextmenu', (event) => event.preventDefault());
     live.addEventListener('pointerleave', () => {
-      if (!hover && !pickHover) return;
+      if (!hover && !pickHover && !edgeHover) return;
       hover = null;
       pickHover = null;
+      edgeHover = null;
       requestLive();
     });
     // Środkowy przycisk: bez przewijania przeglądarki (kółko z czterema strzałkami w Windows).
@@ -4105,11 +4508,33 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         setZoom(view.zoom * Math.exp(-event.deltaY / 300), event.clientX - box.left, event.clientY - box.top);
         return;
       }
-      view.x -= event.deltaX;
-      view.y -= event.deltaY;
-      clampView();
-      requestRender();
+      // Kartki (od 1.22): przy całej stronie ruch kółka w pionie przewraca kartkę; powiększona strona
+      // najpierw się przesuwa, a na górnym albo dolnym brzegu dalszy ruch kółka przewraca kartkę.
+      const vertical = Math.abs(event.deltaY) > Math.abs(event.deltaX);
+      const before = view.y;
+      if (pages.length < 2 || !vertical || view.zoom > 1.0001) {
+        view.x -= event.deltaX;
+        view.y -= event.deltaY;
+        clampView();
+        requestRender();
+      }
+      if (pages.length < 2 || !vertical) return;
+      const now = performance.now();
+      // Nowy ruch kółka po przerwie; przewrócona kartka blokuje resztę tego ruchu (bezwładność gładzika).
+      if (now - wheelTurn.last > 220) Object.assign(wheelTurn, { sum: 0, locked: false });
+      wheelTurn.last = now;
+      if (Math.abs(view.y - before) > 0.5) {
+        wheelTurn.sum = 0;
+        return;
+      }
+      if (wheelTurn.locked) return;
+      wheelTurn.sum += event.deltaMode === 1 ? event.deltaY * 40 : event.deltaY;
+      if (Math.abs(wheelTurn.sum) < (view.zoom > 1.0001 ? 150 : 50)) return;
+      const step = Math.sign(wheelTurn.sum);
+      Object.assign(wheelTurn, { sum: 0, locked: true });
+      if (pageIndex + step >= 0 && pageIndex + step < pages.length) flipTo(pageIndex + step);
     }, { passive: false });
+    const wheelTurn = { sum: 0, last: 0, locked: false };
 
     // ---- okno
     let saving = false;
@@ -4165,6 +4590,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         shiftDown = true;
         refreshShapeDrag();
       }
+      if (event.key === 'Alt') {
+        // Bez paska menu przeglądarki – Alt to tu swobodne osadzanie końców.
+        event.preventDefault();
+        altDown = true;
+      }
       if (event.key === 'Control') {
         // Przytrzymanie (bez innego klawisza) – zaznaczanie; skrót Ctrl+… nie zmienia narzędzia.
         if (!event.repeat && !ctrlHold && !ctrlTimer && tool !== 'select' && !typing(event.target) && !panelOpen()) ctrlTimer = setTimeout(beginCtrlHold, CTRL_DELAY);
@@ -4177,7 +4607,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       // Kartki (od 1.19): PageUp i PageDown – poprzednia i następna.
       if ((event.key === 'PageUp' || event.key === 'PageDown') && !typing(event.target) && !panelOpen()) {
         event.preventDefault();
-        showPage(pageIndex + (event.key === 'PageDown' ? 1 : -1));
+        flipTo(pageIndex + (event.key === 'PageDown' ? 1 : -1));
         return;
       }
       if (event.key === 'Escape' && panelOpen()) {
@@ -4221,11 +4651,16 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         shiftDown = false;
         refreshShapeDrag();
       }
+      if (event.key === 'Alt') {
+        event.preventDefault();
+        altDown = false;
+      }
       if (event.key === 'Control') endCtrlHold();
     };
     // Okno bez fokusu (np. Alt+Tab z wciśniętym Ctrl) – puszczenia klawisza nie będzie.
     const onBlur = () => {
       shiftDown = false;
+      altDown = false;
       endCtrlHold();
     };
 

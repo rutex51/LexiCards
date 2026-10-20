@@ -5906,6 +5906,8 @@ svg.icon--note { color: var(--note-icon); }
 }
 
 .drawing__selection-button--danger { color: var(--danger); }
+/* Magnes (od 1.22): włączone przyciąganie końców – przycisk wciśnięty. */
+.drawing__selection-button[aria-pressed="true"] { background: var(--accent-soft); }
 .drawing__selection-button:active { background: var(--pressed); }
 .drawing__selection-button:disabled { opacity: 0.45; }
 
@@ -6155,6 +6157,10 @@ svg.icon--note { color: var(--note-icon); }
   height: 100%;
 }
 
+/* Przewracana kartka (od 1.22) – nad płótnem, tylko w trakcie animacji. */
+.drawing__flip { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.drawing__flip[hidden] { display: none; }
+
 .drawing__canvas--live {
   touch-action: none;
   -webkit-user-select: none;
@@ -6192,6 +6198,9 @@ svg.icon--note { color: var(--note-icon); }
 .drawing__pill[hidden] { display: none; }
 .drawing__pill--info { pointer-events: none; }
 button.drawing__pill { color: var(--text); font-weight: 500; }
+/* Poprzednia i następna kartka (od 1.22). */
+.drawing__pill--icon { justify-content: center; width: 32px; padding: 0; }
+button.drawing__pill:disabled { opacity: 0.45; }
 button.drawing__pill .icon { color: var(--text-2); }
 .drawing__pill--symbol { justify-content: center; min-width: 36px; padding: 0 10px; font-size: 1.15rem; font-weight: 600; }
 .drawing__pill--notice { background: var(--toast-bg); color: var(--toast-text); }

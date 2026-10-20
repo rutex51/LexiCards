@@ -130,7 +130,7 @@ test('kształty w rysunku: sprawdzanie danych, zaznaczanie prostokątem i lassem
     ]
   });
   assert.equal(cleaned.version, DRAWING_VERSION);
-  assert.equal(DRAWING_VERSION, 6, 'od 1.21 – tabele i karteczki (1.19 – zakończenia odcinka, stałe wymiary i szyki)');
+  assert.equal(DRAWING_VERSION, 7, 'od 1.22 – przyklejone końce (1.21 – tabele i karteczki, 1.19 – zakończenia odcinka, stałe wymiary i szyki)');
   assert.equal(cleaned.strokes.length, 3);
   assert.deepEqual([cleaned.strokes[0].color, cleaned.strokes[0].size, cleaned.strokes[0].skew], ['#abcdef', 40, 2.5]);
   near(cleaned.strokes[0].angle, Math.PI);
@@ -176,7 +176,11 @@ test('liniuszek: najbliższa linia (także pochylonej rodziny), linie przecinaj�
   assert.equal(guideLinesIn(lines, 1600, 1100).length, 26, 'linie od y = 0 do y = 1100 co 44');
   assert.equal(guideLinesIn({ x: 800, y: 550, angle: Math.PI / 2, spacing: 100 }, 1600, 1100).length, 17);
   const tools = cleanToolSettings({ guide: { spacing: 0.3, angle: 200, cross: true, crossSpacing: 'x', crossAngle: 65, snap: false }, shape: 'ellipse' });
-  assert.deepEqual(tools.guide, { spacing: 0.25, angle: 90, cross: true, crossSpacing: 1, crossAngle: 65, snap: false });
+  assert.deepEqual(tools.guide, {
+    spacing: 0.25, angle: 90, cross: true, crossSpacing: 1, crossAngle: 65, snap: false,
+    // Od 1.22: liniuszek promieniowy – brak w zapisie, więc domyślne.
+    kind: 'lines', ringSpacing: 1, rays: true, rayStep: 30, rayAngle: 0
+  });
   assert.equal(tools.shape, 'ellipse');
   assert.equal(cleanToolSettings({ shape: 'gwiazda' }).shape, 'rect');
 });

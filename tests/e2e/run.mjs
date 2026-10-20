@@ -6213,6 +6213,333 @@ test('notatka: „Nowa strona” w edytorze; podgląd na liście bez znacznika; 
   assert.ok(preview.includes('nowa'));
 });
 
+// ---------------------------------------------------------------- 1.22: liniuszek promieniowy, przyciąganie końców, przewracanie kartek
+
+/** Środek kółka liniuszka (biały środek na warstwie bieżącej) w jednostkach strony. */
+async function guideKnob(page, frame) {
+  const knob = await page.locator('[data-testid=drawing-canvas]').evaluate((canvas) => {
+    const { data, width, height } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+    let [sx, sy, count] = [0, 0, 0];
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const index = (y * width + x) * 4;
+        if (data[index + 3] > 200 && data[index] > 240 && data[index + 1] > 240 && data[index + 2] > 240) {
+          sx += x;
+          sy += y;
+          count += 1;
+        }
+      }
+    }
+    const box = canvas.getBoundingClientRect();
+    return count ? { x: box.left + (sx / count) * (box.width / width), y: box.top + (sy / count) * (box.height / height) } : null;
+  });
+  assert.ok(knob, 'kółko liniuszka na płótnie');
+  // Kółko stoi w węźle kratki (co 44 jednostki).
+  const unit = (value, origin) => Math.round((value - origin) / frame.scale / 44) * 44;
+  return { x: unit(knob.x, frame.x + frame.left), y: unit(knob.y, frame.y + frame.top) };
+}
+
+test('rysunek 1.22: liniuszek promieniowy – okręgi co 2 kratki, kreska wzdłuż okręgu po łuku, wzdłuż promienia (co 45°, obrót 15°) prosto, w innym kierunku zwykła; bez promieni; ustawienia zapamiętane (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Promieniowy</p>');
+  const frame = await pageFrame(page);
+  const panel = editor.locator('[data-testid=drawing-guide-panel]');
+  const pill = editor.locator('[data-testid=drawing-guide-pill]');
+  await editor.locator('[data-testid=drawing-guide]').click();
+  await expectText(pill, 'Liniuszek 0°');
+  await pill.click();
+  await panel.waitFor();
+  await panel.locator('[data-testid=drawing-guide-kind] .segmented__option', { hasText: 'Promieniowy' }).click();
+  await expectText(pill, 'Promieniowy · okręgi co 1 cm · promienie co 30°');
+  assert.equal(await panel.locator('[data-testid=drawing-guide-spacing]').isVisible(), false, 'bez odstępu linii równoległych');
+  await panel.locator('[data-testid=drawing-guide-ringSpacing]').fill('2');
+  await panel.locator('[data-testid=drawing-guide-rayStep-45]').click();
+  await panel.locator('[data-testid=drawing-guide-rayAngle-15]').click();
+  await expectText(pill, 'Promieniowy · okręgi co 2 cm · promienie co 45°');
+  await expectText(panel, '45° · 8 promieni');
+  await settled(panel);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-liniuszek-promieniowy-ipad.png') });
+  await page.keyboard.press('Escape');
+  await waitUntil(() => panel.isHidden(), 'Panel liniuszka zamknięty');
+  const center = await guideKnob(page, frame);
+  const polar = (radius, degrees) => frame.at(center.x + radius * Math.cos((degrees * Math.PI) / 180), center.y + radius * Math.sin((degrees * Math.PI) / 180));
+
+  // Wzdłuż okręgu o promieniu 176 (2 × 2 kratki) z drżeniem – łuk dokładnie na okręgu.
+  const arc = Array.from({ length: 15 }, (_, index) => [...polar(176 + (index % 2 ? 3 : -2), 10 + index * 3), 0.5]);
+  await drawStroke(page, arc);
+  // Wzdłuż promienia pod kątem 30° na ekranie (−15° + 45°) – prosto po promieniu.
+  const ray = Array.from({ length: 13 }, (_, index) => {
+    const radius = 60 + index * 15;
+    const [x, y] = polar(radius, 30);
+    return [x + ((index % 2 ? 2 : -2) * frame.scale) / frame.width, y, 0.5];
+  });
+  await drawStroke(page, ray);
+  // Od okręgu 264 ukośnie (45° do okręgu, daleko od promieni) – zwykła kreska.
+  const start = { x: center.x + 264 * Math.cos((100 * Math.PI) / 180), y: center.y + 264 * Math.sin((100 * Math.PI) / 180) };
+  const tangent = ((100 + 90 + 45) * Math.PI) / 180;
+  await drawStroke(page, Array.from({ length: 11 }, (_, index) => [...frame.at(start.x + Math.cos(tangent) * index * 9, start.y + Math.sin(tangent) * index * 9), 0.5]));
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-liniuszek-promieniowy-kreski-ipad.png') });
+
+  // Bez promieni – w pigułce tylko okręgi; po wyłączeniu i włączeniu liniuszka ustawienia zostają.
+  await pill.click();
+  await panel.locator('[data-testid=drawing-guide-rays]').uncheck({ force: true });
+  await expectText(pill, 'Promieniowy · okręgi co 2 cm');
+  assert.equal((await pill.textContent()).includes('promienie'), false);
+  await panel.locator('[data-testid=drawing-guide-rays]').check({ force: true });
+  await page.keyboard.press('Escape');
+  await editor.locator('[data-testid=drawing-guide]').click();
+  await waitUntil(() => pill.isHidden(), 'Liniuszek wyłączony');
+  await editor.locator('[data-testid=drawing-guide]').click();
+  await expectText(pill, 'Promieniowy · okręgi co 2 cm · promienie co 45°');
+  await editor.locator('[data-testid=drawing-guide]').click();
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const strokes = (await savedStrokes(page, ids.statements)).map((stroke) => stroke.points);
+  assert.equal(strokes.length, 3);
+  const pairs = (points) => points.filter((_, index) => index % 3 === 0).map((x, index) => [x, points[index * 3 + 1]]);
+  const radii = (points) => pairs(points).map(([x, y]) => Math.hypot(x - center.x, y - center.y));
+  const [onRing, onRay, free] = strokes;
+  for (const radius of radii(onRing)) assert.ok(Math.abs(radius - 176) < 0.6, `łuk na okręgu 176 (${radius.toFixed(2)})`);
+  assert.ok(pairs(onRing).length >= 10, 'łuk z wielu punktów');
+  for (const [x, y] of pairs(onRay)) {
+    const angle = (Math.atan2(y - center.y, x - center.x) * 180) / Math.PI;
+    assert.ok(Math.abs(angle - 30) < 0.3, `na promieniu 30° (${angle.toFixed(2)}°)`);
+  }
+  const spread = radii(free);
+  assert.ok(Math.max(...spread) - Math.min(...spread) > 30, 'zwykła kreska – oddala się od środka');
+}, { device: IPAD });
+
+test('rysunek 1.22: koniec strzałki i odcinka przyciągany do narożnika i krawędzi (znacznik), z Alt – swobodnie; przyklejony koniec idzie za przesuniętym prostokątem, przesunięta sama strzałka – odklejona; magnes wył. i wł.; zapis (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Przyciąganie</p>');
+  const frame = await pageFrame(page);
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+  const panel = editor.locator('[data-testid=drawing-shape-panel]');
+  const magnet = editor.locator('[data-testid=drawing-selection-magnet]');
+  const drag = async (from, to, { hold = null } = {}) => {
+    await page.mouse.move(...frame.screen(...from));
+    await page.mouse.down();
+    await page.mouse.move(...frame.screen(...to), { steps: 8 });
+    if (hold) await hold();
+    await page.mouse.up();
+  };
+  const shape = async (name) => {
+    await editor.locator('[data-testid=drawing-tool-shape]').click();
+    await panel.locator(`[data-testid=drawing-shape-${name}]`).click();
+  };
+  // Najpierw puste miejsce – dotknięcie już zaznaczonego kształtu otwiera „Tekst na kształcie”.
+  const select = async (point) => {
+    await editor.locator('[data-testid=drawing-tool-select]').click();
+    await page.mouse.click(...frame.screen(80, 1060));
+    await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+    await page.mouse.click(...frame.screen(...point));
+  };
+
+  // Prostokąt 600–900 × 400–600.
+  await shape('rect');
+  await drag([600, 400], [900, 600]);
+  await expectText(selectionCount, 'Prostokąt');
+  // Strzałka do narożnika (koniec 6 i 5 jednostek obok) – znacznik w trakcie, koniec w narożniku.
+  await shape('arrow');
+  assert.equal(await panel.locator('[data-testid=drawing-edge-snap]').isChecked(), true, 'przyciąganie domyślnie włączone');
+  await page.keyboard.press('Escape');
+  await drag([300, 200], [606, 405], {
+    hold: async () => {
+      await nextFrames(page);
+      await page.screenshot({ path: path.join(OUTPUT, 'rysunek-przyciaganie-naroznik.png') });
+    }
+  });
+  await expectText(selectionCount, 'Strzałka');
+  // Z Alt – koniec tam, gdzie kursor (obok lewego dolnego narożnika).
+  await page.keyboard.down('Alt');
+  await drag([300, 700], [606, 594]);
+  await page.keyboard.up('Alt');
+  // Odcinek do prawej krawędzi (daleko od narożników) – koniec na krawędzi.
+  await shape('line');
+  await page.keyboard.press('Escape');
+  await drag([1200, 500], [906, 502]);
+  await expectText(selectionCount, 'Odcinek');
+  assert.equal(await magnet.isVisible(), true, 'magnes przy zaznaczonym odcinku');
+  assert.equal(await magnet.getAttribute('aria-pressed'), 'true');
+
+  // Przesunięcie prostokąta o (100, 60): przyklejone końce idą za nim.
+  await select([750, 500]);
+  await expectText(selectionCount, 'Prostokąt');
+  await drag([750, 500], [850, 560]);
+  await waitUntil(async () => (await darkest(page, ...frame.at(1003, 562), 8)) < 110, 'Koniec odcinka przy przesuniętej krawędzi');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-przyciaganie-przesuniety.png') });
+  // Cofnij – prostokąt i przyklejone końce razem wracają (jeden krok); ponów – znów za prostokątem.
+  await editor.locator('[data-testid=drawing-undo]').click();
+  await waitUntil(async () => (await darkest(page, ...frame.at(903, 502), 8)) < 110, 'Koniec odcinka z powrotem przy krawędzi');
+  assert.ok((await darkest(page, ...frame.at(1003, 562), 8)) > 150, 'po cofnięciu – nie w nowym miejscu');
+  await editor.locator('[data-testid=drawing-redo]').click();
+  await waitUntil(async () => (await darkest(page, ...frame.at(1003, 562), 8)) < 110, 'Po ponowieniu – znów za prostokątem');
+
+  // Magnes wyłączony (pasek zaznaczenia) – strzałka obok narożnika zostaje obok; włączony z panelu kształtów.
+  await select([1100, 531]);
+  await expectText(selectionCount, 'Odcinek');
+  await magnet.click();
+  await expectText(magnet, 'Przyciąganie wył.');
+  assert.equal(await magnet.getAttribute('aria-pressed'), 'false');
+  await shape('arrow');
+  assert.equal(await panel.locator('[data-testid=drawing-edge-snap]').isChecked(), false, 'magnes i panel – to samo ustawienie');
+  await page.keyboard.press('Escape');
+  await drag([300, 1000], [706, 664]);
+  await shape('arrow');
+  await panel.locator('[data-testid=drawing-edge-snap]').check({ force: true });
+  assert.equal(await panel.locator('[data-testid=drawing-edge-snap]').isChecked(), true);
+  await page.keyboard.press('Escape');
+  // Strzałka do prawego dolnego narożnika, potem przesunięta sama – odklejona.
+  await drag([1300, 900], [1004, 664]);
+  await select([1152, 782]);
+  await expectText(selectionCount, 'Strzałka');
+  await drag([1152, 782], [1112, 782]);
+  // Drugie przesunięcie prostokąta (w dół o 100): strzałka do narożnika i odcinek – za nim, odklejona – nie.
+  await select([850, 560]);
+  await expectText(selectionCount, 'Prostokąt');
+  await drag([850, 560], [850, 660]);
+  await nextFrames(page);
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const strokes = await savedStrokes(page, ids.statements);
+  assert.deepEqual(strokes.map((stroke) => stroke.shape), ['rect', 'arrow', 'arrow', 'line', 'arrow', 'arrow']);
+  const [rect, toCorner, free, toEdge, snapOff, detached] = strokes;
+  const end = (stroke, side) => ({ x: stroke.x + (side * stroke.w * Math.cos(stroke.angle)) / 2, y: stroke.y + (side * stroke.w * Math.sin(stroke.angle)) / 2 });
+  const near = (point, x, y, tolerance, message) => assert.ok(Math.abs(point.x - x) <= tolerance && Math.abs(point.y - y) <= tolerance, `${message}: (${point.x.toFixed(2)}, ${point.y.toFixed(2)}) zamiast (${x.toFixed(2)}, ${y.toFixed(2)})`);
+  const [left, top, right, bottom] = [rect.x - rect.w / 2, rect.y - rect.h / 2, rect.x + rect.w / 2, rect.y + rect.h / 2];
+  near({ x: left, y: top }, 700, 560, 2, 'prostokąt przesunięty dwa razy');
+  assert.match(rect.id, /^[a-z0-9]{6,16}$/, 'prostokąt z identyfikatorem');
+  near(end(toCorner, 1), left, top, 0.05, 'strzałka w lewym górnym narożniku (za prostokątem)');
+  assert.deepEqual(toCorner.attach, { end: { id: rect.id, kind: 'corner', index: 0 } });
+  near(end(toCorner, -1), 300, 200, 2, 'początek strzałki bez zmian');
+  near(end(free, 1), 606, 594, 2, 'z Alt – koniec przy kursorze');
+  assert.equal(free.attach, undefined);
+  assert.ok(Math.abs(end(toEdge, 1).x - right) < 0.05, `odcinek na prawej krawędzi (${end(toEdge, 1).x} / ${right})`);
+  near(end(toEdge, 1), right, 662, 2.5, 'odcinek – to samo miejsce krawędzi');
+  assert.equal(toEdge.attach.end.id, rect.id);
+  assert.equal(toEdge.attach.end.kind, 'edge');
+  near(end(snapOff, 1), 706, 664, 2, 'magnes wyłączony – koniec przy kursorze');
+  assert.equal(snapOff.attach, undefined);
+  near(end(detached, 1), 960, 660, 2, 'odklejona strzałka zostaje');
+  assert.equal(detached.attach, undefined, 'przesunięta sama – bez przyklejenia');
+  assert.ok(bottom > 700, 'prostokąt niżej niż odklejona strzałka');
+}, { device: DESKTOP });
+
+test('rysunek 1.22: kółko myszy przewraca kartki z animacją – jeden gest to jedna kartka, małe przesunięcie nic; przyciski ‹ ›, nieczynne na końcach; przy powiększeniu kółko przewija; ograniczony ruch – bez animacji (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Kartki</p>');
+  const frame = await pageFrame(page);
+  const { at } = frame;
+  const pages = editor.locator('[data-testid=drawing-pages]');
+  const prev = editor.locator('[data-testid=drawing-page-prev]');
+  const next = editor.locator('[data-testid=drawing-page-next]');
+  assert.equal(await prev.isHidden(), true, 'jedna kartka – bez strzałek');
+  await drawStroke(page, segment(at(300, 300), at(600, 300), 10));
+  for (const y of [500, 800]) {
+    await pages.click();
+    await page.locator('[data-testid=drawing-page-new]').click();
+    await waitUntil(async () => (await darkest(page, ...at(450, 300), 12)) > 150, 'Nowa kartka pusta');
+    await drawStroke(page, segment(at(300, y), at(600, y), 10));
+  }
+  await expectText(pages, 'Kartka 3 z 3');
+  assert.equal(await prev.isVisible(), true);
+  assert.equal(await next.isDisabled(), true, 'ostatnia kartka – „dalej” nieczynne');
+  // Płótno animacji: licznik pokazań.
+  await page.evaluate(() => {
+    window.__flips = 0;
+    const flip = document.querySelector('.drawing__flip');
+    new MutationObserver(() => { if (!flip.hidden) window.__flips += 1; }).observe(flip, { attributes: true, attributeFilter: ['hidden'] });
+  });
+  const flips = () => page.evaluate(() => window.__flips);
+  const flipHidden = () => page.locator('.drawing__flip').evaluate((element) => element.hidden);
+  await page.mouse.move(...frame.screen(800, 550));
+  await page.mouse.wheel(0, -100);
+  await expectText(pages, 'Kartka 2 z 3');
+  await waitUntil(flipHidden, 'Animacja skończona');
+  assert.equal(await flips(), 1, 'kartka przewrócona z animacją');
+  await waitUntil(async () => (await darkest(page, ...at(450, 500), 12)) < 110, 'Kreska kartki 2');
+  // Jeden gest (6 ruchów kółka co 40 ms) – tylko jedna kartka.
+  await page.waitForTimeout(300);
+  for (let index = 0; index < 6; index += 1) {
+    await page.mouse.wheel(0, 100);
+    await page.waitForTimeout(40);
+  }
+  await expectText(pages, 'Kartka 3 z 3');
+  await page.waitForTimeout(400);
+  await expectText(pages, 'Kartka 3 z 3');
+  // Małe przesunięcie (gładzik) – bez zmiany.
+  await page.mouse.wheel(0, -20);
+  await page.waitForTimeout(300);
+  await expectText(pages, 'Kartka 3 z 3');
+  // Przyciski: wstecz dwa razy – pierwsza kartka, „wstecz” nieczynne; dalej – druga.
+  await prev.click();
+  await expectText(pages, 'Kartka 2 z 3');
+  await waitUntil(flipHidden, 'Animacja skończona');
+  await prev.click();
+  await expectText(pages, 'Kartka 1 z 3');
+  assert.equal(await prev.isDisabled(), true, 'pierwsza kartka – „wstecz” nieczynne');
+  await waitUntil(flipHidden, 'Animacja skończona');
+  await waitUntil(async () => (await darkest(page, ...at(450, 300), 12)) < 110, 'Kreska kartki 1');
+  await next.click();
+  await expectText(pages, 'Kartka 2 z 3');
+  await waitUntil(flipHidden, 'Animacja skończona');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-kartki-strzalki.png') });
+  // Powiększenie (Ctrl + kółko): kółko przewija stronę, kartka ta sama.
+  await page.mouse.move(...frame.screen(800, 550));
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -400);
+  await page.keyboard.up('Control');
+  await waitUntil(async () => (await editor.locator('[data-testid=drawing-zoom]').textContent()) !== '100%', 'Powiększenie');
+  await page.waitForTimeout(300);
+  await page.mouse.wheel(0, 100);
+  await page.waitForTimeout(300);
+  await expectText(pages, 'Kartka 2 z 3');
+  // Ograniczenie ruchu w systemie – kartka zmienia się bez animacji.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const before = await flips();
+  await page.keyboard.press('PageUp');
+  await expectText(pages, 'Kartka 1 z 3');
+  await nextFrames(page);
+  assert.equal(await flips(), before, 'bez animacji');
+  assert.equal(await flipHidden(), true);
+}, { device: DESKTOP });
+
+test('rysunek 1.22 na telefonie: ‹ Kartka 2 z 2 › mieści się w pasku, przyciski przewracają kartki', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const pages = editor.locator('[data-testid=drawing-pages]');
+  await pages.click();
+  await page.locator('[data-testid=drawing-page-new]').click();
+  await expectText(pages, 'Kartka 2 z 2');
+  for (const name of ['drawing-page-prev', 'drawing-pages', 'drawing-page-next']) {
+    const box = await editor.locator(`[data-testid=${name}]`).boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 390, `${name} w szerokości ekranu`);
+  }
+  const tops = await Promise.all(['drawing-page-prev', 'drawing-pages', 'drawing-page-next'].map(async (name) => Math.round((await editor.locator(`[data-testid=${name}]`).boundingBox()).y)));
+  assert.equal(new Set(tops).size, 1, `w jednym wierszu (${tops})`);
+  assert.equal(await overflowX(page), 0);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-kartki-telefon.png') });
+  await editor.locator('[data-testid=drawing-page-prev]').tap();
+  await expectText(pages, 'Kartka 1 z 2');
+  await editor.locator('[data-testid=drawing-page-next]').tap();
+  await expectText(pages, 'Kartka 2 z 2');
+}, { device: PHONE });
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

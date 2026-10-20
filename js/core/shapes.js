@@ -1,6 +1,7 @@
 // Kształty geometryczne na rysunku (od 1.15) i liniuszek – bez przeglądarki: punkty kształtu,
 // obrys (zaznaczanie, gumka, przyciąganie linijki), punkty konstrukcyjne i ich przesuwanie,
-// sprawdzanie danych; liniuszek – najbliższa linia z rodziny równoległych linii. Od 1.17:
+// sprawdzanie danych; liniuszek – najbliższa linia z rodziny równoległych linii, a od 1.22
+// liniuszek promieniowy – najbliższy okrąg i promień. Od 1.17:
 // wypełnienie, tekst na kształcie i wymiary wpisywane z klawiatury (szerokość, wysokość, kąt
 // pochylenia; odcinek – długość i kąt).
 //
@@ -618,4 +619,46 @@ export function guideLinesIn(family, width, height) {
     lines.push({ x: family.x + normal.x * index * family.spacing, y: family.y + normal.y * index * family.spacing });
   }
   return lines;
+}
+
+/**
+ * Liniuszek promieniowy (od 1.22): okręgi wokół środka { x, y } co `spacing` (jednostki strony)
+ * i promienie co `step` (radiany), obrócone o `angle` (kierunek pierwszego promienia). Najbliższy
+ * okrąg w punkcie: { radius, distance, index } – bez okręgu o promieniu 0.
+ */
+export function nearestRing(radial, x, y) {
+  const radius = Math.hypot(x - radial.x, y - radial.y);
+  const index = Math.max(1, Math.round(radius / radial.spacing));
+  return { radius: index * radial.spacing, distance: Math.abs(radius - index * radial.spacing), index };
+}
+
+/** Najbliższy promień w punkcie: { angle, distance, x, y } – kierunek promienia, odległość i rzut punktu na promień. */
+export function nearestRay(radial, x, y) {
+  const radius = Math.hypot(x - radial.x, y - radial.y);
+  const theta = Math.atan2(y - radial.y, x - radial.x);
+  const angle = radial.angle + Math.round((theta - radial.angle) / radial.step) * radial.step;
+  const along = radius * Math.cos(theta - angle);
+  return {
+    angle,
+    distance: radius * Math.abs(Math.sin(theta - angle)),
+    x: radial.x + Math.cos(angle) * along,
+    y: radial.y + Math.sin(angle) * along
+  };
+}
+
+/** Promienie okręgów, które przecinają prostokąt strony (najwyżej 2000). */
+export function ringsIn(radial, width, height) {
+  const far = Math.max(...[[0, 0], [width, 0], [0, height], [width, height]].map(([px, py]) => Math.hypot(px - radial.x, py - radial.y)));
+  const near = Math.hypot(Math.max(-radial.x, 0, radial.x - width), Math.max(-radial.y, 0, radial.y - height));
+  const radii = [];
+  for (let index = Math.max(1, Math.ceil(near / radial.spacing)); index * radial.spacing <= far && radii.length < 2000; index += 1) {
+    radii.push(index * radial.spacing);
+  }
+  return radii;
+}
+
+/** Kierunki wszystkich promieni (radiany) – pełny obrót co `step`. */
+export function rayAngles(radial) {
+  const count = Math.max(1, Math.round((Math.PI * 2) / radial.step));
+  return Array.from({ length: count }, (_, index) => radial.angle + index * radial.step);
 }

@@ -134,6 +134,8 @@ const ICONS = {
   shapeTriangle: [p('M12 4.5l8.5 15h-17z')],
   shapeDiamond: [p('M12 3.5l8.5 8.5-8.5 8.5L3.5 12z')],
   shapeTrapezoid: [p('M7.5 6.5h9l4 11h-17z')],
+  // Magnes (od 1.22): przyciąganie końców do krawędzi i narożników.
+  magnet: [p('M6 4h4v8a2 2 0 0 0 4 0V4h4v8a6 6 0 0 1-12 0z'), p('M6 8h4M14 8h4')],
   guide: [p('M3.5 6.5h17'), p('M3.5 12h17'), p('M3.5 17.5h17'), { d: 'M8 4l-3 16M14 4l-3 16M20 4l-3 16', 'stroke-dasharray': '1.6 2', 'stroke-width': 1.2 }],
   paper: [p('M5 4h14v16H5z'), { d: 'M5 9.3h14M5 14.6h14M9.7 4v16M14.3 4v16', 'stroke-width': 1.1 }],
   // Osadzanie fragmentu rysunku w notatce i wypełnienie kształtu (od 1.17).

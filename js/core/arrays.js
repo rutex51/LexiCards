@@ -12,6 +12,7 @@
 //   linijce), rings – pierścieni, ringStep – odstęp pierścieni (od środka na zewnątrz), (cx, cy) – środek,
 //   rotate – czy obiekty obracają się razem z położeniem (pola tekstowe i wzory zawsze stoją prosto).
 
+import { withoutLinks } from './attach.js';
 import { isShape, shapeBounds, translateShape } from './shapes.js';
 
 export const ARRAY_KINDS = Object.freeze(['linear', 'polar']);
@@ -220,7 +221,8 @@ export function cleanArrayParams(raw, limit) {
 export function makeArray(items, params, limit) {
   const clean = cleanArrayParams(params, limit);
   // Bez szyku w szyku; tabele i karteczki (od 1.21) – też nie.
-  const source = items.filter((item) => item && !isArray(item) && item.tool !== 'table' && item.tool !== 'sticky').slice(0, ARRAY_ITEMS_MAX);
+  // Kopie w szyku (od 1.22) nie mają identyfikatorów ani przyklejeń – są wolne.
+  const source = items.filter((item) => item && !isArray(item) && item.tool !== 'table' && item.tool !== 'sticky').slice(0, ARRAY_ITEMS_MAX).map(withoutLinks);
   if (!clean || source.length === 0) return null;
   return { tool: 'array', ...clean, items: source };
 }

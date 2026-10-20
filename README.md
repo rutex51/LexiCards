@@ -1,4 +1,4 @@
-# LexiCards 1.21
+# LexiCards 1.22
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -30,8 +30,9 @@ Wcięcia (Tab), indeksy, wielkość i własny kolor tekstu, podpisy obrazów „
 Rysunek: wielkość szablonu, Shift i Ctrl, środkowy przycisk myszy, szyk, kilka kartek, zakończenia odcinka, stałe wymiary (wersja 1.19): [docs/RELEASE-1.19.md](docs/RELEASE-1.19.md).
 Notatki: wyrównanie i interlinia, linki, symbole, data i godzina, PDF, pełne „Usuń formatowanie”, Ctrl+Z po wstawieniu sygnatury; ścieżka nad fiszką (wersja 1.20): [docs/RELEASE-1.20.md](docs/RELEASE-1.20.md).
 Tabele w notatkach („Tab. N.”) i na rysunku, okno grubości zakreślacza, karteczki na rysunku (wersja 1.21); wybór daty i godziny – kalendarz i bębny (1.21.1): [docs/RELEASE-1.21.md](docs/RELEASE-1.21.md).
+Rysunek: liniuszek promieniowy, przewracanie kartek kółkiem i przyciskami ‹ › z animacją, końce odcinka i strzałki przyciągane do krawędzi i narożników (wersja 1.22): [docs/RELEASE-1.22.md](docs/RELEASE-1.22.md).
 
-## Co potrafi wersja 1.21
+## Co potrafi wersja 1.22
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -110,7 +111,10 @@ Tabele w notatkach („Tab. N.”) i na rysunku, okno grubości zakreślacza, ka
   i wymiary widoczne na rysunku na stałe (oko przy polu wymiaru). Od 1.21: **tabele** na rysunku (to
   samo okno tabeli co w notatce; szerokość narożnikiem), **karteczki** w pięciu kolorach – zwijane do
   ikony z numerem, ze strzałką do miejsca, z datą dodania, także tylko dla siebie (bez nich na obrazie
-  w notatce) – i okno grubości zakreślacza (do 60). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
+  w notatce) – i okno grubości zakreślacza (do 60). Od 1.22: **liniuszek promieniowy** (okręgi
+  i promienie ze środka – kreska po łuku albo po promieniu), kartki przewracane **kółkiem myszy**
+  i przyciskami **‹ ›** z animacją oraz **przyciąganie końców** odcinka i strzałki do krawędzi
+  i narożników (koniec przyklejony idzie za kształtem; z Alt – swobodnie, magnes wł./wył.). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
@@ -167,7 +171,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.18 – wcięcia, indeksy, wielkość i kolor tekstu, podpisy obrazów, przeciąganie obrazów](docs/RELEASE-1.18.md),
 [wersja 1.19 – szablon, Shift i Ctrl, środkowy przycisk, szyk, kartki, zakończenia odcinka, stałe wymiary](docs/RELEASE-1.19.md),
 [wersja 1.20 – wyrównanie i interlinia, linki, symbole, data i godzina, PDF, „Usuń formatowanie”, ścieżka nad fiszką](docs/RELEASE-1.20.md),
-[wersja 1.21 – tabele w notatkach i na rysunku, grubość zakreślacza, karteczki; 1.21.1 – wybór daty i godziny](docs/RELEASE-1.21.md).
+[wersja 1.21 – tabele w notatkach i na rysunku, grubość zakreślacza, karteczki; 1.21.1 – wybór daty i godziny](docs/RELEASE-1.21.md),
+[wersja 1.22 – liniuszek promieniowy, przewracanie kartek kółkiem, przyciąganie końców do krawędzi i narożników](docs/RELEASE-1.22.md).
 
 ## Jak korzystać
 
@@ -478,7 +483,13 @@ zaczęta przy linii i prowadzona wzdłuż niej biegnie prosto po linii (w innym 
 kreska), z długością w pigułce. Pigułka „Liniuszek …” otwiera ustawienia: odstęp linii (¼–6 kratek),
 kąt (−90° do 90°), **Linie poprzeczne** z odstępem i kątem względem linii (np. 75° – liniatura do
 pisma pochyłego), przyciąganie. Kółko na stronie przesuwa liniuszek (przyskakuje do węzłów kratki).
-Liniuszek nie trafia do rysunku.
+Liniuszek nie trafia do rysunku. Od 1.22 na górze panelu jest wybór **Równoległy / Promieniowy**.
+**Promieniowy**: okręgi wokół kółka (to środek) co **Odstęp okręgów** (¼–6 kratek) i – przełącznik
+**Promienie ze środka** – przerywane promienie **co** 5°, 10°, 15°, 20°, 30°, 45°, 60° albo 90° (szybkie
+15°, 30°, 45°), z **Obrotem** −90° do 90° (szybkie 0°, 15°, 45°; jak kąt linijki – przeciwnie do ruchu
+wskazówek zegara). Kreska zaczęta przy okręgu i prowadzona wzdłuż niego biegnie dokładnie po łuku
+(w pigułce – długość łuku), przy promieniu i wzdłuż niego – prosto po promieniu; w innym kierunku –
+zwykła kreska. Pigułka: „Promieniowy · okręgi co 2 cm · promienie co 45°”. Ustawienia zostają na urządzeniu.
 **Kształty** (od 1.15): narzędzie **kształty** – Odcinek, Strzałka, Prostokąt, Elipsa, Trójkąt, Romb,
 Trapez (wybór w panelu pod paskiem). Przeciągnięcie tworzy kształt w prostokącie przeciągnięcia
 (prawie równe boki – kwadrat, koło; odcinek co 45° przyciągany), dotknięcie – kształt domyślnej
@@ -509,6 +520,17 @@ dowolnym narzędziu włącza zaznaczanie (tryb Auto); puszczony – wraca poprze
 znika (przesuń je, usuń albo skopiuj, trzymając Ctrl). Wciśnięte **kółko myszy** i ruch przesuwa stronę.
 **Zakończenia odcinka** (od 1.19): początek i koniec odcinka albo strzałki – brak, grot, trójkąt, koło,
 kwadrat, romb; dla nowych w panelu kształtów (po wybraniu odcinka), dla zaznaczonego – polecenie **Końce**.
+**Przyciąganie końców** (od 1.22): początek i koniec nowego odcinka albo strzałki, przeciągany koniec
+zaznaczonego odcinka i koniec strzałki karteczki przyskakują do **narożnika** (kwadracik) albo
+**krawędzi** (kółko) innego elementu, gdy są bliżej niż ok. 3 mm (14 punktów ekranu; narożnik ma
+pierwszeństwo): kształty (także obwód elipsy, końce i środek odcinka), pola tekstowe, wzory, tabele
+i karteczki – kreski pióra nie. Myszą znacznik widać już przy najechaniu. Przyciągnięty koniec jest
+**przyklejony**: idzie za elementem, gdy go przesuwasz, zmieniasz jego wielkość albo obracasz (na
+krawędzi – w tym samym miejscu boku). Przesunięty sam odcinek odkleja się (przesunięty razem
+z elementem – zostaje przyklejony), usunięcie elementu zostawia koniec na miejscu, kopie (Powiel,
+Wklej, Szyk) są wolne – chyba że skopiowane razem z elementem. Z wciśniętym **Alt** – swobodnie;
+na iPadzie i iPhonie – **magnes** **Przyciąganie wł. / wył.** nad zaznaczonym odcinkiem, strzałką
+albo karteczką ze strzałką i przełącznik w panelu kształtów (to samo ustawienie, zapamiętane na urządzeniu).
 **Wymiary na stałe** (od 1.19): oko w rogu pola wymiaru – po odznaczeniu kształtu zostaje w tym miejscu
 napis z wymiarem („5 cm”, „15°”), który zmienia się i przesuwa razem z kształtem.
 **Szyk** (od 1.19): polecenie **Szyk** nad zaznaczeniem – **liniowy** (obiektów w rzędzie, odstęp,
@@ -518,7 +540,14 @@ obracanie obiektów). Szyk to jeden element: przeciągnięcie przesuwa wszystkie
 przeciągniesz na rysunku. Najwyżej 400 kopii.
 **Kartki** (od 1.19): przycisk **Kartka 1 z 1** na dole – **Nowa kartka**, przejście do innej, usunięcie
 dodanej (albo PageUp i PageDown). Po **Gotowe** każda kartka z treścią to osobny rysunek w notatce
-(„Rysunek 2”…), zaraz za otwartym rysunkiem.
+(„Rysunek 2”…), zaraz za otwartym rysunkiem. Od 1.22 przy kilku kartkach obok przycisku są strzałki
+**‹ ›** (nieczynne na pierwszej i ostatniej kartce), a na komputerze **kółko myszy** przy całej stronie
+przewraca kartki: jeden ruch kółka – jedna kartka (w dół – następna, w górę – poprzednia; małe ruchy
+gładzika się sumują, rozpęd po przewróceniu nie przewraca dalej). Powiększoną stronę kółko najpierw
+przesuwa, a na górnym albo dolnym brzegu dalszy ruch przewraca kartkę. Przewracanie (też PageUp,
+PageDown i menu kartek) ma animację jak w notesie zszytym u góry: następna – kartka unosi się od dolnej
+krawędzi i przechodzi do góry, poprzednia – opada z góry (pół sekundy; bez animacji, gdy system prosi
+o ograniczenie ruchu).
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno
 **Nowe pole tekstowe** – tekst (Enter zaczyna nowy wiersz, długi wiersz łamie się sam), wielkość
 (Mała, Średnia, Duża, od 1.18 Bardzo duża) i kolor; przycisk **Σ** – okno **Nowy wzór**: zapis jak we wzorze w notatce,
@@ -535,7 +564,8 @@ kreski i podgląd; ustawienia zostają na urządzeniu. Grubość zależy od naci
 palcem i myszą kreska ma stałą grubość. Gdy aplikacja raz zobaczy rysik, rysuje tylko rysik, a palec
 przesuwa stronę (pigułka „Rysuje tylko rysik · palec przesuwa” w rogu) – dłoń oparta o ekran nie
 zostawia śladów; na iPhonie bez rysika rysuje palec. Dwa palce powiększają i przesuwają, pigułka
-z procentami wraca do całej strony; na komputerze kółko przesuwa, Ctrl + kółko powiększa. Gumka
+z procentami wraca do całej strony; na komputerze kółko przesuwa (od 1.22 przy kilku kartkach
+i całej stronie – przewraca kartkę), Ctrl + kółko powiększa. Gumka
 na końcu rysika (Windows) ściera bez zmiany narzędzia. **Gotowe** dodaje rysunek do obrazów notatki
 jako „Rysunek 1”, „Rysunek 2”… (miniatura ze znaczkiem pióra); dalej działa jak obraz: sygnatura,
 `[[Rysunek 1]]` w tekście, powiększenie, przesuwanie. W menu rysunku **Edytuj rysunek** otwiera go
@@ -813,7 +843,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 26. **Wersja 1.19: rysunek – skala szablonu wpisywana i przeciągnięciem narożnika, Shift (proporcje), Ctrl (chwilowe zaznaczanie), przesuwanie środkowym przyciskiem, szyk liniowy i kołowy, kilka kartek, zakończenia odcinka, stałe wymiary** – gotowe.
 27. **Wersja 1.20: notatki – wyrównanie i interlinia, linki (Ctrl+K), symbole, data i godzina, PDF (okno drukowania A4), „Usuń formatowanie” – wszystko oprócz linków, Ctrl+Z po „Wstaw do tekstu” i „Nowa strona”, „Kopiuj” z obrazami w wielkości strony A4; Nauka – ścieżka nad fiszką, ukrywanie grup** – gotowe.
 28. **Wersja 1.21: tabele w notatkach, na rysunku i na zdjęciu („Tab. N.”), okno grubości zakreślacza, karteczki na rysunku; 1.21.1 – wybór daty (kalendarz) i godziny (bębny) zamiast pól przeglądarki** – gotowe.
-29. **Wersja 1.22: rysunek – liniuszek promieniowy, kółko przewraca kartki (z animacją), wymiarowanie techniczne z tolerancjami, symbole GD&T, przyciąganie strzałek do krawędzi i narożników** – w przygotowaniu.
+29. **Wersja 1.22: rysunek – liniuszek promieniowy, kółko i przyciski ‹ › przewracają kartki (z animacją), przyciąganie i przyklejanie końców odcinka i strzałki do krawędzi i narożników** – gotowe; **1.22.1 – wymiarowanie techniczne z tolerancjami i symbole GD&T** – w przygotowaniu.
 30. **Wersja 1.23: eksport sesji nauki do kalendarza (plik .ics dla Outlooka) – cykliczne, prywatne, z linkami do lekcji** – w przygotowaniu.
 31. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
 
