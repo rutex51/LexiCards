@@ -40,7 +40,7 @@ js/ui/symbols.js           panel symboli z ostatnio użytymi (notatka) i symbole
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
-js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek (równoległy, od 1.22 promieniowy), kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka, od 1.22 przyciąganie końców i magnes, od 1.24 punkty w wierzchołkach łamanej), figury z odręcznych kształtów (od 1.24 – przytrzymane pióro), Shift i Ctrl, środkowy przycisk, szyk, kartki (od 1.22 kółko, ‹ › i animacja przewracania, od 1.24 zagięcie od rogu), obraz PNG / JPEG
+js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek (równoległy, od 1.22 promieniowy), kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka, od 1.22 przyciąganie końców i magnes, od 1.24 punkty w wierzchołkach łamanej), figury z odręcznych kształtów (od 1.24 – przytrzymane pióro), spirala na grzbiecie (od 1.24.1), Shift i Ctrl, środkowy przycisk, szyk, kartki (od 1.22 kółko, ‹ › i animacja przewracania, od 1.24 zagięcie od rogu), obraz PNG / JPEG
 js/ui/drawing-paint.js     rysunek na płótnie: kształty geometryczne (z zakończeniami odcinka), szablon (boisko liniami, obraz mnożony z tłem)
 js/ui/drawing-boxes.js     tabele i karteczki na rysunku (od 1.21): układ i pomiar (szerokości kolumn, łamanie, wysokość z treści), rysowanie, strzałka, ikona zwiniętej, treść obok ikony
 js/ui/drawing-gdt.js       wymiary techniczne i symbole metrologiczne na płótnie (od 1.22.1): linie pomocnicze, linia wymiarowa, łuk, liczba z tolerancją, ramka tolerancji, znak bazy, chropowatość; znaki ⌀ □ Ⓜ Ⓛ i 14 symboli ISO 1101 rysowane kreską
@@ -753,7 +753,16 @@ rysunek z kryciem 0,12, jasny pas zaokrąglenia, cień `shadowBlur`) przycięty 
 grzbietem znika), w pionie może z niej wyjść. Pasy – gradienty `CAST_STOPS`, `FOLD_STOPS`, `LIGHT_STOPS`
 jak w `css .note-curl__band`, z kryciem zależnym od uniesienia (sin π·postęp). Następna: na płótnie
 strony już nowa kartka, stara przewraca się (postęp 0 → 1); poprzednia: na płótnie animacji stara
-kartka, nowa wraca (postęp 1 → 0). Kolejne
+kartka, nowa wraca (postęp 1 → 0). Od 1.24.1 **spirala na grzbiecie** (tylko edytor, kartki bez
+zdjęcia – `hasSpiral`): `SPIRAL` – dziurki co kratkę (`spiralHoles`, na środku wysokości) w `holeX`
+od lewej krawędzi, zwoje wokół osi `axis` tuż za krawędzią. `paintHoles` – na płótnie zapisanych kresek
+po treści (szare, nieprzezroczyste – zdjęcie strony do animacji ma dziurki, pomiar strony w testach bez
+zmian), `paintCoils` – na warstwie bieżącej na początku `renderLive` (nad kreskami, pod resztą) i na
+płótnie animacji po kartce (spirala stoi, kartka obraca się wokół niej): przednia połowa zwoju – od
+dziurki nad krawędzią (cień `shadowBlur` w pikselach urządzenia, połysk), tylna – pod kartką, widoczna za
+krawędzią; zwój widziany lekko z ukosa (`tilt`). `fitScale` i `clampView` zostawiają miejsce
+`SPIRAL_OUT` z obu stron (strona na środku), a przy powiększeniu przesunięcie w prawo odsłania spiralę.
+Obraz rysunku (`renderDrawingImage`), wycinek i „Osadź” rysuje `paintDrawing` – bez spirali. Kolejne
 przejście w trakcie animacji kończy ją od razu; `prefers-reduced-motion: reduce` – bez animacji. Kółko:
 `wheelTurn { sum, last, locked }` – nowy ruch po 220 ms przerwy, próg 50 (cała strona) albo 150
 (powiększona, gdy widok już się nie przesuwa), jedno przewrócenie na ruch. Przyciski `drawing-page-prev`

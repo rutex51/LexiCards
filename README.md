@@ -32,7 +32,7 @@ Notatki: wyrównanie i interlinia, linki, symbole, data i godzina, PDF, pełne �
 Tabele w notatkach („Tab. N.”) i na rysunku, okno grubości zakreślacza, karteczki na rysunku (wersja 1.21); wybór daty i godziny – kalendarz i bębny (1.21.1): [docs/RELEASE-1.21.md](docs/RELEASE-1.21.md).
 Rysunek: liniuszek promieniowy, przewracanie kartek kółkiem i przyciskami ‹ › z animacją, końce odcinka i strzałki przyciągane do krawędzi i narożników (wersja 1.22); wymiary jak w rysunku technicznym z tolerancjami, ramka tolerancji, baza, chropowatość (1.22.1): [docs/RELEASE-1.22.md](docs/RELEASE-1.22.md).
 Nauka w kalendarzu – plik .ics do Outlooka z powtarzaniem, przypomnieniem, prywatnością i linkami do lekcji (wersja 1.23): [docs/RELEASE-1.23.md](docs/RELEASE-1.23.md).
-Rysunek: figury z odręcznych kształtów (przytrzymane pióro), łamana i wielokąt z punktami w wierzchołkach, kartki przewracane od rogu jak w notatkach, zaznaczenie przed kółkiem liniuszka (wersja 1.24): [docs/RELEASE-1.24.md](docs/RELEASE-1.24.md).
+Rysunek: figury z odręcznych kształtów (przytrzymane pióro), łamana i wielokąt z punktami w wierzchołkach, kartki przewracane od rogu jak w notatkach, zaznaczenie przed kółkiem liniuszka (wersja 1.24); spirala na grzbiecie kartki (1.24.1): [docs/RELEASE-1.24.md](docs/RELEASE-1.24.md).
 
 ## Co potrafi wersja 1.24
 
@@ -123,7 +123,8 @@ Rysunek: figury z odręcznych kształtów (przytrzymane pióro), łamana i wielo
   i chropowatość (ISO 1302) ze strzałką przyklejoną do krawędzi. Od 1.24: **figury z odręcznych
   kształtów** – narysuj kształt i na końcu przytrzymaj pióro, a zamieni się w odcinek, strzałkę, łamaną,
   trójkąt, prostokąt, romb, równoległobok, trapez, okrąg, elipsę albo wielokąt („Cofnij” przywraca
-  kreskę); łamana i wielokąt mają punkt w każdym wierzchołku. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
+  kreskę); łamana i wielokąt mają punkt w każdym wierzchołku. Od 1.24.1 kartka w edytorze wygląda
+  jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
@@ -184,7 +185,7 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.21 – tabele w notatkach i na rysunku, grubość zakreślacza, karteczki; 1.21.1 – wybór daty i godziny](docs/RELEASE-1.21.md),
 [wersja 1.22 – liniuszek promieniowy, przewracanie kartek kółkiem, przyciąganie końców do krawędzi i narożników; 1.22.1 – wymiary techniczne, tolerancje, symbole metrologiczne](docs/RELEASE-1.22.md),
 [wersja 1.23 – nauka w kalendarzu (.ics)](docs/RELEASE-1.23.md),
-[wersja 1.24 – figury z odręcznych kształtów, łamana, przewracanie kartek od rogu](docs/RELEASE-1.24.md).
+[wersja 1.24 – figury z odręcznych kształtów, łamana, przewracanie kartek od rogu; 1.24.1 – spirala na grzbiecie kartki](docs/RELEASE-1.24.md).
 
 ## Jak korzystać
 
@@ -604,6 +605,11 @@ PageDown i menu kartek) ma animację – od 1.24 jak w notatkach: kartka zagina 
 rogu** i przewraca w lewo (grzbiet z lewej, na odwrocie lekko prześwituje rysunek, pod spodem już
 następna kartka); poprzednia wraca tą samą drogą nad bieżącą. Trwa ok. 0,9 s; powiększona kartka wraca
 najpierw do widoku całej strony (bez animacji, gdy system prosi o ograniczenie ruchu).
+**Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
+i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
+przy przewracaniu kartka obraca się wokół spirali. To tylko wygląd edytora – obraz rysunku w notatce,
+wycinek i „Osadź” są bez spirali, a kreska narysowana pod dziurką zostaje cała. Strona ze zdjęciem
+(„Rysuj na zdjęciu”) – bez spirali.
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno
 **Nowe pole tekstowe** – tekst (Enter zaczyna nowy wiersz, długi wiersz łamie się sam), wielkość
 (Mała, Średnia, Duża, od 1.18 Bardzo duża) i kolor; przycisk **Σ** – okno **Nowy wzór**: zapis jak we wzorze w notatce,
@@ -917,7 +923,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 28. **Wersja 1.21: tabele w notatkach, na rysunku i na zdjęciu („Tab. N.”), okno grubości zakreślacza, karteczki na rysunku; 1.21.1 – wybór daty (kalendarz) i godziny (bębny) zamiast pól przeglądarki** – gotowe.
 29. **Wersja 1.22: rysunek – liniuszek promieniowy, kółko i przyciski ‹ › przewracają kartki (z animacją), przyciąganie i przyklejanie końców odcinka i strzałki do krawędzi i narożników; 1.22.1 – wymiary jak w rysunku technicznym (odsunięcie, piętra, ⌀ R □, tolerancje, pasowania, „50” / „5 cm”), ramka tolerancji ISO 1101, znak bazy, chropowatość ISO 1302** – gotowe.
 30. **Wersja 1.23: nauka w kalendarzu – plik .ics dla Outlooka: powtarzanie (dni tygodnia, do dnia albo N razy), przypomnienie, prywatne i zajęte, strefa czasowa ze zmianą czasu, linki do lekcji (też do kilku lekcji naraz)** – gotowe.
-31. **Wersja 1.24: rysunki, etap 2 – zamiana odręcznych kształtów na figury (przytrzymanie pióra), łamana i wielokąt z punktami w wierzchołkach (punkty konstrukcyjne pozostałych figur są od 1.15); przewracanie kartek od rogu jak w notatkach; zaznaczenie przed kółkiem liniuszka** – gotowe. Dociąganie do linii kratek – zrezygnowano (to samo daje liniuszek).
+31. **Wersja 1.24: rysunki, etap 2 – zamiana odręcznych kształtów na figury (przytrzymanie pióra), łamana i wielokąt z punktami w wierzchołkach (punkty konstrukcyjne pozostałych figur są od 1.15); przewracanie kartek od rogu jak w notatkach; zaznaczenie przed kółkiem liniuszka; 1.24.1 – spirala na grzbiecie kartki w edytorze** – gotowe. Dociąganie do linii kratek – zrezygnowano (to samo daje liniuszek).
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

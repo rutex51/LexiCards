@@ -150,6 +150,14 @@ const ROTATE_GAP = 30;
  */
 const HOLD_MS = 500;
 const HOLD_SLOP = 6;
+/**
+ * Spirala na lewym grzbiecie kartki (od 1.24.1, tylko w edytorze – obraz rysunku w notatce, wycinek
+ * i „Osadź” jej nie mają): dziurki co kratkę w odległości holeX od lewej krawędzi, zwoje drutu wokół
+ * osi tuż za krawędzią (axis); jednostki strony. OUT – ile spirala wystaje za krawędź (miejsce przy
+ * dopasowaniu strony do ekranu). Strona ze zdjęciem – bez spirali.
+ */
+const SPIRAL = Object.freeze({ step: PAPER_STEP, holeX: 24, holeR: 7, axis: -6, wire: 5, margin: 30 });
+const SPIRAL_OUT = 40;
 /** Ctrl (od 1.19): po ilu ms przytrzymania klawisza narzędzie zmienia się na zaznaczanie. */
 const CTRL_DELAY = 200;
 /** Pola wymiarów kształtu (od 1.17): odstęp pola od linii ramki (px ekranu). */
@@ -694,14 +702,18 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const flipCanvas = h('canvas', { class: 'drawing__flip', hidden: true, 'aria-hidden': 'true' });
     stage.append(base, live, flipCanvas, dims, selectionBar);
 
-    const fitScale = () => Math.min((view.width - STAGE_MARGIN * 2) / drawing.width, (view.height - view.top - STAGE_MARGIN) / drawing.height);
-    /** Strona mniejsza niż ekran – na środku (pod paskiem narzędzi); większa – nie ucieka poza krawędź. */
+    /** Spirala przy lewej krawędzi (od 1.24.1) – kartki bez zdjęcia; miejsce na nią po obu stronach (strona na środku). */
+    const hasSpiral = () => !drawing.photo;
+    const spiralRoom = () => (hasSpiral() ? SPIRAL_OUT : 0);
+    const fitScale = () => Math.min((view.width - STAGE_MARGIN * 2) / (drawing.width + spiralRoom() * 2), (view.height - view.top - STAGE_MARGIN) / drawing.height);
+    /** Strona mniejsza niż ekran – na środku (pod paskiem narzędzi); większa – nie ucieka poza krawędź (spirala – w zasięgu). */
     const clampView = () => {
       const pageWidth = drawing.width * view.scale;
       const pageHeight = drawing.height * view.scale;
       const room = view.height - view.top - STAGE_MARGIN;
-      view.x = pageWidth <= view.width - STAGE_MARGIN * 2 ? (view.width - pageWidth) / 2
-        : Math.min(STAGE_MARGIN, Math.max(view.width - STAGE_MARGIN - pageWidth, view.x));
+      const spiral = spiralRoom() * view.scale;
+      view.x = pageWidth + spiral * 2 <= view.width - STAGE_MARGIN * 2 + 0.5 ? (view.width - pageWidth) / 2
+        : Math.min(STAGE_MARGIN + spiral, Math.max(view.width - STAGE_MARGIN - pageWidth, view.x));
       view.y = pageHeight <= room ? view.top + (room - pageHeight) / 2
         : Math.min(view.top, Math.max(view.height - STAGE_MARGIN - pageHeight, view.y));
     };
@@ -755,8 +767,101 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       // Przyklejone końce (od 1.22) idą za przesuwanym kształtem – rysuje je warstwa bieżąca.
       const followers = activeFollowers();
       paintDrawing(ctx, drawing, media, followers ? new Set([...(moving ?? []), ...followers.keys()]) : moving, plainShape, { editor: true });
+      paintHoles(ctx);
       ctx.restore();
     };
+
+    // ---- spirala na grzbiecie (od 1.24.1): dziurki – na stronie, zwoje – na warstwie bieżącej (nad kreskami)
+    /** Środki dziurek (y, jednostki strony) – co kratkę, na środku wysokości strony. */
+    function spiralHoles() {
+      const count = Math.max(0, Math.floor((drawing.height - SPIRAL.margin * 2) / SPIRAL.step) + 1);
+      const first = (drawing.height - (count - 1) * SPIRAL.step) / 2;
+      return Array.from({ length: count }, (_, index) => first + index * SPIRAL.step);
+    }
+    /** Dziurki w kartce: przez dziurkę widać kartkę pod spodem (szarość), cień na górnym brzegu. */
+    function paintHoles(ctx) {
+      if (!hasSpiral()) return;
+      ctx.save();
+      // Środek dziurki trochę na prawo od końca drutu – drut wchodzi w dziurkę przy jej lewym brzegu.
+      const x = SPIRAL.holeX + 2.5;
+      for (const y of spiralHoles()) {
+        ctx.beginPath();
+        ctx.arc(x, y, SPIRAL.holeR, 0, Math.PI * 2);
+        ctx.fillStyle = '#b4b4b9';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x, y, SPIRAL.holeR - 1, Math.PI * 0.9, Math.PI * 2.1);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, SPIRAL.holeR + 0.4, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    /**
+     * Zwoje spirali (płótno z przekształceniem strony): drut wokół osi przy krawędzi – przednia połowa
+     * zwoju wychodzi z dziurki, przechodzi nad krawędzią i schodzi o pół kratki (z cieniem na kartce
+     * i połyskiem), tylna – pod kartką do następnej dziurki (widać ją tylko za krawędzią, ciemniejszą).
+     */
+    function paintCoils(ctx) {
+      if (!hasSpiral()) return;
+      const holes = spiralHoles();
+      const radius = SPIRAL.holeX - SPIRAL.axis;
+      // Zwój widziany lekko z ukosa (jak spirala zeszytu na zdjęciu): przednia połowa wygina się w górę, tylna – w dół.
+      const tilt = radius * 0.38;
+      const turn = (y, from, to) => Array.from({ length: 17 }, (_, index) => {
+        const angle = from + ((to - from) * index) / 16;
+        return [SPIRAL.axis + radius * Math.cos(angle), y + (SPIRAL.step * angle) / (Math.PI * 2) - tilt * Math.sin(angle)];
+      });
+      const path = (points) => {
+        ctx.beginPath();
+        points.forEach(([x, y], index) => (index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+      };
+      const unit = view.scale * view.dpr;
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(-SPIRAL_OUT * 2, -SPIRAL.step, SPIRAL_OUT * 2, drawing.height + SPIRAL.step * 2);
+      ctx.clip();
+      ctx.strokeStyle = '#636366';
+      ctx.lineWidth = SPIRAL.wire * 0.85;
+      for (const y of holes.slice(0, -1)) {
+        path(turn(y, Math.PI, Math.PI * 2));
+        ctx.stroke();
+      }
+      ctx.restore();
+      for (const y of holes) {
+        const points = turn(y, 0, Math.PI);
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.28)';
+        ctx.shadowBlur = 2.5 * unit;
+        ctx.shadowOffsetX = 1.2 * unit;
+        ctx.shadowOffsetY = 2 * unit;
+        path(points);
+        ctx.strokeStyle = '#48484a';
+        ctx.lineWidth = SPIRAL.wire;
+        ctx.stroke();
+        ctx.restore();
+        path(points);
+        ctx.strokeStyle = '#98989d';
+        ctx.lineWidth = SPIRAL.wire * 0.62;
+        ctx.stroke();
+        ctx.save();
+        ctx.translate(-0.5, -0.7);
+        path(points);
+        ctx.strokeStyle = 'rgba(229, 229, 234, 0.95)';
+        ctx.lineWidth = SPIRAL.wire * 0.22;
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
 
     // ---- linijka (na ekranie stałej szerokości, położenie i kąt w jednostkach strony)
     const rulerHalf = () => RULER_WIDTH / 2 / view.scale;
@@ -1558,6 +1663,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const renderLive = () => {
       const ctx = live.getContext('2d');
       prepare(ctx);
+      // Zwoje spirali (od 1.24.1) – nad zapisanymi kreskami, pod wszystkim innym na tej warstwie.
+      paintCoils(ctx);
       ctx.save();
       clipPage(ctx);
       if (active?.kind === 'stroke') paintStroke(ctx, active.recognized?.shape ?? active.stroke);
@@ -3001,6 +3108,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         ctx.drawImage(before.image, before.rect.x, before.rect.y);
         paintTurn(ctx, after, 1 - easeFlip(t));
       }
+      // Spirala zostaje na miejscu – kartka obraca się wokół niej (od 1.24.1).
+      ctx.setTransform(view.dpr * view.scale, 0, 0, view.dpr * view.scale, view.dpr * view.x, view.dpr * view.y);
+      paintCoils(ctx);
       if (t < 1) {
         requestAnimationFrame(stepFlip);
       } else {

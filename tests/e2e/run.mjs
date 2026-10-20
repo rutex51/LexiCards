@@ -7142,6 +7142,49 @@ test('rysunek 1.24: kartka przewraca się od prawego dolnego rogu w lewo (płat 
   await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 1 z 2');
 }, { device: DESKTOP });
 
+/** Najjaśniejszy kanał piksela [r, g, b, a] warstwy bieżącej edytora (ułamki płótna). */
+const livePixel = (page, x, y) => page.locator('[data-testid=drawing-canvas]').evaluate((canvas, [fx, fy]) => [...canvas.getContext('2d').getImageData(Math.round(canvas.width * fx), Math.round(canvas.height * fy), 1, 1).data], [x, y]);
+
+test('rysunek 1.24.1: spirala na lewym grzbiecie – dziurki w kartce i zwoje za krawędzią, nad kreską przy grzbiecie; strona z miejscem na spiralę; obraz rysunku w notatce bez spirali (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Spirala</p>');
+  const frame = await pageFrame(page);
+  const { at } = frame;
+  // Dziurki co kratkę (44) na środku wysokości strony (1100): pierwsza w y = 44, środek x = 26,5.
+  const holes = Array.from({ length: 24 }, (_, index) => 44 + index * 44);
+  // Kreska przy grzbiecie – pod dziurką i zwojem.
+  await drawStroke(page, segment(at(4, holes[5]), at(500, holes[5]), 16));
+  await nextFrames(page);
+  const hole = await pixelAt(page, ...at(28, holes[3] + 4));
+  assert.ok(Math.max(...hole) < 215 && Math.min(...hole) > 90, `dziurka – szara (${hole})`);
+  const paper = await pixelAt(page, ...at(28, holes[3] + 22));
+  assert.ok(paper.every((value) => value > 240), `między dziurkami – papier (${paper})`);
+  // Zwój za krawędzią strony (x < 0) na warstwie bieżącej; między zwojami pusto.
+  const coil = await livePixel(page, ...at(-36, holes[3] + 22));
+  assert.ok(coil[3] > 200 && Math.max(...coil.slice(0, 3)) < 200, `zwój za krawędzią (${coil})`);
+  // Miejsce na spiralę: z lewej co najmniej tyle, ile wystaje (40 jednostek) i margines.
+  assert.ok(frame.left >= 40 * frame.scale + 13, `strona odsunięta od lewej krawędzi (${frame.left})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-spirala-grzbiet.png') });
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  // Obraz rysunku w notatce: w miejscu dziurki – kratka i kreska, bez szarej dziurki.
+  const exported = await page.evaluate(async ([id, points]) => {
+    const [image] = await window.lexicards.library.noteImages(id);
+    const bitmap = await createImageBitmap(new Blob([image.bytes], { type: image.type }));
+    const canvas = Object.assign(document.createElement('canvas'), { width: bitmap.width, height: bitmap.height });
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+    return points.map(([x, y]) => [...ctx.getImageData(x, y, 1, 1).data]);
+  }, [ids.statements, [[28, holes[3] + 4], [28, holes[5]]]]);
+  assert.ok(exported[0].slice(0, 3).every((value) => value > 240), `bez dziurki (${exported[0]})`);
+  assert.ok(Math.max(...exported[1].slice(0, 3)) < 110, `kreska przy grzbiecie cała (${exported[1]})`);
+}, { device: DESKTOP });
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

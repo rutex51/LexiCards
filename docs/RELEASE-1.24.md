@@ -64,3 +64,24 @@ włączonym liniuszku na iPhonie i przewracanie kartek rysunku. Opis budowy:
   i zaokrąglonymi rogami; Twoje kształty mogą być rysowane inaczej (np. strzałka grotem z dwóch
   osobnych kresek – to dwie kreski, nie strzałka).
 - **Przewracanie kartek w Safari** (płynność 0,9 s animacji na iPadzie i iPhonie) – tylko Chromium.
+
+## Uzupełnienie w wersji 1.24.1 – spirala na grzbiecie kartki
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Efekt kółek spirali na lewym grzbiecie i dziurek w kartkach, przez które przechodzi spirala; bez tego efektu na obrazie (grafice) rysunku | Kartka w edytorze ma przy lewej krawędzi **dziurki co kratkę** (na środku wysokości strony) i **metalowe zwoje**: drut wychodzi z dziurki, przechodzi nad krawędzią z cieniem na kartce i wraca pod kartką (ta część widoczna tylko za krawędzią, ciemniejsza); zwoje widać lekko z ukosa, jak w zeszycie na spirali. Zwoje leżą nad kreskami. Przy **przewracaniu** spirala stoi, a kartka obraca się wokół niej (dziurki przewracają się razem z kartką). Strona jest dopasowana do ekranu tak, żeby zwoje się mieściły (na wąskim ekranie strona jest o ok. 5% mniejsza); przy powiększeniu przesunięcie strony w prawo odsłania spiralę. **Obraz rysunku w notatce, wycinek i „Osadź” – bez spirali i bez dziurek**; kreska narysowana pod dziurką jest na obrazie cała. Strona ze zdjęciem („Rysuj na zdjęciu”) – bez spirali. |
+
+Testy wersji 1.24.1:
+
+- **Testy logiki (Node.js): 347 – wszystkie zaliczone** (bez zmian – spirala to tylko rysowanie
+  w edytorze).
+- **Testy w przeglądarce (Chromium): 163 – wszystkie zaliczone w dwóch pełnych przebiegach**
+  (162 wcześniejsze + 1 nowy): ekran komputera – kreska przy grzbiecie; w dziurce szarość, między
+  dziurkami papier; zwój za lewą krawędzią strony (warstwa bieżąca); strona odsunięta od brzegu o miejsce
+  na spiralę; po „Gotowe” obraz rysunku w notatce bez dziurki, a kreska pod dziurką cała.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium): spirala na komputerze i telefonie, klatki przewracania ze spiralą.
+
+Czego nie sprawdzono: wygląd na ekranie iPada i iPhone'a w Safari (tylko Chromium z ekranem telefonu)
+oraz w trybie ciemnym na prawdziwym urządzeniu (zwoje i dziurki mają stałe kolory, kartka jest biała
+w obu trybach).
