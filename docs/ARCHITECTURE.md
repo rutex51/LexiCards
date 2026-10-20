@@ -40,7 +40,7 @@ js/ui/symbols.js           panel symboli z ostatnio użytymi (notatka) i symbole
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
-js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek (równoległy, od 1.22 promieniowy), kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka, od 1.22 przyciąganie końców i magnes), Shift i Ctrl, środkowy przycisk, szyk, kartki (od 1.22 kółko, ‹ › i animacja przewracania), obraz PNG / JPEG
+js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek (równoległy, od 1.22 promieniowy), kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka, od 1.22 przyciąganie końców i magnes, od 1.24 punkty w wierzchołkach łamanej), figury z odręcznych kształtów (od 1.24 – przytrzymane pióro), Shift i Ctrl, środkowy przycisk, szyk, kartki (od 1.22 kółko, ‹ › i animacja przewracania, od 1.24 zagięcie od rogu), obraz PNG / JPEG
 js/ui/drawing-paint.js     rysunek na płótnie: kształty geometryczne (z zakończeniami odcinka), szablon (boisko liniami, obraz mnożony z tłem)
 js/ui/drawing-boxes.js     tabele i karteczki na rysunku (od 1.21): układ i pomiar (szerokości kolumn, łamanie, wysokość z treści), rysowanie, strzałka, ikona zwiniętej, treść obok ikony
 js/ui/drawing-gdt.js       wymiary techniczne i symbole metrologiczne na płótnie (od 1.22.1): linie pomocnicze, linia wymiarowa, łuk, liczba z tolerancją, ramka tolerancji, znak bazy, chropowatość; znaki ⌀ □ Ⓜ Ⓛ i 14 symboli ISO 1101 rysowane kreską
@@ -54,7 +54,8 @@ js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
 js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, skala, przyciąganie linijki, obszar zaznaczania, tabele i karteczki (prostokąt, strzałka), sprawdzanie danych rysunku
 js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
-js/core/shapes.js          kształty geometryczne (punkty, obrys, punkty konstrukcyjne, Shift, wymiary z klawiatury i na stałe, wypełnienie, tekst, zakończenia odcinka, sprawdzanie) i liniuszek (najbliższa linia; od 1.22 najbliższy okrąg i promień, okręgi na stronie, kierunki promieni)
+js/core/shapes.js          kształty geometryczne (punkty, obrys, punkty konstrukcyjne, Shift, wymiary z klawiatury i na stałe, wypełnienie, tekst, zakończenia odcinka, od 1.24 łamana i wielokąt z wierzchołkami, sprawdzanie) i liniuszek (najbliższa linia; od 1.22 najbliższy okrąg i promień, okręgi na stronie, kierunki promieni)
+js/core/recognize.js       figury z odręcznych kształtów (od 1.24): rogi kreski (ShortStraw), boki i wierzchołki, odcinek, strzałka, łamana, trójkąt, czworokąty, wielokąt, okrąg i elipsa
 js/core/attach.js          przyciąganie i przyklejanie końców (od 1.22): narożniki i boki elementów, najbliższy punkt, identyfikatory, końce za elementem, odklejanie, kopie, sprawdzanie przyklejeń; od 1.22.1 kierunek na zewnątrz krawędzi
 js/core/gdt.js             symbole metrologiczne (od 1.22.1): lista ISO 1101, układ ramki tolerancji, znaku bazy i chropowatości (ISO 1302), początek strzałki, trójkąt bazy, kolejna litera bazy, sprawdzanie
 js/core/arrays.js          szyk liniowy i kołowy: kopie elementów, przesunięcie, obrót wokół środka, parametry, sprawdzanie
@@ -68,7 +69,7 @@ js/core/exporter.js        zakres eksportu → plik XLSX (z arkuszem notatek) lu
 js/core/note-format.js     treść notatki: bezpieczny HTML ↔ dokument ↔ tekst sformatowany komórki arkusza; wyrównanie i interlinia, adres linku wpisany ręcznie
 js/core/symbols.js         symbole do wstawiania: grupy, nazwy, ostatnio użyte
 js/core/note-import.js     arkusz notatek: rozpoznanie, wiersze → notatki lekcji z obrazami
-js/core/page-curl.js       zaginana kartka notatki: chwyt, zgięcie, odbicie płata, ograniczenia papieru
+js/core/page-curl.js       zaginana kartka notatki (od 1.24 także kartki rysunku): chwyt, zgięcie, odbicie płata, ograniczenia papieru
 js/core/note-refs.js       sygnatury obrazów notatki i odwołania [[sygnatura]] w treści, podpisy i numery „Rys. N.”
 js/core/calendar.js        kalendarz (od 1.21.1): siatka miesiąca od poniedziałku, nazwy po polsku, okres dwoma dotknięciami, gotowe okresy
 js/core/tables.js          tabele (od 1.21): sprawdzanie, wklejony tekst z tabulatorami i tabela HTML → wiersze, sygnatury „Tabela N”, numery i podpisy „Tab. N.”, HTML (podgląd, schowek), tekst (schowek, arkusz, słuchanie)
@@ -586,6 +587,12 @@ z `RAY_STEPS` – dzielniki 360°, `rayAngle` −90…90 – na ekranie kąt uje
 w punkcie początku) albo promień; krawędź kreski `active.edge` jest wtedy `{ circle: { x, y, r } }`
 i `onEdge` rzutuje punkty na okrąg (kąt ciągły – bez skoku przy ±180°, `along` = kąt × promień, więc
 pigułka pokazuje długość łuku) albo `{ ruler }` jak przy linii.
+Od 1.24 **zaznaczenie ma pierwszeństwo przed kółkiem liniuszka**: `onSelection(point)` (zaznaczanie –
+ramka zaznaczenia, kształty – zaznaczony kształt: wnętrze albo linia) sprawdzane w `pointerdown` przed
+`guideKnobHit` (też przy palcu, gdy rysuje tylko rysik) – element wstawiony na środku widoku, czyli na
+kółku, przesuwa się przeciągnięciem (na telefonie ze skalą < 1 pole trafienia kółka obejmowało go
+całego). `guide-move` liczy ruch dopiero od `TAP_SLOP`; dotknięcie kółka bez ruchu przy zaznaczaniu –
+jak dotknięcie strony (`finishOutline` w punkcie).
 Od 1.17 (format rysunku 4): kształt może mieć **wypełnienie** `fill: 'light' | 'solid'` (kolor kształtu,
 krycie `FILL_ALPHA`; odcinek i strzałka – bez) – wnętrze wypełnionego kształtu liczy się przy trafieniu
 (`touchesShape`) – i **tekst** `label: { text, size, color, width, height }`: `labelFrame` – środek
@@ -704,11 +711,49 @@ w kierunku `snapNormal` (prostopadle do boku, od środka elementu), jeden krok c
 Uchwyt `target` w `boxHandles` (bez narożnika wielkości). Szyk pomija symbole. Starsza wersja aplikacji
 pomija symbole, `dimStyle`, `dimOffsets` i `dimTols` (obraz w notatce zostaje), a przy poprawce
 rysunku zapisze go bez nich.
-**Przewracanie kartek** (od 1.22): `flipTo(index)` – zdjęcie płótna zapisanych kresek przed i po
-`showPage` (`snapshotBase`) i osobne płótno `drawing__flip` nad stroną; `stepFlip` (520 ms, krzywa
-cubic in-out, pierwsza klatka od razu) i `paintCurl` – kartka nad linią zgięcia płasko, część spod
-zgięcia odbita do góry (jasny odwrót z przebijającym rysunkiem i cieniem), cień na kartce pod spodem;
-następna – zgięcie od dołu do góry, poprzednia – stara kartka pod spodem, nowa opada z góry. Kolejne
+Od 1.24 (format rysunku 9): **figury z odręcznych kształtów** (`js/core/recognize.js`, bez przeglądarki).
+W edytorze kreska pióra (nie zakreślacza, bez krawędzi linijki i liniuszka, `tools.recognize`) ma
+`active.hold`: `watchHold` przy każdym ruchu dalej niż `HOLD_SLOP` (6 px) od miejsca postoju ustawia od
+nowa licznik `HOLD_MS` (500 ms); po nim `recognizeHeld` → `recognizeStroke(points, { color }, { scale })`
+i podgląd figury zamiast kreski (`active.recognized`; dalszy ruch jej nie zmienia). Końce odcinka
+i strzałki przy krawędzi – `edgeSnapAt`, `segmentBetween`, przy zapisie `linkEnds`. Puszczenie pióra:
+`history.add(kreska)`, potem zamiana na figurę w osobnym kroku (`commitStep`) – „Cofnij” przywraca
+kreskę. Rozpoznawanie: punkty co 1/40 przekątnej (najwyżej 400), kreska zamknięta, gdy koniec dochodzi
+do początku (do 18% przekątnej; zakładka za początkiem odcięta); rogi – **ShortStraw** (słomka
+z punktów ±3, róg w minimum przebiegu poniżej 0,95 mediany; między rogami kreska nieprosta – róg
+w środkowej połowie, róg na prostej między sąsiednimi – usunięty; prosta – cięciwa ≥ 0,95 drogi albo
+odchylenie ≤ 5%; haczyk do 6% długości na końcach kreski otwartej – pominięty), boki – prosta
+dopasowana do punktów boku bez 15% przy rogach, wierzchołki – przecięcia boków. Kierunki przyciągane
+do poziomu i pionu do 7°, do 45° do 5° (`snap`). Otwarta: odcinek (odchylenie ≤ 7,5%), strzałka
+(`arrowFrom`: wierzchołki A, B, C, B, D albo A, B, C, D, B – ramiona 6–60% trzonu, 8–80° od trzonu, po
+obu stronach; też odwrotnie – grot narysowany najpierw), łamana (proste boki). Zamknięta: wielokąt
+o prostych bokach (3–24 rogi) albo elipsa (`fitEllipse`: osie z kowariancji, półosie z rozpiętości,
+średni błąd promienia ≤ 0,12, obieg 300–420°; osie poziomo, pionowo albo pod 45°, gdy błąd prawie ten
+sam; stosunek osi ≥ 0,87 – okrąg); przy obu – wielokąt, gdy każdy skręt ≥ 40°, a wyraźne rogi (słomka
+≤ 0,82 mediany) przy błędzie > 0,045 wykluczają okrąg. Trójkąt – podstawa pozioma, pionowa albo
+najdłuższa, `adjust` 0, ½, 1 i równoboczny – dokładnie; czworokąt – kąty ±12° od prostych: prostokąt
+(kwadrat ±12%, kwadrat pod 45° – romb), boki równe bez poziomej pary – romb (przekątne), dwie pary
+równoległych (±10°) – prostokąt z pochyleniem, jedna – trapez (`adjust` i pochylenie), inaczej
+wielokąt. **Łamana i wielokąt** (`shape: 'polyline' | 'polygon'`, poza panelem kształtów – `POLY_SHAPES`):
+`nodes` [u, v, …] w układzie ramki (`polyFromPoints`, `polyPoints`), więc przesuwanie, obrót, narożniki
+i pola szerokości i wysokości działają jak dotąd; bez pochylenia, łamana bez wypełnienia i wnętrza.
+`shapeHandles`: narożniki ramki, `v0…` (`kind: 'vertex'` – pierwszeństwo przed narożnikiem w tym samym
+miejscu) i obrót; `moveNode` – wierzchołek w nowym miejscu (bok do sąsiada przyciągany jak koniec
+odcinka, przy dwóch – przecięcie), ramka dopasowana na nowo (kąt zostaje). `snapGeometry` łamanej – bez
+boku zamykającego. Starsza wersja aplikacji pomija łamaną i wielokąt (obraz w notatce zostaje).
+**Przewracanie kartek** (od 1.22; od 1.24 jak w notatkach): `flipTo(index)` – powiększona kartka
+najpierw w widoku całej strony (`view.zoom = 1`), zdjęcia stron przed i po `showPage` (`snapshotPage` –
+sama strona z płótna zapisanych kresek, `{ image, rect }` w pikselach urządzenia; każda kartka ze swoim
+prostokątem, bo strony ze zdjęciem mają inną wielkość) i osobne płótno `drawing__flip` nad stroną;
+`stepFlip` (`FLIP_MS` 900 ms, krzywa cubic in-out jak w notatkach, pierwsza klatka od razu)
+i `paintTurn(ctx, page, progress)` – geometria z `js/core/page-curl.js` (`cornerOf('bottom')`,
+`cornerPath`, `constrainCorner`, `foldGeometry`; grzbiet – lewa krawędź strony): płaska część kartki
+z cieniem przy zgięciu, cień płata na odsłoniętej kartce pod spodem, płat – odwrót (#f7f7f8, odbity
+rysunek z kryciem 0,12, jasny pas zaokrąglenia, cień `shadowBlur`) przycięty w poziomie do strony (za
+grzbietem znika), w pionie może z niej wyjść. Pasy – gradienty `CAST_STOPS`, `FOLD_STOPS`, `LIGHT_STOPS`
+jak w `css .note-curl__band`, z kryciem zależnym od uniesienia (sin π·postęp). Następna: na płótnie
+strony już nowa kartka, stara przewraca się (postęp 0 → 1); poprzednia: na płótnie animacji stara
+kartka, nowa wraca (postęp 1 → 0). Kolejne
 przejście w trakcie animacji kończy ją od razu; `prefers-reduced-motion: reduce` – bez animacji. Kółko:
 `wheelTurn { sum, last, locked }` – nowy ruch po 220 ms przerwy, próg 50 (cała strona) albo 150
 (powiększona, gdy widok już się nie przesuwa), jedno przewrócenie na ruch. Przyciski `drawing-page-prev`
@@ -1132,7 +1177,9 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
   liniuszek, jasność tła i szablon, wypełnienie i tekst kształtu, wymiary z klawiatury, zakończenia
   odcinka, Shift, stałe wymiary, szyk liniowy i kołowy, wielkość szablonu w % i z narożnika, od 1.22
   liniuszek promieniowy, przyciąganie do narożników i krawędzi, przyklejone końce, od 1.22.1 wymiary
-  techniczne – geometria, piętra, tolerancje, styl liczb – i symbole metrologiczne),
+  techniczne – geometria, piętra, tolerancje, styl liczb – i symbole metrologiczne, od 1.24
+  rozpoznawanie odręcznych kształtów – figury, przyciąganie kierunków, kształty odrzucane – oraz łamana
+  i wielokąt: wierzchołki, punkty, przesuwanie wierzchołka, dane),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

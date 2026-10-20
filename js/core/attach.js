@@ -35,10 +35,12 @@ export function snapGeometry(stroke, boxOf = plainBox) {
     if (stroke.shape === 'ellipse') {
       return { corners: [[0.5, 0], [0, 0.5], [-0.5, 0], [0, -0.5]].map(([u, v]) => shapePoint(stroke, u, v)), edges: [], ellipse: stroke };
     }
-    const { points } = shapeOutline(stroke);
+    const { points, closed } = shapeOutline(stroke);
     const corners = [];
     for (let index = 0; index < points.length; index += 2) corners.push({ x: points[index], y: points[index + 1] });
-    return { corners, edges: corners.map((corner, index) => [corner, corners[(index + 1) % corners.length]]) };
+    // Łamana (od 1.24) – bez boku od ostatniego wierzchołka do pierwszego.
+    const edges = corners.map((corner, index) => [corner, corners[(index + 1) % corners.length]]);
+    return { corners, edges: closed ? edges : edges.slice(0, -1) };
   }
   if (isFramed(stroke)) {
     const box = boxOf(stroke);

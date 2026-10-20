@@ -6909,6 +6909,239 @@ test('kalendarz 1.23 na telefonie: okno planu mieści się bez przewijania w bok
   await page.screenshot({ path: path.join(OUTPUT, 'kalendarz-plan-telefon.png') });
 });
 
+// ---------------------------------------------------------------- 1.24: figury z odręcznych kształtów, łamana, liniuszek, przewracanie kartek
+
+/** Odręczna kreska przez punkty strony: kilka punktów na bok, lekkie drżenie (ułamki płótna dla drawStroke). */
+function handPath(at, corners, steps = 14) {
+  const points = [];
+  for (let side = 1; side < corners.length; side += 1) {
+    const [a, b] = [corners[side - 1], corners[side]];
+    for (let step = side === 1 ? 0 : 1; step <= steps; step += 1) {
+      const t = step / steps;
+      const wobble = Math.sin(step * 1.7 + side) * 1.5;
+      points.push([...at(a[0] + (b[0] - a[0]) * t + wobble, a[1] + (b[1] - a[1]) * t - wobble), 0.5]);
+    }
+  }
+  return points;
+}
+
+/** Kreska pióra przytrzymanego na końcu (0,7 s) – zamienia się w figurę. */
+async function heldStroke(page, points) {
+  await drawStroke(page, points, { up: false });
+  await page.waitForTimeout(700);
+  await drawStroke(page, points, { only: 'up' });
+}
+
+/** Wierzchołki łamanej albo wielokąta w punktach strony (kształt bez obrotu). */
+const polyCorners = (shape) => Array.from({ length: shape.nodes.length / 2 }, (_, index) => [shape.x + shape.nodes[index * 2] * shape.w, shape.y + shape.nodes[index * 2 + 1] * shape.h]);
+
+test('rysunek 1.24: pióro przytrzymane na końcu kreski – figura (prostokąt, okrąg, trójkąt, strzałka, łamana); bez przytrzymania – kreska; „Cofnij” przywraca kreskę odręczną; wierzchołek łamanej przeciągnięty; wyłączone w ustawieniach pióra; zapis (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Figury</p>');
+  const { at } = await pageFrame(page);
+  const dark = async (x, y, side = 4) => (await darkest(page, ...at(x, y), side)) < 110;
+  const undo = editor.locator('[data-testid=drawing-undo]');
+
+  // Prostokąt z wybrzuszeniem w połowie górnego boku (y ≈ 166) – figura ma prosty bok (y ≈ 150).
+  const rect = handPath(at, [[200, 150], [380, 150], [400, 166], [420, 150], [600, 150], [600, 400], [200, 400], [200, 150]], 8);
+  await heldStroke(page, rect);
+  await waitUntil(() => dark(500, 150), 'Górny bok prostokąta');
+  assert.ok(!(await dark(400, 166, 3)), 'figura – bez wybrzuszenia');
+  // Cofnij – kreska odręczna (z wybrzuszeniem); jeszcze raz – nic; ponów dwa razy – znowu prostokąt.
+  await undo.click();
+  await waitUntil(() => dark(400, 166, 3), 'Cofnij – kreska odręczna');
+  await undo.click();
+  await waitUntil(async () => !(await dark(500, 150)), 'Cofnij – pusto');
+  await editor.locator('[data-testid=drawing-redo]').click();
+  await editor.locator('[data-testid=drawing-redo]').click();
+  await waitUntil(async () => !(await dark(400, 166, 3)) && (await dark(500, 150)), 'Ponów – prostokąt');
+
+  // Okrąg (r = 120), trójkąt, strzałka z grotem „V”, łamana.
+  const circle = Array.from({ length: 50 }, (_, index) => {
+    const angle = (index / 46) * Math.PI * 2;
+    return [...at(900 + 120 * Math.cos(angle) + Math.sin(index) * 1.5, 280 + 120 * Math.sin(angle)), 0.5];
+  });
+  await heldStroke(page, circle);
+  await heldStroke(page, handPath(at, [[1300, 150], [1450, 400], [1150, 400], [1300, 150]]));
+  await heldStroke(page, handPath(at, [[200, 600], [600, 600], [550, 570], [600, 600], [552, 632]], 10));
+  await heldStroke(page, handPath(at, [[800, 800], [950, 600], [1100, 800], [1250, 600]]));
+  // Bez przytrzymania – zwykła kreska.
+  await drawStroke(page, handPath(at, [[200, 900], [600, 960]]));
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-figury-z-kresek-ipad.png') });
+
+  // Łamana zaznaczona: punkty w wierzchołkach; drugi wierzchołek przeciągnięty w górę (950, 600) → (950, 520).
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await drawStroke(page, [[...at(875, 700), 0.5]]);
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Łamana');
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-lamana-wierzcholki-ipad.png') });
+  await drawStroke(page, segment(at(950, 600), at(950, 520), 8));
+  await waitUntil(() => dark(1025, 660, 6), 'Bok do przesuniętego wierzchołka');
+
+  // Wyłączone w ustawieniach pióra – przytrzymana kreska zostaje odręczna.
+  await editor.locator('[data-testid=drawing-tool-pen]').click();
+  await editor.locator('[data-testid=drawing-tool-pen]').click();
+  const recognize = editor.locator('[data-testid=drawing-recognize]');
+  assert.equal(await recognize.isChecked(), true, 'domyślnie włączone');
+  await recognize.uncheck({ force: true });
+  await page.keyboard.press('Escape');
+  await heldStroke(page, handPath(at, [[1150, 900], [1450, 900], [1450, 1050], [1150, 1050], [1150, 900]]));
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const strokes = await savedStrokes(page, ids.statements);
+  assert.deepEqual(strokes.map((stroke) => stroke.shape ?? stroke.tool), ['rect', 'ellipse', 'triangle', 'arrow', 'polyline', 'pen', 'pen']);
+  const [box, round, triangle, arrow, polyline] = strokes;
+  assert.ok(Math.abs(box.w - 400) < 12 && Math.abs(box.h - 250) < 12 && box.angle === 0, `prostokąt 400 × 250 (${box.w} × ${box.h})`);
+  assert.ok(round.w === round.h && Math.abs(round.w - 240) < 12, `okrąg ⌀240 (${round.w} × ${round.h})`);
+  assert.ok(triangle.adjust === 0.5 && triangle.angle === 0 && Math.abs(triangle.w - 300) < 12, `trójkąt równoramienny na poziomej podstawie (${triangle.w}, ${triangle.adjust}, ${triangle.angle})`);
+  assert.ok(arrow.angle === 0 && Math.abs(arrow.w - 400) < 12 && Math.abs(arrow.x + arrow.w / 2 - 600) < 6, `strzałka pozioma, grot w (600, 600) (${arrow.x}, ${arrow.w})`);
+  const corners = polyCorners(polyline);
+  assert.equal(corners.length, 4);
+  assert.ok(Math.abs(corners[1][0] - 950) < 10 && Math.abs(corners[1][1] - 520) < 10, `przesunięty wierzchołek (${corners[1]})`);
+  assert.ok(Math.abs(corners[2][0] - 1100) < 10 && Math.abs(corners[2][1] - 800) < 10, `pozostałe na miejscu (${corners[2]})`);
+}, { device: IPAD });
+
+/** Środek kółka liniuszka na ekranie (biały krążek na warstwie bieżącej) albo null. */
+const knobOnScreen = (page) => page.locator('[data-testid=drawing-canvas]').evaluate((canvas) => {
+  const { data, width, height } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+  let [sx, sy, count] = [0, 0, 0];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      if (data[index + 3] > 200 && data[index] > 240 && data[index + 1] > 240 && data[index + 2] > 240) {
+        sx += x;
+        sy += y;
+        count += 1;
+      }
+    }
+  }
+  const box = canvas.getBoundingClientRect();
+  return count > 0 ? { x: box.left + (sx / count) * (box.width / width), y: box.top + (sy / count) * (box.height / height) } : null;
+});
+
+test('rysunek 1.24 na telefonie: pole tekstowe na kółku liniuszka – dotknięcie zaznacza pole, przeciągnięcie palcem przesuwa pole, a liniuszek zostaje; kółko poza zaznaczeniem przesuwa liniuszek', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Liniuszek</p>');
+  const frame = await pageFrame(page);
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const touch = (points) => drawStroke(page, points, { type: 'touch', id: 21 });
+  const toFraction = ({ x, y }) => [(x - frame.x) / frame.width, (y - frame.y) / frame.height];
+  await editor.locator('[data-testid=drawing-guide]').click();
+  await nextFrames(page);
+  const knob = await knobOnScreen(page);
+  assert.ok(knob, 'kółko liniuszka widoczne');
+  // Pole tekstowe wstawione na środku – na kółku.
+  await editor.locator('[data-testid=drawing-insert-text]').click();
+  const sheet = page.locator('dialog.sheet[open]').last();
+  await sheet.locator('textarea').fill('Pole');
+  await sheetSubmit(page).click();
+  await expectText(count, 'Pole tekstowe');
+  // Odznaczone (dotknięcie pustego miejsca), potem dotknięcie kółka – zaznacza pole pod nim.
+  await touch([[...frame.at(1500, 1050), 0.5]]);
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Odznaczone');
+  await touch([[...toFraction(knob), 0.5]]);
+  await expectText(count, 'Pole tekstowe');
+  const still = await knobOnScreen(page);
+  assert.ok(Math.hypot(still.x - knob.x, still.y - knob.y) < 2, 'dotknięcie nie rusza liniuszka');
+  // Przeciągnięcie palcem od kółka (na polu) – przesuwa pole o ok. 200 × 150 jednostek, liniuszek zostaje.
+  const target = { x: knob.x + 200 * frame.scale, y: knob.y + 150 * frame.scale };
+  await touch(segment(toFraction(knob), toFraction(target), 10));
+  await nextFrames(page);
+  const after = await knobOnScreen(page);
+  assert.ok(Math.hypot(after.x - knob.x, after.y - knob.y) < 2, `liniuszek na miejscu (${JSON.stringify(after)} / ${JSON.stringify(knob)})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-liniuszek-pole-telefon.png') });
+  // Kółko poza zaznaczeniem – przeciągnięcie przesuwa liniuszek.
+  const moved = { x: knob.x - 80 * frame.scale, y: knob.y - 60 * frame.scale };
+  await touch(segment(toFraction(knob), toFraction(moved), 10));
+  await nextFrames(page);
+  const shifted = await knobOnScreen(page);
+  assert.ok(Math.hypot(shifted.x - knob.x, shifted.y - knob.y) > 15, 'liniuszek przesunięty kółkiem');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const [text] = await savedStrokes(page, ids.statements);
+  const centre = { x: (knob.x - frame.x - frame.left) / frame.scale, y: (knob.y - frame.y - frame.top) / frame.scale };
+  assert.ok(Math.abs(text.x + text.width / 2 - centre.x - 200) < 25 && Math.abs(text.y + text.height / 2 - centre.y - 150) < 25,
+    `pole przesunięte o ok. (200, 150) od kółka (${text.x}, ${text.y}; kółko ${JSON.stringify(centre)})`);
+}, { device: PHONE });
+
+/** Piksel [r, g, b, a] płótna animacji kartki w punkcie (ułamki płótna). */
+const flipPixel = (page, x, y) => page.locator('.drawing__flip').evaluate((canvas, [fx, fy]) => [...canvas.getContext('2d').getImageData(Math.round(canvas.width * fx), Math.round(canvas.height * fy), 1, 1).data], [x, y]);
+
+test('rysunek 1.24: kartka przewraca się od prawego dolnego rogu w lewo (płat – odwrót kartki, pod spodem następna), ok. 0,9 s; powiększona kartka – animacja w widoku całej strony; wstecz – kartka wraca nad bieżącą (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Kartki</p>');
+  const frame = await pageFrame(page);
+  const { at } = frame;
+  await drawStroke(page, segment(at(150, 150), at(700, 150), 12));
+  await editor.locator('[data-testid=drawing-pages]').click();
+  await page.locator('[data-testid=drawing-page-new]').click();
+  await waitUntil(async () => (await darkest(page, ...at(450, 150), 12)) > 150, 'Nowa kartka pusta');
+  await drawStroke(page, segment(at(1000, 950), at(1500, 950), 12));
+  await page.keyboard.press('PageUp');
+  await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 1 z 2');
+  await waitUntil(() => page.locator('.drawing__flip').evaluate((element) => element.hidden), 'Animacja skończona');
+  // Powiększenie – przewracanie i tak w widoku całej strony.
+  await page.mouse.move(...frame.screen(800, 550));
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -300);
+  await page.keyboard.up('Control');
+  await waitUntil(async () => (await editor.locator('[data-testid=drawing-zoom]').textContent()) !== '100%', 'Powiększenie');
+  // Zatrzymany czas animacji: klatki w wybranych chwilach.
+  await page.evaluate(() => {
+    const real = performance.now.bind(performance);
+    window.__freeze = null;
+    performance.now = () => window.__freeze ?? real();
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (callback) => raf(() => callback(performance.now()));
+  });
+  const start = await page.evaluate(() => (window.__freeze = performance.now()));
+  const moment = async (ms) => {
+    await page.evaluate((value) => { window.__freeze = value; }, start + ms);
+    await nextFrames(page);
+  };
+  await page.keyboard.press('PageDown');
+  await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 2 z 2');
+  await expectText(editor.locator('[data-testid=drawing-zoom]'), '100%');
+  // Początek: stara kartka płasko, w widoku całej strony (kreska w tym samym miejscu co przed powiększeniem).
+  await moment(80);
+  const early = await flipPixel(page, ...at(400, 150));
+  assert.ok(early[3] === 255 && Math.max(...early.slice(0, 3)) < 110, `stara kartka – kreska (${early})`);
+  // Połowa: róg przy grzbiecie – z prawej odsłonięta następna kartka (tylko cień), z lewej płat – jasny papier.
+  await moment(450);
+  const revealed = await flipPixel(page, ...at(1300, 700));
+  assert.ok(revealed[3] < 140, `z prawej odsłonięta następna kartka (${revealed})`);
+  const flap = await flipPixel(page, ...at(400, 600));
+  assert.ok(flap[3] === 255 && Math.min(...flap.slice(0, 3)) > 200, `płat – odwrót kartki (${flap})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-kartka-przewracanie.png') });
+  // 0,85 s – jeszcze trwa (dawniej 0,52 s); po 0,95 s – koniec.
+  await moment(850);
+  assert.equal(await page.locator('.drawing__flip').evaluate((element) => element.hidden), false, 'animacja jeszcze trwa');
+  await moment(950);
+  assert.equal(await page.locator('.drawing__flip').evaluate((element) => element.hidden), true, 'animacja skończona');
+  // Wstecz: na płótnie animacji najpierw bieżąca kartka (z kreską na dole), poprzednia wraca od lewej.
+  const back = await page.evaluate(() => (window.__freeze = performance.now()));
+  await page.keyboard.press('PageUp');
+  await page.evaluate((value) => { window.__freeze = value; }, back + 120);
+  await nextFrames(page);
+  const under = await flipPixel(page, ...at(1250, 950));
+  assert.ok(under[3] === 255 && Math.max(...under.slice(0, 3)) < 110, `pod spodem bieżąca kartka (${under})`);
+  await page.evaluate(() => { window.__freeze = null; });
+  await waitUntil(() => page.locator('.drawing__flip').evaluate((element) => element.hidden), 'Animacja skończona');
+  await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 1 z 2');
+}, { device: DESKTOP });
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

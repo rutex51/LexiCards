@@ -50,6 +50,8 @@ import {
   snapToStrokes, splitByPolygon, strokeBounds, strokesAt, strokesInPolygon, strokesInRect, toScaleLength, touchesStroke, translateStroke
 } from '../core/drawing.js';
 import { layoutMath } from '../core/math-layout.js';
+import { constrainCorner, cornerOf, cornerPath, foldGeometry } from '../core/page-curl.js';
+import { recognizeStroke } from '../core/recognize.js';
 import {
   DIM_PREFIXES, FIT_RE, LABEL_TEXT_MAX, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_FILLS, SHAPE_FILL_LABELS, SHAPE_LABELS, SKEW_DEGREES_LIMIT,
   canFill, dimCenter, dimGeometry, dimOffset, dimOffsetAt, dimPlaces, guideLinesIn, isLinearDim, isSegment, isShape, labelFrame, labelMaxWidth, moveShapeHandle, nearestGuideLine, nearestRay,
@@ -142,6 +144,12 @@ const HANDLE_HIT = 18;
 /** Promień przyciągania końca do krawędzi albo narożnika (od 1.22) – ok. 3–4 mm na ekranie (px). */
 const EDGE_SNAP = 14;
 const ROTATE_GAP = 30;
+/**
+ * Rozpoznawanie kształtów (od 1.24): pióro przytrzymane na końcu kreski tyle ms – kreska zamienia się
+ * w figurę; drżenie ręki do tylu px ekranu nie przerywa przytrzymania.
+ */
+const HOLD_MS = 500;
+const HOLD_SLOP = 6;
 /** Ctrl (od 1.19): po ilu ms przytrzymania klawisza narzędzie zmienia się na zaznaczanie. */
 const CTRL_DELAY = 200;
 /** Pola wymiarów kształtu (od 1.17): odstęp pola od linii ramki (px ekranu). */
@@ -1060,8 +1068,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       let best = null;
       for (const handle of shapeHandles(shape, ROTATE_GAP / view.scale)) {
         const distance = Math.hypot(handle.x - point.x, handle.y - point.y) * view.scale;
-        // Wierzchołek trójkąta leży na środku górnego boku – wtedy wygrywa z uchwytem wysokości.
-        const rank = distance - (handle.kind === 'adjust' ? 10 : 0);
+        // Wierzchołek trójkąta leży na środku górnego boku – wtedy wygrywa z uchwytem wysokości;
+        // wierzchołek łamanej (od 1.24) – z narożnikiem ramki, gdy leżą w tym samym miejscu.
+        const rank = distance - (handle.kind === 'adjust' || handle.kind === 'vertex' ? 10 : 0);
         if (distance <= HANDLE_HIT && (!best || rank < best.rank)) best = { ...handle, distance, rank, shape };
       }
       return best;
@@ -1099,12 +1108,21 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           ctx.lineTo(point.x - 7, point.y);
           ctx.closePath();
         } else {
-          ctx.arc(point.x, point.y, handle.kind === 'rotate' ? 8 : 6, 0, Math.PI * 2);
+          ctx.arc(point.x, point.y, handle.kind === 'rotate' ? 8 : handle.kind === 'vertex' ? 6.5 : 6, 0, Math.PI * 2);
         }
-        ctx.fillStyle = handle.kind === 'adjust' ? '#ff9f0a' : handle.kind === 'skew' ? '#d6e6fa' : '#ffffff';
+        // Wierzchołek łamanej i wielokąta (od 1.24) – pełny niebieski punkt w białej obwódce.
+        ctx.fillStyle = handle.kind === 'adjust' ? '#ff9f0a' : handle.kind === 'skew' ? '#d6e6fa' : handle.kind === 'vertex' ? SELECT_COLORS.whole : '#ffffff';
         ctx.fill();
         ctx.lineWidth = 1.5;
-        ctx.stroke();
+        if (handle.kind === 'vertex') {
+          ctx.save();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          ctx.stroke();
+        }
         if (handle.kind === 'rotate') {
           ctx.beginPath();
           ctx.arc(point.x, point.y, 3.5, -Math.PI * 0.9, Math.PI * 0.4);
@@ -1542,7 +1560,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       prepare(ctx);
       ctx.save();
       clipPage(ctx);
-      if (active?.kind === 'stroke') paintStroke(ctx, active.stroke);
+      if (active?.kind === 'stroke') paintStroke(ctx, active.recognized?.shape ?? active.stroke);
       if (active?.kind === 'move') {
         // Karteczka przesuwana sama (od 1.21) – koniec strzałki zostaje w miejscu.
         const kept = keptTarget();
@@ -2104,6 +2122,12 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         onClick: () => { tools.sensitivity = id; saveTools(tools); refresh(); }
       }, label));
       const canvas = h('canvas', { class: 'drawing__preview', width: 656, height: 144, 'aria-hidden': 'true' });
+      // Od 1.24: zamiana odręcznego kształtu w figurę po przytrzymaniu pióra na końcu kreski.
+      const recognizeRow = toggle({
+        checked: tools.recognize, label: 'Figury z odręcznych kształtów',
+        onChange: (checked) => { tools.recognize = checked; saveTools(tools); }
+      });
+      recognizeRow.querySelector('input').dataset.testid = 'drawing-recognize';
       function refresh() {
         const current = width();
         minRange.value = String(current.min);
@@ -2131,6 +2155,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         smoothRange,
         h('p', { class: 'drawing__settings-label' }, 'Podgląd: lekko – mocno – lekko'),
         canvas,
+        h('div', { class: 'drawing__settings-switch' }, recognizeRow),
+        h('p', { class: 'field__hint' }, 'Narysuj kształt i na końcu przytrzymaj pióro (ok. ½ s) – odcinek, strzałka, łamana, trójkąt, prostokąt, romb, okrąg, elipsa i wielokąt zamienią się w figurę. „Cofnij” przywraca kreskę odręczną.'),
         h('p', { class: 'field__hint' }, 'Palcem i myszą kreska ma stałą grubość (bez nacisku). Ustawienia zostają na tym urządzeniu.'));
       refreshSettings = refresh;
       refresh();
@@ -2907,12 +2933,13 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       requestRender();
     }
     /**
-     * Przejście na kartkę `index` z animacją (od 1.22): kartka unosi się od dolnej krawędzi i przewraca
-     * do góry (następna), a poprzednia opada z góry – jak w notesie zszytym u góry. Zdjęcia stron
-     * (płótno zapisanych kresek przed zmianą i po niej) rysuje osobne płótno nad stroną; bez animacji,
-     * gdy system prosi o ograniczenie ruchu.
+     * Przejście na kartkę `index` z animacją (od 1.22; od 1.24 jak w notatkach): kartka zagina się od
+     * prawego dolnego rogu i przewraca w lewo (grzbiet z lewej) – następna leży pod nią; poprzednia
+     * wraca tą samą drogą nad bieżącą. Geometria zgięcia – core/page-curl.js. Zdjęcia obu stron
+     * (zapisane kreski) w widoku całej strony rysuje osobne płótno nad stroną; bez animacji, gdy system
+     * prosi o ograniczenie ruchu.
      */
-    const FLIP_MS = 520;
+    const FLIP_MS = 900;
     let flipping = null;
     function flipTo(index) {
       if (index === pageIndex || index < 0 || index >= pages.length || active) return;
@@ -2922,42 +2949,57 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         flipCanvas.hidden = true;
       }
       const motion = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches && base.width > 0;
-      const before = motion ? snapshotBase() : null;
+      let before = null;
+      if (motion) {
+        // Bieżąca kartka w widoku całej strony (jak następna po przejściu) – inaczej powiększone zdjęcie
+        // nie pasowałoby do strony pod spodem.
+        if (view.zoom !== 1) {
+          view.zoom = 1;
+          view.width = 0;
+          resize();
+          zoomButton.textContent = '100%';
+        }
+        renderBase();
+        before = snapshotPage();
+      }
       const forward = index > pageIndex;
       showPage(index);
       if (!motion) return;
       renderBase();
-      flipping = { forward, before, after: snapshotBase(), page: pageRect(), start: performance.now() };
+      flipping = { forward, before, after: snapshotPage(), start: performance.now() };
       flipCanvas.width = base.width;
       flipCanvas.height = base.height;
       flipCanvas.hidden = false;
       // Pierwsza klatka od razu – inaczej przez chwilę widać już nową kartkę.
       stepFlip(flipping.start);
     }
-    function snapshotBase() {
-      const copy = document.createElement('canvas');
-      copy.width = base.width;
-      copy.height = base.height;
-      copy.getContext('2d').drawImage(base, 0, 0);
-      return copy;
+    /** Zdjęcie strony z płótna zapisanych kresek: { image, rect } – rect w pikselach urządzenia. */
+    function snapshotPage() {
+      const rect = {
+        x: Math.round(view.x * view.dpr), y: Math.round(view.y * view.dpr),
+        w: Math.max(1, Math.round(drawing.width * view.scale * view.dpr)), h: Math.max(1, Math.round(drawing.height * view.scale * view.dpr))
+      };
+      const image = document.createElement('canvas');
+      image.width = rect.w;
+      image.height = rect.h;
+      image.getContext('2d').drawImage(base, -rect.x, -rect.y);
+      return { image, rect };
     }
-    /** Strona na płótnie (piksele urządzenia). */
-    const pageRect = () => ({ x: view.x * view.dpr, y: view.y * view.dpr, w: drawing.width * view.scale * view.dpr, h: drawing.height * view.scale * view.dpr });
+    const easeFlip = (t) => (t < 0.5 ? 4 * t * t * t : 1 - ((2 - 2 * t) ** 3) / 2);
     function stepFlip(now) {
       if (!flipping) return;
       const t = Math.min(1, (now - flipping.start) / FLIP_MS);
-      const eased = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
       const ctx = flipCanvas.getContext('2d');
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, flipCanvas.width, flipCanvas.height);
-      const { page } = flipping;
-      if (flipping.forward) {
-        // Następna: stara kartka unosi się – zgięcie od dołu do góry.
-        paintCurl(ctx, flipping.before, page, page.y + page.h * (1 - eased), 1 - Math.max(0, (t - 0.7) / 0.3));
+      const { forward, before, after } = flipping;
+      if (forward) {
+        // Następna: pod spodem (na płótnie strony) już nowa kartka, stara przewraca się w lewo.
+        paintTurn(ctx, before, easeFlip(t));
       } else {
-        // Poprzednia: pod spodem stara kartka, nowa opada z góry – zgięcie od góry do dołu.
-        ctx.drawImage(flipping.before, 0, 0);
-        paintCurl(ctx, flipping.after, page, page.y + page.h * eased, Math.min(1, t / 0.3));
+        // Poprzednia: pod spodem stara kartka, nowa wraca z lewej (róg od przewróconego położenia).
+        ctx.drawImage(before.image, before.rect.x, before.rect.y);
+        paintTurn(ctx, after, 1 - easeFlip(t));
       }
       if (t < 1) {
         requestAnimationFrame(stepFlip);
@@ -2966,56 +3008,92 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         flipCanvas.hidden = true;
       }
     }
+    /** Ścieżka wielokąta [{ x, y }, …]. */
+    function polygonPath(ctx, polygon) {
+      ctx.beginPath();
+      polygon.forEach((point, index) => (index === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y)));
+      ctx.closePath();
+    }
     /**
-     * Kartka `image` zgięta na wysokości `fold`: nad zgięciem leży płasko, część spod zgięcia jest
-     * odbita do góry (odwrót kartki – jasny papier z przebijającym rysunkiem i cieniem przy zgięciu),
-     * a pod zgięciem pada cień na kartkę pod spodem. flapAlpha – przezroczystość odwiniętej części.
+     * Pas cienia albo światła wzdłuż zgięcia: od punktu zgięcia w kierunku `normal` przez `thickness`
+     * pikseli, kolory `stops` [[miejsce 0–1, kolor], …], przezroczystość `alpha` (wypełnia przycięty obszar).
      */
-    function paintCurl(ctx, image, page, fold, flapAlpha) {
-      const bottom = page.y + page.h;
-      const margin = 30 * view.dpr;
+    function foldBand(ctx, origin, normal, thickness, stops, alpha, extent) {
+      if (alpha <= 0 || thickness <= 0) return;
+      const gradient = ctx.createLinearGradient(origin.x, origin.y, origin.x + normal.x * thickness, origin.y + normal.y * thickness);
+      for (const [offset, color] of stops) gradient.addColorStop(offset, color);
       ctx.save();
-      ctx.beginPath();
-      ctx.rect(page.x - margin, page.y - margin, page.w + margin * 2, Math.max(0, fold - page.y + margin));
+      ctx.globalAlpha = Math.min(1, alpha);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(-extent, -extent, extent * 3, extent * 3);
+      ctx.restore();
+    }
+    // Pasy jak w notatkach (css .note-curl__band): cień na stronie pod spodem, przy zgięciu na płaskiej części
+    // i jasne zaokrąglenie papieru na płacie.
+    const CAST_STOPS = [[0, 'rgba(0,0,0,0.3)'], [0.08, 'rgba(0,0,0,0.22)'], [0.2, 'rgba(0,0,0,0.14)'], [0.38, 'rgba(0,0,0,0.07)'], [0.62, 'rgba(0,0,0,0.025)'], [1, 'rgba(0,0,0,0)']];
+    const FOLD_STOPS = [[0, 'rgba(0,0,0,0.24)'], [0.15, 'rgba(0,0,0,0.15)'], [0.4, 'rgba(0,0,0,0.07)'], [0.7, 'rgba(0,0,0,0.02)'], [1, 'rgba(0,0,0,0)']];
+    const LIGHT_STOPS = [
+      [0, 'rgba(0,0,0,0.1)'], [0.05, 'rgba(255,255,255,0.9)'], [0.13, 'rgba(255,255,255,0.4)'], [0.3, 'rgba(255,255,255,0)'],
+      [0.45, 'rgba(0,0,0,0)'], [0.72, 'rgba(0,0,0,0.025)'], [1, 'rgba(0,0,0,0.05)']
+    ];
+    /**
+     * Kartka `page` ({ image, rect }) w trakcie przewracania (progress 0 – płasko, 1 – przewrócona):
+     * róg dolny prawy idzie łukiem w lewo, płaska część zostaje, zagięty płat (odwrót – jasny papier,
+     * przez który lekko prześwituje rysunek w lustrze) leży odbity względem zgięcia i znika za grzbietem
+     * (lewą krawędzią strony); cień pada na stronę pod spodem.
+     */
+    function paintTurn(ctx, page, progress) {
+      const { image, rect } = page;
+      const [width, height] = [rect.w, rect.h];
+      const corner = cornerOf('bottom', width, height);
+      const point = constrainCorner({ width, height, corner, point: cornerPath(corner, width, height, progress) });
+      const geometry = foldGeometry({ width, height, corner, point });
+      ctx.save();
+      ctx.translate(rect.x, rect.y);
+      if (!geometry) {
+        if (progress < 0.5) ctx.drawImage(image, 0, 0);
+        ctx.restore();
+        return;
+      }
+      const extent = Math.max(width, height) * 2;
+      const lift = Math.sin(Math.PI * geometry.progress);
+      const away = { x: -geometry.normal.x, y: -geometry.normal.y };
+      // Płaska część kartki z cieniem przy zgięciu.
+      ctx.save();
+      polygonPath(ctx, geometry.flat);
       ctx.clip();
       ctx.drawImage(image, 0, 0);
+      foldBand(ctx, geometry.point, away, width * (0.03 + 0.12 * lift), FOLD_STOPS, lift * 2, extent);
       ctx.restore();
-      const flap = bottom - fold;
-      if (flap <= 0.5) return;
-      // Cień odwiniętej części na kartce pod spodem.
-      const shadow = Math.min(flap, 36 * view.dpr);
-      const below = ctx.createLinearGradient(0, fold, 0, fold + shadow);
-      below.addColorStop(0, 'rgba(0, 0, 0, 0.22)');
-      below.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = below;
-      ctx.fillRect(page.x, fold, page.w, shadow);
+      // Cień płata na stronie pod spodem (odsłonięta część).
       ctx.save();
-      ctx.globalAlpha = flapAlpha;
-      ctx.beginPath();
-      ctx.rect(page.x, fold - flap, page.w, flap);
+      polygonPath(ctx, geometry.folded);
       ctx.clip();
+      foldBand(ctx, geometry.point, geometry.normal, width * (0.04 + 0.2 * lift), CAST_STOPS, lift * 1.6, extent);
+      ctx.restore();
+      // Płat: tylko nad stroną w poziomie (za grzbietem kartka znika), w pionie może wyjść poza nią.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, -height, width, height * 3);
+      ctx.clip();
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+      ctx.shadowBlur = 6 * view.dpr;
+      ctx.shadowOffsetY = 2 * view.dpr;
+      polygonPath(ctx, geometry.flap);
       ctx.fillStyle = '#f7f7f8';
-      ctx.fillRect(page.x, fold - flap, page.w, flap);
+      ctx.fill();
+      ctx.restore();
+      polygonPath(ctx, geometry.flap);
+      ctx.clip();
       ctx.save();
-      ctx.globalAlpha = flapAlpha * 0.12;
-      ctx.translate(0, fold * 2);
-      ctx.scale(1, -1);
+      ctx.globalAlpha = 0.12;
+      ctx.transform(...geometry.reflection);
       ctx.drawImage(image, 0, 0);
       ctx.restore();
-      const shade = ctx.createLinearGradient(0, fold, 0, fold - Math.min(flap, 140 * view.dpr));
-      shade.addColorStop(0, 'rgba(0, 0, 0, 0.16)');
-      shade.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = shade;
-      ctx.fillRect(page.x, fold - flap, page.w, flap);
+      const depth = Math.max(1, ...geometry.folded.map((vertex) => (vertex.x - geometry.point.x) * geometry.normal.x + (vertex.y - geometry.point.y) * geometry.normal.y));
+      foldBand(ctx, geometry.point, away, depth + 1, LIGHT_STOPS, lift * 2.5, extent);
       ctx.restore();
-      ctx.save();
-      ctx.globalAlpha = flapAlpha * 0.35;
-      ctx.strokeStyle = '#8e8e93';
-      ctx.lineWidth = view.dpr;
-      ctx.beginPath();
-      ctx.moveTo(page.x, fold - flap);
-      ctx.lineTo(page.x + page.w, fold - flap);
-      ctx.stroke();
       ctx.restore();
     }
 
@@ -3140,6 +3218,13 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const bounds = selectionBounds([...selection]);
       const pad = SELECTION_PAD / view.scale;
       return Boolean(bounds) && point.x >= bounds.minX - pad && point.x <= bounds.maxX + pad && point.y >= bounds.minY - pad && point.y <= bounds.maxY + pad;
+    };
+    /** Punkt na zaznaczeniu, które przeciągnięcie przesunie (zaznaczanie – ramka; kształty – zaznaczony kształt). */
+    const onSelection = (point) => {
+      const [only] = selection;
+      return (tool === 'select' && selectionHit(point))
+        || (tool === 'shape' && selection.size === 1 && isShape(only)
+          && (shapeContains(only, point.x, point.y) || touchesShape(only, point.x, point.y, HANDLE_HIT / view.scale)));
     };
     /**
      * Zaznaczenie fragmentów (od 1.14): kreski przecięte brzegiem obszaru zastępują kawałki – w środku
@@ -4281,7 +4366,44 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       }
       // Liniuszek (od 1.15): kierunek kreski wiadomo dopiero po kilku pikselach – wtedy decyzja.
       if (!active.edge && guide && tools.guide.snap) active.guidePending = { start: toDrawing(event), raw: [] };
+      // Rozpoznawanie kształtu (od 1.24): pióro (nie zakreślacz), bez linijki i liniuszka.
+      if (!highlighter && tools.recognize) active.hold = { anchor: local(event), timer: 0, event };
       extendStroke(event);
+    }
+    /**
+     * Przytrzymanie pióra: każdy ruch dalej niż HOLD_SLOP od miejsca, w którym pióro stanęło, liczy
+     * czas od nowa; po HOLD_MS bez ruchu – rozpoznanie kształtu.
+     */
+    function watchHold(event) {
+      const hold = active?.hold;
+      if (!hold || active.recognized) return;
+      const point = local(event);
+      if (hold.timer && Math.hypot(point.x - hold.anchor.x, point.y - hold.anchor.y) <= HOLD_SLOP) return;
+      clearTimeout(hold.timer);
+      hold.anchor = point;
+      hold.event = event;
+      const stroke = active.stroke;
+      hold.timer = setTimeout(() => recognizeHeld(stroke), HOLD_MS);
+    }
+    /** Kreska `stroke` wciąż rysowana i przytrzymana – figura w miejscu kreski (podgląd do puszczenia pióra). */
+    function recognizeHeld(stroke) {
+      // Kreska wzdłuż linijki albo liniuszka jest już prosta – bez rozpoznawania.
+      if (active?.kind !== 'stroke' || active.stroke !== stroke || active.edge) return;
+      const shape = recognizeStroke(stroke.points, { color: stroke.color }, { scale: view.scale });
+      if (!shape) return;
+      // Końce odcinka i strzałki przy krawędzi albo narożniku – przyciągnięte i przyklejone (jak narzędzie Kształty).
+      let next = shape;
+      let links = [];
+      if (isSegment(shape)) {
+        const ends = [shapePoint(shape, -0.5, 0), shapePoint(shape, 0.5, 0)];
+        const snaps = ends.map((point) => edgeSnapAt(point, active.hold.event));
+        if (snaps.some(Boolean)) {
+          next = segmentBetween(shape, snaps[0] ?? ends[0], snaps[1] ?? ends[1]);
+          links = [['start', snaps[0]], ['end', snaps[1]]].filter(([, snap]) => snap);
+        }
+      }
+      active.recognized = { shape: next, links };
+      renderLive();
     }
     /**
      * Kreska odsunięta od początku o kilka px: gdy zaczęła się przy linii liniuszka i biegnie wzdłuż
@@ -4330,6 +4452,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       return true;
     }
     function extendStroke(event) {
+      // Kreska już zamieniona w figurę (od 1.24) – dalszy ruch do puszczenia pióra jej nie zmienia.
+      if (active.recognized) return;
+      watchHold(event);
       const events = event.getCoalescedEvents?.() ?? [];
       for (const item of events.length > 0 ? events : [event]) {
         const raw = { ...strokePoint(item), w: pointWidth(item) };
@@ -4678,6 +4803,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
             const node = Math.round(value / PAPER_STEP) * PAPER_STEP;
             return Math.abs(node - value) * view.scale <= 8 ? node : value;
           };
+          // Dotknięcie bez przesunięcia (od 1.24) nie rusza kółka – przy zaznaczaniu zaznacza to, co pod nim.
+          if (!active.moved && Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale < TAP_SLOP) break;
+          active.moved = true;
           guide = { x: snap(active.origin.x + point.x - active.start.x), y: snap(active.origin.y + point.y - active.start.y) };
           requestLive();
           break;
@@ -4729,7 +4857,16 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       active = null;
       let focusField = null;
       if (done.kind === 'stroke') {
-        if (!cancelled && done.stroke.points.length >= 3) {
+        clearTimeout(done.hold?.timer);
+        if (!cancelled && done.recognized) {
+          // Dwa kroki cofania (od 1.24): odręczna kreska, potem figura – „Cofnij” przywraca kreskę.
+          history.add(done.stroke);
+          history.begin();
+          const index = drawing.strokes.indexOf(done.stroke);
+          if (index >= 0) drawing.strokes[index] = done.recognized.links.length > 0 ? linkEnds(done.recognized.shape, done.recognized.links) : done.recognized.shape;
+          commitStep();
+          changed = true;
+        } else if (!cancelled && done.stroke.points.length >= 3) {
           history.add(done.stroke);
           changed = true;
         } else if (done.edge) {
@@ -4741,6 +4878,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         if (selection.size > 0) selection = new Set(drawing.strokes.filter((stroke) => selection.has(stroke)));
       } else if ((done.kind === 'marquee' || done.kind === 'lasso') && !cancelled) {
         finishOutline(done);
+      } else if (done.kind === 'guide-move' && !cancelled && !done.moved && tool === 'select') {
+        // Dotknięcie kółka liniuszka przy zaznaczaniu (od 1.24) – jak dotknięcie strony: zaznacza element pod nim.
+        clearSelection();
+        finishOutline({ kind: 'marquee', start: done.start, rect: { x0: done.start.x, y0: done.start.y, x1: done.start.x, y1: done.start.y } });
       } else if (done.kind === 'shape-new' && !cancelled) {
         // Dotknięcie przy zaznaczonym kształcie tylko je zdejmuje; inaczej – kształt (dotknięcie – domyślnej wielkości).
         if (done.moved || !done.hadSelection) {
@@ -4913,10 +5054,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           return;
         }
         // Palec przy rysiku: punkty kształtu, kółko liniuszka i zaznaczenie – tak; poza nimi przesuwa stronę.
-        const [only] = selection;
-        const onSelection = (tool === 'select' && selectionHit(point))
-          || (tool === 'shape' && selection.size === 1 && isShape(only) && shapeContains(only, point.x, point.y));
-        if (!hit && penSeen && !onSelection && !shapeHandleAt(point) && !boxHandleAt(point) && !guideKnobHit(point) && !arrayCenterHit(point)) {
+        if (!hit && penSeen && !onSelection(point) && !shapeHandleAt(point) && !boxHandleAt(point) && !guideKnobHit(point) && !arrayCenterHit(point)) {
           touches.set(event.pointerId, local(event));
           startGesture('page');
           return;
@@ -4942,7 +5080,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       else if (boxHandle) startBoxEdit(event, boxHandle);
       else if (centerHit) startArrayCenter(event);
       else if (hit === 'handle') startRuler(event, 'ruler-rotate');
-      else if (guideKnobHit(point)) startGuideMove(event);
+      // Zaznaczenie przed kółkiem liniuszka (od 1.24): przeciągnięcie zaznaczonego pola albo kształtu,
+      // który leży na kółku, przesuwa je, a nie liniuszek.
+      else if (guideKnobHit(point) && !onSelection(point)) startGuideMove(event);
       else if (hit === 'body' && event.pointerType !== 'pen') startRuler(event, 'ruler-move');
       else if (usesEraser(event)) startErase(event);
       else if (tool === 'select') startSelect(event);

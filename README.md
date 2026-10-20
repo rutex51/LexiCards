@@ -1,4 +1,4 @@
-# LexiCards 1.23
+# LexiCards 1.24
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -32,8 +32,9 @@ Notatki: wyrównanie i interlinia, linki, symbole, data i godzina, PDF, pełne �
 Tabele w notatkach („Tab. N.”) i na rysunku, okno grubości zakreślacza, karteczki na rysunku (wersja 1.21); wybór daty i godziny – kalendarz i bębny (1.21.1): [docs/RELEASE-1.21.md](docs/RELEASE-1.21.md).
 Rysunek: liniuszek promieniowy, przewracanie kartek kółkiem i przyciskami ‹ › z animacją, końce odcinka i strzałki przyciągane do krawędzi i narożników (wersja 1.22); wymiary jak w rysunku technicznym z tolerancjami, ramka tolerancji, baza, chropowatość (1.22.1): [docs/RELEASE-1.22.md](docs/RELEASE-1.22.md).
 Nauka w kalendarzu – plik .ics do Outlooka z powtarzaniem, przypomnieniem, prywatnością i linkami do lekcji (wersja 1.23): [docs/RELEASE-1.23.md](docs/RELEASE-1.23.md).
+Rysunek: figury z odręcznych kształtów (przytrzymane pióro), łamana i wielokąt z punktami w wierzchołkach, kartki przewracane od rogu jak w notatkach, zaznaczenie przed kółkiem liniuszka (wersja 1.24): [docs/RELEASE-1.24.md](docs/RELEASE-1.24.md).
 
-## Co potrafi wersja 1.23
+## Co potrafi wersja 1.24
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -119,7 +120,10 @@ Nauka w kalendarzu – plik .ics do Outlooka z powtarzaniem, przypomnieniem, pry
   **wymiary jak w rysunku technicznym** (linie pomocnicze, linia wymiarowa ze strzałkami, łuk kąta,
   odsunięcie przeciąganiem, piętra), znak ⌀ R □, tolerancje (±, odchyłki, pasowania), liczby „50” (mm)
   albo „5 cm” oraz **symbole metrologiczne** – ramka tolerancji (14 symboli ISO 1101), znak bazy
-  i chropowatość (ISO 1302) ze strzałką przyklejoną do krawędzi. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
+  i chropowatość (ISO 1302) ze strzałką przyklejoną do krawędzi. Od 1.24: **figury z odręcznych
+  kształtów** – narysuj kształt i na końcu przytrzymaj pióro, a zamieni się w odcinek, strzałkę, łamaną,
+  trójkąt, prostokąt, romb, równoległobok, trapez, okrąg, elipsę albo wielokąt („Cofnij” przywraca
+  kreskę); łamana i wielokąt mają punkt w każdym wierzchołku. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
@@ -179,7 +183,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.20 – wyrównanie i interlinia, linki, symbole, data i godzina, PDF, „Usuń formatowanie”, ścieżka nad fiszką](docs/RELEASE-1.20.md),
 [wersja 1.21 – tabele w notatkach i na rysunku, grubość zakreślacza, karteczki; 1.21.1 – wybór daty i godziny](docs/RELEASE-1.21.md),
 [wersja 1.22 – liniuszek promieniowy, przewracanie kartek kółkiem, przyciąganie końców do krawędzi i narożników; 1.22.1 – wymiary techniczne, tolerancje, symbole metrologiczne](docs/RELEASE-1.22.md),
-[wersja 1.23 – nauka w kalendarzu (.ics)](docs/RELEASE-1.23.md).
+[wersja 1.23 – nauka w kalendarzu (.ics)](docs/RELEASE-1.23.md),
+[wersja 1.24 – figury z odręcznych kształtów, łamana, przewracanie kartek od rogu](docs/RELEASE-1.24.md).
 
 ## Jak korzystać
 
@@ -490,6 +495,8 @@ zaczęta przy linii i prowadzona wzdłuż niej biegnie prosto po linii (w innym 
 kreska), z długością w pigułce. Pigułka „Liniuszek …” otwiera ustawienia: odstęp linii (¼–6 kratek),
 kąt (−90° do 90°), **Linie poprzeczne** z odstępem i kątem względem linii (np. 75° – liniatura do
 pisma pochyłego), przyciąganie. Kółko na stronie przesuwa liniuszek (przyskakuje do węzłów kratki).
+Od 1.24 zaznaczony element leżący na kółku ma pierwszeństwo: przeciągnięcie przesuwa element, a nie
+liniuszek, a dotknięcie kółka przy zaznaczaniu zaznacza to, co pod nim (kółko poza zaznaczeniem – jak dotąd).
 Liniuszek nie trafia do rysunku. Od 1.22 na górze panelu jest wybór **Równoległy / Promieniowy**.
 **Promieniowy**: okręgi wokół kółka (to środek) co **Odstęp okręgów** (¼–6 kratek) i – przełącznik
 **Promienie ze środka** – przerywane promienie **co** 5°, 10°, 15°, 20°, 30°, 45°, 60° albo 90° (szybkie
@@ -506,6 +513,21 @@ równoległobok, pochylona elipsa), kółko nad kształtem (obrót, co 15° lekk
 punkt (wierzchołek trójkąta, wcięcie trapezu), a odcinek i strzałka – dwa końce. Kształt zaznaczasz,
 przesuwasz, kopiujesz i usuwasz jak inne elementy (gumka całych kresek go usuwa, gumka fragmentów nie
 przecina); zero linijki przyciąga się też do jego boków i narożników.
+**Figury z odręcznych kształtów** (od 1.24): narysuj kształt piórem i na końcu, nie odrywając go,
+**przytrzymaj ok. ½ sekundy** – kreska zamienia się w figurę (widać ją od razu, zapisuje się po
+oderwaniu pióra); bez przytrzymania zostaje odręczna. Rozpoznawane: **odcinek** (prawie poziomy
+i pionowy – dokładnie, do 7°; prawie 45° – do 5°), **strzałka** (trzon i grot „V” – ramię, powrót,
+drugie ramię – albo grot-trójkąt; także grot narysowany najpierw), **łamana**, **trójkąt** (podstawa
+prawie pozioma – pozioma; prawie równoramienny, prostokątny i równoboczny – dokładnie), **prostokąt
+i kwadrat** (kąty prawie proste – proste), **romb**, **równoległobok**, **trapez**, **okrąg i elipsa**
+oraz **wielokąt** (np. litera L, pięciokąt – boki prawie poziome i pionowe dokładnie). Figura ma kolor
+i grubość kreski; końce odcinka i strzałki przy krawędzi innego elementu przyklejają się (jak przy
+narzędziu Kształty). **Cofnij** przywraca kreskę odręczną. Łuki, fale, pismo i niepewne kształty
+zostają odręczne. Wyłącznik **Figury z odręcznych kształtów** – w ustawieniach pióra (drugie dotknięcie
+pióra). **Łamana i wielokąt** (od 1.24 – tylko z rozpoznania): zaznaczone mają **punkt w każdym
+wierzchołku** (niebieski) – przeciągnięcie przesuwa ten wierzchołek (bok prawie poziomy, pionowy albo
+pod 45° – dokładnie; z Shift co 15°), narożniki ramki zmieniają wielkość, kółko – obrót, pola –
+szerokość i wysokość.
 **Wymiary, wypełnienie i tekst kształtu** (od 1.17): przy zaznaczonym kształcie są pola –
 **szerokość** pod dolną linią ramki, **wysokość** przy prawej, **kąt pochylenia** przy lewej (odcinek
 i strzałka: **długość** i **kąt**). Długości są w skali rysunku; wpisz liczbę i Enter – kształt zmienia
@@ -578,9 +600,10 @@ dodanej (albo PageUp i PageDown). Po **Gotowe** każda kartka z treścią to oso
 przewraca kartki: jeden ruch kółka – jedna kartka (w dół – następna, w górę – poprzednia; małe ruchy
 gładzika się sumują, rozpęd po przewróceniu nie przewraca dalej). Powiększoną stronę kółko najpierw
 przesuwa, a na górnym albo dolnym brzegu dalszy ruch przewraca kartkę. Przewracanie (też PageUp,
-PageDown i menu kartek) ma animację jak w notesie zszytym u góry: następna – kartka unosi się od dolnej
-krawędzi i przechodzi do góry, poprzednia – opada z góry (pół sekundy; bez animacji, gdy system prosi
-o ograniczenie ruchu).
+PageDown i menu kartek) ma animację – od 1.24 jak w notatkach: kartka zagina się od **prawego dolnego
+rogu** i przewraca w lewo (grzbiet z lewej, na odwrocie lekko prześwituje rysunek, pod spodem już
+następna kartka); poprzednia wraca tą samą drogą nad bieżącą. Trwa ok. 0,9 s; powiększona kartka wraca
+najpierw do widoku całej strony (bez animacji, gdy system prosi o ograniczenie ruchu).
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno
 **Nowe pole tekstowe** – tekst (Enter zaczyna nowy wiersz, długi wiersz łamie się sam), wielkość
 (Mała, Średnia, Duża, od 1.18 Bardzo duża) i kolor; przycisk **Σ** – okno **Nowy wzór**: zapis jak we wzorze w notatce,
@@ -894,7 +917,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 28. **Wersja 1.21: tabele w notatkach, na rysunku i na zdjęciu („Tab. N.”), okno grubości zakreślacza, karteczki na rysunku; 1.21.1 – wybór daty (kalendarz) i godziny (bębny) zamiast pól przeglądarki** – gotowe.
 29. **Wersja 1.22: rysunek – liniuszek promieniowy, kółko i przyciski ‹ › przewracają kartki (z animacją), przyciąganie i przyklejanie końców odcinka i strzałki do krawędzi i narożników; 1.22.1 – wymiary jak w rysunku technicznym (odsunięcie, piętra, ⌀ R □, tolerancje, pasowania, „50” / „5 cm”), ramka tolerancji ISO 1101, znak bazy, chropowatość ISO 1302** – gotowe.
 30. **Wersja 1.23: nauka w kalendarzu – plik .ics dla Outlooka: powtarzanie (dni tygodnia, do dnia albo N razy), przypomnienie, prywatne i zajęte, strefa czasowa ze zmianą czasu, linki do lekcji (też do kilku lekcji naraz)** – gotowe.
-31. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
+31. **Wersja 1.24: rysunki, etap 2 – zamiana odręcznych kształtów na figury (przytrzymanie pióra), łamana i wielokąt z punktami w wierzchołkach (punkty konstrukcyjne pozostałych figur są od 1.15); przewracanie kartek od rogu jak w notatkach; zaznaczenie przed kółkiem liniuszka** – gotowe. Dociąganie do linii kratek – zrezygnowano (to samo daje liniuszek).
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

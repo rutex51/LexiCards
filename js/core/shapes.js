@@ -21,11 +21,20 @@
 //   (['width', 'height', 'skew'] albo odcinek ['length', 'angle']); od 1.22.1 rysowane jak w rysunku
 //   technicznym – dimOffsets { klucz: odsunięcie linii wymiarowej albo promień łuku } i dimTols
 //   { klucz: { prefix?, kind?: 'sym' | 'dev' | 'fit', value?, upper?, lower?, fit? } } (znak i tolerancja).
+//   Od 1.24 łamana 'polyline' i wielokąt 'polygon' (z rozpoznanego odręcznego kształtu): nodes – wierzchołki
+//   [u, v, u, v, …] w układzie własnym (od −½ do ½ szerokości i wysokości ramki), więc przesuwanie,
+//   obrót i zmiana wielkości działają jak przy innych kształtach; bez pochylenia, łamana – bez wypełnienia.
 
 export const SHAPES = Object.freeze(['line', 'arrow', 'rect', 'ellipse', 'triangle', 'diamond', 'trapezoid']);
 export const SHAPE_LABELS = Object.freeze({
-  line: 'Odcinek', arrow: 'Strzałka', rect: 'Prostokąt', ellipse: 'Elipsa', triangle: 'Trójkąt', diamond: 'Romb', trapezoid: 'Trapez'
+  line: 'Odcinek', arrow: 'Strzałka', rect: 'Prostokąt', ellipse: 'Elipsa', triangle: 'Trójkąt', diamond: 'Romb', trapezoid: 'Trapez',
+  polyline: 'Łamana', polygon: 'Wielokąt'
 });
+/** Kształty z wierzchołkami (od 1.24) – tylko z rozpoznania odręcznego kształtu, nie z panelu kształtów. */
+export const POLY_SHAPES = Object.freeze(['polyline', 'polygon']);
+export const isPoly = (shape) => shape.shape === 'polyline' || shape.shape === 'polygon';
+/** Najwięcej wierzchołków łamanej i wielokąta. */
+export const POLY_NODES_MAX = 24;
 /** Kształty z dwoma końcami (bez wysokości). */
 export const isSegment = (shape) => shape.shape === 'line' || shape.shape === 'arrow';
 export const isShape = (stroke) => stroke?.tool === 'shape';
@@ -38,7 +47,7 @@ const DEFAULT_ADJUST = { triangle: 0.5, trapezoid: 0.25 };
 export const SHAPE_FILLS = Object.freeze(['none', 'light', 'solid']);
 export const SHAPE_FILL_LABELS = Object.freeze({ none: 'Brak', light: 'Jasne', solid: 'Pełne' });
 export const FILL_ALPHA = Object.freeze({ light: 0.22, solid: 1 });
-export const canFill = (shape) => !isSegment(shape);
+export const canFill = (shape) => !isSegment(shape) && shape.shape !== 'polyline';
 /** Najdłuższy tekst na kształcie. */
 export const LABEL_TEXT_MAX = 500;
 /** Największy kąt pochylenia wpisywany z klawiatury (stopnie) – odpowiada SKEW_LIMIT. */
@@ -70,9 +79,14 @@ function polygonOf(shape) {
     case 'diamond': return [[0, -0.5], [0.5, 0], [0, 0.5], [-0.5, 0]];
     case 'triangle': return [[shape.adjust - 0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
     case 'trapezoid': return [[-0.5 + shape.adjust, -0.5], [0.5 - shape.adjust, -0.5], [0.5, 0.5], [-0.5, 0.5]];
+    case 'polyline':
+    case 'polygon': return nodePairs(shape);
     default: return null;
   }
 }
+
+/** Wierzchołki łamanej albo wielokąta: [[u, v], …]. */
+const nodePairs = (shape) => Array.from({ length: shape.nodes.length / 2 }, (_, index) => [shape.nodes[index * 2], shape.nodes[index * 2 + 1]]);
 
 // ---------------------------------------------------------------- zakończenia odcinka (od 1.19)
 
@@ -175,7 +189,7 @@ export function shapeOutline(shape) {
     const point = shapePoint(shape, u, v);
     points.push(point.x, point.y);
   }
-  return { points, closed: true };
+  return { points, closed: shape.shape !== 'polyline' };
 }
 
 /** Ścieżka do narysowania: łamane i krzywe Béziera w punktach strony (elipsa – obraz okręgu przez przekształcenie kształtu). */
@@ -302,7 +316,7 @@ function pointInPolygon(x, y, points) {
 
 /** Czy punkt leży wewnątrz kształtu (dotknięcie środka pustego prostokąta też go zaznacza). */
 export function shapeContains(shape, x, y) {
-  if (isSegment(shape)) return false;
+  if (isSegment(shape) || shape.shape === 'polyline') return false;
   const { points } = shapeOutline(shape);
   let inside = false;
   for (let index = 0, previous = points.length - 2; index < points.length; previous = index, index += 2) {
@@ -377,8 +391,12 @@ export function shapeHandles(shape, rotateGap) {
     const [a, b] = [shapePoint(shape, -0.5, 0), shapePoint(shape, 0.5, 0)];
     return [{ id: 'start', kind: 'end', ...a }, { id: 'end', kind: 'end', ...b }];
   }
-  const handles = Object.entries(FRAME_HANDLES).map(([id, [u, v]]) => ({ id, kind: id.length === 2 ? 'corner' : 'edge', ...shapePoint(shape, u, v) }));
-  handles.push({ id: 'skew', kind: 'skew', ...shapePoint(shape, SKEW_AT, -0.5) });
+  // Łamana i wielokąt (od 1.24): narożniki ramki (wielkość), obrót i punkt w każdym wierzchołku.
+  const poly = isPoly(shape);
+  const handles = Object.entries(FRAME_HANDLES).filter(([id]) => !poly || id.length === 2)
+    .map(([id, [u, v]]) => ({ id, kind: id.length === 2 ? 'corner' : 'edge', ...shapePoint(shape, u, v) }));
+  if (poly) nodePairs(shape).forEach(([u, v], index) => handles.push({ id: `v${index}`, kind: 'vertex', ...shapePoint(shape, u, v) }));
+  else handles.push({ id: 'skew', kind: 'skew', ...shapePoint(shape, SKEW_AT, -0.5) });
   if (shape.shape === 'triangle') handles.push({ id: 'adjust', kind: 'adjust', ...shapePoint(shape, shape.adjust - 0.5, -0.5) });
   if (shape.shape === 'trapezoid') handles.push({ id: 'adjust', kind: 'adjust', ...shapePoint(shape, -0.5 + shape.adjust, -0.5) });
   // Obrót – nad środkiem, na osi kształtu (przy pochyleniu też – przeciągnięcie nie skacze).
@@ -401,6 +419,7 @@ function fromFrame(shape, lx, ly) {
  * Od 1.19 `lock` (Shift): narożnik zachowuje proporcje kształtu, koniec odcinka i obrót – co 15°.
  */
 export function moveShapeHandle(shape, id, point, { lock = false } = {}) {
+  if (/^v\d+$/.test(id) && isPoly(shape)) return moveNode(shape, Number(id.slice(1)), point, { lock });
   if (id === 'start' || id === 'end') {
     const fixed = shapePoint(shape, id === 'start' ? 0.5 : -0.5, 0);
     const [from, to] = id === 'start' ? [point, fixed] : [fixed, point];
@@ -451,6 +470,80 @@ export function moveShapeHandle(shape, id, point, { lock = false } = {}) {
   return { ...shape, w: round(w), h: round(h), x: round(center.x), y: round(center.y) };
 }
 
+/**
+ * Łamana albo wielokąt z wierzchołkami w punktach strony [{ x, y }, …] w układzie `frame` (środek,
+ * kąt): ramka – najmniejszy prostokąt wokół wierzchołków w tym układzie (od 1.24).
+ */
+export function polyFromPoints(kind, points, frame, style) {
+  const [cos, sin] = [Math.cos(frame.angle), Math.sin(frame.angle)];
+  const local = points.map((point) => {
+    const [dx, dy] = [point.x - frame.x, point.y - frame.y];
+    return [dx * cos + dy * sin, -dx * sin + dy * cos];
+  });
+  const xs = local.map(([lx]) => lx);
+  const ys = local.map(([, ly]) => ly);
+  const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const [w, h] = [Math.max(MIN_SHAPE, maxX - minX), Math.max(MIN_SHAPE, maxY - minY)];
+  const [cx, cy] = [(minX + maxX) / 2, (minY + maxY) / 2];
+  const nodes = local.flatMap(([lx, ly]) => [Math.round(((lx - cx) / w) * 10000) / 10000, Math.round(((ly - cy) / h) * 10000) / 10000]);
+  const shape = {
+    tool: 'shape', shape: kind, color: style.color, size: style.size,
+    x: round(frame.x + cx * cos - cy * sin), y: round(frame.y + cx * sin + cy * cos),
+    w: round(w), h: round(h), angle: frame.angle, skew: 0, adjust: 0, nodes
+  };
+  if (kind === 'polygon' && (style.fill === 'light' || style.fill === 'solid')) shape.fill = style.fill;
+  return shape;
+}
+
+/** Wierzchołki łamanej albo wielokąta w punktach strony. */
+export const polyPoints = (shape) => nodePairs(shape).map(([u, v]) => shapePoint(shape, u, v));
+
+/**
+ * Wierzchołek `index` łamanej albo wielokąta przesunięty do punktu strony – ramka dopasowana do
+ * nowych wierzchołków (kąt ramki zostaje). Bok do sąsiedniego wierzchołka przyciągany do poziomu,
+ * pionu i 45° (do 3°; z Shift – co 15°); przy obu sąsiadach – w przecięciu obu kierunków.
+ */
+function moveNode(shape, index, point, { lock = false } = {}) {
+  const points = polyPoints(shape);
+  if (index < 0 || index >= points.length) return shape;
+  const closed = shape.shape === 'polygon';
+  const neighbours = [index - 1, index + 1]
+    .map((other) => (closed ? (other + points.length) % points.length : other))
+    .filter((other) => other >= 0 && other < points.length && other !== index)
+    .map((other) => points[other]);
+  const [step, tolerance] = lock ? [LOCK_STEP, LOCK_STEP] : [Math.PI / 4, (3 * Math.PI) / 180];
+  const lines = [];
+  for (const from of neighbours) {
+    const raw = Math.atan2(point.y - from.y, point.x - from.x);
+    const angle = snapAngle(raw, step, tolerance);
+    if (angle !== raw && Math.hypot(point.x - from.x, point.y - from.y) > 0) lines.push({ from, angle });
+  }
+  let target = point;
+  if (lines.length === 2) {
+    // Przecięcie obu prostych (równoległe – tylko pierwsza).
+    const [a, b] = lines;
+    const [ax, ay, bx, by] = [Math.cos(a.angle), Math.sin(a.angle), Math.cos(b.angle), Math.sin(b.angle)];
+    const cross = ax * by - ay * bx;
+    if (Math.abs(cross) > 1e-6) {
+      const t = ((b.from.x - a.from.x) * by - (b.from.y - a.from.y) * bx) / cross;
+      target = { x: a.from.x + ax * t, y: a.from.y + ay * t };
+    } else {
+      lines.pop();
+    }
+  }
+  if (lines.length === 1) {
+    const [{ from, angle }] = lines;
+    const along = (point.x - from.x) * Math.cos(angle) + (point.y - from.y) * Math.sin(angle);
+    target = { x: from.x + Math.cos(angle) * along, y: from.y + Math.sin(angle) * along };
+  }
+  points[index] = target;
+  return { ...polyFromPoints(shape.shape, points, shape, shape), ...keepExtras(shape) };
+}
+
+/** Pola geometrii kształtu – przy przeliczeniu łamanej zastępowane; reszta (wypełnienie, tekst, wymiary, id…) zostaje. */
+const GEOMETRY_KEYS = new Set(['tool', 'shape', 'color', 'size', 'x', 'y', 'w', 'h', 'angle', 'skew', 'adjust', 'nodes']);
+const keepExtras = (shape) => Object.fromEntries(Object.entries(shape).filter(([key]) => !GEOMETRY_KEYS.has(key)));
+
 // ---------------------------------------------------------------- wymiary z klawiatury (od 1.17)
 
 /** Kąt pochylenia w stopniach: dodatni – górna krawędź przesunięta w prawo (kształt pochylony w prawo). */
@@ -462,7 +555,7 @@ export const skewDegrees = (shape) => (Math.atan(shape.skew) * 180) / Math.PI;
  */
 export function resizeShape(shape, { w = shape.w, h = shape.h, skew = null } = {}) {
   if (isSegment(shape)) return { ...shape, w: round(Math.max(MIN_SHAPE, w)) };
-  const degrees = skew === null ? null : clamp(skew, -SKEW_DEGREES_LIMIT, SKEW_DEGREES_LIMIT);
+  const degrees = skew === null || isPoly(shape) ? null : clamp(skew, -SKEW_DEGREES_LIMIT, SKEW_DEGREES_LIMIT);
   return {
     ...shape,
     w: round(Math.max(MIN_SHAPE, w)),
@@ -490,7 +583,7 @@ export function setSegment(shape, { length = shape.w, degrees = segmentDegrees(s
 // ---------------------------------------------------------------- wymiary na rysunku (od 1.19)
 
 /** Wymiary kształtu: szerokość, wysokość i kąt pochylenia; odcinka i strzałki – długość i kąt. */
-export const dimKeys = (shape) => (isSegment(shape) ? ['length', 'angle'] : ['width', 'height', 'skew']);
+export const dimKeys = (shape) => (isSegment(shape) ? ['length', 'angle'] : isPoly(shape) ? ['width', 'height'] : ['width', 'height', 'skew']);
 /** Wielkość czcionki stałego wymiaru i jego odstęp od linii ramki (jednostki strony; kratka ma 44). */
 export const DIM_FONT = 22;
 export const DIM_GAP = 8;
@@ -511,11 +604,14 @@ export function dimPlaces(shape) {
     const flip = cos < -1e-9 || (Math.abs(cos) < 1e-9 && sin > 0) ? -1 : 1;
     return { length: { point: shapePoint(shape, 0, 0), normal: turn([0, flip]) }, angle: { point: shapePoint(shape, 0.5, 0), normal: [cos, sin] } };
   }
-  return {
+  const places = {
     width: { point: shapePoint(shape, 0, 0.5), normal: turn([0, 1]) },
     height: { point: shapePoint(shape, 0.5, 0), normal: turn(unit([1, shape.skew])) },
     skew: { point: shapePoint(shape, -0.5, 0), normal: turn(unit([-1, -shape.skew])) }
   };
+  // Łamana i wielokąt (od 1.24) – bez pochylenia.
+  if (isPoly(shape)) delete places.skew;
+  return places;
 }
 
 /** Środek pola albo napisu wymiaru (width × height) odsuniętego od linii ramki o `gap` na zewnątrz. */
@@ -792,11 +888,21 @@ function cleanLabel(raw, isColor, limit) {
   };
 }
 
+/** Sprawdzone wierzchołki łamanej albo wielokąta [u, v, …] (od −½ do ½) albo null. */
+function cleanNodes(raw, least) {
+  if (!Array.isArray(raw) || raw.length % 2 !== 0 || raw.length < least * 2 || raw.length > POLY_NODES_MAX * 2 || !raw.every(finite)) return null;
+  return raw.map((value) => clamp(value, -0.5, 0.5));
+}
+
 /** Sprawdzony kształt (zapis, kopia zapasowa) albo null. */
 export function cleanShape(raw, pageWidth, pageHeight, isColor) {
-  if (!raw || !SHAPES.includes(raw.shape) || !isColor(raw.color)) return null;
+  if (!raw || !(SHAPES.includes(raw.shape) || POLY_SHAPES.includes(raw.shape)) || !isColor(raw.color)) return null;
   if (![raw.x, raw.y, raw.w, raw.h, raw.angle, raw.size].every(finite)) return null;
   const segment = raw.shape === 'line' || raw.shape === 'arrow';
+  // Od 1.24: wierzchołki łamanej (co najmniej 2) i wielokąta (co najmniej 3) w układzie własnym.
+  const poly = isPoly(raw);
+  const nodes = poly ? cleanNodes(raw.nodes, raw.shape === 'polygon' ? 3 : 2) : null;
+  if (poly && !nodes) return null;
   const limit = Math.max(pageWidth, pageHeight) * 4;
   const label = cleanLabel(raw.label, isColor, limit);
   // Od 1.19: zakończenia odcinka (tylko inne niż domyślne) i wymiary widoczne na stałe.
@@ -813,10 +919,11 @@ export function cleanShape(raw, pageWidth, pageHeight, isColor) {
     h: segment ? 0 : clamp(Math.abs(raw.h), MIN_SHAPE, limit),
     // Kąt w zakresie (−π, π]; w zakresie – bez przeliczania (bez błędów zaokrągleń).
     angle: raw.angle > Math.PI || raw.angle <= -Math.PI ? Math.atan2(Math.sin(raw.angle), Math.cos(raw.angle)) : raw.angle,
-    skew: segment || !finite(raw.skew) ? 0 : clamp(raw.skew, -SKEW_LIMIT, SKEW_LIMIT),
+    skew: segment || poly || !finite(raw.skew) ? 0 : clamp(raw.skew, -SKEW_LIMIT, SKEW_LIMIT),
     adjust: raw.shape === 'triangle' ? clamp(finite(raw.adjust) ? raw.adjust : 0.5, 0, 1)
       : raw.shape === 'trapezoid' ? clamp(finite(raw.adjust) ? raw.adjust : 0.25, 0, 0.45) : 0,
-    ...(!segment && (raw.fill === 'light' || raw.fill === 'solid') ? { fill: raw.fill } : {}),
+    ...(canFill(raw) && (raw.fill === 'light' || raw.fill === 'solid') ? { fill: raw.fill } : {}),
+    ...(nodes ? { nodes } : {}),
     ...(label ? { label } : {}),
     ...(caps.startCap ? { startCap: caps.startCap } : {}),
     ...(caps.endCap ? { endCap: caps.endCap } : {}),

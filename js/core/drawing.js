@@ -28,7 +28,9 @@
 //   strzałka i karteczka – przyklejone końce attach { start?, end?, leader? } (core/attach.js);
 //   od 1.22.1 wymiary kształtu rysowane jak w rysunku technicznym (odsunięcia i tolerancje – core/shapes.js),
 //   dimStyle: 'technical' – liczby wymiarów w milimetrach bez jednostki („50”; brak – „5 cm”), a w strokes
-//   symbole metrologiczne: ramka tolerancji 'gdt', znak bazy 'datum', chropowatość 'roughness' (core/gdt.js).
+//   symbole metrologiczne: ramka tolerancji 'gdt', znak bazy 'datum', chropowatość 'roughness' (core/gdt.js);
+//   od 1.24 kształty także łamana 'polyline' i wielokąt 'polygon' z wierzchołkami (nodes) – z rozpoznania
+//   odręcznego kształtu (core/recognize.js).
 
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import {
@@ -46,7 +48,7 @@ import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
  * 6 – tabele i karteczki (1.21), 7 – identyfikatory elementów i przyklejone końce odcinków (1.22),
  * 8 – wymiary techniczne (odsunięcia, tolerancje, styl liczb) i symbole metrologiczne (1.22.1).
  */
-export const DRAWING_VERSION = 8;
+export const DRAWING_VERSION = 9;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -323,7 +325,9 @@ export function defaultToolSettings() {
     // Od 1.22: końce odcinków i strzałek przyciągane do krawędzi i narożników (magnes).
     edgeSnap: true,
     // Od 1.22.1: odsunięcie linii wymiarowej – wzór dla następnych wymiarów (ostatnio przeciągnięte).
-    dimOffset: DIM_OFFSET
+    dimOffset: DIM_OFFSET,
+    // Od 1.24: kreska pióra przytrzymana na końcu zamienia się w figurę.
+    recognize: true
   };
 }
 
@@ -414,7 +418,8 @@ export function cleanToolSettings(raw) {
     arrayKind: ARRAY_KINDS.includes(raw.arrayKind) ? raw.arrayKind : base.arrayKind,
     stickyColor: STICKY_COLORS.some((color) => color.id === raw.stickyColor) ? raw.stickyColor : base.stickyColor,
     edgeSnap: typeof raw.edgeSnap === 'boolean' ? raw.edgeSnap : base.edgeSnap,
-    dimOffset: finite(raw.dimOffset) ? clamp(Math.round(raw.dimOffset), DIM_OFFSET_LIMITS.min, DIM_OFFSET_LIMITS.max) : base.dimOffset
+    dimOffset: finite(raw.dimOffset) ? clamp(Math.round(raw.dimOffset), DIM_OFFSET_LIMITS.min, DIM_OFFSET_LIMITS.max) : base.dimOffset,
+    recognize: typeof raw.recognize === 'boolean' ? raw.recognize : base.recognize
   };
 }
 
