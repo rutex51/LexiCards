@@ -1,4 +1,4 @@
-# LexiCards 1.18
+# LexiCards 1.19
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -27,8 +27,9 @@ Jasność tła, szablon pod kreskami (boisko, obraz z pliku), liniuszek, kształ
 Przeciąganie wierszy i kolejność list biblioteki – A–Z, Z–A, według daty (wersja 1.16): [docs/RELEASE-1.16.md](docs/RELEASE-1.16.md).
 Wycinek, „Osadź” w notatce, wymiary kształtu z klawiatury, wypełnienie i tekst kształtu (wersja 1.17): [docs/RELEASE-1.17.md](docs/RELEASE-1.17.md).
 Wcięcia (Tab), indeksy, wielkość i własny kolor tekstu, podpisy obrazów „Rys. N.”, przeciąganie obrazów w notatce (wersja 1.18): [docs/RELEASE-1.18.md](docs/RELEASE-1.18.md).
+Rysunek: wielkość szablonu, Shift i Ctrl, środkowy przycisk myszy, szyk, kilka kartek, zakończenia odcinka, stałe wymiary (wersja 1.19): [docs/RELEASE-1.19.md](docs/RELEASE-1.19.md).
 
-## Co potrafi wersja 1.18
+## Co potrafi wersja 1.19
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -92,7 +93,11 @@ Wcięcia (Tab), indeksy, wielkość i własny kolor tekstu, podpisy obrazów „
   szerokość, wysokość, pochylenie, obrót. Od 1.17: wycinek (prawy przycisk albo tryb „Wycinek” –
   obraz obszaru z tłem i kratką), **Osadź** – zaznaczenie albo wycinek jako obraz notatki, wymiary
   i kąt pochylenia kształtu wpisywane w polach przy jego ramce, wypełnienie kształtu i tekst na
-  kształcie. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
+  kształcie. Od 1.19: wielkość szablonu wpisana w procentach albo narożnikiem, Shift (kwadrat, koło,
+  kąty co 15°), przytrzymany Ctrl – chwilowo zaznaczanie, środkowy przycisk myszy przesuwa stronę,
+  **szyk** liniowy i kołowy (jeden element z parametrami, „Rozdziel”), **kilka kartek** w jednym oknie
+  (każda – osobny rysunek w notatce), zakończenia odcinka (grot, trójkąt, koło, kwadrat, romb)
+  i wymiary widoczne na rysunku na stałe (oko przy polu wymiaru). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
@@ -146,7 +151,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.15 – jasność tła, szablon, liniuszek, kształty](docs/RELEASE-1.15.md),
 [wersja 1.16 – przeciąganie wierszy, kolejność list](docs/RELEASE-1.16.md),
 [wersja 1.17 – wycinek, „Osadź”, wymiary, wypełnienie i tekst kształtu](docs/RELEASE-1.17.md),
-[wersja 1.18 – wcięcia, indeksy, wielkość i kolor tekstu, podpisy obrazów, przeciąganie obrazów](docs/RELEASE-1.18.md).
+[wersja 1.18 – wcięcia, indeksy, wielkość i kolor tekstu, podpisy obrazów, przeciąganie obrazów](docs/RELEASE-1.18.md),
+[wersja 1.19 – szablon, Shift i Ctrl, środkowy przycisk, szyk, kartki, zakończenia odcinka, stałe wymiary](docs/RELEASE-1.19.md).
 
 ## Jak korzystać
 
@@ -411,6 +417,23 @@ w prostokącie albo lassie, z tłem, kratką, szablonem i częściami kresek. **
 schowka jako obraz (wkleisz go w notatce albo w innej aplikacji). **Osadź** – nad wycinkiem i nad
 każdym zaznaczeniem – dodaje obraz do obrazów notatki („Obraz N”, zaraz za rysunkiem): wycinek z tłem,
 a zaznaczone elementy – same, na białym tle.
+**Shift, Ctrl i mysz** (od 1.19): z wciśniętym **Shift** prostokąt jest kwadratem, elipsa – kołem,
+odcinek i strzałka idą co 15°, a narożnik zaznaczonego kształtu nie zmienia proporcji (na iPadzie bez
+klawiatury – przełącznik **Proporcje jak z Shift** w panelu kształtów). Przytrzymany **Ctrl** przy
+dowolnym narzędziu włącza zaznaczanie (tryb Auto); puszczony – wraca poprzednie narzędzie, a zaznaczenie
+znika (przesuń je, usuń albo skopiuj, trzymając Ctrl). Wciśnięte **kółko myszy** i ruch przesuwa stronę.
+**Zakończenia odcinka** (od 1.19): początek i koniec odcinka albo strzałki – brak, grot, trójkąt, koło,
+kwadrat, romb; dla nowych w panelu kształtów (po wybraniu odcinka), dla zaznaczonego – polecenie **Końce**.
+**Wymiary na stałe** (od 1.19): oko w rogu pola wymiaru – po odznaczeniu kształtu zostaje w tym miejscu
+napis z wymiarem („5 cm”, „15°”), który zmienia się i przesuwa razem z kształtem.
+**Szyk** (od 1.19): polecenie **Szyk** nad zaznaczeniem – **liniowy** (obiektów w rzędzie, odstęp,
+rzędów, odstęp rzędów; w skali rysunku) albo **kołowy** (obiektów, kąt wypełnienia, promień, pierścienie,
+obracanie obiektów). Szyk to jeden element: przeciągnięcie przesuwa wszystkie kopie, dotknięcie albo
+**Szyk** – parametry, **Rozdziel** – osobne elementy; środek szyku kołowego (kółko z krzyżykiem)
+przeciągniesz na rysunku. Najwyżej 400 kopii.
+**Kartki** (od 1.19): przycisk **Kartka 1 z 1** na dole – **Nowa kartka**, przejście do innej, usunięcie
+dodanej (albo PageUp i PageDown). Po **Gotowe** każda kartka z treścią to osobny rysunek w notatce
+(„Rysunek 2”…), zaraz za otwartym rysunkiem.
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno
 **Nowe pole tekstowe** – tekst (Enter zaczyna nowy wiersz, długi wiersz łamie się sam), wielkość
 (Mała, Średnia, Duża, od 1.18 Bardzo duża) i kolor; przycisk **Σ** – okno **Nowy wzór**: zapis jak we wzorze w notatce,
@@ -669,7 +692,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 23. **Wersja 1.16: przeciąganie wierszy przy zmianie kolejności, kolejność list biblioteki – ręcznie, A–Z, Z–A, według daty utworzenia** – gotowe.
 24. **Wersja 1.17: wycinek (prawy przycisk, tryb „Wycinek”), „Osadź” – fragment rysunku jako obraz notatki, wymiary i kąt pochylenia kształtu z klawiatury, wypełnienie i tekst kształtu** – gotowe.
 25. **Wersja 1.18: notatki – wcięcia (Tab), indeks górny i dolny, wielkość tekstu, własne kolory tekstu, podpisy obrazów z numeracją „Rys. N.”, przeciąganie obrazów (dwa rzędy z przewijaniem w bok)** – gotowe.
-26. **Wersja 1.19: rysunek – skala szablonu wpisywana i przeciągnięciem narożnika, Shift (proporcje), Ctrl (chwilowe zaznaczanie), przesuwanie środkowym przyciskiem, szyk liniowy i kołowy, kilka kartek, zakończenia odcinka, stałe wymiary** – w przygotowaniu.
+26. **Wersja 1.19: rysunek – skala szablonu wpisywana i przeciągnięciem narożnika, Shift (proporcje), Ctrl (chwilowe zaznaczanie), przesuwanie środkowym przyciskiem, szyk liniowy i kołowy, kilka kartek, zakończenia odcinka, stałe wymiary** – gotowe.
 27. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja

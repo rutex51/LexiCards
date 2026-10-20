@@ -145,7 +145,21 @@ const ICONS = {
   ruler: [p('M3.5 15.8L15.8 3.5l4.7 4.7L8.2 20.5z'), p('M7.3 12l1.9 1.9'), p('M10 9.3l1.3 1.3'), p('M12.7 6.6l1.9 1.9')],
   // Sygnatura obrazu (etykieta) – od 1.12, odróżnia się od ołówka „Edytuj rysunek”.
   tag: [p('M3.5 12.5V4h8.5l8.5 8.5-8.5 8.5z'), { tag: 'circle', cx: 8, cy: 8.5, r: 1.4 }],
-  eraser: [p('M8.5 19.5h11'), p('M5.2 14.3l8.6-8.6a2 2 0 0 1 2.8 0l2.7 2.7a2 2 0 0 1 0 2.8L12 18.5H9.4l-4.2-4.2z'), p('M9.3 10.2l5.5 5.5')]
+  eraser: [p('M8.5 19.5h11'), p('M5.2 14.3l8.6-8.6a2 2 0 0 1 2.8 0l2.7 2.7a2 2 0 0 1 0 2.8L12 18.5H9.4l-4.2-4.2z'), p('M9.3 10.2l5.5 5.5')],
+  // Rysunek od 1.19: wymiar widoczny na stałe (oko), szyk i jego rozdzielenie, zakończenia odcinka.
+  eye: [p('M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z'), { tag: 'circle', cx: 12, cy: 12, r: 2.8 }],
+  eyeOff: [p('M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z'), { tag: 'circle', cx: 12, cy: 12, r: 2.8 }, p('M4 20L20 4')],
+  array: [p('M3.5 5.5h4.2v4.2H3.5z'), p('M9.9 5.5h4.2v4.2H9.9z'), p('M16.3 5.5h4.2v4.2h-4.2z'), p('M3.5 14.3h4.2v4.2H3.5z'), p('M9.9 14.3h4.2v4.2H9.9z'), p('M16.3 14.3h4.2v4.2h-4.2z')],
+  explode: [
+    { d: 'M9 9h6v6H9z', 'stroke-dasharray': '2 1.8' },
+    p('M6.5 6.5L3.5 3.5M3.5 6.8V3.5h3.3'), p('M17.5 6.5l3-3M17.2 3.5h3.3v3.3'), p('M6.5 17.5l-3 3M3.5 17.2v3.3h3.3'), p('M17.5 17.5l3 3M20.5 17.2v3.3h-3.3')
+  ],
+  capNone: [p('M3 12h18')],
+  capArrow: [p('M3 12h17.5'), p('M15 7.2l5.5 4.8-5.5 4.8')],
+  capTriangle: [p('M3 12h12'), filled('M21 12l-7.5-4.5v9z')],
+  capCircle: [p('M3 12h13'), dot(17.2, 12, 3.6)],
+  capSquare: [p('M3 12h11'), filled('M13.6 8.4h7.2v7.2h-7.2z')],
+  capDiamond: [p('M3 12h11'), filled('M21.2 12l-4-4.6-4 4.6 4 4.6z')]
 };
 
 /** Zwraca element SVG ikony o podanej nazwie. */

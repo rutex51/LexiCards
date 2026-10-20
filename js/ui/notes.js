@@ -1241,17 +1241,44 @@ function noteEditor({
     return { embed, embedded };
   }
 
+  /**
+   * Kolejne kartki z edytora rysunku (od 1.19) – nowe rysunki („Rysunek N”) za obrazem `after`
+   * (i za obrazami osadzonymi z edytora), w kolejności kartek; ponad limit obrazów – pominięte.
+   */
+  function addPages(pages, after, embedded) {
+    if (!pages?.length) return;
+    const next = [...state.images];
+    const last = [after, ...embedded].findLast((image) => image && next.includes(image));
+    let index = last ? next.indexOf(last) + 1 : next.length;
+    let skipped = 0;
+    for (const page of pages) {
+      if (next.length + state.pending >= NOTE_IMAGE_LIMIT) {
+        skipped += 1;
+        continue;
+      }
+      next.splice(index, 0, drawnImage(page, nextDrawingLabel(next.map((image) => image.label))));
+      index += 1;
+    }
+    state.images = withImageLabels(next);
+    if (skipped > 0) toast(`Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów – pominięte kartki: ${skipped}.`, { kind: 'error' });
+  }
+
   async function drawNew() {
     if (state.images.length + state.pending >= NOTE_IMAGE_LIMIT) return;
     const label = nextDrawingLabel(state.images.map((image) => image.label));
     const { embed, embedded } = embedder(null);
     const result = await openDrawingEditor({ title: label, onEmbed: embed });
     if (!result) return;
-    // Rysunek przed osadzonymi z niego obrazami.
-    const first = embedded.find((image) => state.images.includes(image));
-    const next = [...state.images];
-    next.splice(first ? next.indexOf(first) : next.length, 0, drawnImage(result, label));
-    state.images = withImageLabels(next);
+    let main = null;
+    if (result.drawing) {
+      // Rysunek przed osadzonymi z niego obrazami.
+      const first = embedded.find((image) => state.images.includes(image));
+      const next = [...state.images];
+      main = drawnImage(result, label);
+      next.splice(first ? next.indexOf(first) : next.length, 0, main);
+      state.images = withImageLabels(next);
+    }
+    addPages(result.pages, main, embedded);
     renderImages();
   }
 
@@ -1272,10 +1299,14 @@ function noteEditor({
       }
       options = { photo: { bytes: image.bytes, type: image.type, width: picture.naturalWidth, height: picture.naturalHeight }, title: image.label };
     }
-    const result = await openDrawingEditor({ ...options, onEmbed: embedder(image).embed });
+    const { embed, embedded } = embedder(image);
+    const result = await openDrawingEditor({ ...options, onEmbed: embed });
     const position = state.images.indexOf(image);
     if (!result || position < 0) return;
-    state.images[position] = drawnImage(result, image.label, image.caption);
+    // Pierwsza kartka bez zmian (od 1.19 – dodane tylko kolejne kartki) – obraz zostaje ten sam.
+    const main = result.drawing ? drawnImage(result, image.label, image.caption) : image;
+    state.images[position] = main;
+    addPages(result.pages, main, embedded);
     renderImages();
   }
 

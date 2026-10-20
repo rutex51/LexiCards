@@ -5592,18 +5592,51 @@ svg.icon--note { color: var(--note-icon); }
 .drawing__dim {
   position: absolute;
   display: inline-flex;
-  align-items: center;
-  gap: 2px;
   min-height: 32px;
-  padding: 0 8px 0 4px;
   border: 1px solid #0058be;
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.95);
   color: #0058be;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  cursor: text;
   pointer-events: auto;
 }
+
+.drawing__dim[hidden] { display: none; }
+
+.drawing__dim-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 0 4px;
+  cursor: text;
+}
+
+/*
+ * Oko (od 1.19): wymiar widoczny na rysunku na stałe – kółko na prawym górnym rogu pola, nie zmienia
+ * jego wielkości (pole zostaje na środku linii ramki); większe pole dotyku niż samo kółko.
+ */
+.drawing__dim-eye {
+  position: absolute;
+  top: -11px;
+  right: -11px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #0058be;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #8e8e93;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
+}
+
+.drawing__dim-eye::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+.drawing__dim-eye[aria-pressed="true"] { background: #0058be; color: #ffffff; }
 
 .drawing__dims--busy .drawing__dim { pointer-events: none; opacity: 0.85; }
 
@@ -6021,12 +6054,88 @@ button.drawing__pill .icon { color: var(--text-2); }
 .drawing__chip--danger { color: var(--danger); }
 .drawing__chip--square { display: inline-grid; place-items: center; width: 38px; padding: 0; }
 
+/* Wielkość szablonu (od 1.19 wpisywana): pole z procentami między − i +. */
 .drawing__placement-size {
-  min-width: 3.4em;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--fill);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  text-align: center;
 }
+
+.drawing__placement-input {
+  width: 3.6em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: 600 16px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  text-align: right;
+  outline: none;
+}
+
+/* Środkowy przycisk myszy (od 1.19): strona przesuwana – kursor „chwyt”. */
+.drawing__stage--panning .drawing__canvas { cursor: grabbing; }
+
+/* Zakończenia odcinka (od 1.19): początek i koniec – po sześć ikon; ikony początku odwrócone. */
+.drawing__caps-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.drawing__caps-label {
+  flex: none;
+  width: 5.2em;
+  color: var(--text-2);
+  font-size: var(--size-sub);
+}
+
+.drawing__caps {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  padding: 2px;
+  border-radius: 11px;
+  background: var(--fill);
+}
+
+.drawing__cap {
+  display: grid;
+  flex: 1 1 0;
+  place-items: center;
+  min-width: 0;
+  height: 34px;
+  border-radius: 9px;
+  color: var(--text);
+}
+
+.drawing__cap--start .icon { transform: scaleX(-1); }
+.drawing__cap[aria-checked="true"] { background: var(--elevated); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14); color: var(--accent); }
+
+/* Szyk (od 1.19): parametry w dwóch kolumnach, liczba z jednostką. */
+.drawing__array-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+
+.drawing__array-grid[hidden] { display: none; }
+.drawing__array-wide { grid-column: 1 / -1; }
+
+.drawing__array-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.drawing__array-value > span { color: var(--text-2); font-weight: 600; }
+.drawing__array-input { flex: 1; min-width: 0; }
 
 /* Kształty (od 1.15): siatka rodzajów z ikoną i nazwą. */
 .drawing__shape-kinds {

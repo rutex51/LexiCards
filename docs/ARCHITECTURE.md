@@ -34,8 +34,8 @@ js/ui/notes.js             okno notatki lekcji: podgląd, edytor z paskiem forma
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
-js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon, liniuszek, kształty (pola wymiarów, wypełnienie, tekst), obraz PNG / JPEG
-js/ui/drawing-paint.js     rysunek na płótnie: kształty geometryczne, szablon (boisko liniami, obraz mnożony z tłem)
+js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek, kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka), Shift i Ctrl, środkowy przycisk, szyk, kartki, obraz PNG / JPEG
+js/ui/drawing-paint.js     rysunek na płótnie: kształty geometryczne (z zakończeniami odcinka), szablon (boisko liniami, obraz mnożony z tłem)
 js/ui/images.js            obrazy w przeglądarce: odczyt, zmniejszanie dużych zdjęć, adresy do wyświetlenia
 js/core/library.js         model w pamięci + wszystkie operacje na danych
 js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
@@ -45,8 +45,9 @@ js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
 js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, skala, przyciąganie linijki, obszar zaznaczania, sprawdzanie danych rysunku
 js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
-js/core/shapes.js          kształty geometryczne (punkty, obrys, punkty konstrukcyjne, wymiary z klawiatury, wypełnienie, tekst, sprawdzanie) i liniuszek (najbliższa linia)
-js/core/templates.js       tło rysunku: poziomy jasności, szablon – boisko (105 × 68 m), dopasowanie, środek, wielkość, sprawdzanie
+js/core/shapes.js          kształty geometryczne (punkty, obrys, punkty konstrukcyjne, Shift, wymiary z klawiatury i na stałe, wypełnienie, tekst, zakończenia odcinka, sprawdzanie) i liniuszek (najbliższa linia)
+js/core/arrays.js          szyk liniowy i kołowy: kopie elementów, przesunięcie, obrót wokół środka, parametry, sprawdzanie
+js/core/templates.js       tło rysunku: poziomy jasności, szablon – boisko (105 × 68 m), dopasowanie, środek, wielkość (też w % i narożnikiem), sprawdzanie
 js/core/zip.js             odczyt i zapis archiwów ZIP (także kawałkami przez Blob – duże pliki)
 js/core/xlsx.js            odczyt i zapis skoroszytów XLSX
 js/core/csv.js             kodowanie, separator, odczyt i zapis CSV
@@ -526,6 +527,31 @@ notatki („Obraz N” z `withImageLabels`) zaraz za rysunkiem; inne obrazy zost
 (edytor notatki odnajduje po nich rysunek po zamknięciu edytora), a nowy rysunek wstawia się przed
 obrazy z niego osadzone. Zaznaczenie (całe albo fragmenty) – obraz samych elementów na białym tle
 (`strokesCanvas`).
+Od 1.19 (format rysunku 5): **zakończenia odcinka** `startCap`, `endCap` (`SEGMENT_CAPS`: none, arrow,
+triangle, circle, square, diamond; zapisane tylko inne niż domyślne – `segmentCaps` daje strzałce sprzed
+1.19 grot na końcu). `segmentCap(shape, which)` – geometria: ramiona grotu, wielokąt (trójkąt z ostrzem
+w końcu odcinka, kwadrat i romb ze środkiem w końcu) albo koło, oraz `trim` – miejsce, w którym kończy się
+linia (pod trójkątem). Granice, dotknięcie i zaznaczanie obejmują zakończenia (`capPoints`).
+**Stałe wymiary** `dims: ['width', 'height', 'skew']` albo odcinek `['length', 'angle']` (`withDims`) –
+napisy z `dimensionText` (skala rysunku) w miejscach z `dimPlaces` (te same co pola wymiarów, `dimCenter`
+odsuwa napis od linii ramki o `DIM_GAP` i pół napisu); `paintStroke(ctx, stroke, { scale, dims })` – warstwa
+zapisanych kresek pomija napisy kształtu z polami wymiarów (`plain`). **Shift** (`lock`): `shapeFromDrag`
+– równe boki, odcinek co 15°; `moveShapeHandle` – narożnik z zachowaniem proporcji, koniec odcinka
+i obrót co 15°; edytor śledzi klawisz (`shiftDown`) i przelicza przeciągany kształt także bez ruchu.
+**Szyk** (`js/core/arrays.js`) – element `{ tool: 'array', kind, items, … }` w `strokes`: `expandArray`
+(zapamiętane w `WeakMap`) daje wszystkie kopie jako zwykłe elementy – z nich rysowanie, granice,
+dotknięcie, zaznaczanie (tylko w całości), przyciąganie linijki i „Rozdziel”; `translateArray`
+przesuwa źródło i środek. Kołowy: kopie obracane wokół (cx, cy) o −k·krok (przeciwnie do ruchu
+wskazówek zegara na ekranie), pierścienie – źródło odsunięte wzdłuż promienia; pola tekstowe i wzory
+tylko przesuwane. `cleanArrayParams` ogranicza kopie do 400, `makeArray` pomija szyki w szyku.
+**Ctrl**: przytrzymanie (200 ms bez innego klawisza) albo wskaźnik z `ctrlKey` – `ctrlHold = { previous,
+mode: 'auto' }` i narzędzie zaznaczania; puszczenie (także `blur` okna) – `setTool(previous)`, po
+zakończeniu trwającej czynności. **Środkowy przycisk** – czynność `pan` (przesunięcie widoku).
+**Szablon**: narożniki w trakcie ustawiania – `resizeTemplateCorner` (rzut wskaźnika na przekątną od
+przeciwnego narożnika), pole z procentami – `setTemplatePercent` względem `fitTemplate`.
+**Kartki**: edytor ma listę `pages` ({ drawing, history, media, changed, ready }) i bieżące `drawing`,
+`history`, `media`; wynik `{ drawing, image, pages }` – pierwsza kartka (null, gdy bez zmian) i kolejne
+z treścią; edytor notatki wstawia je jako nowe rysunki (`addPages`) za otwartym rysunkiem.
 
 Od 1.6 **wersja angielska**: `htmlEN` obok `html`; w edytorze przełącznik Polski / Angielski zamienia
 treść jednego pola `contenteditable` (stan drugiej wersji jest w pamięci edytora; zmiana języka
@@ -918,7 +944,8 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
   FSRS (zgodność z py-fsrs i zapis powtórek), quizy, statystyki, kopia zapasowa (oba pliki),
   załączniki, rysunki (nacisk, wygładzanie, gumka, historia, dane, zapis i kopia, pola tekstowe i wzory,
   skala, przyciąganie linijki, obszar zaznaczania, własne kolory, kształty z punktami konstrukcyjnymi,
-  liniuszek, jasność tła i szablon, wypełnienie i tekst kształtu, wymiary z klawiatury),
+  liniuszek, jasność tła i szablon, wypełnienie i tekst kształtu, wymiary z klawiatury, zakończenia
+  odcinka, Shift, stałe wymiary, szyk liniowy i kołowy, wielkość szablonu w % i z narożnika),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

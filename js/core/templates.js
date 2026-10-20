@@ -100,6 +100,45 @@ export function scaleTemplate(template, factor, pageWidth, pageHeight) {
 
 const round = (value) => Math.round(value * 10) / 10;
 
+/** Wielkość szablonu w procentach (od 1.19 wpisywana): 100% – dopasowany do strony. */
+export function templatePercent(template, pageWidth, pageHeight) {
+  return (template.w / fitTemplate(template, pageWidth, pageHeight).w) * 100;
+}
+
+/** Szablon o wpisanej wielkości (procent wielkości dopasowanej) – wokół swojego środka, w granicach scaleTemplate. */
+export function setTemplatePercent(template, percent, pageWidth, pageHeight) {
+  const target = (fitTemplate(template, pageWidth, pageHeight).w * percent) / 100;
+  return scaleTemplate(template, target / template.w, pageWidth, pageHeight);
+}
+
+/** Narożniki szablonu: [u, v] – 0 lewy albo górny brzeg, 1 prawy albo dolny. */
+export const TEMPLATE_CORNERS = Object.freeze({ nw: [0, 0], ne: [1, 0], se: [1, 1], sw: [0, 1] });
+
+/** Narożnik szablonu `corner` jako punkt strony. */
+export function templateCorner(template, corner) {
+  const [u, v] = TEMPLATE_CORNERS[corner];
+  return { x: template.x + u * template.w, y: template.y + v * template.h };
+}
+
+/**
+ * Szablon po przeciągnięciu narożnika `corner` do punktu `point` (od 1.19): przeciwny narożnik zostaje,
+ * proporcje też – wielkość z rzutu punktu na przekątną; granice jak przy +/−.
+ */
+export function resizeTemplateCorner(template, corner, point, pageWidth, pageHeight) {
+  const [u, v] = TEMPLATE_CORNERS[corner];
+  const fixed = templateCorner(template, Object.keys(TEMPLATE_CORNERS).find((key) => {
+    const [a, b] = TEMPLATE_CORNERS[key];
+    return a === 1 - u && b === 1 - v;
+  }));
+  const [dx, dy] = [(u ? 1 : -1) * template.w, (v ? 1 : -1) * template.h];
+  const factor = ((point.x - fixed.x) * dx + (point.y - fixed.y) * dy) / (dx * dx + dy * dy);
+  const longest = Math.max(pageWidth, pageHeight);
+  const size = Math.max(template.w, template.h);
+  const limit = clamp(factor, longest / 20 / size, (longest * 4) / size);
+  const [w, h] = [template.w * limit, template.h * limit];
+  return { ...template, x: round(u ? fixed.x : fixed.x - w), y: round(v ? fixed.y : fixed.y - h), w: round(w), h: round(h) };
+}
+
 /** Skala rysunku z boiska: ile metrów ma kratka (`step` jednostek strony), gdy boisko ma szerokość template.w. */
 export const pitchScale = (template, step = 44) => (PITCH.width * step) / template.w;
 

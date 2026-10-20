@@ -64,6 +64,17 @@ async function waitUntil(check, message, timeout = 5000) {
   }
 }
 
+/** Czeka, aż pole ma wartość `expected` (od 1.19 – wielkość szablonu jest polem). */
+async function expectValue(locator, expected, message = '') {
+  let value = '';
+  await waitUntil(async () => {
+    value = await locator.first().inputValue();
+    return value === expected;
+  }, `${message || 'Oczekiwano wartości'} „${expected}”`).catch((error) => {
+    throw new Error(`${error.message}; jest: „${value}”`);
+  });
+}
+
 async function expectText(locator, expected, message = '') {
   let text = '';
   await waitUntil(async () => {
@@ -3988,17 +3999,17 @@ test('rysunek 1.15: jasność kratki, szablon – boisko (pomniejsz, powiększ, 
   // Boisko: od razu ustawianie – 100%, skala rysunku w metrach (rysunek miał domyślną).
   const before = await darkest(page, 0.5, 0.25);
   await panel.locator('[data-testid=drawing-template-pitch]').click();
-  await expectText(panel.locator('[data-testid=drawing-template-size]'), '100%');
+  await expectValue(panel.locator('[data-testid=drawing-template-size]'), '100');
   assert.equal(await panel.locator('[data-testid=drawing-template-scale]').isChecked(), true);
   const lineAt = async (x) => (await darkest(page, x, 0.25)) < before - 40;
   await waitUntil(() => lineAt(0.5), 'Linia środkowa boiska na środku strony');
   await panel.locator('[data-testid=drawing-template-smaller]').click();
-  await expectText(panel.locator('[data-testid=drawing-template-size]'), '91%');
+  await expectValue(panel.locator('[data-testid=drawing-template-size]'), '90,9');
   await panel.locator('[data-testid=drawing-template-larger]').click();
   await panel.locator('[data-testid=drawing-template-larger]').click();
-  await expectText(panel.locator('[data-testid=drawing-template-size]'), '110%');
+  await expectValue(panel.locator('[data-testid=drawing-template-size]'), '110');
   await panel.locator('[data-testid=drawing-template-fit]').click();
-  await expectText(panel.locator('[data-testid=drawing-template-size]'), '100%');
+  await expectValue(panel.locator('[data-testid=drawing-template-size]'), '100');
   // Przeciągnięcie przesuwa szablon (nie rysuje).
   await drawStroke(page, segment([0.45, 0.6], [0.55, 0.6], 8));
   await waitUntil(async () => (await lineAt(0.6)) && !(await lineAt(0.5)), 'Szablon przesunięty w prawo (o 0,1 szerokości)');
@@ -4045,7 +4056,7 @@ test('rysunek 1.15: jasność kratki, szablon – boisko (pomniejsz, powiększ, 
   const plain = await darkest(page, 0.5, 0.53, 50);
   await editor.locator('[data-testid=drawing-paper]').click();
   await panel.locator('[data-testid=drawing-template-input]').setInputFiles({ name: 'kalka.png', mimeType: 'image/png', buffer: png });
-  await expectText(panel.locator('[data-testid=drawing-template-size]'), '100%');
+  await expectValue(panel.locator('[data-testid=drawing-template-size]'), '100');
   await waitUntil(async () => (await darkest(page, 0.5, 0.53, 50)) < plain - 60, 'Krzyż szablonu na środku strony');
   await panel.locator('[data-testid=drawing-template-done]').click();
   await editor.locator('[data-testid=drawing-done]').click();
@@ -4586,6 +4597,317 @@ test('rysunek 1.12.1 na telefonie (bez rysika): palec przesuwa linijkę i rysuje
   const [stroke] = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing.strokes, ids.statements);
   assert.equal(new Set(stroke.points.filter((_, index) => index % 3 === 1)).size, 1, 'kreska przy linijce – prosta (jedno y)');
 });
+
+// ---------------------------------------------------------------- rysunki (1.19)
+
+/**
+ * Strona rysunku na płótnie przy widoku „cała strona”: lewy górny róg i skala (px CSS na jednostkę
+ * strony) – z nieprzezroczystych pikseli warstwy zapisanych kresek; at() – punkt strony jako ułamki płótna.
+ */
+async function pageFrame(page) {
+  const frame = await page.locator('.drawing__canvas:not(.drawing__canvas--live)').evaluate((canvas) => {
+    const ctx = canvas.getContext('2d');
+    const ratio = canvas.getBoundingClientRect().width / canvas.width;
+    const span = (data, count) => {
+      let [first, last] = [-1, -1];
+      for (let index = 0; index < count; index += 1) {
+        if (data[index * 4 + 3] !== 255) continue;
+        if (first < 0) first = index;
+        last = index;
+      }
+      return [first, last];
+    };
+    const [x0, x1] = span(ctx.getImageData(0, Math.round(canvas.height * 0.6), canvas.width, 1).data, canvas.width);
+    const [y0] = span(ctx.getImageData(Math.round(canvas.width * 0.5), 0, 1, canvas.height).data, canvas.height);
+    const box = canvas.getBoundingClientRect();
+    return { left: x0 * ratio, top: y0 * ratio, scale: ((x1 - x0 + 1) / 1600) * ratio, width: box.width, height: box.height, x: box.x, y: box.y };
+  });
+  return {
+    ...frame,
+    at: (x, y) => [(frame.left + x * frame.scale) / frame.width, (frame.top + y * frame.scale) / frame.height],
+    screen: (x, y) => [frame.x + frame.left + x * frame.scale, frame.y + frame.top + y * frame.scale]
+  };
+}
+
+/** Okno albo menu bez animacji otwierania (zrzut ekranu). */
+const settled = (locator) => waitUntil(() => locator.evaluate((element) => element.getAnimations({ subtree: true }).every((animation) => animation.playState !== 'running')), 'Okno otwarte');
+
+/** Kreski, kształty i szyki pierwszego (albo `index`) rysunku notatki – z bazy. */
+const savedStrokes = (page, lessonID, index = 0) => page.evaluate(async ([id, at]) => (await window.lexicards.library.noteImages(id))[at].drawing.strokes, [lessonID, index]);
+
+test('rysunek 1.19: Shift – kwadrat i odcinek co 15°; przytrzymany Ctrl – chwilowo zaznaczanie (Auto), puszczony – pióro; Ctrl+Z bez zmiany narzędzia; Ctrl + kółko powiększa, środkowy przycisk przesuwa stronę (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Mysz</p>');
+  const frame = await pageFrame(page);
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+  const panel = editor.locator('[data-testid=drawing-shape-panel]');
+  const dim = (key) => editor.locator(`[data-testid=drawing-dim-${key}]`);
+  const pressed = (name) => editor.locator(`[data-testid=drawing-tool-${name}]`).getAttribute('aria-pressed');
+  const drag = async (from, to, options = {}) => {
+    await page.mouse.move(...frame.screen(...from));
+    await page.mouse.down(options);
+    await page.mouse.move(...frame.screen(...to), { steps: 6 });
+    await page.mouse.up(options);
+  };
+
+  // Shift: prostokąt 200 × 80 przeciągnięciem – z Shift kwadrat (szerokość = wysokość).
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-shape-rect]').click();
+  await page.keyboard.down('Shift');
+  await drag([200, 200], [400, 280]);
+  await page.keyboard.up('Shift');
+  await expectText(selectionCount, 'Prostokąt');
+  // Ok. 200 jednostek (4,5 cm; mysz – całe piksele), wysokość taka sama – kwadrat.
+  const side = await dim('width').inputValue();
+  assert.ok(side.startsWith('4,5'), `szerokość ok. 4,5 cm (${side})`);
+  assert.equal(await dim('height').inputValue(), side, 'wysokość = szerokość');
+  // Odcinek pod kątem ok. 20° – z Shift 15°.
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-shape-line]').click();
+  await page.keyboard.down('Shift');
+  await drag([200, 600], [388, 532]);
+  await page.keyboard.up('Shift');
+  await expectText(selectionCount, 'Odcinek');
+  assert.equal(await dim('angle').inputValue(), '15');
+
+  // Ctrl: przytrzymany przy piórze – zaznaczanie w trybie Auto; prostokąt od lewej – cała kreska.
+  await editor.locator('[data-testid=drawing-tool-pen]').click();
+  await drag([700, 300], [800, 300]);
+  await page.keyboard.down('Control');
+  await waitUntil(async () => (await pressed('select')) === 'true', 'Ctrl – zaznaczanie');
+  await expectText(editor.locator('[data-testid=drawing-select-hint]'), 'puść Ctrl');
+  assert.equal(await editor.locator('[data-testid=drawing-select-mode-auto]').getAttribute('aria-checked'), 'true');
+  await drag([680, 270], [830, 330]);
+  await expectText(selectionCount, '1 kreska');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-ctrl-zaznaczanie.png') });
+  await page.keyboard.up('Control');
+  await waitUntil(async () => (await pressed('pen')) === 'true', 'Po puszczeniu Ctrl – pióro');
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Zaznaczenie zdjęte');
+  // Ctrl+Z – cofnięcie kreski, narzędzie bez zmiany.
+  await page.keyboard.press('Control+z');
+  await waitUntil(async () => (await darkest(page, ...frame.at(750, 300), 10)) > 150, 'Kreska cofnięta');
+  await page.waitForTimeout(350);
+  assert.equal(await pressed('pen'), 'true', 'Ctrl+Z nie zmienia narzędzia');
+
+  // Ctrl + kółko powiększa wokół kursora; środkowy przycisk przesuwa stronę (bez kreski).
+  await drag([650, 700], [850, 700]);
+  const [sx, sy] = frame.screen(750, 700);
+  await page.mouse.move(sx, sy);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -400);
+  await page.keyboard.up('Control');
+  await waitUntil(async () => (await editor.locator('[data-testid=drawing-zoom]').textContent()) !== '100%', 'Powiększenie');
+  await nextFrames(page);
+  assert.equal(await pressed('pen'), 'true', 'Ctrl + kółko nie zmienia narzędzia');
+  const fraction = (x, y) => [(x - frame.x) / frame.width, (y - frame.y) / frame.height];
+  await waitUntil(async () => (await darkest(page, ...fraction(sx, sy), 6)) < 110, 'Kreska pod kursorem po powiększeniu');
+  await page.mouse.down({ button: 'middle' });
+  await page.mouse.move(sx, sy + 120, { steps: 6 });
+  await page.mouse.up({ button: 'middle' });
+  await waitUntil(async () => (await darkest(page, ...fraction(sx, sy + 120), 6)) < 110, 'Strona przesunięta w dół');
+  assert.ok((await darkest(page, ...fraction(sx, sy), 6)) > 150, 'w starym miejscu kreski już nie ma (i nic się nie narysowało)');
+  assert.equal(await pressed('pen'), 'true');
+}, { device: DESKTOP });
+
+test('rysunek 1.19: zakończenia odcinka (panel i „Końce”), wymiar widoczny na stałe (oko), szyk liniowy (przesunięcie całości, parametry) i kołowy (środek, „Rozdziel”); zapis (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Szyk</p>');
+  const frame = await pageFrame(page);
+  const { at } = frame;
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+  const panel = editor.locator('[data-testid=drawing-shape-panel]');
+  const sheet = page.locator('dialog.sheet[open]').last();
+  const dark = async (x, y, side = 8) => (await darkest(page, ...at(x, y), side)) < 110;
+
+  // Odcinek: w panelu (zostaje otwarty po wyborze odcinka) – koło na początku, trójkąt na końcu.
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-shape-line]').click();
+  await panel.locator('[data-testid=drawing-caps-default-start-circle]').click();
+  await panel.locator('[data-testid=drawing-caps-default-end-triangle]').click();
+  assert.equal(await panel.locator('[data-testid=drawing-caps-default-end-triangle]').getAttribute('aria-checked'), 'true');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-konce-panel-ipad.png') });
+  await drawStroke(page, segment(at(200, 900), at(600, 900), 10));
+  await expectText(selectionCount, 'Odcinek');
+  // „Końce” zaznaczonego odcinka: koniec – romb.
+  await editor.locator('[data-testid=drawing-selection-caps]').click();
+  await expectText(sheet.locator('.sheet__title'), 'Zakończenia odcinka');
+  assert.equal(await sheet.locator('[data-testid=drawing-caps-start-circle]').getAttribute('aria-checked'), 'true');
+  await sheet.locator('[data-testid=drawing-caps-end-diamond]').click();
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await page.locator('dialog.sheet').count()) === 1, 'Okno zakończeń zamknięte');
+
+  // Prostokąt 5 × 3 cm; oko przy szerokości – po odznaczeniu napis „5 cm” pod dolną linią.
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-shape-rect]').click();
+  await drawStroke(page, segment(at(300, 200), at(520, 332), 10));
+  await expectText(selectionCount, 'Prostokąt');
+  const eye = editor.locator('[data-testid=drawing-dim-eye-width]');
+  assert.equal(await eye.getAttribute('aria-pressed'), 'false');
+  // Napis wymiaru: ok. 22 jednostki pod dolną linią (332) – pole 16 px nie sięga linii.
+  assert.ok(!(await dark(410, 353, 16)), 'bez oka – pod prostokątem nic');
+  await eye.click();
+  await waitUntil(async () => (await eye.getAttribute('aria-pressed')) === 'true', 'Oko włączone');
+  assert.ok(!(await dark(410, 353, 16)), 'zaznaczony – zamiast napisu pole wymiaru');
+  await drawStroke(page, [[...at(1000, 1000), 0.5]]);
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Odznaczony');
+  await waitUntil(() => dark(410, 353, 16), 'Napis „5 cm” pod prostokątem');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-konce-wymiar-ipad.png') });
+
+  // Szyk liniowy z prostokąta: 3 w rzędzie co 6 cm, 2 rzędy co 4 cm.
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await drawStroke(page, [[...at(300, 266), 0.5]]);
+  await expectText(selectionCount, 'Prostokąt');
+  await editor.locator('[data-testid=drawing-selection-array]').click();
+  await expectText(sheet.locator('.sheet__title'), 'Powiel w szyku');
+  for (const [name, value] of [['columns', '3'], ['dx', '6'], ['rows', '2'], ['dy', '4']]) await sheet.locator(`[data-testid=drawing-array-${name}]`).fill(value);
+  await settled(sheet);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-szyk-okno-ipad.png') });
+  await sheetSubmit(page).click();
+  await expectText(selectionCount, 'Szyk liniowy · 6');
+  await waitUntil(() => dark(828, 266), 'Trzecia kopia w rzędzie');
+  assert.ok(await dark(564, 442), 'drugi rząd');
+  // Przesunięcie całego szyku o kratkę w prawo.
+  await drawStroke(page, segment(at(500, 266), at(544, 266), 6));
+  await waitUntil(() => dark(872, 266), 'Szyk przesunięty');
+  assert.ok(!(await dark(300, 266)), 'w starym miejscu lewej krawędzi pierwszej kopii pusto');
+  // Dotknięcie szyku – parametry: 2 w rzędzie.
+  await drawStroke(page, [[...at(344, 266), 0.5]]);
+  await expectText(sheet.locator('.sheet__title'), 'Szyk liniowy');
+  assert.equal(await sheet.locator('[data-testid=drawing-array-columns]').inputValue(), '3');
+  await sheet.locator('[data-testid=drawing-array-columns]').fill('2');
+  await sheetSubmit(page).click();
+  await expectText(selectionCount, 'Szyk liniowy · 4');
+  await waitUntil(async () => !(await dark(872, 266)), 'Trzecia kopia znikła');
+
+  // Szyk kołowy z koła: 6 wokół środka pod nim; przeciągnięcie środka, „Rozdziel”.
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-shape-ellipse]').click();
+  await drawStroke(page, segment(at(1070, 220), at(1130, 280), 8));
+  await expectText(selectionCount, 'Elipsa');
+  // Zaznaczanie – koło zostaje zaznaczone.
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await expectText(selectionCount, 'Elipsa');
+  await editor.locator('[data-testid=drawing-selection-array]').click();
+  await sheet.getByRole('radio', { name: 'Kołowy', exact: true }).check();
+  await sheet.locator('[data-testid=drawing-array-count]').fill('6');
+  await sheetSubmit(page).click();
+  await expectText(selectionCount, 'Szyk kołowy · 6');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-szyk-ipad.png') });
+  // Środek domyślnie pod kołem: promień 1,2 × 64 + 44 ≈ 121 jednostek.
+  const centerY = 250 + Math.round(64.6 * 1.2 + 44);
+  await waitUntil(() => dark(1100, centerY * 2 - 250, 30), 'Kopia pod środkiem (naprzeciw źródła)');
+  await drawStroke(page, segment(at(1100, centerY), at(1144, centerY), 6));
+  // Kopia naprzeciw źródła (1100, 250) względem środka (1144, centerY).
+  await waitUntil(() => dark(1188, centerY * 2 - 250, 30), 'Środek przesunięty – kopie wokół niego');
+  await editor.locator('[data-testid=drawing-selection-explode]').click();
+  await expectText(selectionCount, '6 elementów');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  const strokes = await savedStrokes(page, ids.statements);
+  assert.deepEqual(strokes.map((stroke) => stroke.tool === 'array' ? `array:${stroke.kind}` : stroke.shape),
+    ['line', 'array:linear', 'ellipse', 'ellipse', 'ellipse', 'ellipse', 'ellipse', 'ellipse']);
+  const [line, linear, ...ellipses] = strokes;
+  assert.deepEqual([line.startCap, line.endCap], ['circle', 'diamond']);
+  assert.deepEqual([linear.columns, linear.rows, Math.round(linear.dx), Math.round(linear.dy)], [2, 2, 264, 176]);
+  assert.deepEqual(linear.items.map((item) => [item.shape, item.dims]), [['rect', ['width']]]);
+  assert.ok(Math.abs(linear.items[0].x - 454) < 1, `szyk przesunięty o kratkę (${linear.items[0].x})`);
+  // Koło ok. 60 × 60 (pozycje na płótnie – całe piksele); wszystkie kopie takie same.
+  assert.ok(ellipses.every((ellipse) => Math.abs(ellipse.w - 60) < 3 && ellipse.w === ellipse.h && ellipse.w === ellipses[0].w),
+    `rozdzielone kopie koła (${ellipses.map((ellipse) => `${ellipse.w}×${ellipse.h}`)})`);
+  const xs = ellipses.map((ellipse) => Math.round(ellipse.x));
+  assert.ok(Math.min(...xs) < 1100 && Math.max(...xs) > 1144, `kopie wokół przesuniętego środka (${xs})`);
+}, { device: IPAD });
+
+test('rysunek 1.19: kilka kartek – nowa kartka, PageUp i PageDown, usunięcie pustej; po „Gotowe” każda kartka to osobny rysunek; szablon – wielkość wpisana w procentach i narożnikiem (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Kartki</p>');
+  const frame = await pageFrame(page);
+  const { at } = frame;
+  const pages = editor.locator('[data-testid=drawing-pages]');
+  const paperPanel = editor.locator('[data-testid=drawing-paper-panel]');
+  await expectText(pages, 'Kartka 1 z 1');
+  await drawStroke(page, segment(at(300, 400), at(600, 400), 10));
+  await pages.click();
+  await page.locator('[data-testid=drawing-page-new]').click();
+  await expectText(pages, 'Kartka 2 z 2');
+  await expectText(editor.locator('[data-testid=drawing-title]'), 'Rysunek 1 · kartka 2');
+  await waitUntil(async () => (await darkest(page, ...at(450, 400), 12)) > 150, 'Nowa kartka pusta');
+  await drawStroke(page, segment(at(900, 700), at(1300, 700), 10));
+
+  // Szablon na kartce 2: 80% wpisane, potem narożnik do środka – 70%.
+  await editor.locator('[data-testid=drawing-paper]').click();
+  await paperPanel.locator('[data-testid=drawing-template-pitch]').click();
+  const size = paperPanel.locator('[data-testid=drawing-template-size]');
+  await expectValue(size, '100');
+  await size.fill('80');
+  await size.press('Enter');
+  await expectValue(size, '80');
+  // Boisko 80%: 1209,6 × 783,36 na środku; prawy dolny narożnik (1404,8; 941,68) – do 87,5% przekątnej.
+  await drawStroke(page, segment(at(1404.8, 941.68), at(1253.6, 843.76), 8));
+  await expectValue(size, '70');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-szablon-naroznik-ipad.png') });
+  await paperPanel.locator('[data-testid=drawing-template-done]').click();
+  // Esc zamyka panel tła; PageUp – kartka 1 z kreską; PageDown – z powrotem.
+  await page.keyboard.press('Escape');
+  await paperPanel.waitFor({ state: 'hidden' });
+  await page.keyboard.press('PageUp');
+  await expectText(pages, 'Kartka 1 z 2');
+  await waitUntil(async () => (await darkest(page, ...at(450, 400), 12)) < 110, 'Kreska kartki 1');
+  await page.keyboard.press('PageDown');
+  await expectText(pages, 'Kartka 2 z 2');
+  // Trzecia, pusta kartka – usunięta bez pytania.
+  await pages.click();
+  await page.locator('[data-testid=drawing-page-new]').click();
+  await expectText(pages, 'Kartka 3 z 3');
+  await pages.click();
+  assert.equal(await page.locator('[data-testid=drawing-page-3]').getAttribute('aria-checked'), 'true');
+  await settled(page.locator('dialog.menu[open]'));
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-kartki-menu-ipad.png') });
+  await page.locator('[data-testid=drawing-page-delete]').click();
+  await expectText(pages, 'Kartka 2 z 2');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await waitUntil(async () => (await tileLabels(dialog)).join() === 'Rysunek 1,Rysunek 2', 'Dwie kartki – dwa rysunki');
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  const drawings = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id)).map((image) => ({
+    label: image.label, strokes: image.drawing.strokes.length, template: image.drawing.template ? Math.round(image.drawing.template.w) : null
+  })), ids.statements);
+  assert.deepEqual(drawings, [{ label: 'Rysunek 1', strokes: 1, template: null }, { label: 'Rysunek 2', strokes: 1, template: 1058 }]);
+}, { device: IPAD });
+
+test('rysunek 1.19 na telefonie: polecenia zaznaczonego odcinka (Końce, Szyk) i kartki mieszczą się na ekranie; okno szyku bez przewijania w bok', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await editor.locator('[data-testid=drawing-shape-line]').click();
+  await drawStroke(page, segment([0.25, 0.55], [0.75, 0.55], 10), { type: 'touch', id: 7 });
+  await expectText(selectionCount, 'Odcinek');
+  const bar = await editor.locator('.drawing__selection').boundingBox();
+  assert.ok(bar.x >= 0 && bar.x + bar.width <= 390, `polecenia w szerokości ekranu (${Math.round(bar.x)}–${Math.round(bar.x + bar.width)})`);
+  for (const name of ['caps', 'array', 'embed']) assert.equal(await editor.locator(`[data-testid=drawing-selection-${name}]`).isVisible(), true, name);
+  const pill = await editor.locator('[data-testid=drawing-pages]').boundingBox();
+  assert.ok(pill.x >= 0 && pill.x + pill.width <= 390, 'kartki w szerokości ekranu');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-odcinek-telefon.png') });
+  await editor.locator('[data-testid=drawing-selection-array]').click();
+  await expectText(page.locator('dialog.sheet[open] .sheet__title').last(), 'Powiel w szyku');
+  assert.equal(await overflowX(page), 0, 'okno szyku bez przewijania w bok');
+  await settled(page.locator('dialog.sheet[open]').last());
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-szyk-telefon.png') });
+}, { device: PHONE });
 
 test('rysunek na zdjęciu: „Rysuj na zdjęciu” – zdjęcie pod kreskami, sygnatura i miejsce bez zmian; bez rysika rysuje palec; nowy pusty rysunek nie trafia do notatki; kopia zapasowa przenosi kreski', async ({ open, browser, track }) => {
   const page = await open();

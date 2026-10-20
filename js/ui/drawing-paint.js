@@ -1,11 +1,14 @@
 // Rysowanie na płótnie rzeczy dodanych w 1.15: kształty geometryczne (core/shapes.js; od 1.17
-// z wypełnieniem) i szablon pod kreskami – boisko piłkarskie rysowane liniami albo obraz z pliku
-// (core/templates.js).
+// z wypełnieniem, od 1.19 z zakończeniami odcinka) i szablon pod kreskami – boisko piłkarskie
+// rysowane liniami albo obraz z pliku (core/templates.js).
 
 import { FILL_ALPHA, shapePath } from '../core/shapes.js';
 import { PITCH, TEMPLATE_ALPHA } from '../core/templates.js';
 
-/** Kształt: łamana albo krzywe Béziera (elipsa) o stałej grubości; strzałka – z grotem; wypełnienie pod linią. */
+/**
+ * Kształt: łamana albo krzywe Béziera (elipsa) o stałej grubości; wypełnienie pod linią; odcinek
+ * i strzałka – z zakończeniami (grot – ramiona, trójkąt, kwadrat i romb – wypełnione, koło – wypełnione).
+ */
 export function paintShape(ctx, shape) {
   const path = shapePath(shape);
   ctx.save();
@@ -27,14 +30,29 @@ export function paintShape(ctx, shape) {
     ctx.fill();
     ctx.globalAlpha = 1;
   }
-  if (path.head) {
-    const end = path.lines.at(-1);
-    for (const point of path.head) {
-      ctx.moveTo(end.x, end.y);
+  for (const cap of path.caps) {
+    if (!cap.arms) continue;
+    for (const point of cap.arms) {
+      ctx.moveTo(cap.tip.x, cap.tip.y);
       ctx.lineTo(point.x, point.y);
     }
   }
   ctx.stroke();
+  // Zakończenia wypełnione: obrys tą samą linią – ostre rogi zaokrąglone jak reszta kształtu.
+  ctx.fillStyle = shape.color;
+  ctx.lineWidth = Math.min(shape.size, 3);
+  for (const cap of path.caps) {
+    if (cap.arms) continue;
+    ctx.beginPath();
+    if (cap.circle) {
+      ctx.arc(cap.circle.x, cap.circle.y, cap.circle.r, 0, Math.PI * 2);
+    } else {
+      cap.polygon.forEach((point, index) => (index === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y)));
+      ctx.closePath();
+    }
+    ctx.fill();
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
