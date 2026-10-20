@@ -1,4 +1,4 @@
-# LexiCards 1.26
+# LexiCards 1.27
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -35,8 +35,9 @@ Nauka w kalendarzu – plik .ics do Outlooka z powtarzaniem, przypomnieniem, pry
 Rysunek: figury z odręcznych kształtów (przytrzymane pióro), łamana i wielokąt z punktami w wierzchołkach, kartki przewracane od rogu jak w notatkach, zaznaczenie przed kółkiem liniuszka (wersja 1.24); spirala na grzbiecie kartki (1.24.1); powiększanie dwoma palcami w miejscu palców (1.24.2): [docs/RELEASE-1.24.md](docs/RELEASE-1.24.md).
 Rysunek: wymiary bez jednostki w mm (albo cm, m, calach) z oznaczeniem „Wymiary w mm”, odchyłki w ramce tolerancji, znak +/− przy odchyłkach, tabela pasowań ISO 286 z ostatnio użytymi, zamykanie paneli (wersja 1.25); kartka przewracana nad spiralą (1.25.1): [docs/RELEASE-1.25.md](docs/RELEASE-1.25.md).
 Jeden wygląd okien (białe, sekcje w cienkich ramkach), „Wstaw obiekt” na pasku notatki, przycisk Σ z oknem równań, tabele – formaty kolumn (liczby, waluta, data), wyrównanie nagłówka i szerokości kolumn (wersja 1.26): [docs/RELEASE-1.26.md](docs/RELEASE-1.26.md).
+Rysunek: rodzaj linii kształtów (przerywana, osiowa, dwupunktowa, kropkowa), prosta przez całą stronę, punkt symetrii, strzałka po łuku z dwoma punktami pośrednimi i zakończeniami (wersja 1.27): [docs/RELEASE-1.27.md](docs/RELEASE-1.27.md).
 
-## Co potrafi wersja 1.26
+## Co potrafi wersja 1.27
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -116,7 +117,10 @@ Jeden wygląd okien (białe, sekcje w cienkich ramkach), „Wstaw obiekt” na p
   kąty co 15°), przytrzymany Ctrl – chwilowo zaznaczanie, środkowy przycisk myszy przesuwa stronę,
   **szyk** liniowy i kołowy (jeden element z parametrami, „Rozdziel”), **kilka kartek** w jednym oknie
   (każda – osobny rysunek w notatce), zakończenia odcinka (grot, trójkąt, koło, kwadrat, romb)
-  i wymiary widoczne na rysunku na stałe (oko przy polu wymiaru). Od 1.21: **tabele** na rysunku (to
+  i wymiary widoczne na rysunku na stałe (oko przy polu wymiaru). Od 1.27: **rodzaj linii** każdego
+  kształtu (ciągła, przerywana, osiowa – kreska-kropka, dwupunktowa, kropkowa), **prosta** przez całą
+  stronę, **punkt** (punkt symetrii, kropka, krzyżyk, środek) i **strzałka po łuku** z dwoma punktami
+  pośrednimi i zakończeniami jak odcinek. Od 1.21: **tabele** na rysunku (to
   samo okno tabeli co w notatce; szerokość narożnikiem), **karteczki** w pięciu kolorach – zwijane do
   ikony z numerem, ze strzałką do miejsca, z datą dodania, także tylko dla siebie (bez nich na obrazie
   w notatce) – i okno grubości zakreślacza (do 60). Od 1.22: **liniuszek promieniowy** (okręgi
@@ -197,7 +201,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.23 – nauka w kalendarzu (.ics)](docs/RELEASE-1.23.md),
 [wersja 1.24 – figury z odręcznych kształtów, łamana, przewracanie kartek od rogu; 1.24.1 – spirala na grzbiecie kartki; 1.24.2 – powiększanie dwoma palcami](docs/RELEASE-1.24.md),
 [wersja 1.25 – jednostki wymiarów, odchyłki w ramce tolerancji, tabela pasowań; 1.25.1 – kartka nad spiralą](docs/RELEASE-1.25.md),
-[wersja 1.26 – jeden wygląd okien, „Wstaw obiekt”, okno równań, formaty i szerokości kolumn tabel](docs/RELEASE-1.26.md).
+[wersja 1.26 – jeden wygląd okien, „Wstaw obiekt”, okno równań, formaty i szerokości kolumn tabel](docs/RELEASE-1.26.md),
+[wersja 1.27 – rodzaj linii, prosta, punkt symetrii, strzałka po łuku](docs/RELEASE-1.27.md).
 
 ## Jak korzystać
 
@@ -397,7 +402,8 @@ jest, a nagłówki nie mają formatu. Liczba i waluta wyrównują wartości do p
 Nagłówek idzie za wyrównaniem wartości, dopóki nie wybierzesz mu innego. **Szerokość kolumn**: uchwyt
 (pionowa kreska) między przyciskami kolumn – przeciągnięcie poszerza jedną kolumnę kosztem następnej;
 **Równe kolumny** / **Kolumny z treści** – wszystkie tej samej szerokości albo znów według tekstu.
-W podglądzie notatki kolumny mają ustawione szerokości (tekst łamie się w kolumnie).
+W podglądzie notatki kolumny mają ustawione szerokości (od 1.27 kolumna nie jest węższa niż jej najdłuższe
+słowo albo liczba – na wąskim ekranie słowa nie łamią się w środku).
 
 **Notatka po angielsku:** w edytorze nad tekstem jest przełącznik **Polski / Angielski** – każda
 wersja ma osobną treść, obrazy są wspólne. W podglądzie notatki z obiema wersjami przełącznik
@@ -536,7 +542,7 @@ wskazówek zegara). Kreska zaczęta przy okręgu i prowadzona wzdłuż niego bie
 (w pigułce – długość łuku), przy promieniu i wzdłuż niego – prosto po promieniu; w innym kierunku –
 zwykła kreska. Pigułka: „Promieniowy · okręgi co 2 cm · promienie co 45°”. Ustawienia zostają na urządzeniu.
 **Kształty** (od 1.15): narzędzie **kształty** – Odcinek, Strzałka, Prostokąt, Elipsa, Trójkąt, Romb,
-Trapez (wybór w panelu pod paskiem). Przeciągnięcie tworzy kształt w prostokącie przeciągnięcia
+Trapez, od 1.27 też Prosta, Strzałka po łuku i Punkt (wybór w panelu pod paskiem). Przeciągnięcie tworzy kształt w prostokącie przeciągnięcia
 (prawie równe boki – kwadrat, koło; odcinek co 45° przyciągany), dotknięcie – kształt domyślnej
 wielkości; kolor i grubość – pióra. Punkty konstrukcyjne zaznaczonego kształtu: narożniki
 (szerokość i wysokość), środki boków (jeden wymiar), romb na górnej krawędzi (pochylenie –
@@ -564,7 +570,7 @@ szerokość i wysokość.
 i strzałka: **długość** i **kąt**). Długości są w skali rysunku; wpisz liczbę i Enter – kształt zmienia
 się wokół środka (odcinek – od początku), Esc – bez zmiany. Dotknięcie rombu pochylenia albo punktu
 boku bez przeciągania ustawia kursor w odpowiednim polu. **Wypełnienie** (Brak, Jasne, Pełne – w kolorze
-kształtu): w panelu kształtów dla nowych, polecenie **Wypełnienie** nad zaznaczonym. **Tekst** nad
+kształtu): w panelu kształtów dla nowych, polecenie **Wypełnienie** nad zaznaczonym (od 1.27 w oknie **Styl**). **Tekst** nad
 zaznaczonym kształtem (albo dotknięcie zaznaczonego kształtu) – tekst na środku kształtu (odcinka –
 nad nim), który przesuwa się, obraca i zmienia szerokość razem z nim.
 **Wycinek i Osadź** (od 1.17): przy zaznaczaniu przeciągnięcie **prawym przyciskiem myszy** (albo
@@ -579,7 +585,28 @@ klawiatury – przełącznik **Proporcje jak z Shift** w panelu kształtów). Pr
 dowolnym narzędziu włącza zaznaczanie (tryb Auto); puszczony – wraca poprzednie narzędzie, a zaznaczenie
 znika (przesuń je, usuń albo skopiuj, trzymając Ctrl). Wciśnięte **kółko myszy** i ruch przesuwa stronę.
 **Zakończenia odcinka** (od 1.19): początek i koniec odcinka albo strzałki – brak, grot, trójkąt, koło,
-kwadrat, romb; dla nowych w panelu kształtów (po wybraniu odcinka), dla zaznaczonego – polecenie **Końce**.
+kwadrat, romb; dla nowych w panelu kształtów (po wybraniu odcinka), dla zaznaczonego – polecenie **Końce**
+(od 1.27 w oknie **Styl**).
+
+**Rodzaj linii** (od 1.27): w panelu kształtów rząd **Linia** – ciągła, przerywana, osiowa (kreska-kropka,
+jak oś symetrii), dwupunktowa (kreska-dwie kropki) i kropkowa – dla nowych kształtów i od razu dla
+zaznaczonych. **Styl** (od 1.27 – w miejsce dawnych poleceń **Wypełnienie** i **Końce**) nad zaznaczonym
+kształtem otwiera jedno okno: rodzaj linii, wypełnienie, zakończenia (odcinek, strzałka, łuk) albo znacznik
+punktu – zmiana po **Gotowe**, jeden krok cofania; przy kilku zaznaczonych kształtach – rodzaj linii
+wszystkich naraz. Pasek poleceń jest przez to krótszy i mieści się na telefonie. Kreski i kropki zależą od grubości linii; groty i zakończenia zostają ciągłe.
+Działa przy każdym kształcie oprócz punktu, także na obrazie w notatce.
+
+**Prosta** (od 1.27): przeciągnięcie jak przy odcinku wyznacza dwa punkty (kąt co 45° lekko przyskakuje,
+z Shift – co 15°), a linia biegnie przez całą stronę w obie strony. Zaznaczona ma dwa punkty do
+przeciągnięcia i pole kąta; z linią osiową to oś symetrii. **Punkt** (od 1.27): dotknięcie strony stawia
+znacznik – **punkt symetrii** (kółko z krzyżykiem, domyślnie), **kropka**, **krzyżyk** albo **środek** (+);
+wielkość – od grubości pióra; znacznik wybierasz w panelu albo w oknie **Styl** nad zaznaczonym
+punktem, tekst (np. „O”, „S”) – poleceniem **Tekst** (stoi obok znacznika). **Strzałka po łuku** (od 1.27):
+przeciągnięcie od początku do końca tworzy łuk wygięty na lewo od kierunku ruchu (w prawo – łuk w górę);
+zaznaczona ma cztery niebieskie punkty – początek, **dwa punkty pośrednie** i koniec – a łuk zawsze przechodzi
+przez wszystkie cztery (przeciągnij punkt pośredni, żeby zmienić wygięcie), narożniki ramki zmieniają
+wielkość, kółko – obrót. Zakończenia jak przy odcinku (grot, trójkąt, koło, kwadrat, romb – w panelu albo w oknie
+**Styl**), domyślnie grot na końcu; bez grotów to zwykły łuk.
 **Przyciąganie końców** (od 1.22): początek i koniec nowego odcinka albo strzałki, przeciągany koniec
 zaznaczonego odcinka i koniec strzałki karteczki przyskakują do **narożnika** (kwadracik) albo
 **krawędzi** (kółko) innego elementu, gdy są bliżej niż ok. 3 mm (14 punktów ekranu; narożnik ma

@@ -24,19 +24,30 @@
 //   Od 1.24 łamana 'polyline' i wielokąt 'polygon' (z rozpoznanego odręcznego kształtu): nodes – wierzchołki
 //   [u, v, u, v, …] w układzie własnym (od −½ do ½ szerokości i wysokości ramki), więc przesuwanie,
 //   obrót i zmiana wielkości działają jak przy innych kształtach; bez pochylenia, łamana – bez wypełnienia.
+//   Od 1.27: dash – rodzaj linii kształtu (SHAPE_DASHES: przerywana, osiowa – kreska-kropka, dwupunktowa,
+//   kropkowa; brak – ciągła); 'xline' – prosta przez dwa punkty (jak odcinek, ale rysowana przez całą
+//   stronę); 'curve' – strzałka po łuku: cztery wierzchołki w nodes (początek, dwa punkty pośrednie,
+//   koniec) – krzywa Béziera przechodząca przez wszystkie cztery, z zakończeniami jak odcinek (domyślnie
+//   grot na końcu); 'point' – punkt (znacznik mark: POINT_MARKS) o średnicy w (w = h).
 
-export const SHAPES = Object.freeze(['line', 'arrow', 'rect', 'ellipse', 'triangle', 'diamond', 'trapezoid']);
+export const SHAPES = Object.freeze(['line', 'arrow', 'rect', 'ellipse', 'triangle', 'diamond', 'trapezoid', 'xline', 'curve', 'point']);
 export const SHAPE_LABELS = Object.freeze({
   line: 'Odcinek', arrow: 'Strzałka', rect: 'Prostokąt', ellipse: 'Elipsa', triangle: 'Trójkąt', diamond: 'Romb', trapezoid: 'Trapez',
-  polyline: 'Łamana', polygon: 'Wielokąt'
+  xline: 'Prosta', curve: 'Strzałka po łuku', point: 'Punkt', polyline: 'Łamana', polygon: 'Wielokąt'
 });
 /** Kształty z wierzchołkami (od 1.24) – tylko z rozpoznania odręcznego kształtu, nie z panelu kształtów. */
 export const POLY_SHAPES = Object.freeze(['polyline', 'polygon']);
-export const isPoly = (shape) => shape.shape === 'polyline' || shape.shape === 'polygon';
+/** Z wierzchołkami w nodes: łamana, wielokąt i (od 1.27) strzałka po łuku. */
+export const isPoly = (shape) => shape.shape === 'polyline' || shape.shape === 'polygon' || shape.shape === 'curve';
 /** Najwięcej wierzchołków łamanej i wielokąta. */
 export const POLY_NODES_MAX = 24;
-/** Kształty z dwoma końcami (bez wysokości). */
-export const isSegment = (shape) => shape.shape === 'line' || shape.shape === 'arrow';
+/** Kształty z dwoma końcami (bez wysokości); od 1.27 także prosta. */
+export const isSegment = (shape) => shape.shape === 'line' || shape.shape === 'arrow' || shape.shape === 'xline';
+export const isXline = (shape) => shape.shape === 'xline';
+export const isCurve = (shape) => shape.shape === 'curve';
+export const isPointShape = (shape) => shape.shape === 'point';
+/** Kształty z zakończeniami (grot, trójkąt…): odcinek, strzałka i (od 1.27) strzałka po łuku – prosta ich nie ma. */
+export const hasCaps = (shape) => shape.shape === 'line' || shape.shape === 'arrow' || shape.shape === 'curve';
 export const isShape = (stroke) => stroke?.tool === 'shape';
 export const SKEW_LIMIT = 2.5;
 export const MIN_SHAPE = 4;
@@ -47,7 +58,139 @@ const DEFAULT_ADJUST = { triangle: 0.5, trapezoid: 0.25 };
 export const SHAPE_FILLS = Object.freeze(['none', 'light', 'solid']);
 export const SHAPE_FILL_LABELS = Object.freeze({ none: 'Brak', light: 'Jasne', solid: 'Pełne' });
 export const FILL_ALPHA = Object.freeze({ light: 0.22, solid: 1 });
-export const canFill = (shape) => !isSegment(shape) && shape.shape !== 'polyline';
+export const canFill = (shape) => !isSegment(shape) && !['polyline', 'curve', 'point'].includes(shape.shape);
+
+// ---------------------------------------------------------------- rodzaj linii i punkt (od 1.27)
+
+/** Rodzaj linii kształtu: ciągła, przerywana, osiowa (kreska-kropka), dwupunktowa (kreska-dwie kropki), kropkowa. */
+export const SHAPE_DASHES = Object.freeze(['solid', 'dashed', 'center', 'phantom', 'dotted']);
+export const SHAPE_DASH_LABELS = Object.freeze({ solid: 'Ciągła', dashed: 'Przerywana', center: 'Osiowa', phantom: 'Dwupunktowa', dotted: 'Kropkowa' });
+/** Punkt nie ma linii. */
+export const canDash = (shape) => shape.shape !== 'point';
+/** Rodzaj linii kształtu (brak albo nieznany – ciągła). */
+export const shapeDash = (shape) => (canDash(shape) && SHAPE_DASHES.includes(shape.dash) ? shape.dash : 'solid');
+
+/**
+ * Wzór kresek do setLineDash (jednostki strony) – od grubości linii. Linia ma zaokrąglone końce, więc
+ * kreska jest dłuższa o grubość, a przerwa krótsza; kropka to kreska prawie zerowej długości.
+ */
+export function dashPattern(shape) {
+  const unit = Math.max(1.5, shape.size);
+  const dot = 0.001;
+  switch (shapeDash(shape)) {
+    case 'dashed': return [unit * 4, unit * 4];
+    case 'center': return [unit * 12, unit * 4, dot, unit * 4];
+    case 'phantom': return [unit * 12, unit * 4, dot, unit * 4, dot, unit * 4];
+    case 'dotted': return [dot, unit * 3];
+    default: return [];
+  }
+}
+
+/** Kształt z rodzajem linii – nowy obiekt; ciągła – bez pola. */
+export function withDash(shape, dash) {
+  const next = { ...shape };
+  delete next.dash;
+  if (canDash(shape) && SHAPE_DASHES.includes(dash) && dash !== 'solid') next.dash = dash;
+  return next;
+}
+
+/** Znacznik punktu: punkt symetrii (kółko z krzyżykiem), kropka, krzyżyk ×, środek +. */
+export const POINT_MARKS = Object.freeze(['center', 'dot', 'cross', 'plus']);
+export const POINT_MARK_LABELS = Object.freeze({ center: 'Punkt symetrii', dot: 'Kropka', cross: 'Krzyżyk', plus: 'Środek' });
+export const pointMark = (shape) => (POINT_MARKS.includes(shape.mark) ? shape.mark : 'center');
+/** Średnica znacznika punktu z grubości linii. */
+export const pointDiameter = (size) => clamp(Math.round(size * 7), 16, 60);
+
+/**
+ * Znacznik punktu w punktach strony: { lines: [[a, b], …], ring?: { x, y, r }, dot?: { x, y, r } } –
+ * obrócony z kształtem.
+ */
+export function pointMarkGeometry(shape) {
+  const half = shape.w / 2;
+  const center = { x: shape.x, y: shape.y };
+  const along = (u, v) => shapePoint({ ...shape, skew: 0 }, u, v);
+  const plus = [[along(-0.5, 0), along(0.5, 0)], [along(0, -0.5), along(0, 0.5)]];
+  const k = 0.5 * Math.SQRT1_2;
+  switch (pointMark(shape)) {
+    case 'dot': return { lines: [], dot: { ...center, r: Math.max(shape.size * 1.2, half * 0.36) } };
+    case 'cross': return { lines: [[along(-k, -k), along(k, k)], [along(-k, k), along(k, -k)]] };
+    case 'plus': return { lines: plus };
+    default: return { lines: plus, ring: { ...center, r: half * 0.62 } };
+  }
+}
+
+// ---------------------------------------------------------------- strzałka po łuku (od 1.27)
+
+const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+
+/**
+ * Krzywa łuku: [P0, C1, C2, P3] – krzywa Béziera od pierwszego do ostatniego wierzchołka, która
+ * przechodzi przez dwa punkty pośrednie (w t = ⅓ i ⅔): 12·C1 + 6·C2 = 27·P1 − 8·P0 − P3,
+ * 6·C1 + 12·C2 = 27·P2 − P0 − 8·P3.
+ */
+export function curveControls(shape) {
+  const [p0, p1, p2, p3] = polyPoints(shape);
+  const a = { x: 27 * p1.x - 8 * p0.x - p3.x, y: 27 * p1.y - 8 * p0.y - p3.y };
+  const b = { x: 27 * p2.x - p0.x - 8 * p3.x, y: 27 * p2.y - p0.y - 8 * p3.y };
+  return [p0, { x: (2 * a.x - b.x) / 18, y: (2 * a.y - b.y) / 18 }, { x: (2 * b.x - a.x) / 18, y: (2 * b.y - a.y) / 18 }, p3];
+}
+
+/** Punkt krzywej Béziera [P0, C1, C2, P3] w t. */
+export function bezierPoint([p0, c1, c2, p3], t) {
+  const u = 1 - t;
+  return {
+    x: u * u * u * p0.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * p3.x,
+    y: u * u * u * p0.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * p3.y
+  };
+}
+
+/** Fragment krzywej od t0 do t1 (de Casteljau) – [P0, C1, C2, P3]. */
+function bezierPart(curve, t0, t1) {
+  const split = ([p0, c1, c2, p3], t) => {
+    const [a, b, c] = [lerp(p0, c1, t), lerp(c1, c2, t), lerp(c2, p3, t)];
+    const [d, e] = [lerp(a, b, t), lerp(b, c, t)];
+    const f = lerp(d, e, t);
+    return [[p0, a, d, f], [f, e, c, p3]];
+  };
+  const right = t0 > 0 ? split(curve, t0)[1] : curve;
+  return t1 < 1 ? split(right, (t1 - t0) / (1 - t0))[0] : right;
+}
+
+/** Parametr t, w którym krzywa jest `distance` od swojego końca `which` (do przycięcia pod trójkątem). */
+function bezierTrim(curve, which, distance) {
+  const tip = which === 'end' ? curve[3] : curve[0];
+  let [low, high] = which === 'end' ? [0.5, 1] : [0, 0.5];
+  for (let step = 0; step < 30; step += 1) {
+    const middle = (low + high) / 2;
+    const point = bezierPoint(curve, middle);
+    const far = Math.hypot(point.x - tip.x, point.y - tip.y) > distance;
+    if ((which === 'end') === far) low = middle;
+    else high = middle;
+  }
+  return (low + high) / 2;
+}
+
+/** Punkty krzywej łuku (obrys do zaznaczania, gumki i granic). */
+export function curveSamples(shape, count = 32) {
+  const curve = curveControls(shape);
+  return Array.from({ length: count + 1 }, (_, index) => bezierPoint(curve, index / count));
+}
+
+/**
+ * Nowa strzałka po łuku z przeciągnięcia od `from` do `to`: punkty pośrednie w ⅓ i ⅔ cięciwy,
+ * odsunięte w górę (na lewo od kierunku przeciągnięcia) o ⅕ jej długości – łuk; dotknięcie – łuk
+ * domyślnej długości w prawo.
+ */
+function curveFromDrag(from, to, style, defaultSize, tap) {
+  let end = to;
+  if (Math.hypot(to.x - from.x, to.y - from.y) < tap) end = { x: from.x + defaultSize, y: from.y };
+  const [dx, dy] = [end.x - from.x, end.y - from.y];
+  const length = Math.hypot(dx, dy) || 1;
+  const lift = { x: (dy / length) * length * 0.2, y: (-dx / length) * length * 0.2 };
+  const points = [from, { x: from.x + dx / 3 + lift.x, y: from.y + dy / 3 + lift.y }, { x: from.x + (2 * dx) / 3 + lift.x, y: from.y + (2 * dy) / 3 + lift.y }, end];
+  const frame = { x: (from.x + end.x) / 2, y: (from.y + end.y) / 2, angle: Math.atan2(dy, dx) };
+  return polyFromPoints('curve', points, frame, style);
+}
 /** Najdłuższy tekst na kształcie. */
 export const LABEL_TEXT_MAX = 500;
 /** Największy kąt pochylenia wpisywany z klawiatury (stopnie) – odpowiada SKEW_LIMIT. */
@@ -94,10 +237,14 @@ const nodePairs = (shape) => Array.from({ length: shape.nodes.length / 2 }, (_, 
 export const SEGMENT_CAPS = Object.freeze(['none', 'arrow', 'triangle', 'circle', 'square', 'diamond']);
 export const SEGMENT_CAP_LABELS = Object.freeze({ none: 'Brak', arrow: 'Grot', triangle: 'Trójkąt', circle: 'Koło', square: 'Kwadrat', diamond: 'Romb' });
 
-/** Zakończenia { start, end }: zapisane albo domyślne – odcinek bez, strzałka z grotem na końcu (jak do 1.18). */
+/**
+ * Zakończenia { start, end }: zapisane albo domyślne – odcinek bez, strzałka i (od 1.27) strzałka po łuku
+ * z grotem na końcu (jak do 1.18); prosta – bez zakończeń.
+ */
 export function segmentCaps(shape) {
+  if (shape.shape === 'xline') return { start: 'none', end: 'none' };
   const pick = (value, fallback) => (SEGMENT_CAPS.includes(value) ? value : fallback);
-  return { start: pick(shape.startCap, 'none'), end: pick(shape.endCap, shape.shape === 'arrow' ? 'arrow' : 'none') };
+  return { start: pick(shape.startCap, 'none'), end: pick(shape.endCap, shape.shape === 'arrow' || shape.shape === 'curve' ? 'arrow' : 'none') };
 }
 
 /** Odcinek z zakończeniami { start, end } – nowy obiekt; zapisane tylko te, które są inne niż domyślne. */
@@ -105,6 +252,7 @@ export function withCaps(shape, caps) {
   const next = { ...shape };
   delete next.startCap;
   delete next.endCap;
+  if (!hasCaps(shape)) return next;
   const fallback = segmentCaps(next);
   if (SEGMENT_CAPS.includes(caps.start) && caps.start !== fallback.start) next.startCap = caps.start;
   if (SEGMENT_CAPS.includes(caps.end) && caps.end !== fallback.end) next.endCap = caps.end;
@@ -112,9 +260,27 @@ export function withCaps(shape, caps) {
 }
 
 /** Wielkość zakończenia – jak grot strzałki: od grubości linii, najwyżej część długości odcinka (przy dwóch – mniejsza). */
-function capLength(shape, caps) {
+function capLength(shape, caps, span) {
   const both = caps.start !== 'none' && caps.end !== 'none';
-  return Math.min(Math.max(14, shape.size * 4), Math.abs(shape.w) * (both ? 0.4 : 0.6));
+  return Math.min(Math.max(14, shape.size * 4), span * (both ? 0.4 : 0.6));
+}
+
+/**
+ * Koniec `which` kształtu z zakończeniami: { tip, ux, uy, span } – punkt końca, kierunek na zewnątrz
+ * i długość (odcinek – długość, łuk – cięciwa). Od 1.27 łuk: kierunek stycznej w końcu krzywej.
+ */
+function capFrame(shape, which) {
+  if (isCurve(shape)) {
+    const curve = curveControls(shape);
+    const nodes = polyPoints(shape);
+    const [tip, toward, fallback] = which === 'end' ? [curve[3], curve[2], nodes[2]] : [curve[0], curve[1], nodes[1]];
+    let [dx, dy] = [tip.x - toward.x, tip.y - toward.y];
+    if (Math.hypot(dx, dy) < 1e-6) [dx, dy] = [tip.x - fallback.x, tip.y - fallback.y];
+    const length = Math.hypot(dx, dy) || 1;
+    return { tip, ux: dx / length, uy: dy / length, span: Math.hypot(curve[3].x - curve[0].x, curve[3].y - curve[0].y) };
+  }
+  const sign = which === 'end' ? 1 : -1;
+  return { tip: shapePoint(shape, which === 'end' ? 0.5 : -0.5, 0), ux: Math.cos(shape.angle) * sign, uy: Math.sin(shape.angle) * sign, span: Math.abs(shape.w) };
 }
 
 /**
@@ -126,13 +292,11 @@ function capLength(shape, caps) {
 export function segmentCap(shape, which) {
   const caps = segmentCaps(shape);
   const kind = caps[which];
-  const tip = shapePoint(shape, which === 'end' ? 0.5 : -0.5, 0);
-  if (kind === 'none') return { kind, tip, trim: tip };
   // u – na zewnątrz odcinka, n – w poprzek.
-  const sign = which === 'end' ? 1 : -1;
-  const [ux, uy] = [Math.cos(shape.angle) * sign, Math.sin(shape.angle) * sign];
+  const { tip, ux, uy, span } = capFrame(shape, which);
+  if (kind === 'none') return { kind, tip, trim: tip };
   const [nx, ny] = [-uy, ux];
-  const length = capLength(shape, caps);
+  const length = capLength(shape, caps, span);
   const at = (along, across) => ({ x: tip.x + ux * along + nx * across, y: tip.y + uy * along + ny * across });
   switch (kind) {
     case 'arrow': {
@@ -156,7 +320,7 @@ export function segmentCap(shape, which) {
 export const arrowHead = (shape, which = 'end') => segmentCap(shape, which).arms ?? [];
 
 /** Zakończenia odcinka (bez „brak”). */
-export const segmentCapList = (shape) => (isSegment(shape) ? ['start', 'end'].map((which) => segmentCap(shape, which)).filter((cap) => cap.kind !== 'none') : []);
+export const segmentCapList = (shape) => (hasCaps(shape) ? ['start', 'end'].map((which) => segmentCap(shape, which)).filter((cap) => cap.kind !== 'none') : []);
 
 /** Skrajne punkty zakończeń odcinka – granice i zaznaczanie. */
 export function capPoints(shape) {
@@ -176,7 +340,24 @@ export function capPoints(shape) {
  * Obrys kształtu jako łamana punktów strony { points: [x, y, …], closed } – do zaznaczania, gumki
  * i przyciągania linijki. Elipsa – 48 punktów (rysowana dokładnie krzywymi Béziera).
  */
+/** Jak daleko za swoje punkty sięga prosta (od 1.27) – poza każdą stronę; na płótnie i tak przycięta. */
+export const XLINE_REACH = 20000;
+
 export function shapeOutline(shape) {
+  if (isXline(shape)) {
+    const [a, b] = [shapePoint(shape, -0.5, 0), shapePoint(shape, 0.5, 0)];
+    const [ux, uy] = [Math.cos(shape.angle), Math.sin(shape.angle)];
+    return { points: [a.x - ux * XLINE_REACH, a.y - uy * XLINE_REACH, b.x + ux * XLINE_REACH, b.y + uy * XLINE_REACH], closed: false };
+  }
+  if (isCurve(shape)) return { points: curveSamples(shape).flatMap((point) => [point.x, point.y]), closed: false };
+  if (isPointShape(shape)) {
+    const points = [];
+    for (let index = 0; index < 16; index += 1) {
+      const angle = (index / 16) * Math.PI * 2;
+      points.push(shape.x + Math.cos(angle) * shape.w / 2, shape.y + Math.sin(angle) * shape.w / 2);
+    }
+    return { points, closed: true };
+  }
   if (isSegment(shape)) {
     const [a, b] = [shapePoint(shape, -0.5, 0), shapePoint(shape, 0.5, 0)];
     return { points: [a.x, a.y, b.x, b.y], closed: false };
@@ -207,6 +388,19 @@ export function shapePath(shape) {
       curves: quarter.map((curve) => curve.map(([u, v]) => shapePoint(shape, u, v)))
     };
   }
+  if (isCurve(shape)) {
+    // Od 1.27: krzywa łuku (przy trójkącie – przycięta pod jego podstawą) i zakończenia.
+    const curve = curveControls(shape);
+    const [start, end] = [segmentCap(shape, 'start'), segmentCap(shape, 'end')];
+    const cut = (cap, which) => (cap.trim === cap.tip ? (which === 'end' ? 1 : 0)
+      : bezierTrim(curve, which, Math.hypot(cap.trim.x - cap.tip.x, cap.trim.y - cap.tip.y)));
+    const part = bezierPart(curve, cut(start, 'start'), cut(end, 'end'));
+    return { start: part[0], curves: [part.slice(1)], closed: false, caps: [start, end].filter((cap) => cap.kind !== 'none') };
+  }
+  if (isXline(shape) || isPointShape(shape)) {
+    const { points, closed } = shapeOutline(shape);
+    return { start: { x: points[0], y: points[1] }, lines: [{ x: points[2], y: points[3] }], closed, caps: [] };
+  }
   if (isSegment(shape)) {
     // Od 1.19: linia między zakończeniami (przy trójkącie – do jego podstawy) i same zakończenia.
     const [start, end] = [segmentCap(shape, 'start'), segmentCap(shape, 'end')];
@@ -220,7 +414,8 @@ export function shapePath(shape) {
 
 /** Granice kształtu razem z grubością linii, zakończeniami odcinka, tekstem i (od 1.19) stałymi wymiarami. */
 export function shapeBounds(shape) {
-  const { points } = shapeOutline(shape);
+  // Prosta (od 1.27) – granice jej dwóch punktów (zaznaczenie prostokątem, ramka), nie całej linii.
+  const { points } = isXline(shape) ? { points: [shapePoint(shape, -0.5, 0), shapePoint(shape, 0.5, 0)].flatMap((point) => [point.x, point.y]) } : shapeOutline(shape);
   const xs = points.filter((_, index) => index % 2 === 0);
   const ys = points.filter((_, index) => index % 2 === 1);
   const half = shape.size / 2;
@@ -247,6 +442,10 @@ export function labelFrame(shape) {
   const [cos, sin] = [Math.cos(shape.angle), Math.sin(shape.angle)];
   const flip = cos < -1e-9 || (Math.abs(cos) < 1e-9 && sin > 0);
   const angle = flip ? Math.atan2(-sin, -cos) : shape.angle;
+  if (isPointShape(shape)) {
+    // Punkt (od 1.27): tekst obok znacznika, w prawo i w górę.
+    return { x: shape.x + shape.w / 2 + label.width / 2 + 4, y: shape.y - shape.w / 2 - label.height / 2, angle: 0, width: label.width, height: label.height };
+  }
   if (!isSegment(shape)) return { x: shape.x, y: shape.y, angle, width: label.width, height: label.height };
   const lift = label.height / 2 + shape.size / 2 + label.size * 0.25;
   return { x: shape.x + Math.sin(angle) * lift, y: shape.y - Math.cos(angle) * lift, angle, width: label.width, height: label.height };
@@ -286,6 +485,7 @@ function segmentDistance(px, py, ax, ay, bx, by) {
  */
 export function touchesShape(shape, x, y, radius) {
   if (touchesLabel(shape, x, y, radius) || (shape.fill && shapeContains(shape, x, y))) return true;
+  if (isPointShape(shape)) return Math.hypot(x - shape.x, y - shape.y) <= shape.w / 2 + radius;
   const { points, closed } = shapeOutline(shape);
   const reach = radius + shape.size / 2;
   const count = points.length / 2;
@@ -316,7 +516,8 @@ function pointInPolygon(x, y, points) {
 
 /** Czy punkt leży wewnątrz kształtu (dotknięcie środka pustego prostokąta też go zaznacza). */
 export function shapeContains(shape, x, y) {
-  if (isSegment(shape) || shape.shape === 'polyline') return false;
+  if (isPointShape(shape)) return Math.hypot(x - shape.x, y - shape.y) <= shape.w / 2;
+  if (isSegment(shape) || shape.shape === 'polyline' || shape.shape === 'curve') return false;
   const { points } = shapeOutline(shape);
   let inside = false;
   for (let index = 0, previous = points.length - 2; index < points.length; previous = index, index += 2) {
@@ -347,9 +548,16 @@ export const translateShape = (shape, dx, dy) => ({ ...shape, x: round(shape.x +
  */
 export function shapeFromDrag(kind, from, to, style, { defaultSize = 176, tap = 6, lock = false } = {}) {
   const [dx, dy] = [to.x - from.x, to.y - from.y];
+  // Od 1.27: punkt – w miejscu końca przeciągnięcia (dotknięcia), znacznik z panelu.
+  if (kind === 'point') {
+    const diameter = pointDiameter(style.size);
+    return { tool: 'shape', shape: 'point', color: style.color, size: style.size, x: to.x, y: to.y, w: diameter, h: diameter, angle: 0, skew: 0, adjust: 0, mark: pointMark(style) };
+  }
+  if (kind === 'curve') return withDash(withCaps(curveFromDrag(from, to, style, defaultSize, tap), style.caps ?? {}), style.dash);
   let base = { tool: 'shape', shape: kind, color: style.color, size: style.size, angle: 0, skew: 0, adjust: DEFAULT_ADJUST[kind] ?? 0 };
   if ((style.fill === 'light' || style.fill === 'solid') && canFill(base)) base.fill = style.fill;
-  if (isSegment(base) && style.caps) base = withCaps(base, style.caps);
+  if (hasCaps(base) && style.caps) base = withCaps(base, style.caps);
+  base = withDash(base, style.dash);
   if (Math.hypot(dx, dy) < tap) {
     return isSegment(base)
       ? { ...base, x: from.x, y: from.y, w: defaultSize, h: 0 }
@@ -387,6 +595,8 @@ const SKEW_AT = 0.3;
  * obrót nad kształtem (`rotateGap` – odległość w jednostkach strony), trójkąt i trapez – kształt.
  */
 export function shapeHandles(shape, rotateGap) {
+  // Punkt (od 1.27) – tylko przesuwanie.
+  if (isPointShape(shape)) return [];
   if (isSegment(shape)) {
     const [a, b] = [shapePoint(shape, -0.5, 0), shapePoint(shape, 0.5, 0)];
     return [{ id: 'start', kind: 'end', ...a }, { id: 'end', kind: 'end', ...b }];
@@ -507,6 +717,11 @@ function moveNode(shape, index, point, { lock = false } = {}) {
   const points = polyPoints(shape);
   if (index < 0 || index >= points.length) return shape;
   const closed = shape.shape === 'polygon';
+  // Punkty łuku (od 1.27) – bez przyciągania kierunków.
+  if (isCurve(shape)) {
+    points[index] = point;
+    return { ...polyFromPoints(shape.shape, points, shape, shape), ...keepExtras(shape) };
+  }
   const neighbours = [index - 1, index + 1]
     .map((other) => (closed ? (other + points.length) % points.length : other))
     .filter((other) => other >= 0 && other < points.length && other !== index)
@@ -583,7 +798,8 @@ export function setSegment(shape, { length = shape.w, degrees = segmentDegrees(s
 // ---------------------------------------------------------------- wymiary na rysunku (od 1.19)
 
 /** Wymiary kształtu: szerokość, wysokość i kąt pochylenia; odcinka i strzałki – długość i kąt. */
-export const dimKeys = (shape) => (isSegment(shape) ? ['length', 'angle'] : isPoly(shape) ? ['width', 'height'] : ['width', 'height', 'skew']);
+export const dimKeys = (shape) => (shape.shape === 'xline' ? ['angle'] : shape.shape === 'curve' || shape.shape === 'point' ? []
+  : isSegment(shape) ? ['length', 'angle'] : isPoly(shape) ? ['width', 'height'] : ['width', 'height', 'skew']);
 /** Wielkość czcionki stałego wymiaru i jego odstęp od linii ramki (jednostki strony; kratka ma 44). */
 export const DIM_FONT = 22;
 export const DIM_GAP = 8;
@@ -602,7 +818,7 @@ export function dimPlaces(shape) {
   };
   if (isSegment(shape)) {
     const flip = cos < -1e-9 || (Math.abs(cos) < 1e-9 && sin > 0) ? -1 : 1;
-    return { length: { point: shapePoint(shape, 0, 0), normal: turn([0, flip]) }, angle: { point: shapePoint(shape, 0.5, 0), normal: [cos, sin] } };
+    return onlyDimKeys(shape, { length: { point: shapePoint(shape, 0, 0), normal: turn([0, flip]) }, angle: { point: shapePoint(shape, 0.5, 0), normal: [cos, sin] } });
   }
   const places = {
     width: { point: shapePoint(shape, 0, 0.5), normal: turn([0, 1]) },
@@ -611,7 +827,13 @@ export function dimPlaces(shape) {
   };
   // Łamana i wielokąt (od 1.24) – bez pochylenia.
   if (isPoly(shape)) delete places.skew;
-  return places;
+  return onlyDimKeys(shape, places);
+}
+
+/** Miejsca tylko wymiarów kształtu (dimKeys): prosta – sam kąt, łuk i punkt (od 1.27) – żadnych. */
+function onlyDimKeys(shape, places) {
+  const keys = dimKeys(shape);
+  return Object.fromEntries(Object.entries(places).filter(([key]) => keys.includes(key)));
 }
 
 /** Środek pola albo napisu wymiaru (width × height) odsuniętego od linii ramki o `gap` na zewnątrz. */
@@ -911,8 +1133,8 @@ function cleanLabel(raw, isColor, limit) {
 }
 
 /** Sprawdzone wierzchołki łamanej albo wielokąta [u, v, …] (od −½ do ½) albo null. */
-function cleanNodes(raw, least) {
-  if (!Array.isArray(raw) || raw.length % 2 !== 0 || raw.length < least * 2 || raw.length > POLY_NODES_MAX * 2 || !raw.every(finite)) return null;
+function cleanNodes(raw, least, most = POLY_NODES_MAX) {
+  if (!Array.isArray(raw) || raw.length % 2 !== 0 || raw.length < least * 2 || raw.length > most * 2 || !raw.every(finite)) return null;
   return raw.map((value) => clamp(value, -0.5, 0.5));
 }
 
@@ -920,15 +1142,16 @@ function cleanNodes(raw, least) {
 export function cleanShape(raw, pageWidth, pageHeight, isColor) {
   if (!raw || !(SHAPES.includes(raw.shape) || POLY_SHAPES.includes(raw.shape)) || !isColor(raw.color)) return null;
   if (![raw.x, raw.y, raw.w, raw.h, raw.angle, raw.size].every(finite)) return null;
-  const segment = raw.shape === 'line' || raw.shape === 'arrow';
-  // Od 1.24: wierzchołki łamanej (co najmniej 2) i wielokąta (co najmniej 3) w układzie własnym.
+  const segment = isSegment(raw);
+  // Od 1.24: wierzchołki łamanej (co najmniej 2) i wielokąta (co najmniej 3) w układzie własnym; łuk (od 1.27) – dokładnie 4.
   const poly = isPoly(raw);
-  const nodes = poly ? cleanNodes(raw.nodes, raw.shape === 'polygon' ? 3 : 2) : null;
+  const nodes = poly ? cleanNodes(raw.nodes, raw.shape === 'polygon' ? 3 : raw.shape === 'curve' ? 4 : 2, raw.shape === 'curve' ? 4 : POLY_NODES_MAX) : null;
   if (poly && !nodes) return null;
   const limit = Math.max(pageWidth, pageHeight) * 4;
   const label = cleanLabel(raw.label, isColor, limit);
   // Od 1.19: zakończenia odcinka (tylko inne niż domyślne) i wymiary widoczne na stałe.
-  const caps = segment ? withCaps({ shape: raw.shape }, { start: raw.startCap ?? 'none', end: raw.endCap ?? (raw.shape === 'arrow' ? 'arrow' : 'none') }) : {};
+  const caps = hasCaps(raw) ? withCaps({ shape: raw.shape }, { ...segmentCaps({ shape: raw.shape }), ...(raw.startCap ? { start: raw.startCap } : {}), ...(raw.endCap ? { end: raw.endCap } : {}) }) : {};
+  const point = isPointShape(raw);
   const dims = withDims({ shape: raw.shape }, Array.isArray(raw.dims) ? raw.dims : []).dims;
   return {
     tool: 'shape',
@@ -938,10 +1161,10 @@ export function cleanShape(raw, pageWidth, pageHeight, isColor) {
     x: clamp(raw.x, -pageWidth, pageWidth * 2),
     y: clamp(raw.y, -pageHeight, pageHeight * 2),
     w: clamp(Math.abs(raw.w), MIN_SHAPE, limit),
-    h: segment ? 0 : clamp(Math.abs(raw.h), MIN_SHAPE, limit),
+    h: segment ? 0 : point ? clamp(Math.abs(raw.w), MIN_SHAPE, limit) : clamp(Math.abs(raw.h), MIN_SHAPE, limit),
     // Kąt w zakresie (−π, π]; w zakresie – bez przeliczania (bez błędów zaokrągleń).
     angle: raw.angle > Math.PI || raw.angle <= -Math.PI ? Math.atan2(Math.sin(raw.angle), Math.cos(raw.angle)) : raw.angle,
-    skew: segment || poly || !finite(raw.skew) ? 0 : clamp(raw.skew, -SKEW_LIMIT, SKEW_LIMIT),
+    skew: segment || poly || point || !finite(raw.skew) ? 0 : clamp(raw.skew, -SKEW_LIMIT, SKEW_LIMIT),
     adjust: raw.shape === 'triangle' ? clamp(finite(raw.adjust) ? raw.adjust : 0.5, 0, 1)
       : raw.shape === 'trapezoid' ? clamp(finite(raw.adjust) ? raw.adjust : 0.25, 0, 0.45) : 0,
     ...(canFill(raw) && (raw.fill === 'light' || raw.fill === 'solid') ? { fill: raw.fill } : {}),
@@ -949,6 +1172,9 @@ export function cleanShape(raw, pageWidth, pageHeight, isColor) {
     ...(label ? { label } : {}),
     ...(caps.startCap ? { startCap: caps.startCap } : {}),
     ...(caps.endCap ? { endCap: caps.endCap } : {}),
+    // Od 1.27: rodzaj linii (nie ciągła) i znacznik punktu.
+    ...(canDash(raw) && SHAPE_DASHES.includes(raw.dash) && raw.dash !== 'solid' ? { dash: raw.dash } : {}),
+    ...(point ? { mark: pointMark(raw) } : {}),
     ...(dims ? { dims } : {}),
     // Od 1.22.1: odsunięcia linii wymiarowych i oznaczenia wymiarów (znak, tolerancja).
     ...cleanDimExtras(raw, { shape: raw.shape })

@@ -465,8 +465,8 @@ kolumnami, `widthsWithColumn` / `widthsWithoutColumn` – przy dodaniu i usunię
 zapisana jak wpisana; `displayCell` pokazuje ją w formacie kolumny (`parseNumber` – spacje, apostrof
 i kropki tysięcy, przecinek albo kropka dziesiętna, symbol waluty pomijany; `formatNumber` – twarda spacja
 co trzy cyfry, przecinek, minus „−”; `parseDate` – rrrr-mm-dd, dd.mm.rrrr, d/m/rr), a nagłówki, puste,
-wielowierszowe i nie-liczby – bez zmian. `tableHtml` (podgląd, druk, schowek; `<colgroup>` i
-`table-layout: fixed` przy `colWidths`), `tableText`, `tableLines` i `tableSpeech` używają wartości
+wielowierszowe i nie-liczby – bez zmian. `tableHtml` (podgląd, druk, schowek; `<colgroup>` w procentach przy `colWidths` – od 1.27 bez
+`table-layout: fixed`, więc kolumna nie jest węższa niż najdłuższe słowo), `tableText`, `tableLines` i `tableSpeech` używają wartości
 pokazywanych. W oknie tabeli przycisk kolumny otwiera okno **Kolumna N** (`openColumnSheet`: format,
 wyrównanie wartości i nagłówka – nagłówek idzie za wartościami, dopóki nie wybierze się mu innego; liczba
 i waluta przy wyrównaniu do lewej – do prawej), uchwyt `.table-editor__grip` między przyciskami zmienia
@@ -740,6 +740,31 @@ bieżąca rysuje same linie (`paintDims(…, { text: false })`), a pola wymiaró
 w miejscu liczby; uchwyt (`startDimDrag`, nasłuch na `window`, miejsce chwytu względem liczby) –
 czynność `dim-offset` z podglądem przerywanym, po puszczeniu `withDimOffset` i wzór `tools.dimOffset`
 (dla długości); oko – `showDim` (wzór i piętro). Przycisk ± – `editDimMarks` (`withDimTolerance`).
+Od 1.27 (bez zmiany formatu rysunku – nowe pola i rodzaje kształtów; starsza wersja aplikacji je pomija):
+**rodzaj linii** `dash` ('dashed' | 'center' | 'phantom' | 'dotted', `SHAPE_DASHES`; brak – ciągła, punkt go
+nie ma – `canDash`) – `dashPattern` daje wzór `setLineDash` w wielokrotnościach grubości (zaokrąglone końce:
+kreska dłuższa o grubość, przerwa krótsza, kropka – kreska 0,001), `paintShape` przerywa tylko linię
+kształtu (groty i zakończenia – ciągłe), `withDash` zapisuje tylko inną niż ciągła. **Prosta** `xline`
+(w `isSegment`: dwa punkty, kąt co 45°, przyciąganie końców) – `shapeOutline` sięga `XLINE_REACH` za punkty
+(dotknięcie i gumka na całej długości, płótno i obraz przycinają ją do strony), `shapeBounds` – z samych
+punktów (ramka, zaznaczanie prostokątem); bez zakończeń (`hasCaps`), wymiar – tylko kąt. **Punkt** `point`:
+(x, y), średnica `w = h` (`pointDiameter` z grubości pióra), znacznik `mark` (`POINT_MARKS`: center – kółko
+z krzyżykiem, punkt symetrii, dot, cross, plus; `pointMarkGeometry`), bez uchwytów, wymiarów i wypełnienia;
+tekst obok znacznika. **Strzałka po łuku** `curve` (w `isPoly`: `nodes` – dokładnie cztery wierzchołki):
+`curveControls` – jedna krzywa Béziera [P0, C1, C2, P3] przechodząca przez punkty pośrednie w t = ⅓ i ⅔
+(12·C1 + 6·C2 = 27·P1 − 8·P0 − P3, 6·C1 + 12·C2 = 27·P2 − P0 − 8·P3); `shapeFromDrag` – punkty w ⅓ i ⅔
+cięciwy odsunięte o ⅕ jej długości na lewo od kierunku przeciągnięcia; zakończenia jak odcinka
+(`capFrame` – koniec i kierunek stycznej, długość grotu od cięciwy; domyślnie grot na końcu, `curveCaps`
+w ustawieniach), trójkąt przycina krzywą (`bezierTrim`, `bezierPart` – de Casteljau); obrys –
+`curveSamples` (32 odcinki), wierzchołki bez przyciągania kierunków (`moveNode`), bez wymiarów (`dimPlaces`
+zwraca tylko klucze `dimKeys`). Przyciąganie (`snapGeometry`): punkt – środek, łuk – końce i krzywa.
+Edytor: panel kształtów – **Prosta**, **Strzałka po łuku**, **Punkt**, rząd **Linia** (`styleChoices`,
+`tools.shapeDash`; zmienia też zaznaczone kształty – `restyle`, jeden krok cofania) albo **Znacznik punktu**
+(`tools.pointMark`), zakończenia łuku (`CAPS_KEYS`); nad zaznaczeniem jeden przycisk **Styl** (`chooseStyle`,
+w miejsce dawnych „Wypełnienie” i „Końce” – pasek mieści się na telefonie): okno z rodzajem linii, wypełnieniem,
+zakończeniami (`capChoices`) albo znacznikiem; kilka zaznaczonych kształtów – sam rodzaj linii; zmiana po
+„Gotowe” przez `restyle` (jeden krok cofania). `openMenu` pokazuje ikonę także przy pozycji do wyboru.
+
 Od 1.25 (format rysunku 10): **jednostka liczb wymiarów** – `drawing.dimUnit` ('mm' | 'cm' | 'm' | 'in',
 `DIM_UNITS`; tylko przy `dimStyle: 'technical'`, brak – `defaultDimUnit`: mm, przy skali imperialnej
 cale). `dimFormat(drawing)` → `{ style, unit }` zastępuje dawny napis stylu w `dimensionParts`, `dimFactor`,

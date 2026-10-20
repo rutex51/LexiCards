@@ -4313,10 +4313,6 @@ a.row__main:active,
 .note-table th { font-weight: 650; background: var(--fill); }
 .note-table tbody th { background: transparent; }
 .note-table tr { break-inside: avoid; }
-/* Szerokości kolumn ustawione w oknie tabeli (od 1.26) – stały układ, tekst łamie się w kolumnie. */
-.note-table--fixed { table-layout: fixed; }
-.note-table--fixed th,
-.note-table--fixed td { overflow-wrap: anywhere; }
 
 /* Akapit wyjustowany podzielony między strony: ostatni wiersz na stronie też do obu krawędzi. */
 .note-text .note-page__split[data-align="justify"] { text-align-last: justify; }
@@ -6811,6 +6807,34 @@ button.drawing__pill .icon { color: var(--text-2); }
 
 /* Symbole metrologiczne (od 1.22.1): przyciski w panelu kształtów i okno ramki tolerancji. */
 .drawing__shape-kinds--symbols { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* Rodzaj linii i znacznik punktu (od 1.27): przyciski z ikoną w jednym rzędzie. */
+.drawing__styles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
+  gap: 4px;
+}
+
+.drawing__style {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 40px;
+  border-radius: 10px;
+  color: var(--text);
+}
+
+.drawing__style[aria-checked="true"] { background: var(--fill); font-weight: 600; }
+
+/* Okno „Styl” (od 1.27): każda grupa – w ramce jak pole okna. */
+.dialog.sheet .drawing__style-group,
+.dialog.sheet .drawing__caps-group {
+  padding: 11px 14px 12px;
+  border: 1px solid var(--outline);
+  border-radius: 14px;
+}
+.dialog.sheet .drawing__style-group > .drawing__settings-label,
+.dialog.sheet .drawing__caps-group > .drawing__settings-label { margin-top: 0; }
 
 .drawing__gdt-symbols {
   display: grid;

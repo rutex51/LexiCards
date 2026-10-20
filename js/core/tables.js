@@ -387,12 +387,10 @@ export function tableHtml(table, { portable = false, from = null, to = null } = 
   const bodyStart = table.header ? 1 : 0;
   const start = Math.max(bodyStart, from ?? bodyStart);
   const end = Math.min(table.rows.length, to ?? table.rows.length);
-  // Szerokości kolumn (od 1.26) – <colgroup> i stały układ tabeli.
-  const fixed = Boolean(table.colWidths);
-  let html = portable
-    ? `<table style="border-collapse:collapse;width:100%${fixed ? ';table-layout:fixed' : ''}">`
-    : `<table class="note-table${fixed ? ' note-table--fixed' : ''}">`;
-  if (fixed) html += `<colgroup>${table.colWidths.map((share) => `<col style="width:${Math.round(share * 10000) / 100}%">`).join('')}</colgroup>`;
+  // Szerokości kolumn (od 1.26) – <colgroup> w procentach; od 1.27 bez stałego układu tabeli: kolumna
+  // nie jest węższa niż najdłuższe słowo (na wąskim ekranie słowa i liczby nie łamią się w środku).
+  let html = portable ? '<table style="border-collapse:collapse;width:100%">' : '<table class="note-table">';
+  if (table.colWidths) html += `<colgroup>${table.colWidths.map((share) => `<col style="width:${Math.round(share * 10000) / 100}%">`).join('')}</colgroup>`;
   if (table.header) {
     html += `<thead><tr>${table.rows[0].map((_, column) => `<th${style(0, column, true)}>${cell(0, column)}</th>`).join('')}</tr></thead>`;
   }

@@ -32,6 +32,14 @@ export function snapGeometry(stroke, boxOf = plainBox) {
       const [a, b] = [shapePoint(stroke, -0.5, 0), shapePoint(stroke, 0.5, 0)];
       return { corners: [a, b, shapePoint(stroke, 0, 0)], edges: [[a, b]] };
     }
+    // Punkt (od 1.27) – sam środek; łuk – końce i krzywa (bez narożników w punktach obrysu).
+    if (stroke.shape === 'point') return { corners: [{ x: stroke.x, y: stroke.y }], edges: [] };
+    if (stroke.shape === 'curve') {
+      const { points } = shapeOutline(stroke);
+      const along = [];
+      for (let index = 0; index < points.length; index += 2) along.push({ x: points[index], y: points[index + 1] });
+      return { corners: [along[0], along.at(-1)], edges: along.slice(1).map((point, index) => [along[index], point]) };
+    }
     if (stroke.shape === 'ellipse') {
       return { corners: [[0.5, 0], [0, 0.5], [-0.5, 0], [0, -0.5]].map(([u, v]) => shapePoint(stroke, u, v)), edges: [], ellipse: stroke };
     }

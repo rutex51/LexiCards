@@ -1,8 +1,8 @@
 // Rysowanie na płótnie rzeczy dodanych w 1.15: kształty geometryczne (core/shapes.js; od 1.17
-// z wypełnieniem, od 1.19 z zakończeniami odcinka) i szablon pod kreskami – boisko piłkarskie
-// rysowane liniami albo obraz z pliku (core/templates.js).
+// z wypełnieniem, od 1.19 z zakończeniami odcinka, od 1.27 z rodzajem linii, prosta, łuk i punkt)
+// i szablon pod kreskami – boisko piłkarskie rysowane liniami albo obraz z pliku (core/templates.js).
 
-import { FILL_ALPHA, shapePath } from '../core/shapes.js';
+import { FILL_ALPHA, dashPattern, isPointShape, pointMarkGeometry, shapePath } from '../core/shapes.js';
 import { PITCH, TEMPLATE_ALPHA } from '../core/templates.js';
 
 /**
@@ -10,6 +10,11 @@ import { PITCH, TEMPLATE_ALPHA } from '../core/templates.js';
  * i strzałka – z zakończeniami (grot – ramiona, trójkąt, kwadrat i romb – wypełnione, koło – wypełnione).
  */
 export function paintShape(ctx, shape) {
+  // Punkt (od 1.27): znacznik – kreski, kółko albo kropka, zawsze linią ciągłą.
+  if (isPointShape(shape)) {
+    paintPointMark(ctx, shape);
+    return;
+  }
   const path = shapePath(shape);
   ctx.save();
   ctx.strokeStyle = shape.color;
@@ -30,14 +35,21 @@ export function paintShape(ctx, shape) {
     ctx.fill();
     ctx.globalAlpha = 1;
   }
-  for (const cap of path.caps) {
-    if (!cap.arms) continue;
-    for (const point of cap.arms) {
-      ctx.moveTo(cap.tip.x, cap.tip.y);
-      ctx.lineTo(point.x, point.y);
-    }
-  }
+  // Od 1.27 rodzaj linii (przerywana, osiowa…) – tylko linia kształtu; groty i zakończenia – ciągłe.
+  ctx.setLineDash(dashPattern(shape));
   ctx.stroke();
+  ctx.setLineDash([]);
+  const arms = path.caps.filter((cap) => cap.arms);
+  if (arms.length > 0) {
+    ctx.beginPath();
+    for (const cap of arms) {
+      for (const point of cap.arms) {
+        ctx.moveTo(cap.tip.x, cap.tip.y);
+        ctx.lineTo(point.x, point.y);
+      }
+    }
+    ctx.stroke();
+  }
   // Zakończenia wypełnione: obrys tą samą linią – ostre rogi zaokrąglone jak reszta kształtu.
   ctx.fillStyle = shape.color;
   ctx.lineWidth = Math.min(shape.size, 3);
@@ -52,6 +64,32 @@ export function paintShape(ctx, shape) {
     }
     ctx.fill();
     ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Znacznik punktu (od 1.27): punkt symetrii – kółko z krzyżykiem, kropka, krzyżyk ×, środek +. */
+function paintPointMark(ctx, shape) {
+  const mark = pointMarkGeometry(shape);
+  ctx.save();
+  ctx.strokeStyle = shape.color;
+  ctx.fillStyle = shape.color;
+  ctx.lineWidth = Math.min(shape.size, shape.w / 5);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (const [a, b] of mark.lines) {
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+  }
+  if (mark.ring) {
+    ctx.moveTo(mark.ring.x + mark.ring.r, mark.ring.y);
+    ctx.arc(mark.ring.x, mark.ring.y, mark.ring.r, 0, Math.PI * 2);
+  }
+  ctx.stroke();
+  if (mark.dot) {
+    ctx.beginPath();
+    ctx.arc(mark.dot.x, mark.dot.y, mark.dot.r, 0, Math.PI * 2);
+    ctx.fill();
   }
   ctx.restore();
 }

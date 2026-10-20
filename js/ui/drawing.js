@@ -56,7 +56,8 @@ import { rememberFit } from '../core/fits.js';
 import { cleanColumnWidths, moveColumnBorder } from '../core/tables.js';
 import { openFitTable } from './fit-table.js';
 import {
-  DIM_PREFIXES, FIT_RE, LABEL_TEXT_MAX, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_FILLS, SHAPE_FILL_LABELS, SHAPE_LABELS, SKEW_DEGREES_LIMIT,
+  DIM_PREFIXES, FIT_RE, LABEL_TEXT_MAX, POINT_MARKS, POINT_MARK_LABELS, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_DASHES, SHAPE_DASH_LABELS,
+  SHAPE_FILLS, SHAPE_FILL_LABELS, SHAPE_LABELS, SKEW_DEGREES_LIMIT, canDash, hasCaps, isPointShape, pointMark, shapeDash, withDash,
   canFill, dimCenter, dimGeometry, dimOffset, dimOffsetAt, dimPlaces, guideLinesIn, isLinearDim, isSegment, isShape, labelFrame, labelMaxWidth, moveShapeHandle, nearestGuideLine, nearestRay,
   nearestRing, rayAngles, resizeShape, ringsIn, stackDimOffset, withDimOffset, withDimTolerance,
   segmentCaps, segmentDegrees, setSegment, shapeContains, shapeFromDrag, shapeHandles, shapePoint, shownDims, skewDegrees, touchesShape,
@@ -140,8 +141,12 @@ const GUIDE_COLOR = 'rgba(0, 88, 190, 0.42)';
 /** Zakończenia odcinka (od 1.19) – ikony wyboru. */
 const CAP_ICONS = { none: 'capNone', arrow: 'capArrow', triangle: 'capTriangle', circle: 'capCircle', square: 'capSquare', diamond: 'capDiamond' };
 const SHAPE_ICONS = {
-  line: 'shapeLine', arrow: 'shapeArrow', rect: 'shapeRect', ellipse: 'shapeEllipse', triangle: 'shapeTriangle', diamond: 'shapeDiamond', trapezoid: 'shapeTrapezoid'
+  line: 'shapeLine', arrow: 'shapeArrow', rect: 'shapeRect', ellipse: 'shapeEllipse', triangle: 'shapeTriangle', diamond: 'shapeDiamond', trapezoid: 'shapeTrapezoid',
+  xline: 'shapeXline', curve: 'shapeCurve', point: 'shapePoint'
 };
+/** Rodzaje linii i znaczniki punktu (od 1.27) – ikony wyboru. */
+const DASH_ICONS = { solid: 'lineSolid', dashed: 'lineDashed', center: 'lineCenter', phantom: 'linePhantom', dotted: 'lineDotted' };
+const MARK_ICONS = { center: 'shapePoint', dot: 'markDot', cross: 'markCross', plus: 'markPlus' };
 /** Kształty: uchwyty (px ekranu) – promień trafienia, odległość uchwytu obrotu od kształtu. */
 const HANDLE_HIT = 18;
 /** Promień przyciągania końca do krawędzi albo narożnika (od 1.22) – ok. 3–4 mm na ekranie (px). */
@@ -709,9 +714,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const [only] = selection;
       if (isShape(only)) editShapeLabel(only);
     });
-    const fillButton = selectionButton('drawing-selection-fill', 'fill', 'Wypełnienie', 'Wypełnienie kształtu', () => chooseFill());
-    // Od 1.19: zakończenia odcinka, szyk (nowy albo zmiana parametrów) i rozdzielenie szyku.
-    const capsButton = selectionButton('drawing-selection-caps', 'capArrow', 'Końce', 'Zakończenia odcinka: grot, trójkąt, koło, kwadrat, romb', () => chooseCaps());
+    // Od 1.27 jeden przycisk „Styl” (do 1.26 „Wypełnienie” i „Końce”): rodzaj linii, wypełnienie, zakończenia
+    // odcinka i łuku, znacznik punktu – w jednym oknie (pasek zaznaczenia mieści się na telefonie).
+    const styleButton = selectionButton('drawing-selection-style', 'lineDashed', 'Styl', 'Styl kształtu: rodzaj linii, wypełnienie, zakończenia, znacznik punktu', () => chooseStyle());
+    // Od 1.19: szyk (nowy albo zmiana parametrów) i rozdzielenie szyku.
     // Od 1.22: magnes – przyciąganie końców do krawędzi i narożników (wł./wył., zapamiętane na urządzeniu).
     const magnetButton = selectionButton('drawing-selection-magnet', 'magnet', 'Przyciąganie',
       'Przyciąganie końców do krawędzi i narożników – wł./wył. (z Alt – chwilowo swobodnie)', () => toggleEdgeSnap());
@@ -722,7 +728,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const embedButton = selectionButton('drawing-selection-embed', 'embed', 'Osadź', 'Osadź w notatce jako obraz', () => embedSelection());
     const deleteButton = selectionButton('drawing-selection-delete', 'trash', 'Usuń', 'Usuń (Delete)', () => deleteSelection(), true);
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
-      selectionCount, editButton, collapseButton, shapeTextButton, fillButton, capsButton, magnetButton, copyButton, duplicateButton, arrayButton, explodeButton, embedButton, deleteButton);
+      selectionCount, editButton, collapseButton, shapeTextButton, styleButton, magnetButton, copyButton, duplicateButton, arrayButton, explodeButton, embedButton, deleteButton);
     // Pola wymiarów zaznaczonego kształtu (od 1.17): na liniach ramki konstrukcyjnej, wpisywane z klawiatury.
     const dims = h('div', { class: 'drawing__dims', hidden: true, dataset: { testid: 'drawing-dims' } });
     // Od 1.22: animacja przewracania kartki (zdjęcia stron nad płótnem, tylko w trakcie).
@@ -1215,7 +1221,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
       ctx.strokeStyle = SELECT_COLORS.whole;
       ctx.lineWidth = 1;
-      if (!isSegment(shape)) {
+      if (!isSegment(shape) && !isPointShape(shape)) {
         // Ramka kształtu (przy pochyleniu – równoległobok) i ramię uchwytu obrotu.
         ctx.setLineDash([4, 3]);
         ctx.beginPath();
@@ -1967,8 +1973,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         replaceChildren(collapseButton, icon(sticky.collapsed ? 'plus' : 'minus', { size: 18 }), h('span', { class: 'drawing__selection-label' }, label));
       }
       shapeTextButton.hidden = !shape;
-      fillButton.hidden = !shape || !canFill(shape);
-      capsButton.hidden = !shape || !isSegment(shape);
+      styleButton.hidden = Boolean(snip) || (!shape && dashable().length === 0);
       // Magnes (od 1.22): przy odcinku, strzałce i karteczce ze strzałką.
       // Od 1.22.1 także strzałka ramki tolerancji, trójkąt bazy i wierzchołek chropowatości.
       const withEnds = Boolean(shape && isSegment(shape)) || Boolean(sticky?.leader) || (!snip && selection.size === 1 && isSymbol(only));
@@ -2899,8 +2904,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           onClick: () => {
             tools.shape = kind;
             saveTools(tools);
-            // Odcinek i strzałka (od 1.19): panel zostaje – pod spodem wybór zakończeń.
-            if (isSegment({ shape: kind })) renderShapePanel();
+            // Odcinek, strzałka (od 1.19), strzałka po łuku i punkt (od 1.27): panel zostaje – pod spodem
+            // wybór zakończeń albo znacznika.
+            if (hasCaps({ shape: kind }) || kind === 'point') renderShapePanel();
             else closeSettings();
             updateToolbar();
           }
@@ -2931,9 +2937,23 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
             renderShapePanel();
           }
         }, SHAPE_FILL_LABELS[fill]))),
-        // Od 1.19: zakończenia nowych odcinków i strzałek (zaznaczonego – przyciskiem „Końce”).
-        isSegment({ shape: tools.shape }) ? capChoices(segmentDefaultCaps(), 'drawing-caps-default', (caps) => {
-          tools[tools.shape === 'arrow' ? 'arrowCaps' : 'lineCaps'] = caps;
+        // Od 1.27: rodzaj linii nowych kształtów (i zaznaczonych), przy punkcie – znacznik.
+        tools.shape === 'point'
+          ? [h('p', { class: 'drawing__settings-label' }, `Znacznik punktu – ${POINT_MARK_LABELS[tools.pointMark].toLowerCase()}`), styleChoices(POINT_MARKS, MARK_ICONS, POINT_MARK_LABELS, tools.pointMark, 'drawing-mark-default', (mark) => {
+            tools.pointMark = mark;
+            saveTools(tools);
+            restyle((shape) => isPointShape(shape), (shape) => ({ ...shape, mark }));
+            renderShapePanel();
+          })]
+          : [h('p', { class: 'drawing__settings-label' }, `Linia – ${SHAPE_DASH_LABELS[tools.shapeDash].toLowerCase()}`), styleChoices(SHAPE_DASHES, DASH_ICONS, SHAPE_DASH_LABELS, tools.shapeDash, 'drawing-dash-default', (dash) => {
+            tools.shapeDash = dash;
+            saveTools(tools);
+            restyle(canDash, (shape) => withDash(shape, dash));
+            renderShapePanel();
+          })],
+        // Od 1.19: zakończenia nowych odcinków i strzałek (zaznaczonego – przyciskiem „Końce”); od 1.27 też łuku.
+        hasCaps({ shape: tools.shape }) ? capChoices(segmentDefaultCaps(), 'drawing-caps-default', (caps) => {
+          tools[CAPS_KEYS[tools.shape]] = caps;
           saveTools(tools);
           renderShapePanel();
         }) : null,
@@ -2944,7 +2964,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           + 'narożniki i boki – szerokość i wysokość, romb na górnej krawędzi – pochylenie, kółko nad kształtem – obrót, pomarańczowy punkt – '
           + 'wierzchołek trójkąta albo wcięcie trapezu. Wymiary i kąt pochylenia wpiszesz w polach przy ramce (oko przy polu – wymiar zostaje '
           + 'na rysunku), tekst – przyciskiem „Tekst” albo dotknięciem zaznaczonego kształtu. Z klawiszem Shift (albo z włączonymi '
-          + 'proporcjami): kwadrat, koło, odcinek co 15°, narożnik bez zmiany proporcji.'));
+          + 'proporcjami): kwadrat, koło, odcinek co 15°, narożnik bez zmiany proporcji. Prosta biegnie przez całą stronę przez dwa punkty; '
+          + 'strzałka po łuku ma dwa punkty pośrednie (przeciągnij je – łuk przechodzi przez nie); punkt – dotknięcie strony.'));
       updateToolbar();
     }
     /** Przyciąganie końców odcinka i strzałki do krawędzi i narożników (od 1.22) – na urządzeniu; Alt – chwilowo swobodnie. */
@@ -2972,8 +2993,105 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       lock.querySelector('input').dataset.testid = 'drawing-lock-proportions';
       return lock;
     }
-    /** Zakończenia nowego odcinka albo strzałki (wybrane w panelu kształtów). */
-    const segmentDefaultCaps = () => ({ ...(tools.shape === 'arrow' ? tools.arrowCaps : tools.lineCaps) });
+    /** Zakończenia nowego odcinka, strzałki albo (od 1.27) strzałki po łuku – wybrane w panelu kształtów. */
+    const CAPS_KEYS = { line: 'lineCaps', arrow: 'arrowCaps', curve: 'curveCaps' };
+    const segmentDefaultCaps = () => ({ ...tools[CAPS_KEYS[tools.shape] ?? 'lineCaps'] });
+    /**
+     * Wybór stylu (od 1.27): rodzaju linii albo znacznika punktu – przyciski z ikoną (nazwa wybranego –
+     * w nagłówku nad nimi, każda – w podpowiedzi i dla czytnika ekranu). onPick(wartość).
+     */
+    function styleChoices(values, icons, labels, current, testID, onPick) {
+      return h('div', { class: 'drawing__styles', role: 'radiogroup' }, values.map((value) => h('button', {
+        type: 'button', class: 'drawing__style', role: 'radio', 'aria-checked': String(value === current), 'aria-label': labels[value], title: labels[value],
+        dataset: { testid: `${testID}-${value}` },
+        onClick: () => onPick(value)
+      }, icon(icons[value], { size: 28 }))));
+    }
+    /** Zaznaczone kształty, którym można zmienić rodzaj linii. */
+    const dashable = () => [...selection].filter((stroke) => isShape(stroke) && canDash(stroke));
+    /** Zmiana stylu zaznaczonych kształtów spełniających `test` – jeden krok cofania. */
+    function restyle(test, change) {
+      const targets = [...selection].filter((stroke) => isShape(stroke) && test(stroke) && drawing.strokes.includes(stroke));
+      if (targets.length === 0) return;
+      const pairs = targets.map((shape) => [shape, change(shape)]).filter(([shape, next]) => JSON.stringify(shape) !== JSON.stringify(next));
+      if (pairs.length === 0) return;
+      history.begin();
+      for (const [shape, next] of pairs) drawing.strokes[drawing.strokes.indexOf(shape)] = next;
+      commitStep();
+      selection = new Set([...selection].map((stroke) => pairs.find(([shape]) => shape === stroke)?.[1] ?? stroke));
+      selectionKind = 'whole';
+      updateToolbar();
+      requestRender();
+    }
+    /**
+     * Styl zaznaczonego kształtu (od 1.27): rodzaj linii, wypełnienie, zakończenia (odcinek, strzałka, łuk)
+     * albo znacznik punktu – zmiana po „Gotowe”, jeden krok cofania. Kilka kształtów – sam rodzaj linii.
+     */
+    function chooseStyle() {
+      const [only] = selection;
+      const single = selection.size === 1 && isShape(only) ? only : null;
+      const shapes = single ? [single] : dashable();
+      if (shapes.length === 0) return;
+      const choice = {
+        dash: shapes.every((shape) => shapeDash(shape) === shapeDash(shapes[0])) ? shapeDash(shapes[0]) : null,
+        fill: single?.fill ?? 'none',
+        caps: single && hasCaps(single) ? segmentCaps(single) : null,
+        mark: single && isPointShape(single) ? pointMark(single) : null
+      };
+      let picked = null;
+      /** Przyciski z ikoną do wyboru jednej wartości; nagłówek pokazuje nazwę wybranej. */
+      const tiles = (key, values, icons, labels, title, testID) => {
+        const heading = h('p', { class: 'drawing__settings-label' });
+        const show = () => { heading.textContent = choice[key] ? `${title} – ${labels[choice[key]].toLowerCase()}` : title; };
+        const buttons = values.map((value) => h('button', {
+          type: 'button', class: 'drawing__style', role: 'radio', 'aria-checked': String(choice[key] === value), 'aria-label': labels[value], title: labels[value],
+          dataset: { testid: `${testID}-${value}` },
+          onClick: () => {
+            choice[key] = value;
+            for (const button of buttons) button.setAttribute('aria-checked', String(button === buttons[values.indexOf(value)]));
+            show();
+          }
+        }, icon(icons[value], { size: 28 })));
+        show();
+        return h('div', { class: 'drawing__style-group' }, heading, h('div', { class: 'drawing__styles', role: 'radiogroup', 'aria-label': title }, buttons));
+      };
+      const fills = single && canFill(single) ? SHAPE_FILLS.map((fill) => h('button', {
+        type: 'button', role: 'radio', 'aria-checked': String(choice.fill === fill), dataset: { testid: `drawing-fill-${fill}` },
+        onClick: (event) => {
+          choice.fill = fill;
+          for (const button of event.currentTarget.parentNode.children) button.setAttribute('aria-checked', String(button === event.currentTarget));
+        }
+      }, SHAPE_FILL_LABELS[fill])) : null;
+      openFormSheet({
+        title: shapes.length > 1 ? `Styl – ${plural(shapes.length, 'kształt', 'kształty', 'kształtów')}` : `Styl – ${SHAPE_LABELS[single.shape].toLowerCase()}`,
+        submitLabel: 'Gotowe',
+        build: () => [
+          choice.mark ? tiles('mark', POINT_MARKS, MARK_ICONS, POINT_MARK_LABELS, 'Znacznik punktu', 'drawing-mark') : null,
+          shapes.some(canDash) ? tiles('dash', SHAPE_DASHES, DASH_ICONS, SHAPE_DASH_LABELS, 'Rodzaj linii', 'drawing-dash') : null,
+          fills ? h('div', { class: 'drawing__style-group' }, h('p', { class: 'drawing__settings-label' }, 'Wypełnienie'),
+            h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Wypełnienie' }, fills)) : null,
+          choice.caps ? capChoices(choice.caps, 'drawing-caps', (next) => { choice.caps = next; }) : null
+        ],
+        onSubmit: () => { picked = { ...choice }; },
+        onClose: () => {
+          if (!picked) return;
+          const targets = new Set(shapes);
+          restyle((shape) => targets.has(shape), (shape) => {
+            let next = picked.dash ? withDash(shape, picked.dash) : shape;
+            if (picked.mark && isPointShape(next)) next = { ...next, mark: picked.mark };
+            if (picked.caps && hasCaps(next)) next = withCaps(next, picked.caps);
+            if (single && canFill(next) && (next.fill ?? 'none') !== picked.fill) {
+              next = { ...next };
+              if (picked.fill === 'none') delete next.fill;
+              else next.fill = picked.fill;
+              // Pełne wypełnienie w kolorze tekstu – tekst biały, żeby było go widać.
+              if (picked.fill === 'solid' && next.label?.color === next.color) next.label = { ...next.label, color: '#ffffff' };
+            }
+            return next;
+          });
+        }
+      });
+    }
     /**
      * Wybór zakończeń odcinka (od 1.19): dwa wiersze – początek i koniec – po sześć przycisków z ikoną.
      * onPick({ start, end }) po każdej zmianie.
@@ -3711,17 +3829,6 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     }
 
     // ---- wypełnienie i tekst kształtu (od 1.17)
-    /** Wypełnienie zaznaczonego kształtu – menu z wyborem. */
-    function chooseFill() {
-      const [only] = selection;
-      if (selection.size !== 1 || !isShape(only) || !canFill(only)) return;
-      openMenu({
-        title: 'Wypełnienie kształtu',
-        items: SHAPE_FILLS.map((fill) => ({
-          label: SHAPE_FILL_LABELS[fill], checked: (only.fill ?? 'none') === fill, testID: `drawing-fill-${fill}`, onSelect: () => fillShape(only, fill)
-        }))
-      });
-    }
     function fillShape(shape, fill) {
       if (!drawing.strokes.includes(shape) || (shape.fill ?? 'none') === fill) return;
       const next = { ...shape };
@@ -3786,27 +3893,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       updateToolbar();
       requestRender();
     }
-    // ---- zakończenia odcinka i szyk (od 1.19)
-    /** Zakończenia zaznaczonego odcinka albo strzałki – okno z wyborem dla początku i końca. */
-    function chooseCaps() {
-      const [only] = selection;
-      if (selection.size !== 1 || !isShape(only) || !isSegment(only)) return;
-      const caps = segmentCaps(only);
-      let picked = null;
-      openFormSheet({
-        title: 'Zakończenia odcinka',
-        build: () => [capChoices(caps, 'drawing-caps', (next) => Object.assign(caps, next))],
-        onSubmit: () => { picked = { ...caps }; },
-        onClose: () => {
-          if (!picked || !drawing.strokes.includes(only)) return;
-          const next = withCaps(only, picked);
-          if (next.startCap === only.startCap && next.endCap === only.endCap) return;
-          replaceShape(only, next);
-          updateToolbar();
-          requestRender();
-        }
-      });
-    }
+    // ---- szyk (od 1.19)
     /**
      * Szyk: nowy z zaznaczenia (szyki w zaznaczeniu – rozdzielone) albo zmiana parametrów zaznaczonego
      * szyku. Okno: rodzaj (liniowy, kołowy) i parametry; długości w skali rysunku, kąty w stopniach.
@@ -4922,7 +5009,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     /** Styl nowego kształtu: kolor pióra, średnia grubość wybranej grubości pióra, (od 1.17) wypełnienie i (od 1.19) zakończenia odcinka. */
     const shapeStyle = () => {
       const width = tools.penWidths[tools.penWidth];
-      return { color: inkHex(tools.penColor), size: Math.round(((width.min + width.max) / 2) * 10) / 10, fill: tools.shapeFill, caps: segmentDefaultCaps() };
+      return {
+        color: inkHex(tools.penColor), size: Math.round(((width.min + width.max) / 2) * 10) / 10, fill: tools.shapeFill, caps: segmentDefaultCaps(),
+        // Od 1.27: rodzaj linii i znacznik punktu.
+        dash: tools.shapeDash, mark: tools.pointMark
+      };
     };
     const common = (event, point) => ({ id: event.pointerId, touch: event.pointerType === 'touch', start: point, client: local(event) });
     /** Kształty: przeciągnięcie zaznaczonego kształtu przesuwa go, gdzie indziej – nowy kształt. */

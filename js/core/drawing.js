@@ -38,7 +38,7 @@
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import { DEFAULT_RECENT_FITS, cleanRecentFits } from './fits.js';
 import {
-  DIM_OFFSET, DIM_OFFSET_LIMITS, FIT_RE, SEGMENT_CAPS, SHAPES, SHAPE_FILLS, capPoints, cleanShape, isLinearDim, isShape, scaleDimTolerances, segmentDegrees, shapeAsStroke, shapeBounds,
+  DIM_OFFSET, DIM_OFFSET_LIMITS, FIT_RE, POINT_MARKS, SEGMENT_CAPS, SHAPES, SHAPE_DASHES, SHAPE_FILLS, capPoints, cleanShape, isLinearDim, isShape, scaleDimTolerances, segmentDegrees, shapeAsStroke, shapeBounds,
   shapeOutline, skewDegrees, touchesShape
 } from './shapes.js';
 import { keepLinks } from './attach.js';
@@ -371,6 +371,10 @@ export function defaultToolSettings() {
     shapeLock: false,
     lineCaps: { start: 'none', end: 'none' },
     arrowCaps: { start: 'none', end: 'arrow' },
+    // Od 1.27: rodzaj linii nowych kształtów, zakończenia strzałki po łuku i znacznik punktu.
+    shapeDash: 'solid',
+    curveCaps: { start: 'none', end: 'arrow' },
+    pointMark: 'center',
     arrayKind: 'linear',
     // Od 1.21: kolor ostatnio dodanej karteczki.
     stickyColor: 'yellow',
@@ -469,6 +473,9 @@ export function cleanToolSettings(raw) {
     shapeLock: typeof raw.shapeLock === 'boolean' ? raw.shapeLock : base.shapeLock,
     lineCaps: cleanCaps(raw.lineCaps, base.lineCaps),
     arrowCaps: cleanCaps(raw.arrowCaps, base.arrowCaps),
+    shapeDash: SHAPE_DASHES.includes(raw.shapeDash) ? raw.shapeDash : base.shapeDash,
+    curveCaps: cleanCaps(raw.curveCaps, base.curveCaps),
+    pointMark: POINT_MARKS.includes(raw.pointMark) ? raw.pointMark : base.pointMark,
     arrayKind: ARRAY_KINDS.includes(raw.arrayKind) ? raw.arrayKind : base.arrayKind,
     stickyColor: STICKY_COLORS.some((color) => color.id === raw.stickyColor) ? raw.stickyColor : base.stickyColor,
     edgeSnap: typeof raw.edgeSnap === 'boolean' ? raw.edgeSnap : base.edgeSnap,

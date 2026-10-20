@@ -168,6 +168,8 @@ export function openMenu({ title = null, items }) {
         item.onSelect?.();
       }
     }, radio ? (item.checked ? icon('check') : h('span', { class: 'menu__blank', 'aria-hidden': 'true' })) : item.icon ? icon(item.icon) : null,
+    // Od 1.27 pozycja do wyboru może mieć też ikonę (np. rodzaj linii) – za znacznikiem.
+    radio && item.icon ? icon(item.icon) : null,
     h('span', null, item.label)));
   }
   const panel = h('div', { class: 'menu__panel', 'aria-labelledby': title ? titleID : null, 'aria-label': title ? null : 'Polecenia' },

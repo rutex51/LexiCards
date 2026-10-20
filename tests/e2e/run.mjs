@@ -4181,7 +4181,8 @@ test('rysunek 1.15: kształty – prostokąt przeciągnięciem, punkty konstrukc
   const panel = editor.locator('[data-testid=drawing-shape-panel]');
   await editor.locator('[data-testid=drawing-tool-shape]').click();
   await panel.waitFor();
-  assert.equal(await panel.locator('[data-testid^=drawing-shape-]').count(), 7);
+  // Od 1.27 także prosta, strzałka po łuku i punkt.
+  assert.equal(await panel.locator('[data-testid^=drawing-shape-]').count(), 10);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-ksztalty-panel-ipad.png') });
   await panel.locator('[data-testid=drawing-shape-rect]').click();
   await waitUntil(() => panel.isHidden(), 'Panel kształtów zamknięty po wyborze');
@@ -4418,15 +4419,17 @@ test('rysunek 1.17: kształt – wymiary w polach przy ramce (szerokość, wysok
   await enter('skew', '20');
   await waitUntil(async () => (await dim('skew').inputValue()) === '20', 'Pochylenie 20°');
 
-  // Wypełnienie z polecenia zaznaczenia: pełne, potem jasne (środek – szary, nie biały).
+  // Wypełnienie z polecenia zaznaczenia (od 1.27 w oknie „Styl”): pełne, potem jasne (środek – szary, nie biały).
   const center = [0.375, 0.4];
-  await editor.locator('[data-testid=drawing-selection-fill]').click();
-  const menu = page.locator('dialog.menu[open]');
-  assert.equal(await menu.locator('[data-testid=drawing-fill-none]').getAttribute('aria-checked'), 'true');
-  await menu.locator('[data-testid=drawing-fill-solid]').click();
+  await editor.locator('[data-testid=drawing-selection-style]').click();
+  const styleSheet = page.locator('dialog.sheet[open]').last();
+  assert.equal(await styleSheet.locator('[data-testid=drawing-fill-none]').getAttribute('aria-checked'), 'true');
+  await styleSheet.locator('[data-testid=drawing-fill-solid]').click();
+  await sheetSubmit(page).click();
   await waitUntil(() => darkAt(page, ...center), 'Pełne wypełnienie');
-  await editor.locator('[data-testid=drawing-selection-fill]').click();
-  await page.locator('dialog.menu[open] [data-testid=drawing-fill-light]').click();
+  await editor.locator('[data-testid=drawing-selection-style]').click();
+  await styleSheet.locator('[data-testid=drawing-fill-light]').click();
+  await sheetSubmit(page).click();
   await waitUntil(async () => { const [red] = await pixelAt(page, ...center); return red > 150 && red < 235; }, 'Jasne wypełnienie');
 
   // Tekst na kształcie: czerwony, na środku; przesunięcie kształtu przenosi tekst.
@@ -4537,7 +4540,7 @@ test('rysunek 1.17 na telefonie: tryb „Wycinek” palcem i „Osadź”; pola 
   const bar = await editor.locator('.drawing__selection').boundingBox();
   assert.ok(bar.x >= 0 && bar.x + bar.width <= 390, `polecenia zaznaczenia w szerokości ekranu (${bar.x}, ${bar.width})`);
   assert.ok(bar.y >= toolbarBottom, 'polecenia zaznaczenia pod paskiem narzędzi');
-  assert.equal(await editor.locator('[data-testid=drawing-selection-fill]').isVisible(), true);
+  assert.equal(await editor.locator('[data-testid=drawing-selection-style]').isVisible(), true);
   assert.equal(await editor.locator('[data-testid=drawing-selection-text]').isVisible(), true);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-wymiary-telefon.png') });
   assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
@@ -4735,9 +4738,9 @@ test('rysunek 1.19: zakończenia odcinka (panel i „Końce”), wymiar widoczny
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-konce-panel-ipad.png') });
   await drawStroke(page, segment(at(200, 900), at(600, 900), 10));
   await expectText(selectionCount, 'Odcinek');
-  // „Końce” zaznaczonego odcinka: koniec – romb.
-  await editor.locator('[data-testid=drawing-selection-caps]').click();
-  await expectText(sheet.locator('.sheet__title'), 'Zakończenia odcinka');
+  // Zakończenia zaznaczonego odcinka (od 1.27 w oknie „Styl”): koniec – romb.
+  await editor.locator('[data-testid=drawing-selection-style]').click();
+  await expectText(sheet.locator('.sheet__title'), 'Styl – odcinek');
   assert.equal(await sheet.locator('[data-testid=drawing-caps-start-circle]').getAttribute('aria-checked'), 'true');
   await sheet.locator('[data-testid=drawing-caps-end-diamond]').click();
   await sheetSubmit(page).click();
@@ -4905,7 +4908,7 @@ test('rysunek 1.19 na telefonie: polecenia zaznaczonego odcinka (Końce, Szyk) i
   await expectText(selectionCount, 'Odcinek');
   const bar = await editor.locator('.drawing__selection').boundingBox();
   assert.ok(bar.x >= 0 && bar.x + bar.width <= 390, `polecenia w szerokości ekranu (${Math.round(bar.x)}–${Math.round(bar.x + bar.width)})`);
-  for (const name of ['caps', 'array', 'embed']) assert.equal(await editor.locator(`[data-testid=drawing-selection-${name}]`).isVisible(), true, name);
+  for (const name of ['style', 'array', 'embed']) assert.equal(await editor.locator(`[data-testid=drawing-selection-${name}]`).isVisible(), true, name);
   const pill = await editor.locator('[data-testid=drawing-pages]').boundingBox();
   assert.ok(pill.x >= 0 && pill.x + pill.width <= 390, 'kartki w szerokości ekranu');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-odcinek-telefon.png') });
@@ -7583,6 +7586,13 @@ test('notatka 1.26 na telefonie: Wstaw obiekt – nowa tabela w miejscu kursora 
   assert.deepEqual(await table.locator('tbody tr').first().locator('td').allTextContents(), ['Śruba M6', '1200', '1 234,50 zł', '20.10.2026']);
   assert.equal(await table.locator('thead th').nth(1).evaluate((element) => getComputedStyle(element).textAlign), 'center');
   assert.equal(await table.locator('col').count(), 4);
+  // Od 1.27 bez stałego układu: słowa i liczby nie łamią się w środku (jeden wiersz tekstu w komórce).
+  const lines = (cell) => cell.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size;
+  });
+  assert.deepEqual([await lines(table.locator('thead th').nth(1)), await lines(table.locator('tbody tr').first().locator('td').nth(1))], [1, 1], '„Ilość” i „1200” w jednym wierszu');
   await table.scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(OUTPUT, 'notatka-126-tabela-podglad-telefon.png') });
 }, { device: PHONE });
@@ -7635,6 +7645,127 @@ test('rysunek 1.26: tabela – uchwyt granicy kolumn na rysunku zmienia szeroko�
   assert.ok(Math.abs(moved.colWidths[0] - (1 / 3 + share)) < 0.01 && Math.abs(moved.colWidths[1] - (1 / 3 - share)) < 0.01, `udziały ${moved.colWidths}`);
   assert.equal(moved.colWidths[2], 0.3333, 'trzecia bez zmian');
   assert.deepEqual([moved.x, moved.y, moved.width], [table.x, table.y, table.width], 'tabela w tym samym miejscu i tej samej szerokości');
+}, { device: DESKTOP });
+
+// ---------------------------------------------------------------- 1.27: rodzaj linii, prosta, punkt, strzałka po łuku
+
+/** Odcinki tuszu w wierszu `y` obrazu rysunku z notatki między x0 a x1: [[od, do], …]. */
+const imageRuns = (page, lessonID, y, x0, x1) => page.evaluate(async ([id, row, from, to]) => {
+  const image = (await window.lexicards.library.noteImages(id))[0];
+  const bitmap = await createImageBitmap(new Blob([image.bytes], { type: image.type }));
+  const canvas = Object.assign(document.createElement('canvas'), { width: bitmap.width, height: bitmap.height });
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0);
+  const { data } = ctx.getImageData(from, row - 2, to - from, 5);
+  const runs = [];
+  for (let x = 0; x < to - from; x += 1) {
+    let ink = false;
+    for (let line = 0; line < 5; line += 1) {
+      const at = (line * (to - from) + x) * 4;
+      if (Math.max(data[at], data[at + 1], data[at + 2]) < 120) ink = true;
+    }
+    const last = runs.at(-1);
+    if (ink && last && last[1] === from + x - 1) last[1] = from + x;
+    else if (ink) runs.push([from + x, from + x]);
+  }
+  return runs;
+}, [lessonID, y, x0, x1]);
+
+test('rysunek 1.27: linia osiowa i przerywana, prosta przez całą stronę, punkt symetrii, strzałka po łuku z punktami pośrednimi i końcami (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Kształty</p>');
+  const frame = await pageFrame(page);
+  const panel = editor.locator('[data-testid=drawing-shape-panel]');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const drag = async (from, to) => {
+    await page.mouse.move(...frame.screen(...from));
+    await page.mouse.down();
+    await page.mouse.move(...frame.screen(...to), { steps: 8 });
+    await page.mouse.up();
+  };
+  const openPanel = async () => {
+    await editor.locator('[data-testid=drawing-tool-shape]').click();
+    if (await panel.isHidden()) await editor.locator('[data-testid=drawing-tool-shape]').click();
+    await panel.waitFor();
+  };
+  // Prosta, linia osiowa (kreska-kropka).
+  await openPanel();
+  await panel.locator('[data-testid=drawing-dash-default-center]').click();
+  assert.equal(await panel.locator('[data-testid=drawing-dash-default-center]').getAttribute('aria-checked'), 'true');
+  await panel.locator('[data-testid=drawing-shape-xline]').click();
+  await drag([600, 250], [1000, 250]);
+  await expectText(count, 'Prosta');
+  // Punkt symetrii: panel zostaje otwarty – znacznik; dotknięcie strony.
+  await openPanel();
+  await panel.locator('[data-testid=drawing-shape-point]').click();
+  assert.equal(await panel.locator('[data-testid=drawing-mark-default-center]').getAttribute('aria-checked'), 'true', 'domyślnie punkt symetrii');
+  await panel.locator('[data-testid=drawing-panel-close]').click();
+  // Pierwsze dotknięcie odznacza prostą, drugie – stawia punkt.
+  await page.mouse.click(...frame.screen(800, 520));
+  await page.mouse.click(...frame.screen(800, 520));
+  await expectText(count, 'Punkt');
+  // Strzałka po łuku – linia ciągła; punkt pośredni przeciągnięty wyżej.
+  await openPanel();
+  await panel.locator('[data-testid=drawing-shape-curve]').click();
+  await panel.locator('[data-testid=drawing-dash-default-solid]').click();
+  await settled(panel);
+  await panel.locator('[data-testid=drawing-caps-default-end-arrow]').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-127-panel-ksztaltow.png') });
+  await panel.locator('[data-testid=drawing-panel-close]').click();
+  await drag([300, 900], [900, 900]);
+  await expectText(count, 'Strzałka po łuku');
+  assert.equal(await editor.locator('[data-testid=drawing-dim-box-width]').isHidden(), true, 'łuk – bez pól wymiarów');
+  await drag([500, 780], [500, 650]);
+  // Końce łuku: koło na początku (okno „Styl” – rodzaj linii i zakończenia, bez wypełnienia).
+  await editor.locator('[data-testid=drawing-selection-style]').click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Styl – strzałka po łuku');
+  assert.equal(await sheet(page).locator('[data-testid=drawing-fill-none]').count(), 0, 'łuk bez wypełnienia');
+  assert.equal(await sheet(page).locator('[data-testid=drawing-caps-end-arrow]').getAttribute('aria-checked'), 'true', 'grot na końcu');
+  await sheet(page).locator('[data-testid=drawing-caps-start-circle]').click();
+  await settled(sheet(page));
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-127-styl-luku.png') });
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno stylu zamknięte');
+  // Prostokąt i rodzaj linii z okna „Styl” nad zaznaczeniem.
+  await openPanel();
+  await panel.locator('[data-testid=drawing-shape-rect]').click();
+  await drag([1100, 600], [1400, 800]);
+  await expectText(count, 'Prostokąt');
+  await editor.locator('[data-testid=drawing-selection-style]').click();
+  await sheet(page).locator('[data-testid=drawing-dash-dashed]').click();
+  await expectText(sheet(page).locator('.drawing__style-group .drawing__settings-label').first(), 'Rodzaj linii – przerywana');
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno stylu zamknięte');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-127-ksztalty.png') });
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  const strokes = await savedStrokes(page, ids.statements);
+  const find = (kind) => strokes.find((stroke) => stroke.shape === kind);
+  assert.deepEqual([find('xline').dash, find('xline').angle], ['center', 0]);
+  assert.deepEqual([find('point').mark, 'dash' in find('point')], ['center', false]);
+  const arc = find('curve');
+  assert.deepEqual([arc.nodes.length, 'dash' in arc, arc.startCap, 'endCap' in arc], [8, false, 'circle', false]);
+  // Punkt pośredni przeciągnięty: wierzchołek 2 w (500, 650).
+  const nodeX = arc.x + arc.nodes[2] * arc.w * Math.cos(arc.angle) - arc.nodes[3] * arc.h * Math.sin(arc.angle);
+  const nodeY = arc.y + arc.nodes[2] * arc.w * Math.sin(arc.angle) + arc.nodes[3] * arc.h * Math.cos(arc.angle);
+  assert.ok(Math.abs(nodeX - 500) < 6 && Math.abs(nodeY - 650) < 6, `punkt pośredni (${nodeX}, ${nodeY})`);
+  assert.equal(find('rect').dash, 'dashed');
+  // Obraz w notatce: prosta przez całą szerokość strony (za swoimi punktami), linia osiowa – kreski i kropki.
+  const runs = await imageRuns(page, ids.statements, 250, 20, 1580);
+  assert.ok(runs[0][0] < 80 && runs.at(-1)[1] > 1520, `prosta od krawędzi do krawędzi (${JSON.stringify(runs.slice(0, 2))} … ${JSON.stringify(runs.slice(-1))})`);
+  const lengths = runs.map(([from, to]) => to - from + 1);
+  assert.ok(runs.length > 30, `kreski i kropki (${runs.length})`);
+  assert.ok(lengths.filter((length) => length > 25).length > 10 && lengths.filter((length) => length < 10).length > 10, `długie kreski i kropki (${lengths.slice(0, 12)})`);
+  // Łuk przechodzi przez przeciągnięty punkt pośredni; cięciwa łuku jest pusta.
+  assert.ok(await imageInk(page, ids.statements, [492, 642, 508, 658]) > 5, 'łuk w punkcie pośrednim');
+  assert.equal(await imageInk(page, ids.statements, [560, 880, 640, 890]), 0, 'pod łukiem pusto');
+  // Prostokąt przerywany: na górnej krawędzi kilka kresek.
+  assert.ok((await imageRuns(page, ids.statements, 600, 1110, 1390)).length >= 6, 'przerywany bok prostokąta');
 }, { device: DESKTOP });
 
 // ---------------------------------------------------------------- nauka z fiszkami

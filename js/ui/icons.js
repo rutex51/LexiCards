@@ -141,6 +141,18 @@ const ICONS = {
   shapeTriangle: [p('M12 4.5l8.5 15h-17z')],
   shapeDiamond: [p('M12 3.5l8.5 8.5-8.5 8.5L3.5 12z')],
   shapeTrapezoid: [p('M7.5 6.5h9l4 11h-17z')],
+  // Od 1.27: prosta, strzałka po łuku, punkt (symetrii) i rodzaje linii.
+  shapeXline: [p('M2.5 19.5l19-15'), dot(8.8, 14.5, 1.7), dot(15.2, 9.5, 1.7)],
+  shapeCurve: [p('M4 18.5C5.5 10 13 5.8 19.5 7.2'), p('M15.6 4.4l3.9 2.8-3 3.8')],
+  shapePoint: [{ tag: 'circle', cx: 12, cy: 12, r: 4.6 }, p('M12 4v16'), p('M4 12h16')],
+  lineSolid: [p('M3 12h18')],
+  lineDashed: [{ d: 'M3 12h18', 'stroke-dasharray': '4 3' }],
+  lineCenter: [{ d: 'M3 12h18', 'stroke-dasharray': '7 2.5 0.01 2.5' }],
+  linePhantom: [{ d: 'M2 12h20', 'stroke-dasharray': '6 2.2 0.01 2.2 0.01 2.2' }],
+  lineDotted: [{ d: 'M3.5 12h17', 'stroke-dasharray': '0.01 3.2', 'stroke-width': 2.4 }],
+  markDot: [dot(12, 12, 3.6)],
+  markCross: [p('M7 7l10 10'), p('M17 7L7 17')],
+  markPlus: [p('M12 5v14'), p('M5 12h14')],
   // Magnes (od 1.22): przyciąganie końców do krawędzi i narożników.
   // Od 1.22.1: uchwyt odsunięcia linii wymiarowej, ramka tolerancji, znak bazy, chropowatość.
   dimDrag: [p('M12 4v16'), p('M8.5 7.5L12 4l3.5 3.5'), p('M8.5 16.5L12 20l3.5-3.5')],

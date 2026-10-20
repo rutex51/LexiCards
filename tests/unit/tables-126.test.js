@@ -76,12 +76,12 @@ test('tabele 1.26: granica kolumn – lewa szersza, prawa węższa, razem tyle s
 test('tabele 1.26: HTML podglądu (szerokości kolumn, wyrównanie nagłówka, wartości w formacie), tekst schowka i arkusza', () => {
   const table = priced();
   const html = tableHtml(table);
-  assert.ok(html.startsWith('<table class="note-table note-table--fixed"><colgroup><col style="width:40%"><col style="width:20%">'), html);
+  assert.ok(html.startsWith('<table class="note-table"><colgroup><col style="width:40%"><col style="width:20%">'), html);
   assert.ok(html.includes('<th style="text-align:center;">Pozycja</th>'), 'nagłówek do środka');
   assert.ok(html.includes(`<td style="text-align:right;">1${NBSP}234,50${NBSP}zł</td>`), 'waluta do prawej');
   assert.ok(html.includes('<td>20.10.2026</td>'));
   const portable = tableHtml(table, { portable: true });
-  assert.ok(portable.startsWith('<table style="border-collapse:collapse;width:100%;table-layout:fixed"><colgroup>'), portable);
+  assert.ok(portable.startsWith('<table style="border-collapse:collapse;width:100%"><colgroup>'), portable);
   assert.equal(tableHtml(cleanTable({ rows: [['a']] })).includes('colgroup'), false, 'bez szerokości – układ z treści');
   assert.equal(tableText(table).split('\n')[1], `Śruba M6\t1200\t1${NBSP}234,50${NBSP}zł\t20.10.2026`);
   assert.equal(tableLines(table)[2], `Nakrętka | 36 | 0,99${NBSP}zł | 01.02.2026`);
