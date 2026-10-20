@@ -11,15 +11,15 @@ import { NOTE_FILE_LIMIT, NOTE_FILE_MAX_BYTES, NOTE_IMAGE_LIMIT } from '../core/
 import { bytesToBase64 } from '../core/base64.js';
 import { nextDrawingLabel } from '../core/drawing.js';
 import {
-  MAX_INDENT, NOTE_COLORS, NOTE_NO_COLOR, NOTE_SIZES, PAGE_BREAK_LINE, editorNoteHtml, isEmptyNoteHtml, noteText, normalizeNoteHtml,
-  portableNoteHtml
+  MAX_INDENT, NOTE_ALIGNS, NOTE_COLORS, NOTE_LINE_SPACINGS, NOTE_NO_COLOR, NOTE_SIZES, PAGE_BREAK_LINE, editorNoteHtml, isEmptyNoteHtml,
+  normalizeLink, noteText, normalizeNoteHtml, portableNoteHtml
 } from '../core/note-format.js';
 import {
   IMAGE_CAPTION_MAX, IMAGE_LABEL_MAX, cleanImageCaption, cleanImageLabel, figureCaption, figureNumbers, findImageByLabel, labelKey,
   referenceLabel, referenceToken, renameReferences, withImageLabels
 } from '../core/note-refs.js';
 import { FILE_NAME_MAX, cleanFileName, fileExtension, fileTypeOf, formatDuration, recordingName, renamedFile } from '../core/note-files.js';
-import { joinList, pluralAttachments, pluralImages } from '../core/text.js';
+import { formatClock, formatDay, formatDayTime, formatEnteredDate, joinList, pluralAttachments, pluralImages } from '../core/text.js';
 import { attachmentList, fileBadge, fileDescription, openAttachment } from './attachments.js';
 import { enableGridDrag } from './grid-drag.js';
 import { openColorSheet, readCustomColors } from './color-picker.js';
@@ -30,9 +30,12 @@ import { openDrawingEditor } from './drawing.js';
 import { icon } from './icons.js';
 import { prepareImage, urlPool } from './images.js';
 import { openMathHelp } from './math.js';
+import { clearFormatting, contentEditing, insertBlockAt, paragraphAt, setParagraph } from './note-editing.js';
+import { printNote } from './note-print.js';
 import { recordingSupported, startRecording } from './recorder.js';
 import { noteBook } from './note-book.js';
 import { speakThen, speechAvailable, stopSpeaking } from './speech.js';
+import { symbolPanel } from './symbols.js';
 
 let titleCounter = 0;
 
@@ -40,29 +43,64 @@ let titleCounter = 0;
 const NO_COLOR = NOTE_NO_COLOR;
 /** Największy łączny rozmiar obrazów kopiowanych do schowka razem z tekstem. */
 const CLIPBOARD_IMAGE_BYTES = 8 * 1024 * 1024;
+/**
+ * Obraz w schowku (od 1.20) najwyżej na szerokość tekstu strony A4 (16 cm przy marginesach 2,5 cm,
+ * w pikselach 96 dpi) i na wysokość strony – Word i OneNote nie zmniejszają obrazów same.
+ */
+const COPY_IMAGE_WIDTH = 605;
+const COPY_IMAGE_HEIGHT = 860;
 
-const FORMAT_BUTTONS = [
-  { command: 'bold', icon: 'bold', label: 'Pogrubienie', keys: 'Ctrl+B' },
-  { command: 'italic', icon: 'italic', label: 'Kursywa', keys: 'Ctrl+I' },
-  { command: 'underline', icon: 'underline', label: 'Podkreślenie', keys: 'Ctrl+U' },
-  // Od 1.18: indeks górny i dolny, wielkość tekstu, wcięcie (też Tab i Shift+Tab).
-  { command: 'superscript', icon: 'superscript', label: 'Indeks górny', keys: 'Ctrl+.' },
-  { command: 'subscript', icon: 'subscript', label: 'Indeks dolny', keys: 'Ctrl+,' },
-  { command: 'size', icon: 'textSize', label: 'Wielkość tekstu' },
-  { command: 'color', icon: 'textColor', label: 'Kolor tekstu' },
-  { command: 'heading', icon: 'heading', label: 'Nagłówek' },
-  { command: 'insertUnorderedList', icon: 'listBullet', label: 'Lista punktowana' },
-  { command: 'insertOrderedList', icon: 'listNumber', label: 'Lista numerowana' },
-  { command: 'outdent', icon: 'outdent', label: 'Zmniejsz wcięcie', keys: 'Shift+Tab' },
-  { command: 'indent', icon: 'indent', label: 'Zwiększ wcięcie', keys: 'Tab' },
-  { command: 'pageBreak', icon: 'pageBreak', label: 'Nowa strona' },
-  // Wzory (od 1.11): zapis $…$ i ściągawka zapisu.
-  { command: 'equation', icon: 'sigma', label: 'Wzór', keys: '$…$' },
-  { command: 'equationHelp', icon: 'info', label: 'Równania – ściągawka' },
-  { command: 'removeFormat', icon: 'clearFormat', label: 'Usuń formatowanie' }
+/**
+ * Pasek formatowania w trzech grupach (od 1.20): tekst, akapit, wstawianie. Na szerokim ekranie
+ * grupy łamią się w wiersze, na telefonie pasek przewija się w bok.
+ */
+const FORMAT_GROUPS = [
+  {
+    label: 'Tekst',
+    buttons: [
+      { command: 'bold', icon: 'bold', label: 'Pogrubienie', keys: 'Ctrl+B' },
+      { command: 'italic', icon: 'italic', label: 'Kursywa', keys: 'Ctrl+I' },
+      { command: 'underline', icon: 'underline', label: 'Podkreślenie', keys: 'Ctrl+U' },
+      // Od 1.18: indeks górny i dolny, wielkość tekstu, wcięcie (też Tab i Shift+Tab).
+      { command: 'superscript', icon: 'superscript', label: 'Indeks górny', keys: 'Ctrl+.' },
+      { command: 'subscript', icon: 'subscript', label: 'Indeks dolny', keys: 'Ctrl+,' },
+      { command: 'size', icon: 'textSize', label: 'Wielkość tekstu' },
+      { command: 'color', icon: 'textColor', label: 'Kolor tekstu' },
+      // Od 1.20 – wszystko oprócz linków: także nagłówek, lista, wcięcie, wyrównanie i interlinia.
+      { command: 'removeFormat', icon: 'clearFormat', label: 'Usuń formatowanie' }
+    ]
+  },
+  {
+    label: 'Akapit',
+    buttons: [
+      { command: 'heading', icon: 'heading', label: 'Nagłówek' },
+      { command: 'insertUnorderedList', icon: 'listBullet', label: 'Lista punktowana' },
+      { command: 'insertOrderedList', icon: 'listNumber', label: 'Lista numerowana' },
+      { command: 'outdent', icon: 'outdent', label: 'Zmniejsz wcięcie', keys: 'Shift+Tab' },
+      { command: 'indent', icon: 'indent', label: 'Zwiększ wcięcie', keys: 'Tab' },
+      // Od 1.20: wyrównanie i interlinia zaznaczonych akapitów (bez zaznaczenia – całego tekstu).
+      { command: 'paragraph', icon: 'lineSpacing', label: 'Wyrównanie i interlinia' }
+    ]
+  },
+  {
+    label: 'Wstaw',
+    buttons: [
+      // Od 1.20: link, symbole, data i godzina.
+      { command: 'link', icon: 'link', label: 'Link', keys: 'Ctrl+K' },
+      { command: 'symbol', icon: 'omega', label: 'Symbole' },
+      { command: 'date', icon: 'calendar', label: 'Data i godzina' },
+      { command: 'pageBreak', icon: 'pageBreak', label: 'Nowa strona' },
+      // Wzory (od 1.11): zapis $…$ i ściągawka zapisu.
+      { command: 'equation', icon: 'sigma', label: 'Wzór', keys: '$…$' },
+      { command: 'equationHelp', icon: 'info', label: 'Równania – ściągawka' }
+    ]
+  }
 ];
 /** Polecenia bez stanu włączenia (przycisk nie jest przełącznikiem). */
-const ACTION_COMMANDS = ['color', 'size', 'removeFormat', 'pageBreak', 'equation', 'equationHelp', 'indent', 'outdent'];
+const ACTION_COMMANDS = ['color', 'size', 'removeFormat', 'pageBreak', 'equation', 'equationHelp', 'indent', 'outdent', 'paragraph', 'symbol', 'date'];
+const ALIGN_ICONS = { left: 'alignLeft', center: 'alignCenter', right: 'alignRight', justify: 'alignJustify' };
+
+const escapeHtml = (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // ---------------------------------------------------------------- elementy list
 
@@ -154,7 +192,15 @@ async function copyNote(note, images, language = 'pl') {
     if (total > CLIPBOARD_IMAGE_BYTES) return '';
     const caption = figureCaption(image.caption, numbers[labeled.indexOf(image)], note.numberFigures === true);
     const below = caption ? `<p style="text-align:center">${caption.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</p>` : '';
-    return `<p><img src="data:${image.type};base64,${bytesToBase64(image.bytes)}" alt="" style="max-width:100%"></p>${below}`;
+    // Wymiary wprost (od 1.20): mieści się na stronie A4.
+    let size = 'style="max-width:100%"';
+    if (image.width > 0 && image.height > 0) {
+      const scale = Math.min(1, COPY_IMAGE_WIDTH / image.width, COPY_IMAGE_HEIGHT / image.height);
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+      size = `width="${width}" height="${height}" style="width:${width}px;height:auto;max-width:100%"`;
+    }
+    return `<p><img src="data:${image.type};base64,${bytesToBase64(image.bytes)}" alt="" ${size}></p>${below}`;
   };
   const holder = document.createElement('template');
   holder.innerHTML = portableNoteHtml(source);
@@ -590,8 +636,24 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
             ? h('button', {
                 type: 'button', class: 'button button--secondary note-sheet__copy', dataset: { testid: 'note-copy' },
                 onClick: () => copyNote(note, stored, language)
-              }, icon('copy', { size: 18 }), h('span', null, 'Kopiuj notatkę'))
+              }, icon('copy', { size: 18 }), h('span', null, 'Kopiuj', h('span', { class: 'note-sheet__copy-more' }, ' notatkę')))
             : null,
+          // Zapis PDF i druk (od 1.20): okno drukowania przeglądarki z notatką w układzie A4.
+          h('button', {
+            type: 'button', class: 'button button--secondary note-sheet__copy', title: 'Zapisz jako PDF albo wydrukuj', dataset: { testid: 'note-pdf' },
+            onClick: () => {
+              const path = library.lessonPath(lessonID).split(' › ');
+              printNote({
+                title: library.getLesson(lessonID)?.name ?? lesson.name,
+                path: path.length > 1 ? path.slice(0, -1).join(' › ') : null,
+                html,
+                images: stored,
+                imagesFirst: note.imagesFirst === true,
+                numberFigures: note.numberFigures === true,
+                language
+              });
+            }
+          }, icon('print', { size: 18 }), h('span', null, 'PDF')),
           book.pager
         )
       );
@@ -811,6 +873,8 @@ function noteEditor({
 
   // ---- pasek formatowania
   const buttons = new Map();
+  /** Zmiany treści z cofaniem (od 1.20): wstawianie bloków, usuwanie formatowania, akapity. */
+  const editing = contentEditing(area);
   const colorPanel = h('div', { class: 'note-colors', hidden: true, role: 'group', 'aria-label': 'Kolor tekstu', dataset: { testid: 'note-colors' } });
   /**
    * Kolory: paleta, do trzech ostatnich własnych (od 1.18 – wspólne z rysunkiem), „+” – siatka,
@@ -869,60 +933,81 @@ function noteEditor({
       }
     }, size.label)));
 
+  /** Wyrównanie i interlinia (od 1.20) – pod paskiem, jak kolory; stan bloku z kursorem. */
+  const paragraphPanel = h('div', { class: 'note-paragraph', hidden: true, role: 'group', 'aria-label': 'Wyrównanie i interlinia', dataset: { testid: 'note-paragraph' } });
+  function renderParagraphPanel() {
+    const current = paragraphAt(area, liveRange());
+    const option = (attribute, value, selected, label, content, testID) => h('button', {
+      type: 'button', class: 'note-paragraph__option', 'aria-pressed': String(selected), 'aria-label': label, title: label, dataset: { testid: testID },
+      onMousedown: (event) => event.preventDefault(),
+      onClick: () => applyParagraph(attribute, value)
+    }, content);
+    replaceChildren(paragraphPanel,
+      h('div', { class: 'note-paragraph__row' },
+        h('span', { class: 'note-paragraph__label' }, 'Wyrównanie'),
+        h('div', { class: 'note-paragraph__options' }, NOTE_ALIGNS.map((align) => option('data-align', align.id, current.align === align.id, align.label,
+          icon(ALIGN_ICONS[align.id ?? 'left'], { size: 20 }), `note-align-${align.id ?? 'left'}`)))),
+      h('div', { class: 'note-paragraph__row' },
+        h('span', { class: 'note-paragraph__label' }, 'Interlinia'),
+        h('div', { class: 'note-paragraph__options' }, NOTE_LINE_SPACINGS.map((spacing) => option('data-line', spacing.id, current.line === spacing.id,
+          `Interlinia ${spacing.label}`, spacing.label, `note-line-${spacing.id ?? '1.15'}`)))),
+      h('p', { class: 'note-paragraph__hint' }, 'Zmienia zaznaczone akapity, a bez zaznaczenia – cały tekst.'));
+  }
+  /** Symbole (od 1.20): ostatnio użyte i grupy znaków; panel zostaje otwarty przy kolejnych. */
+  const symbols = symbolPanel({ testID: 'note-symbols', className: 'note-symbols', onPick: (symbol) => run('insertText', symbol) });
+  const symbolsPanel = symbols.element;
+  symbolsPanel.hidden = true;
+  const panels = [colorPanel, sizePanel, paragraphPanel, symbolsPanel];
+  /** Pokazuje jeden panel pod paskiem albo chowa go, gdy był już widoczny. */
+  const togglePanel = (panel, render = null) => {
+    const show = panel.hidden;
+    for (const other of panels) other.hidden = true;
+    if (show) render?.();
+    panel.hidden = !show;
+  };
+
+  const toolbarButton = (definition) => {
+    const button = h('button', {
+      type: 'button',
+      class: `note-toolbar__button${definition.command === 'color' ? ' note-toolbar__button--color' : ''}`,
+      'aria-label': definition.label,
+      title: definition.keys ? `${definition.label} (${definition.keys})` : definition.label,
+      dataset: { command: definition.command, testid: `note-format-${definition.command}` },
+      // Przycisk nie zabiera fokusu – zaznaczenie w tekście zostaje.
+      onMousedown: (event) => {
+        event.preventDefault();
+        captureSelection();
+      },
+      onClick: () => command(definition.command)
+    }, icon(definition.icon, { size: 20 }));
+    if (!ACTION_COMMANDS.includes(definition.command)) button.setAttribute('aria-pressed', 'false');
+    buttons.set(definition.command, button);
+    return button;
+  };
   const toolbar = h('div', { class: 'note-toolbar', role: 'toolbar', 'aria-label': 'Formatowanie tekstu' },
-    FORMAT_BUTTONS.map((definition) => {
-      const button = h('button', {
-        type: 'button',
-        class: `note-toolbar__button${definition.command === 'color' ? ' note-toolbar__button--color' : ''}`,
-        'aria-label': definition.label,
-        title: definition.keys ? `${definition.label} (${definition.keys})` : definition.label,
-        dataset: { command: definition.command, testid: `note-format-${definition.command}` },
-        // Przycisk nie zabiera fokusu – zaznaczenie w tekście zostaje.
-        onMousedown: (event) => {
-          event.preventDefault();
-          captureSelection();
-        },
-        onClick: () => {
-          if (definition.command === 'color') {
-            if (colorPanel.hidden) renderColorPanel();
-            colorPanel.hidden = !colorPanel.hidden;
-            sizePanel.hidden = true;
-            return;
-          }
-          if (definition.command === 'size') {
-            sizePanel.hidden = !sizePanel.hidden;
-            colorPanel.hidden = true;
-            return;
-          }
-          if (definition.command === 'indent' || definition.command === 'outdent') {
-            indent(definition.command === 'indent');
-            return;
-          }
-          if (definition.command === 'pageBreak') {
-            insertBlock(h('hr', { 'data-page': '' }));
-            return;
-          }
-          if (definition.command === 'equation') {
-            insertEquation();
-            return;
-          }
-          if (definition.command === 'equationHelp') {
-            openMathHelp({ onInsert: (text) => run('insertText', text) });
-            return;
-          }
-          if (definition.command === 'heading') {
-            const block = String(document.queryCommandValue('formatBlock') ?? '').toLowerCase();
-            run('formatBlock', block === 'h3' ? '<p>' : '<h3>');
-            return;
-          }
-          run(definition.command);
-        }
-      }, icon(definition.icon, { size: 20 }));
-      if (!ACTION_COMMANDS.includes(definition.command)) button.setAttribute('aria-pressed', 'false');
-      buttons.set(definition.command, button);
-      return button;
-    })
-  );
+    FORMAT_GROUPS.map((group) => h('div', { class: 'note-toolbar__group', role: 'group', 'aria-label': group.label }, group.buttons.map(toolbarButton))));
+
+  function command(name) {
+    switch (name) {
+      case 'color': togglePanel(colorPanel, renderColorPanel); break;
+      case 'size': togglePanel(sizePanel); break;
+      case 'paragraph': togglePanel(paragraphPanel, renderParagraphPanel); break;
+      case 'symbol': togglePanel(symbolsPanel, symbols.refresh); break;
+      case 'indent': case 'outdent': indent(name === 'indent'); break;
+      case 'pageBreak': insertBlock(h('hr', { 'data-page': '' })); break;
+      case 'equation': insertEquation(); break;
+      case 'equationHelp': openMathHelp({ onInsert: (text) => run('insertText', text) }); break;
+      case 'removeFormat': rewrite(clearFormatting); break;
+      case 'link': editLink(); break;
+      case 'date': chooseDate(); break;
+      case 'heading': {
+        const block = String(document.queryCommandValue('formatBlock') ?? '').toLowerCase();
+        run('formatBlock', block === 'h3' ? '<p>' : '<h3>');
+        break;
+      }
+      default: run(name);
+    }
+  }
 
   /**
    * Bieżące zaznaczenie w tekście – przed poleceniem z klawiatury albo przycisku (zapamiętane przy
@@ -983,55 +1068,147 @@ function noteEditor({
     run(more ? 'indent' : 'outdent');
   }
 
-  /**
-   * „Nowa strona” i odwołanie do obrazu zawsze między blokami: na końcu bloku – wstawiony blok
-   * i pusty akapit do pisania dalej; w środku akapitu – akapit dzieli się na dwa; w liście – lista
-   * dzieli się po bieżącym punkcie. Bez kursora w tekście – na końcu.
-   */
-  function insertBlock(inserted) {
-    restoreSelection();
+  /** Zaznaczenie w polu: bieżące albo zapamiętane. */
+  function liveRange() {
     const selection = window.getSelection();
-    const range = selection.rangeCount ? selection.getRangeAt(0) : null;
-    let block = range && area.contains(range.startContainer) ? range.startContainer : area.lastChild;
-    if (block === area) block = area.childNodes[Math.max(0, range.startOffset - 1)] ?? area.lastChild;
-    while (block && block.parentNode !== area) block = block.parentNode;
-    const empty = h('p', null, h('br'));
-    let after = [empty];
-    let caretTarget = empty;
-    if (block?.nodeType === 1 && /^(UL|OL)$/.test(block.tagName)) {
-      let item = range.startContainer;
-      while (item && item.parentNode !== block) item = item.parentNode;
-      const items = [...block.children];
-      const following = item ? items.slice(items.indexOf(item) + 1) : [];
-      if (following.length > 0) {
-        const rest = document.createElement(block.tagName);
-        rest.append(...following);
-        after = [empty, rest];
-      }
-    } else if (block?.nodeType === 1 && range) {
-      // Tekst za kursorem przechodzi na nową stronę.
-      const tail = range.cloneRange();
-      tail.collapse(true);
-      tail.setEnd(block, block.childNodes.length);
-      const moved = tail.extractContents();
-      if (moved.textContent.trim() !== '') {
-        const rest = block.cloneNode(false);
-        rest.append(moved);
-        after = [rest];
-        caretTarget = rest;
-      }
-      if (block.textContent === '' && !block.querySelector('br')) block.append(h('br'));
-    }
-    if (block) block.after(inserted, ...after);
-    else area.append(inserted, ...after);
-    const caret = document.createRange();
-    caret.setStart(caretTarget, 0);
-    caret.collapse(true);
-    selection.removeAllRanges();
-    selection.addRange(caret);
-    state.range = caret.cloneRange();
+    if (selection.rangeCount && area.contains(selection.getRangeAt(0).commonAncestorContainer)) return selection.getRangeAt(0);
+    return state.range;
+  }
+
+  /** Zmiana treści z cofaniem (note-editing.js) w miejscu zaznaczenia. */
+  function rewrite(change) {
+    restoreSelection();
+    editing.apply(liveRange(), change);
+    captureSelection();
     syncEmpty();
     updateToolbar();
+  }
+
+  function applyParagraph(name, value) {
+    rewrite((copy) => { setParagraph(copy, name, value); });
+    renderParagraphPanel();
+  }
+
+  /**
+   * „Nowa strona” i odwołanie do obrazu zawsze między blokami (zob. insertBlockAt) – od 1.20
+   * z cofaniem (Ctrl+Z).
+   */
+  function insertBlock(inserted) {
+    rewrite((copy) => insertBlockAt(copy, inserted));
+  }
+
+  /** Link, w którym jest początek zaznaczenia (albo null). */
+  function linkAt(range) {
+    if (!range) return null;
+    const node = range.startContainer;
+    const link = (node.nodeType === 1 ? node : node.parentElement)?.closest('a');
+    return link && area.contains(link) ? link : null;
+  }
+
+  /** Link (od 1.20, Ctrl+K): wstawienie, zmiana adresu albo usunięcie. */
+  function editLink() {
+    restoreSelection();
+    const range = liveRange()?.cloneRange() ?? null;
+    const anchor = linkAt(range);
+    const selected = range && !range.collapsed ? range.toString().trim() : '';
+    let address = anchor?.getAttribute('href')?.replace(/^mailto:/i, '') ?? (normalizeLink(selected) ? selected : '');
+    let label = '';
+    let action = null;
+    let sheet = null;
+    const addressInput = textInput({ value: address, onInput: (value) => { address = value; }, autocapitalize: 'off', type: 'url', testID: 'note-link-url' });
+    const labelInput = anchor || selected ? null : textInput({ value: '', onInput: (value) => { label = value; }, testID: 'note-link-text' });
+    sheet = openFormSheet({
+      title: anchor ? 'Edytuj link' : 'Wstaw link',
+      submitLabel: anchor ? 'Zapisz' : 'Wstaw',
+      build: () => [
+        field('Adres', addressInput, { hint: 'Strona (https://… albo www.…) lub adres e-mail. W podglądzie notatki link otwiera się w nowej karcie.' }),
+        labelInput ? field('Tekst linku', labelInput, { hint: 'Puste – w tekście będzie sam adres.' }) : null,
+        anchor ? h('button', {
+          type: 'button', class: 'button button--danger-plain note-link__remove', dataset: { testid: 'note-link-remove' },
+          onClick: () => {
+            action = { remove: true };
+            sheet.close();
+          }
+        }, icon('unlink', { size: 18 }), h('span', null, 'Usuń link')) : null
+      ],
+      onSubmit: () => {
+        const href = normalizeLink(address);
+        if (!href) throw new Error('Wpisz adres strony (np. www.przyklad.pl) albo adres e-mail.');
+        action = { href, label: label.trim() };
+      },
+      onClose: () => {
+        if (action) applyLink(range, anchor, action);
+      }
+    });
+    requestAnimationFrame(() => addressInput.focus());
+  }
+
+  function applyLink(range, anchor, action) {
+    state.range = range;
+    restoreSelection();
+    const selection = window.getSelection();
+    if (anchor?.isConnected) {
+      const whole = document.createRange();
+      whole.selectNodeContents(anchor);
+      selection.removeAllRanges();
+      selection.addRange(whole);
+    }
+    if (action.remove) {
+      document.execCommand('unlink');
+    } else if (anchor || !selection.isCollapsed) {
+      document.execCommand('createLink', false, action.href);
+    } else {
+      const text = action.label || action.href.replace(/^mailto:/i, '');
+      document.execCommand('insertHTML', false, `<a href="${escapeHtml(action.href)}">${escapeHtml(text)}</a>`);
+    }
+    if (!selection.isCollapsed) selection.collapseToEnd();
+    captureSelection();
+    syncEmpty();
+    updateToolbar();
+  }
+
+  /** Data i godzina (od 1.20) w miejscu kursora: dzisiaj, teraz, sama godzina albo wpisane ręcznie. */
+  function chooseDate() {
+    captureSelection();
+    const range = state.range?.cloneRange() ?? null;
+    const now = new Date();
+    const insert = (text) => {
+      state.range = range;
+      run('insertText', text);
+    };
+    openMenu({
+      title: 'Data i godzina',
+      items: [
+        { label: `Dzisiaj – ${formatDay(now)}`, icon: 'calendar', testID: 'note-date-today', onSelect: () => insert(formatDay(now)) },
+        { label: `Teraz – ${formatDayTime(now)}`, icon: 'clock', testID: 'note-date-now', onSelect: () => insert(formatDayTime(now)) },
+        { label: `Godzina – ${formatClock(now)}`, icon: 'clock', testID: 'note-date-time', onSelect: () => insert(formatClock(now)) },
+        { label: 'Inna data lub godzina…', icon: 'edit', testID: 'note-date-other', onSelect: () => enterDate(now, insert) }
+      ]
+    });
+  }
+
+  function enterDate(now, insert) {
+    const pad = (value) => String(value).padStart(2, '0');
+    let day = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    let time = formatClock(now);
+    let text = null;
+    const dayInput = textInput({ value: day, onInput: (value) => { day = value; }, type: 'date', testID: 'note-date-day' });
+    const timeInput = textInput({ value: time, onInput: (value) => { time = value; }, type: 'time', testID: 'note-date-clock' });
+    openFormSheet({
+      title: 'Data i godzina',
+      submitLabel: 'Wstaw',
+      build: () => [
+        field('Data', dayInput),
+        field('Godzina', timeInput, { hint: 'Wyczyść jedno z pól, żeby wstawić samą datę albo samą godzinę.' })
+      ],
+      onSubmit: () => {
+        text = formatEnteredDate(day, time);
+        if (!text) throw new Error('Wpisz datę albo godzinę.');
+      },
+      onClose: () => {
+        if (text) insert(text);
+      }
+    });
   }
 
   function updateToolbar() {
@@ -1039,9 +1216,9 @@ function noteEditor({
       if (!button.hasAttribute('aria-pressed')) continue;
       let active = false;
       try {
-        active = command === 'heading'
-          ? String(document.queryCommandValue('formatBlock') ?? '').toLowerCase() === 'h3'
-          : document.queryCommandState(command);
+        if (command === 'heading') active = String(document.queryCommandValue('formatBlock') ?? '').toLowerCase() === 'h3';
+        else if (command === 'link') active = Boolean(linkAt(liveRange()));
+        else active = document.queryCommandState(command);
       } catch {
         active = false;
       }
@@ -1062,7 +1239,17 @@ function noteEditor({
   area.addEventListener('focus', () => {
     document.execCommand('defaultParagraphSeparator', false, 'p');
   });
-  area.addEventListener('input', syncEmpty);
+  area.addEventListener('input', (event) => {
+    editing.onInput(event);
+    syncEmpty();
+  });
+  // Ctrl+kliknięcie (Cmd na Macu) otwiera link z edytora w nowej karcie.
+  area.addEventListener('click', (event) => {
+    const link = event.target.closest?.('a[href]');
+    if (!link || !(event.ctrlKey || event.metaKey)) return;
+    event.preventDefault();
+    window.open(link.href, '_blank', 'noopener');
+  });
   area.addEventListener('keydown', (event) => {
     // Tab i Shift+Tab (od 1.18) – wcięcie zamiast przejścia do następnego pola.
     if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -1074,11 +1261,17 @@ function noteEditor({
     // Skróty jak w edytorach tekstu (przeglądarka obsługuje je i tak; tu – spójnie w każdej).
     if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
     const key = event.key.toLowerCase();
-    const command = { b: 'bold', i: 'italic', u: 'underline', '.': 'superscript', ',': 'subscript' }[key];
-    if (command) {
+    if (key === 'k') {
       event.preventDefault();
       captureSelection();
-      run(command);
+      editLink();
+      return;
+    }
+    const shortcut = { b: 'bold', i: 'italic', u: 'underline', '.': 'superscript', ',': 'subscript' }[key];
+    if (shortcut) {
+      event.preventDefault();
+      captureSelection();
+      run(shortcut);
     }
   });
 
@@ -1653,7 +1846,7 @@ function noteEditor({
           }
         }))
       ),
-      h('div', { class: 'note-editor__toolbar' }, toolbar, colorPanel, sizePanel),
+      h('div', { class: 'note-editor__toolbar' }, toolbar, colorPanel, sizePanel, paragraphPanel, symbolsPanel),
       area
     )
   );

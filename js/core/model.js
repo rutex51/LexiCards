@@ -130,6 +130,8 @@ export function defaultSettings() {
     studyCount: 20,                // ostatnio wybrana liczba fiszek (0 = wszystkie)
     activeStudySession: null,      // trwająca sesja nauki – do wznowienia po ponownym otwarciu
     lastStudySession: null,        // ostatnia zakończona sesja: { config, queue, finishedAt } – do powtórzenia
+    studyShowReview: true,         // ekran Nauka: grupa „Powtórka na dziś” (od 1.20 do ukrycia – jest też na Starcie)
+    studyShowLast: true,           // ekran Nauka: grupa „Ostatnia sesja” (od 1.20 do ukrycia)
     desiredRetention: 0.9,         // FSRS: docelowa szansa przypomnienia w dniu powtórki
     consolidatedReviewDays: 30,    // lekcje oznaczone jako utrwalone: fiszki wracają najwcześniej po tylu dniach
     noteSpread: true,              // notatka na dużym ekranie: dwie strony obok siebie

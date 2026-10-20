@@ -1,3 +1,3 @@
 // PLIK GENEROWANY przez `npm run build` – nie edytuj go ręcznie.
-export const APP_VERSION = '1.19.0';
-export const BUILD_ID = 'b9ee04c2';
+export const APP_VERSION = '1.20.0';
+export const BUILD_ID = '563e5abb';

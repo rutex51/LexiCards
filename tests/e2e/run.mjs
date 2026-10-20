@@ -4909,6 +4909,451 @@ test('rysunek 1.19 na telefonie: polecenia zaznaczonego odcinka (Końce, Szyk) i
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-szyk-telefon.png') });
 }, { device: PHONE });
 
+// ---------------------------------------------------------------- notatki 1.20
+
+/** Treść pola edytora bez wartowników podmiany treści (js/ui/note-editing.js). */
+const editorHtml = (editor) => editor.evaluate((area) => area.innerHTML.replace(/<p data-s="">(?:<br>)?<\/p>/g, ''));
+
+/** Zaznacza w polu edytora pierwsze wystąpienie tekstu; caret 'start' / 'end' – sam kursor przed nim / za nim. */
+async function selectInEditor(editor, text, { caret = null } = {}) {
+  await editor.evaluate((area, [needle, where]) => {
+    const walker = document.createTreeWalker(area, window.NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const index = walker.currentNode.data.indexOf(needle);
+      if (index < 0) continue;
+      const range = document.createRange();
+      range.setStart(walker.currentNode, where === 'end' ? index + needle.length : index);
+      range.setEnd(walker.currentNode, where === 'start' ? index : index + needle.length);
+      area.focus();
+      window.getSelection().removeAllRanges();
+      window.getSelection().addRange(range);
+      return;
+    }
+    throw new Error(`Brak tekstu „${needle}” w edytorze`);
+  }, [text, caret]);
+  await editor.page().waitForTimeout(60);
+}
+
+test('notatka 1.20: „Usuń formatowanie” – wszystko oprócz linków (zaznaczenie, akapit z kursorem), Ctrl+Z i ponowienie; Ctrl+Z po „Wstaw do tekstu” i „Nowa strona” – kursor wraca na miejsce', async ({ open }) => {
+  const page = await open();
+  const { ids } = await openNoteWithImages(page, {
+    html: '<h3>Nagłówek</h3><p><strong>Gruby</strong> <span data-size="l">duży</span> <span data-color="red">czerwony</span> <a href="https://example.com">link</a> x<sup>2</sup></p>'
+      + '<ul><li>Punkt <em>jeden</em></li><li>Punkt dwa</li></ul><p data-indent="2" data-align="center" data-line="2">Wcięty</p><p>Ostatni akapit</p>',
+    labels: ['Schemat']
+  });
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-right]').click();
+  const editor = dialog.locator('[data-testid=note-editor]');
+  await editor.waitFor();
+  const button = (command) => dialog.locator(`[data-testid=note-format-${command}]`);
+  const original = await editorHtml(editor);
+  assert.ok(original.includes('<blockquote><blockquote><p data-align="center" data-line="2">Wcięty</p></blockquote></blockquote>'), original);
+
+  // Zaznaczenie od „Gruby” do „jeden”: tekst bez wyróżnień, wielkości i koloru – link zostaje; punkt listy staje się akapitem.
+  await editor.evaluate((area) => {
+    const range = document.createRange();
+    range.setStart(area.querySelector('strong').firstChild, 0);
+    range.setEnd(area.querySelector('em').firstChild, 5);
+    area.focus();
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+  });
+  await page.waitForTimeout(60);
+  await button('removeFormat').click();
+  const link = '<a href="https://example.com" target="_blank" rel="noopener noreferrer">link</a>';
+  assert.equal(await editorHtml(editor), `<h3>Nagłówek</h3><p>Gruby duży czerwony ${link} x2</p><p>Punkt jeden</p><ul><li>Punkt dwa</li></ul>`
+    + '<blockquote><blockquote><p data-align="center" data-line="2">Wcięty</p></blockquote></blockquote><p>Ostatni akapit</p>');
+  const selected = await page.evaluate(() => window.getSelection().toString());
+  assert.ok(selected.startsWith('Gruby') && selected.endsWith('Punkt jeden'), `zaznaczenie zostaje: „${selected}”`);
+
+  // Ctrl+Z – formatowanie wraca jednym krokiem, zaznaczenie jak przed zmianą; ponowienie – znowu bez formatowania.
+  await page.keyboard.press('Control+z');
+  await waitUntil(async () => (await editorHtml(editor)) === original, 'Ctrl+Z przywraca formatowanie');
+  assert.ok((await page.evaluate(() => window.getSelection().toString())).startsWith('Gruby'), 'zaznaczenie po cofnięciu');
+  await page.keyboard.press('Control+Shift+z');
+  await waitUntil(async () => (await editorHtml(editor)).startsWith('<h3>Nagłówek</h3><p>Gruby duży czerwony'), 'ponowienie');
+  await page.keyboard.press('Control+z');
+  await waitUntil(async () => (await editorHtml(editor)) === original, 'znowu cofnięte');
+
+  // Sam kursor: cały akapit – bez wcięcia, wyrównania i interlinii; reszta notatki bez zmian, kursor na miejscu.
+  await selectInEditor(editor, 'Wcięty', { caret: 'end' });
+  await button('removeFormat').click();
+  assert.equal(await editorHtml(editor), original.replace('<blockquote><blockquote><p data-align="center" data-line="2">Wcięty</p></blockquote></blockquote>', '<p>Wcięty</p>'));
+  await page.keyboard.type('!');
+  assert.ok((await editorHtml(editor)).includes('<p>Wcięty!</p>'), 'kursor na końcu akapitu');
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  await waitUntil(async () => (await editorHtml(editor)) === original, 'cofnięte pisanie i usunięcie formatowania');
+
+  // „Wstaw do tekstu”: odwołanie w osobnej linijce, pisanie pod nim; Ctrl+Z – odwołanie znika, kursor na końcu akapitu.
+  await selectInEditor(editor, 'Ostatni akapit', { caret: 'end' });
+  await dialog.locator('.note-images__open').first().click();
+  await menuItem(page, 'Wstaw do tekstu');
+  assert.ok((await editorHtml(editor)).endsWith('<p>Ostatni akapit</p><p>[[Schemat]]</p><p><br></p>'), await editorHtml(editor));
+  await page.keyboard.type('Dalej');
+  assert.ok((await editorHtml(editor)).endsWith('<p>[[Schemat]]</p><p>Dalej</p>'), 'pisanie pod odwołaniem');
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  await waitUntil(async () => (await editorHtml(editor)) === original, 'Ctrl+Z usuwa odwołanie (wcześniej cofał inną zmianę)');
+  await page.keyboard.type('.');
+  assert.ok((await editorHtml(editor)).endsWith('<p>Ostatni akapit.</p>'), 'kursor wrócił na koniec akapitu');
+
+  // „Nowa strona” w środku akapitu: akapit dzieli się, kursor na początku drugiej części; Ctrl+Z – akapit znowu cały.
+  await selectInEditor(editor, 'akapit.', { caret: 'start' });
+  await button('pageBreak').click();
+  assert.match(await editorHtml(editor), /<p>Ostatni(?: |&nbsp;)<\/p><hr data-page=""><p>akapit\.<\/p>$/);
+  await page.keyboard.type('X');
+  assert.ok((await editorHtml(editor)).endsWith('<hr data-page=""><p>Xakapit.</p>'), 'kursor na początku nowej strony');
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  await waitUntil(async () => (await editorHtml(editor)).endsWith('<p>Ostatni akapit.</p>') && !(await editorHtml(editor)).includes('<hr'), 'Ctrl+Z usuwa nową stronę');
+
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').first().waitFor();
+  assert.equal((await storedNote(page, ids.statements)).html,
+    '<h3>Nagłówek</h3><p><strong>Gruby</strong> <span data-size="l">duży</span> <span data-color="red">czerwony</span> '
+    + '<a href="https://example.com" target="_blank" rel="noopener noreferrer">link</a> x<sup>2</sup></p><ul><li>Punkt <em>jeden</em></li><li>Punkt dwa</li></ul>'
+    + '<p data-indent="2" data-align="center" data-line="2">Wcięty</p><p>Ostatni akapit.</p>');
+}, { device: DESKTOP });
+
+test('notatka 1.20: wyrównanie i interlinia (zaznaczone akapity, bez zaznaczenia – cały tekst), link (Ctrl+K: wstawienie, zmiana, usunięcie), symbole z ostatnio użytymi, data i godzina; zapis i podgląd', async ({ open }) => {
+  const page = await open();
+  await page.clock.setFixedTime(new Date('2026-10-20T14:35:00'));
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.goto(`${page.url().split('#')[0]}#/library/module/${ids.module}`);
+  await page.getByRole('button', { name: 'Więcej poleceń: Financial Statements' }).click();
+  await menuItem(page, 'Dodaj notatkę');
+  const dialog = noteDialog(page);
+  const editor = dialog.locator('[data-testid=note-editor]');
+  await editor.waitFor();
+  const button = (command) => dialog.locator(`[data-testid=note-format-${command}]`);
+  assert.deepEqual(await dialog.locator('.note-toolbar__group').evaluateAll((groups) => groups.map((group) => group.getAttribute('aria-label'))), ['Tekst', 'Akapit', 'Wstaw']);
+  await editor.click();
+  await page.keyboard.type('Pierwszy akapit');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Drugi akapit');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Trzeci akapit');
+  // Bez ukrytego wartownika podmiany treści (zostaje po cofnięciu).
+  const blocks = () => editor.locator('p:not([data-s])').evaluateAll((items) => items.map((item) => `${item.dataset.align ?? ''}/${item.dataset.line ?? ''}`));
+
+  // Bez zaznaczenia – cały tekst do środka.
+  await button('paragraph').click();
+  const panel = dialog.locator('[data-testid=note-paragraph]');
+  await panel.waitFor();
+  assert.equal(await panel.locator('[data-testid=note-align-left]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await panel.locator('[data-testid="note-line-1.15"]').getAttribute('aria-pressed'), 'true');
+  await panel.locator('[data-testid=note-align-center]').click();
+  assert.deepEqual(await blocks(), ['center/', 'center/', 'center/']);
+  assert.equal(await panel.locator('[data-testid=note-align-center]').getAttribute('aria-pressed'), 'true');
+
+  // Zaznaczony drugi akapit: do prawej, interlinia 2,0 – Ctrl+Z cofa samą interlinię; potem 1,5.
+  await selectInEditor(editor, 'Drugi akapit');
+  await panel.locator('[data-testid=note-align-right]').click();
+  await panel.locator('[data-testid=note-line-2]').click();
+  assert.deepEqual(await blocks(), ['center/', 'right/2', 'center/']);
+  await page.keyboard.press('Control+z');
+  await waitUntil(async () => JSON.stringify(await blocks()) === JSON.stringify(['center/', 'right/', 'center/']), 'Ctrl+Z cofa interlinię');
+  await panel.locator('[data-testid="note-line-1.5"]').click();
+  assert.deepEqual(await blocks(), ['center/', 'right/1.5', 'center/']);
+  assert.equal(await panel.locator('[data-testid="note-line-1.5"]').getAttribute('aria-pressed'), 'true');
+  // Enter na końcu – nowy akapit ma to samo wyrównanie i interlinię.
+  await selectInEditor(editor, 'Drugi akapit', { caret: 'end' });
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Nowy');
+  assert.deepEqual(await blocks(), ['center/', 'right/1.5', 'right/1.5', 'center/']);
+  const ratio = await editor.locator('p', { hasText: 'Nowy' }).evaluate((item) => parseFloat(getComputedStyle(item).lineHeight) / parseFloat(getComputedStyle(item).fontSize));
+  assert.ok(Math.abs(ratio - 2) < 0.05, `interlinia 1,5 w edytorze (${ratio})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-120-wyrownanie.png') });
+  await button('paragraph').click();
+  assert.equal(await panel.isHidden(), true);
+
+  // Link na zaznaczonym tekście (Ctrl+K): niepoprawny adres – komunikat; „www.” dostaje https://.
+  await selectInEditor(editor, 'Pierwszy');
+  await page.keyboard.press('Control+k');
+  await expectText(sheet(page).locator('.sheet__title'), 'Wstaw link');
+  assert.equal(await sheet(page).locator('[data-testid=note-link-text]').count(), 0, 'zaznaczony tekst – bez pola tekstu linku');
+  await sheet(page).locator('[data-testid=note-link-url]').fill('javascript:alert(1)');
+  await sheetSubmit(page).click();
+  await expectText(sheet(page).locator('.form-message--error'), 'Wpisz adres strony');
+  await sheet(page).locator('[data-testid=note-link-url]').fill('www.przyklad.pl');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-120-link.png') });
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'okno linku zamknięte');
+  assert.equal(await editor.locator('a').getAttribute('href'), 'https://www.przyklad.pl');
+  assert.equal(await editor.locator('a').textContent(), 'Pierwszy');
+  // Kursor w linku: „Edytuj link” z adresem; e-mail dostaje mailto:.
+  await selectInEditor(editor, 'Pierw', { caret: 'end' });
+  await button('link').click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Edytuj link');
+  assert.equal(await sheet(page).locator('[data-testid=note-link-url]').inputValue(), 'https://www.przyklad.pl');
+  await sheet(page).locator('[data-testid=note-link-url]').fill('jan@example.com');
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await editor.locator('a').getAttribute('href')) === 'mailto:jan@example.com', 'zmieniony adres');
+  assert.equal(await editor.locator('a').textContent(), 'Pierwszy');
+  // Usunięcie linku – tekst zostaje.
+  await selectInEditor(editor, 'Pierw', { caret: 'end' });
+  await page.keyboard.press('Control+k');
+  await sheet(page).locator('[data-testid=note-link-remove]').click();
+  await waitUntil(async () => (await editor.locator('a').count()) === 0, 'link usunięty');
+  await expectText(editor.locator('p').first(), 'Pierwszy akapit');
+  // Bez zaznaczenia: adres i tekst linku; pisanie dalej jest już poza linkiem.
+  await selectInEditor(editor, 'Trzeci akapit', { caret: 'end' });
+  await page.keyboard.type(' ');
+  await button('link').click();
+  await sheet(page).locator('[data-testid=note-link-url]').fill('example.com/strona');
+  await sheet(page).locator('[data-testid=note-link-text]').fill('Przykład');
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await editor.locator('a').count()) === 1, 'wstawiony link');
+  await page.keyboard.type(' koniec');
+  assert.equal(await editor.locator('a').textContent(), 'Przykład');
+  assert.equal(await editor.locator('a').getAttribute('href'), 'https://example.com/strona');
+
+  // Symbole: średnica i stopień w miejscu kursora; ostatnio użyte – najnowszy pierwszy.
+  await button('symbol').click();
+  const symbols = dialog.locator('[data-testid=note-symbols]');
+  await symbols.waitFor();
+  assert.equal(await symbols.locator('[data-testid=note-symbols-recent]').count(), 0);
+  await symbols.getByRole('button', { name: 'średnica' }).click();
+  await symbols.getByRole('button', { name: 'stopień', exact: true }).click();
+  assert.deepEqual(await symbols.locator('[data-testid=note-symbols-recent] button').allTextContents(), ['°', '⌀']);
+  await expectText(editor, 'koniec⌀°');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-120-symbole.png') });
+  await button('symbol').click();
+  await page.keyboard.type(' ');
+
+  // Data i godzina: dzisiaj, teraz, sama godzina, wpisana ręcznie (sama data).
+  for (const [item, typed] of [['today', ' '], ['now', ' '], ['time', ' ']]) {
+    await button('date').click();
+    await page.locator(`[data-testid=note-date-${item}]`).click();
+    await page.keyboard.type(typed);
+  }
+  await button('date').click();
+  await expectText(page.locator('[data-testid=note-date-today]'), 'Dzisiaj – 20.10.2026');
+  await expectText(page.locator('[data-testid=note-date-now]'), 'Teraz – 20.10.2026, 14:35');
+  await page.locator('[data-testid=note-date-other]').click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Data i godzina');
+  await sheet(page).locator('[data-testid=note-date-day]').fill('2026-11-05');
+  await sheet(page).locator('[data-testid=note-date-clock]').fill('');
+  await sheetSubmit(page).click();
+  await expectText(editor, 'koniec⌀° 20.10.2026 20.10.2026, 14:35 14:35 05.11.2026');
+
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').first().waitFor();
+  assert.equal((await storedNote(page, ids.statements)).html, '<p data-align="center">Pierwszy akapit</p><p data-align="right" data-line="1.5">Drugi akapit</p>'
+    + '<p data-align="right" data-line="1.5">Nowy</p><p data-align="center">Trzeci akapit <a href="https://example.com/strona" target="_blank" rel="noopener noreferrer">Przykład</a>'
+    + ' koniec⌀° 20.10.2026 20.10.2026, 14:35 14:35 05.11.2026</p>');
+  const look = await dialog.locator('[data-testid=note-text]').first().evaluate((text) => [...text.querySelectorAll('p')].map((item) => ({
+    align: getComputedStyle(item).textAlign,
+    line: Math.round((parseFloat(getComputedStyle(item).lineHeight) / parseFloat(getComputedStyle(item).fontSize)) * 100) / 100
+  })));
+  assert.deepEqual(look.map((item) => item.align), ['center', 'right', 'right', 'center']);
+  assert.deepEqual(look.map((item) => item.line), [1.55, 2, 2, 1.55]);
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-120-podglad.png') });
+}, { device: DESKTOP });
+
+test('notatka 1.20: PDF – okno drukowania z całą notatką na stronach A4 (ścieżka, obraz z podpisem, nowa strona, wzór, wyjustowanie); Kopiuj – obraz zmniejszony do szerokości strony A4', async ({ open, context }) => {
+  const page = await open();
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin });
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate(async (id) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2000;
+    canvas.height = 1000;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#2f8f6f';
+    ctx.fillRect(0, 0, 2000, 1000);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 220px sans-serif';
+    ctx.fillText('Schemat', 520, 580);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    await window.lexicards.library.saveNote(id, {
+      html: '<h3>Bilans</h3><p data-align="justify">Bilans pokazuje majątek firmy i źródła jego finansowania na określony dzień. Aktywa to zasoby, '
+        + 'którymi firma dysponuje, a pasywa – źródła, z których te zasoby sfinansowano. Obie strony bilansu są zawsze równe.</p>'
+        + '<p>[[Schemat]]</p><hr data-page=""><p data-line="1.5">Druga strona: $a^2 + b^2 = c^2$, <span data-color="red">czerwony</span> tekst.</p>',
+      images: [{ bytes: await blob.arrayBuffer(), type: 'image/png', width: 2000, height: 1000, label: 'Schemat', caption: 'Bilans w skrócie' }],
+      numberFigures: true
+    });
+  }, ids.statements);
+  await openNotePreview(page, ids.statements);
+  const dialog = noteDialog(page);
+  const [lessonPath] = await page.evaluate((id) => [window.lexicards.library.lessonPath(id)], ids.statements);
+  const parts = lessonPath.split(' › ');
+  const appTitle = await page.title();
+
+  // Zamiast okna drukowania – zapis tego, co jest gotowe do druku.
+  await page.evaluate(() => {
+    window.printed = [];
+    window.print = () => window.printed.push({ title: document.title, images: [...document.querySelectorAll('.note-print img')].map((image) => image.complete && image.naturalWidth) });
+  });
+  await dialog.locator('[data-testid=note-pdf]').click();
+  await waitUntil(() => page.evaluate(() => window.printed.length === 1), 'okno drukowania');
+  assert.deepEqual(await page.evaluate(() => window.printed[0]), { title: parts[parts.length - 1], images: [2000] }, 'nazwa pliku PDF – nazwa lekcji; obraz wczytany');
+  const printed = page.locator('[data-testid=note-print]');
+  assert.equal(await printed.evaluate((element) => getComputedStyle(element).display), 'none', 'na ekranie wydruku nie widać');
+  await expectText(printed.locator('.note-print__path'), parts.slice(0, -1).join(' › '));
+  await expectText(printed.locator('.note-print__title'), parts[parts.length - 1]);
+  await expectText(printed.locator('figcaption'), 'Rys. 1. Bilans w skrócie');
+  assert.equal(await printed.locator('.note-flow__break').count(), 1);
+  assert.equal(await printed.locator('math').count(), 1, 'wzór');
+  assert.equal(await printed.locator('p[data-align=justify]').count(), 1);
+
+  // Wydruk: tylko notatka (bez aplikacji i okna), jasne kolory; PDF z Chromium – dwie strony A4.
+  await page.emulateMedia({ media: 'print' });
+  assert.equal(await printed.evaluate((element) => getComputedStyle(element).display), 'block');
+  assert.equal(await page.locator('#app').evaluate((element) => getComputedStyle(element).display), 'none');
+  assert.equal(await dialog.evaluate((element) => getComputedStyle(element).display), 'none');
+  assert.equal(await printed.locator('[data-color=red]').evaluate((element) => getComputedStyle(element).color), 'rgb(215, 0, 21)');
+  const figure = await printed.locator('.note-flow__figure img').evaluate((image) => ({ width: image.getBoundingClientRect().width, page: image.closest('.note-print').getBoundingClientRect().width }));
+  assert.ok(Math.abs(figure.width - figure.page) < 2, `obraz na szerokość strony (${figure.width} z ${figure.page})`);
+  const pdf = await page.pdf({ format: 'A4', preferCSSPageSize: true });
+  await writeFile(path.join(OUTPUT, 'notatka-120.pdf'), pdf);
+  const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page(?![s\w])/g) ?? []).length;
+  assert.equal(pages, 2, 'dwie strony A4 (nowa strona w notatce)');
+  await page.emulateMedia({ media: 'screen' });
+  // Po zamknięciu okna drukowania – wydruk znika, tytuł strony wraca.
+  await page.evaluate(() => window.dispatchEvent(new window.Event('afterprint')));
+  assert.equal(await printed.count(), 0);
+  assert.equal(await page.title(), appTitle);
+
+  // Kopiuj: obraz 2000×1000 – w schowku 605×303 (szerokość tekstu strony A4), wyjustowanie i interlinia w stylu.
+  await dialog.locator('[data-testid=note-copy]').click();
+  await page.locator('.toast', { hasText: 'Skopiowano notatkę' }).waitFor();
+  const copied = await page.evaluate(async () => (await (await (await navigator.clipboard.read())[0].getType('text/html')).text()));
+  assert.match(copied, /<img [^>]*width="605" height="303" style="width:605px;height:auto;max-width:100%"/);
+  assert.ok(copied.includes('style="text-align:justify"'), 'wyjustowanie w schowku');
+  assert.ok(copied.includes('style="line-height:150%"'), 'interlinia w schowku');
+}, { device: DESKTOP });
+
+test('notatka 1.20 na telefonie: pasek w grupach przewijany w bok, panele wyrównania i symboli mieszczą się; w podglądzie Kopiuj, PDF i strony w jednym wierszu; symbole w polu tekstowym rysunku', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate((id) => window.lexicards.library.saveNote(id, { html: `<p>${'Bilans pokazuje majątek firmy. '.repeat(120)}</p>` }), ids.statements);
+  await openNotePreview(page, ids.statements);
+  const dialog = noteDialog(page);
+  // Stopka: trzy elementy obok siebie, w oknie.
+  const footer = await dialog.locator('.note-sheet__footer').evaluate((element) => {
+    const panel = element.closest('.sheet__panel').getBoundingClientRect();
+    return [...element.children].filter((child) => !child.hidden).map((child) => {
+      const box = child.getBoundingClientRect();
+      return { middle: Math.round(box.top + box.height / 2), left: box.left - panel.left, right: panel.right - box.right, text: child.innerText.trim() };
+    });
+  });
+  assert.equal(footer.length, 3, JSON.stringify(footer));
+  assert.equal(new Set(footer.map((item) => item.middle)).size, 1, `jeden wiersz: ${JSON.stringify(footer)}`);
+  assert.ok(footer.every((item) => item.left >= 0 && item.right >= 0), `w oknie: ${JSON.stringify(footer)}`);
+  assert.deepEqual(footer.slice(0, 2).map((item) => item.text), ['Kopiuj', 'PDF']);
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-120-telefon-podglad.png') });
+
+  await dialog.locator('[data-testid=note-right]').click();
+  const editor = dialog.locator('[data-testid=note-editor]');
+  await editor.waitFor();
+  const toolbar = dialog.locator('.note-toolbar');
+  const scroll = await toolbar.evaluate((element) => ({ scroll: element.scrollWidth, width: element.clientWidth, wraps: getComputedStyle(element).flexWrap }));
+  assert.equal(scroll.wraps, 'nowrap');
+  assert.ok(scroll.scroll > scroll.width, 'pasek przewija się w bok');
+  await selectInEditor(editor, 'Bilans', { caret: 'end' });
+  await dialog.locator('[data-testid=note-format-paragraph]').click();
+  const paragraph = dialog.locator('[data-testid=note-paragraph]');
+  await paragraph.waitFor();
+  const fits = (locator) => locator.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return element.scrollWidth <= element.clientWidth + 1 && box.right <= window.innerWidth && document.documentElement.scrollWidth <= window.innerWidth;
+  });
+  assert.equal(await fits(paragraph), true, 'panel wyrównania mieści się');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-120-telefon-akapit.png') });
+  await dialog.locator('[data-testid=note-format-symbol]').evaluate((element) => element.scrollIntoView({ inline: 'center' }));
+  await dialog.locator('[data-testid=note-format-symbol]').click();
+  const symbols = dialog.locator('[data-testid=note-symbols]');
+  await symbols.waitFor();
+  assert.equal(await paragraph.isHidden(), true, 'jeden panel naraz');
+  assert.equal(await fits(symbols), true, 'panel symboli mieści się');
+  await symbols.getByRole('button', { name: 'promil' }).click();
+  await expectText(editor, 'Bilans‰');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-120-telefon-symbole.png') });
+
+  // Rysunek: symbole pod polem tekstowym – znak w miejscu kursora.
+  await dialog.locator('[data-testid=note-image-draw]').click();
+  const drawing = drawingDialog(page);
+  await drawing.waitFor();
+  await waitUntil(() => drawing.locator('[data-testid=drawing-canvas]').evaluate((canvas) => canvas.width > 0), 'Płótno gotowe');
+  await drawing.locator('[data-testid=drawing-insert-text]').click();
+  const input = page.locator('[data-testid=drawing-text-input]');
+  await input.fill('Kąt 30 i 45');
+  await input.evaluate((element) => element.setSelectionRange(6, 6));
+  await page.locator('[data-testid=drawing-symbols-toggle]').click();
+  await expectText(page.locator('[data-testid=drawing-symbols-recent]'), '‰');
+  await page.locator('[data-testid=drawing-symbols]').getByRole('button', { name: 'stopień', exact: true }).click();
+  assert.equal(await input.inputValue(), 'Kąt 30° i 45');
+  assert.equal(await fits(page.locator('[data-testid=drawing-symbols]')), true, 'symbole w oknie pola tekstowego mieszczą się');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-120-telefon-symbole.png') });
+}, { device: PHONE });
+
+test('Nauka 1.20: nad fiszką cała ścieżka Dziedzina › Moduł › Lekcja; w Ustawieniach można ukryć „Powtórka na dziś” i „Ostatnia sesja” (na Starcie zostają)', async ({ open, context }) => {
+  await context.clock.install({ time: new Date('2026-10-12T10:00:00') });
+  const page = await open();
+  const ids = await seedStudy(page);
+  await openStudySetup(page, `#/study/lesson/${ids.basicsID}`);
+  await startStudy(page);
+  const lesson = page.locator('[data-testid=study-lesson]');
+  await expectText(lesson, 'Biznes › Finanse › Podstawy');
+  assert.equal(await lesson.getAttribute('title'), 'Biznes › Finanse › Podstawy');
+  await expectText(lesson.locator('.study__lesson-name'), 'Podstawy');
+  // Długa ścieżka na telefonie: skraca się dziedzina i moduł, nazwa lekcji zostaje cała.
+  await page.evaluate(async ([domainID, moduleID]) => {
+    await window.lexicards.library.updateDomain(domainID, { name: 'Rachunkowość zarządcza i finansowa' });
+    await window.lexicards.library.updateModule(moduleID, { name: 'Sprawozdania finansowe – bilans' });
+  }, [ids.domainID, ids.financeID]);
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await expectText(lesson, 'Rachunkowość zarządcza i finansowa › Sprawozdania finansowe – bilans › Podstawy');
+  const fit = await lesson.evaluate((element) => {
+    const name = element.querySelector('.study__lesson-name');
+    const trail = element.querySelector('.study__path');
+    return { name: name.scrollWidth <= name.clientWidth, trail: trail.scrollWidth > trail.clientWidth, inside: element.getBoundingClientRect().right <= window.innerWidth };
+  });
+  assert.deepEqual(fit, { name: true, trail: true, inside: true });
+  await page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== 'running'));
+  await page.screenshot({ path: path.join(OUTPUT, 'nauka-120-sciezka.png') });
+  for (let index = 0; index < 3; index += 1) await assess(page, 'all', 'know');
+  await page.click('[data-testid=summary-done]');
+  await page.waitForFunction(() => location.hash === '#/start');
+  await page.clock.fastForward('11:00');
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  await tab(page, 'Nauka');
+  await page.locator('[data-testid=study-review]').waitFor();
+  await page.locator('[data-testid=study-repeat-last]').waitFor();
+
+  // Ustawienia: obie grupy wyłączone – na ekranie Nauka ich nie ma, na Starcie zostają.
+  await page.evaluate(() => { location.hash = '#/settings'; });
+  await expectText(page.locator('.group__title', { hasText: 'Ekran Nauka' }), 'Ekran Nauka');
+  assert.equal(await page.locator('[data-testid=study-show-review]').isChecked(), true);
+  await page.locator('[data-testid=study-show-review]').click();
+  await page.locator('[data-testid=study-show-last]').click();
+  await waitUntil(() => page.evaluate(() => {
+    const settings = window.lexicards.library.getSettings();
+    return settings.studyShowReview === false && settings.studyShowLast === false;
+  }), 'zapisane ustawienia');
+  await page.evaluate(() => document.querySelector('[data-testid=study-show-review]').scrollIntoView({ block: 'center' }));
+  await page.screenshot({ path: path.join(OUTPUT, 'ustawienia-120-nauka.png') });
+  await tab(page, 'Nauka');
+  await page.locator('[data-testid=study-start]').waitFor();
+  assert.equal(await page.locator('[data-testid=study-review]').count(), 0);
+  assert.equal(await page.locator('[data-testid=study-repeat-last]').count(), 0);
+  await tab(page, 'Start');
+  await page.locator('[data-testid=start-review]').waitFor();
+  await page.locator('[data-testid=start-repeat-last]').waitFor();
+  // Ponowne włączenie – grupy wracają.
+  await page.evaluate(() => window.lexicards.library.updateSettings({ studyShowReview: true, studyShowLast: true }));
+  await tab(page, 'Nauka');
+  await page.locator('[data-testid=study-review]').waitFor();
+  await page.locator('[data-testid=study-repeat-last]').waitFor();
+});
+
 test('rysunek na zdjęciu: „Rysuj na zdjęciu” – zdjęcie pod kreskami, sygnatura i miejsce bez zmian; bez rysika rysuje palec; nowy pusty rysunek nie trafia do notatki; kopia zapasowa przenosi kreski', async ({ open, browser, track }) => {
   const page = await open();
   const { ids } = await openNoteWithImages(page, { html: '<p>Schemat:</p><p>[[Schemat]]</p>', labels: ['Schemat'] });

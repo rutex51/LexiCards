@@ -62,6 +62,7 @@ import { icon } from './icons.js';
 import { openMathHelp } from './math.js';
 import { paintShape, paintTemplate } from './drawing-paint.js';
 import { prepareImage } from './images.js';
+import { symbolField } from './symbols.js';
 
 const PEN_KEY = 'lexicards-pen-seen';
 /** Zakres powiększenia względem „cała strona na ekranie”. */
@@ -2751,6 +2752,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           field('Tekst', input, {
             hint: label ? 'Pusty tekst usuwa go z kształtu.' : 'Tekst jest na środku kształtu (odcinka – nad nim) i przesuwa się, obraca i zmienia szerokość razem z nim.'
           }),
+          // Symbole (od 1.20): %, °, §, ⌀ … w miejscu kursora.
+          symbolField(input, { testID: 'drawing-symbols' }),
           options
         ],
         onSubmit: () => { pending = value; },
@@ -3103,6 +3106,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         submitLabel: element ? 'Zapisz' : 'Wstaw',
         build: () => [
           field('Tekst', input, { hint: element ? 'Pusty tekst usuwa pole z rysunku.' : 'Enter zaczyna nowy wiersz, długi wiersz łamie się sam.' }),
+          symbolField(input, { testID: 'drawing-symbols' }),
           options
         ],
         onSubmit: () => { pending = value; },

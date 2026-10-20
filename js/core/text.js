@@ -107,3 +107,34 @@ export function joinList(parts) {
   if (parts.length === 1) return parts[0];
   return `${parts.slice(0, -1).join(', ')} i ${parts[parts.length - 1]}`;
 }
+
+const pad2 = (value) => String(value).padStart(2, '0');
+
+/** Data do wstawienia w notatce (od 1.20): „20.10.2026”. */
+export function formatDay(date) {
+  return `${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}.${date.getFullYear()}`;
+}
+
+/** Godzina: „14:35”. */
+export function formatClock(date) {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+/** Data i godzina: „20.10.2026, 14:35”. */
+export function formatDayTime(date) {
+  return `${formatDay(date)}, ${formatClock(date)}`;
+}
+
+/**
+ * Data i godzina wpisane ręcznie – wartości pól daty (rrrr-mm-dd) i godziny (gg:mm): obie –
+ * „20.10.2026, 14:35”, jedna z nich – sama data albo godzina; puste albo niepoprawne – null.
+ */
+export function formatEnteredDate(day, time) {
+  const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day ?? '').trim());
+  const clock = /^(\d{1,2}):(\d{2})/.exec(String(time ?? '').trim());
+  const dayText = date && Number(date[2]) >= 1 && Number(date[2]) <= 12 && Number(date[3]) >= 1 && Number(date[3]) <= 31
+    ? `${date[3]}.${date[2]}.${date[1]}` : null;
+  const clockText = clock && Number(clock[1]) < 24 && Number(clock[2]) < 60 ? `${pad2(clock[1])}:${clock[2]}` : null;
+  if (dayText && clockText) return `${dayText}, ${clockText}`;
+  return dayText ?? clockText;
+}

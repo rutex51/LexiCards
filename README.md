@@ -1,4 +1,4 @@
-# LexiCards 1.19
+# LexiCards 1.20
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -28,8 +28,9 @@ Przeciąganie wierszy i kolejność list biblioteki – A–Z, Z–A, według da
 Wycinek, „Osadź” w notatce, wymiary kształtu z klawiatury, wypełnienie i tekst kształtu (wersja 1.17): [docs/RELEASE-1.17.md](docs/RELEASE-1.17.md).
 Wcięcia (Tab), indeksy, wielkość i własny kolor tekstu, podpisy obrazów „Rys. N.”, przeciąganie obrazów w notatce (wersja 1.18): [docs/RELEASE-1.18.md](docs/RELEASE-1.18.md).
 Rysunek: wielkość szablonu, Shift i Ctrl, środkowy przycisk myszy, szyk, kilka kartek, zakończenia odcinka, stałe wymiary (wersja 1.19): [docs/RELEASE-1.19.md](docs/RELEASE-1.19.md).
+Notatki: wyrównanie i interlinia, linki, symbole, data i godzina, PDF, pełne „Usuń formatowanie”, Ctrl+Z po wstawieniu sygnatury; ścieżka nad fiszką (wersja 1.20): [docs/RELEASE-1.20.md](docs/RELEASE-1.20.md).
 
-## Co potrafi wersja 1.19
+## Co potrafi wersja 1.20
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -66,7 +67,12 @@ Rysunek: wielkość szablonu, Shift i Ctrl, środkowy przycisk myszy, szyk, kilk
   (kartka zagina się od rogu, za który ją chwycisz), przyciskami ‹ › albo strzałkami; na komputerze
   dwie strony leżą obok siebie jak w otwartej książce; „Nowa strona” w edytorze zaczyna stronę tam, gdzie chcesz. Wklejony tekst z Worda,
   stron WWW czy Notatek zachowuje formatowanie, wklejony obraz trafia do obrazów notatki, a
-  „Kopiuj notatkę” przenosi ją z formatowaniem i obrazami do innej aplikacji.
+  „Kopiuj notatkę” przenosi ją z formatowaniem i obrazami do innej aplikacji (od 1.20 obrazy
+  w wielkości mieszczącej się na stronie A4). Od 1.20: wyrównanie akapitów (do lewej, do środka,
+  do prawej, wyjustowane) i interlinia (1,0 · 1,15 · 1,5 · 2,0), linki do stron i adresów e-mail
+  (Ctrl+K), symbole (%, ‰, °, §, ⌀…; także w polach tekstowych rysunku), data i godzina jednym
+  dotknięciem, **PDF** – notatka w układzie A4 w oknie drukowania; „Usuń formatowanie” czyści wszystko
+  oprócz linków, a Ctrl+Z cofa też wstawienie odwołania do obrazu i nowej strony.
 - Załączniki notatek: PDF, Word, Excel, PowerPoint i inne pliki do 50 MB. Na iPhonie otwierasz je
   przez systemowy arkusz udostępniania (Word, Excel, Książki, „Zachowaj w Plikach”…), na komputerze
   PDF otwiera się w nowej karcie, a pozostałe pliki są pobierane i otwierają się w swoich programach.
@@ -152,7 +158,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.16 – przeciąganie wierszy, kolejność list](docs/RELEASE-1.16.md),
 [wersja 1.17 – wycinek, „Osadź”, wymiary, wypełnienie i tekst kształtu](docs/RELEASE-1.17.md),
 [wersja 1.18 – wcięcia, indeksy, wielkość i kolor tekstu, podpisy obrazów, przeciąganie obrazów](docs/RELEASE-1.18.md),
-[wersja 1.19 – szablon, Shift i Ctrl, środkowy przycisk, szyk, kartki, zakończenia odcinka, stałe wymiary](docs/RELEASE-1.19.md).
+[wersja 1.19 – szablon, Shift i Ctrl, środkowy przycisk, szyk, kartki, zakończenia odcinka, stałe wymiary](docs/RELEASE-1.19.md),
+[wersja 1.20 – wyrównanie i interlinia, linki, symbole, data i godzina, PDF, „Usuń formatowanie”, ścieżka nad fiszką](docs/RELEASE-1.20.md).
 
 ## Jak korzystać
 
@@ -256,12 +263,42 @@ Kolejność obrazów zmieniasz przeciąganiem (od 1.18): myszą albo rysikiem od
 przytrzymania; przy krawędzi siatka przewija się sama. Gdy obrazy nie mieszczą się w dwóch rzędach,
 siatka ma dwa rzędy i przewija się w bok (jak dziedziny na Starcie).
 
-**Formatowanie tekstu** (pasek nad tekstem): pogrubienie, kursywa, podkreślenie, od 1.18 **indeks
-górny i dolny** (x², x₂; Ctrl+. i Ctrl+,), **wielkość tekstu** (Mała, Średnia, Duża, Bardzo duża),
-kolor, nagłówek, listy, od 1.18 **wcięcie** (przyciski albo Tab i Shift+Tab – do czterech stopni,
-w liście – punkt poziom niżej), nowa strona, wzór i wyczyszczenie formatowania. Panel koloru ma pięć
-kolorów, do trzech ostatnich **własnych** (wspólnych z rysunkiem) i **„+”** – okno z siatką kolorów,
-suwakami R, G, B z kodem HEX i – w Chrome i Edge na komputerze – pipetką.
+**Formatowanie tekstu** (pasek nad tekstem, od 1.20 w trzech grupach – na komputerze i iPadzie
+w dwóch wierszach, na telefonie przewijany w bok). **Tekst:** pogrubienie, kursywa, podkreślenie,
+od 1.18 **indeks górny i dolny** (x², x₂; Ctrl+. i Ctrl+,), **wielkość tekstu** (Mała, Średnia, Duża,
+Bardzo duża), kolor i **Usuń formatowanie**. **Akapit:** nagłówek, listy, od 1.18 **wcięcie**
+(przyciski albo Tab i Shift+Tab – do czterech stopni, w liście – punkt poziom niżej), od 1.20
+**wyrównanie i interlinia**. **Wstaw:** od 1.20 link, symbole, data i godzina, a także nowa strona,
+wzór i ściągawka. Panel koloru ma pięć kolorów, do trzech ostatnich **własnych** (wspólnych
+z rysunkiem) i **„+”** – okno z siatką kolorów, suwakami R, G, B z kodem HEX i – w Chrome i Edge na
+komputerze – pipetką.
+
+**Wyrównanie i interlinia** (od 1.20): przycisk z liniami i strzałką otwiera panel – **do lewej, do
+środka, do prawej, wyjustuj** i interlinia **1,0 · 1,15 · 1,5 · 2,0** (1,15 to dotychczasowy odstęp).
+Zmieniają zaznaczone akapity (także nagłówki i punkty list), a bez zaznaczenia – cały tekst. Enter
+w takim akapicie zaczyna następny z tym samym ustawieniem. Wklejony tekst z Worda zachowuje
+wyrównanie (np. wyśrodkowany tytuł).
+
+**Usuń formatowanie** (od 1.20 – wszystko oprócz linków): w zaznaczonym tekście znika pogrubienie,
+kursywa, podkreślenie, przekreślenie, indeksy, kolor i wielkość, a akapity objęte zaznaczeniem stają
+się zwykłymi akapitami – bez nagłówka, listy, wcięcia, wyrównania i interlinii. Bez zaznaczenia –
+akapit, w którym jest kursor. Ctrl+Z cofa to jednym krokiem (tak samo wyrównanie, interlinię,
+**Wstaw do tekstu** i **Nowa strona** – po cofnięciu kursor wraca tam, gdzie był).
+
+**Link** (od 1.20, Ctrl+K): z zaznaczonym tekstem – wpisujesz adres; bez zaznaczenia – adres i tekst
+linku; z kursorem w linku – **Edytuj link** (inny adres albo **Usuń link**). Adres strony (`https://…`,
+`www.…` albo sama domena – dostaje `https://`) albo e-mail (dostaje `mailto:`). W podglądzie link
+otwiera się w nowej karcie, w edytorze – Ctrl+kliknięcie.
+
+**Symbole** (od 1.20, przycisk Ω): panel z grupami – często używane (`%` `‰` `°` `§` `⌀` średnica,
+`±` `×` `÷` `≈` `≠` `≤` `≥` `∞` `√`, myślniki, cudzysłowy…), matematyka, litery greckie, strzałki,
+jednostki i znaki – oraz **Ostatnio użyte** (osiem, zapamiętane na urządzeniu, wspólne z rysunkiem).
+Znak trafia w miejsce kursora; panel zostaje otwarty, więc można wstawić kilka. W rysunku – pod polem
+tekstu (pole tekstowe i tekst na kształcie) przycisk **Symbole (%, °, §, ⌀…)**.
+
+**Data i godzina** (od 1.20, przycisk z kalendarzem): **Dzisiaj** („20.10.2026”), **Teraz**
+(„20.10.2026, 14:35”), **Godzina** („14:35”) albo **Inna data lub godzina…** – pola daty i godziny
+(z jednym pustym – sama data albo sama godzina). Wstawiane jako zwykły tekst.
 
 **Podpisy obrazów** (od 1.18): w menu obrazu **Dodaj podpis** – np. „Wyniki sprzedaży” (do 120
 znaków). Podpis jest wyśrodkowany pod obrazem w podglądzie, w powiększeniu i w „Kopiuj notatkę”.
@@ -279,6 +316,16 @@ przed tekstem albo po nim – według wyboru przy obrazach.
 **Notatka po angielsku:** w edytorze nad tekstem jest przełącznik **Polski / Angielski** – każda
 wersja ma osobną treść, obrazy są wspólne. W podglądzie notatki z obiema wersjami przełącznik
 **PL / EN** obok nazwy lekcji; wybór jest zapamiętany. „Kopiuj notatkę” kopiuje widoczną wersję.
+
+**Kopiuj i PDF** (pod stroną notatki; na telefonie „Kopiuj”): **Kopiuj notatkę** kładzie notatkę do
+schowka z formatowaniem i obrazami – od 1.20 obraz ma wymiary wpisane wprost, najwyżej 16 cm
+szerokości (tekst strony A4 przy marginesach 2,5 cm) i 22,7 cm wysokości, więc w Wordzie i OneNote
+mieści się na kartce (plik obrazu ma pełną rozdzielczość). **PDF** (od 1.20) otwiera zwykłe okno
+drukowania z całą notatką w układzie A4: ścieżka i nazwa lekcji, tekst z formatowaniem, wzory, obrazy
+na szerokość strony z podpisami, „Nowa strona” – nowa strona wydruku; w jasnych kolorach także przy
+ciemnym motywie. Na Windows wybierz **Zapisz jako PDF** (Edge, Chrome) albo **Microsoft Print to PDF**;
+na iPhonie i iPadzie w oknie drukowania – **Udostępnij** → **Zachowaj w Plikach**. Nazwa pliku to nazwa
+lekcji.
 
 **Czytanie na głos:** przycisk z głośnikiem obok nazwy lekcji czyta widoczną wersję notatki głosem
 z Ustawień (synteza mowy urządzenia, bez internetu), zdanie po zdaniu, od widocznej strony: czytany
@@ -530,11 +577,16 @@ mają datę importu.
 Zakresy „Nie znam pojęcia”, „Nie znam definicji” i „Nie znam przykładu” zbierają fiszki, przy których
 w ostatniej ocenie w danym kierunku ten kafelek został niezaznaczony – sesja tylko z jednym rodzajem braków.
 
+Nad fiszką jest cała ścieżka (od 1.20): **Dziedzina › Moduł › Lekcja** – gdy się nie mieści, najpierw
+skraca się dziedzina i moduł, a nazwa lekcji zostaje.
+
 Strzałka w pasku u góry cofa ostatnią decyzję. Przerwaną sesję można wznowić ze Startu.
 Po sesji można jednym dotknięciem powtórzyć fiszki odłożone (wszystkie z „Powtórz”), częściowo
 zapamiętane („Powtórz” z częścią kafelków), nieznane („Powtórz” bez kafelków) albo całą sesję – na podsumowaniu, a po jego zamknięciu
 w zakładce Nauka (grupa „Ostatnia sesja”); całą sesję także ze Startu. Zakres „Częściowo zapamiętane”
 działa też dla dowolnego materiału. Formularz sesji pamięta ostatnio wybrany materiał.
+Grupy „Powtórka na dziś” i „Ostatnia sesja” na ekranie Nauka można ukryć (od 1.20): **Ustawienia →
+Ekran Nauka** – na Starcie te przyciski zostają zawsze.
 Na komputerze działa klawiatura: spacja odwraca, 1 2 3 przełączają kafelki, ← i → zatwierdzają, Z cofa.
 
 ### Powtórki
@@ -693,7 +745,11 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 24. **Wersja 1.17: wycinek (prawy przycisk, tryb „Wycinek”), „Osadź” – fragment rysunku jako obraz notatki, wymiary i kąt pochylenia kształtu z klawiatury, wypełnienie i tekst kształtu** – gotowe.
 25. **Wersja 1.18: notatki – wcięcia (Tab), indeks górny i dolny, wielkość tekstu, własne kolory tekstu, podpisy obrazów z numeracją „Rys. N.”, przeciąganie obrazów (dwa rzędy z przewijaniem w bok)** – gotowe.
 26. **Wersja 1.19: rysunek – skala szablonu wpisywana i przeciągnięciem narożnika, Shift (proporcje), Ctrl (chwilowe zaznaczanie), przesuwanie środkowym przyciskiem, szyk liniowy i kołowy, kilka kartek, zakończenia odcinka, stałe wymiary** – gotowe.
-27. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
+27. **Wersja 1.20: notatki – wyrównanie i interlinia, linki (Ctrl+K), symbole, data i godzina, PDF (okno drukowania A4), „Usuń formatowanie” – wszystko oprócz linków, Ctrl+Z po „Wstaw do tekstu” i „Nowa strona”, „Kopiuj” z obrazami w wielkości strony A4; Nauka – ścieżka nad fiszką, ukrywanie grup** – gotowe.
+28. **Wersja 1.21: tabele w notatkach, na rysunku i na zdjęciu („Tab. N.”), okno grubości zakreślacza, karteczki na rysunku** – w przygotowaniu.
+29. **Wersja 1.22: rysunek – liniuszek promieniowy, kółko przewraca kartki (z animacją), wymiarowanie techniczne z tolerancjami, symbole GD&T, przyciąganie strzałek do krawędzi i narożników** – w przygotowaniu.
+30. **Wersja 1.23: eksport sesji nauki do kalendarza (plik .ics dla Outlooka) – cykliczne, prywatne, z linkami do lekcji** – w przygotowaniu.
+31. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

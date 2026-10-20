@@ -170,6 +170,36 @@ export class SettingsScreen {
     );
   }
 
+  /** Ekran Nauka (od 1.20): grupy „Powtórka na dziś” i „Ostatnia sesja” można ukryć – są też na Starcie. */
+  #studyGroup() {
+    const { library } = this.ctx;
+    const settings = library.getSettings();
+    const save = async (patch) => {
+      try {
+        await library.updateSettings(patch);
+      } catch (error) {
+        await showError(error);
+      }
+    };
+    return group({
+      title: 'Ekran Nauka',
+      footer: 'Powtórkę na dziś i ostatnią sesję znajdziesz też na ekranie Start – tam zostają zawsze.'
+    },
+      checkRow({
+        checked: settings.studyShowReview !== false,
+        title: 'Pokazuj „Powtórka na dziś”',
+        testID: 'study-show-review',
+        onChange: (value) => save({ studyShowReview: value })
+      }),
+      checkRow({
+        checked: settings.studyShowLast !== false,
+        title: 'Pokazuj „Ostatnia sesja”',
+        testID: 'study-show-last',
+        onChange: (value) => save({ studyShowLast: value })
+      })
+    );
+  }
+
   /** Powtórki FSRS: docelowa skuteczność, czyli jak często fiszki wracają. */
   #reviewGroup() {
     const { library } = this.ctx;
@@ -590,6 +620,7 @@ export class SettingsScreen {
           library.isEmpty() ? null : actionRow({ label: 'Eksportuj bibliotekę do pliku', iconName: 'download', onClick: () => openExportSheet(ctx, { kind: 'all' }), testID: 'settings-export' })
         ),
         this.#reviewGroup(),
+        this.#studyGroup(),
         this.#libraryGroup(),
         this.#speechGroup(),
         this.#storageGroup(),

@@ -1947,12 +1947,24 @@ a.row__main:active,
 }
 
 .study__lesson {
+  display: flex;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  text-overflow: ellipsis;
   color: var(--text-2);
 }
+
+/* Ścieżka nad fiszką (od 1.20): gdy się nie mieści, najpierw skraca się dziedzina i moduł, potem lekcja. */
+.study__path,
+.study__lesson-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.study__path { flex: 0 1 auto; min-width: 1.6em; white-space: pre; }
+.study__lesson-name { flex: none; max-width: 100%; color: var(--text); font-weight: 500; }
+.study__path + .study__lesson-name { max-width: calc(100% - 1.6em); }
 
 .study__counter {
   flex: none;
@@ -4219,6 +4231,22 @@ a.row__main:active,
 .note-text > * + blockquote,
 .note-text blockquote > * + * { margin-top: 0.7em; }
 
+/* Wyrównanie i interlinia (od 1.20). Interlinia 1,15 to zwykły odstęp notatki (bez znacznika);
+   lista zagnieżdżona w punkcie ma własne ustawienia, nie dziedziczy ich po punkcie. */
+.note-text [data-align="center"] { text-align: center; }
+.note-text [data-align="right"] { text-align: right; }
+.note-text [data-align="justify"] { text-align: justify; hyphens: auto; }
+.note-text [data-line="1"] { line-height: 1.35; }
+.note-text [data-line="1.5"] { line-height: 2; }
+.note-text [data-line="2"] { line-height: 2.7; }
+.note-text h3[data-line="1"] { line-height: 1.15; }
+.note-text h3[data-line="1.5"] { line-height: 1.75; }
+.note-text h3[data-line="2"] { line-height: 2.3; }
+.note-text li[data-align] > :is(ul, ol) { text-align: start; }
+.note-text li[data-line] > :is(ul, ol) { line-height: 1.55; }
+/* Akapit wyjustowany podzielony między strony: ostatni wiersz na stronie też do obu krawędzi. */
+.note-text .note-page__split[data-align="justify"] { text-align-last: justify; }
+
 /* Okno notatki. */
 @media (min-width: 700px) {
   .dialog.sheet.note-dialog { width: min(720px, calc(100vw - 48px)); }
@@ -4488,6 +4516,13 @@ a.row__main:active,
 
 .note-sheet__footer:empty { display: none; }
 
+/* Kopiuj i PDF (od 1.20) obok przewracania stron – na telefonie węższe. */
+@media (max-width: 479px) {
+  .note-sheet__footer { gap: 8px; }
+  .note-sheet__copy { padding: 0 12px; }
+  .note-sheet__copy-more { display: none; }
+}
+
 .note-pager {
   display: flex;
   align-items: center;
@@ -4563,12 +4598,25 @@ a.row__main:active,
 
 .note-toolbar {
   display: flex;
-  gap: 2px;
+  gap: 4px 14px;
   padding: 4px;
   border-radius: var(--radius);
   background: var(--surface);
   overflow-x: auto;
   scrollbar-width: none;
+}
+
+/* Grupy przycisków (od 1.20): tekst, akapit, wstawianie – oddzielone odstępem (kreska na początku
+   drugiego wiersza wyglądałaby jak błąd). */
+.note-toolbar__group {
+  flex: none;
+  display: flex;
+  gap: 2px;
+}
+
+/* Szeroki ekran: grupy w wierszach zamiast przewijania. */
+@media (min-width: 600px) {
+  .note-toolbar { flex-wrap: wrap; overflow-x: visible; }
 }
 
 .note-toolbar::-webkit-scrollbar { display: none; }
@@ -4666,6 +4714,103 @@ a.row__main:active,
 }
 
 .note-sizes__option:active { background: var(--pressed); }
+
+/* Wyrównanie i interlinia (od 1.20). */
+.note-paragraph {
+  display: grid;
+  gap: 8px;
+  padding: 10px 8px 2px;
+}
+
+.note-paragraph__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.note-paragraph__label {
+  min-width: 6.5em;
+  font-size: var(--size-sub);
+  color: var(--text-2);
+}
+
+.note-paragraph__options {
+  display: flex;
+  gap: 6px;
+}
+
+.note-paragraph__option {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: var(--fill);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.note-paragraph__option[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.note-paragraph__option:active { background: var(--pressed); }
+
+.note-paragraph__hint {
+  font-size: var(--size-foot);
+  color: var(--text-2);
+}
+
+/* Symbole (od 1.20): w notatce pod paskiem formatowania, w rysunku pod polem tekstu. */
+.symbols {
+  display: grid;
+  gap: 8px;
+  padding: 10px 8px 2px;
+  max-height: min(46vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.symbols[hidden] { display: none; }
+
+.symbols__label {
+  margin-bottom: 4px;
+  font-size: var(--size-foot);
+  color: var(--text-2);
+}
+
+.symbols__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.symbols__item {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  background: var(--fill);
+  color: var(--text);
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.symbols__item:active { background: var(--pressed); }
+
+@media (hover: hover) {
+  .symbols__item:hover { background: var(--hover); }
+}
+
+.symbols-field { display: grid; gap: 4px; }
+.symbols-field .symbols { padding: 4px 0 0; }
+.symbols__toggle { justify-self: start; min-height: 40px; padding: 0 10px; gap: 6px; font-weight: 500; }
+
+.note-link__remove { justify-self: start; gap: 6px; }
+
+/* Wartownik podmiany treści (od 1.20, js/ui/note-editing.js) – widoczny tylko na czas podmiany. */
+.note-editor__area [data-s] { display: none; }
+.note-editor__area--replacing [data-s] { display: block; }
 
 .note-editor__area {
   position: relative;
@@ -6289,3 +6434,52 @@ button.drawing__pill .icon { color: var(--text-2); }
 :root.input-pointer .choice:has(input:focus-visible),
 :root.input-pointer :focus-visible .tabbar__bubble,
 :root.input-pointer :focus-visible .start-bubble__circle { outline: none !important; }
+
+/* ------------------------------------------------------------------ druk notatki i PDF (od 1.20) */
+/* Notatka do druku (js/ui/note-print.js) jest osobnym elementem strony: na ekranie ukryta,
+   na wydruku jedyna widoczna – zawsze w jasnych kolorach, na stronie A4. */
+.note-print { display: none; }
+
+@media print {
+  @page { size: A4; margin: 18mm 16mm; }
+
+  html,
+  body {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  body > :not(.note-print) { display: none !important; }
+
+  .note-print {
+    --text: #1d1d1f;
+    --text-2: #555555;
+    --accent: #0040dd;
+    --note-red: #d70015;
+    --note-orange: #c45500;
+    --note-green: #248a3d;
+    --note-blue: #0040dd;
+    --note-purple: #8944ab;
+    display: block;
+    color: var(--text);
+    background: #ffffff;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .note-print .note-text [data-color^="#"] { color: var(--note-color) !important; }
+  .note-print__path { margin: 0 0 1.5mm; font-size: 9.5pt; color: var(--text-2); }
+  .note-print__title { margin: 0 0 6mm; font-size: 18pt; line-height: 1.25; }
+  .note-print .note-text { font-size: 11pt; }
+  .note-print .note-text h3 { font-size: 13pt; break-after: avoid; }
+  .note-print .note-text :is(p, li) { orphans: 2; widows: 2; }
+  .note-flow > * + * { margin-top: 0.85em; }
+  .note-flow__break { break-after: page; height: 0; margin: 0 !important; }
+  .note-flow__break + * { margin-top: 0 !important; }
+  .note-flow__figure { margin: 0; text-align: center; break-inside: avoid; }
+  .note-flow__figure img { max-width: 100%; max-height: 225mm; object-fit: contain; }
+  .note-flow__caption { margin-top: 2mm; font-size: 9.5pt; color: var(--text-2); }
+  .note-flow__missing { padding: 6mm; border: 1px dashed #999999; color: var(--text-2); }
+}

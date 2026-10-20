@@ -159,7 +159,24 @@ const ICONS = {
   capTriangle: [p('M3 12h12'), filled('M21 12l-7.5-4.5v9z')],
   capCircle: [p('M3 12h13'), dot(17.2, 12, 3.6)],
   capSquare: [p('M3 12h11'), filled('M13.6 8.4h7.2v7.2h-7.2z')],
-  capDiamond: [p('M3 12h11'), filled('M21.2 12l-4-4.6-4 4.6 4 4.6z')]
+  capDiamond: [p('M3 12h11'), filled('M21.2 12l-4-4.6-4 4.6 4 4.6z')],
+  // Notatki 1.20: wyrównanie i interlinia, link, symbole, data, druk (PDF).
+  alignLeft: [p('M4 6h16'), p('M4 10h10'), p('M4 14h16'), p('M4 18h10')],
+  alignCenter: [p('M4 6h16'), p('M7 10h10'), p('M4 14h16'), p('M7 18h10')],
+  alignRight: [p('M4 6h16'), p('M10 10h10'), p('M4 14h16'), p('M10 18h10')],
+  alignJustify: [p('M4 6h16'), p('M4 10h16'), p('M4 14h16'), p('M4 18h11')],
+  lineSpacing: [p('M11.5 6h8.5'), p('M11.5 12h8.5'), p('M11.5 18h8.5'), p('M6 4.5v15'), p('M3.5 7L6 4.5 8.5 7'), p('M3.5 17L6 19.5 8.5 17')],
+  link: [p('M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1.2 1.2'), p('M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1.2-1.2')],
+  unlink: [p('M14.8 12.2l3.4-3.4a3.5 3.5 0 0 0-5-5l-3.4 3.4'), p('M9.2 11.8l-3.4 3.4a3.5 3.5 0 0 0 5 5l3.4-3.4'), p('M4 4l16 16')],
+  omega: [p('M4.5 19.5h4.6v-2.3a6.6 6.6 0 1 1 5.8 0v2.3h4.6')],
+  calendar: [
+    p('M5 6h14a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 19 20H5a1.5 1.5 0 0 1-1.5-1.5v-11A1.5 1.5 0 0 1 5 6z'),
+    p('M3.5 10.5h17'), p('M8 3.5v4'), p('M16 3.5v4'), dot(8.5, 14.5, 1.1), dot(12, 14.5, 1.1), dot(15.5, 14.5, 1.1)
+  ],
+  print: [
+    p('M7 9V4h10v5'), p('M7 17H5a1.5 1.5 0 0 1-1.5-1.5v-5A1.5 1.5 0 0 1 5 9h14a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 19 17h-2'),
+    p('M7 14h10v6H7z')
+  ]
 };
 
 /** Zwraca element SVG ikony o podanej nazwie. */

@@ -30,7 +30,10 @@ js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
 js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspólny dla nauki i quizu
 js/ui/charts.js            wykresy SVG (w czasie, pasek udziałów, miernik) z podpowiedzią i tabelą danych
 js/ui/listen-player.js     odtwarzacz słuchania: kolejne kroki czytane syntezatorem mowy, pauza, dalej, powtórz
-js/ui/notes.js             okno notatki lekcji: podgląd, edytor z paskiem formatowania (wcięcia, indeksy, wielkość, kolory), obrazy (podpisy, numeracja, przeciąganie), załączniki, powiększanie
+js/ui/notes.js             okno notatki lekcji: podgląd (Kopiuj, PDF), edytor z paskiem formatowania w grupach (wcięcia, indeksy, wielkość, kolory, wyrównanie i interlinia, link, symbole, data), obrazy (podpisy, numeracja, przeciąganie), załączniki, powiększanie
+js/ui/note-editing.js      zmiany treści edytora notatki z cofaniem: kopia treści ze znacznikami zaznaczenia, podmiana jednym insertHTML (wartownik), klucze miejsca kursora; wyrównanie i interlinia, „Usuń formatowanie”, wstawienie bloku
+js/ui/note-print.js        druk i PDF notatki: cała notatka w układzie A4 (ścieżka, tytuł, treść), okno drukowania przeglądarki
+js/ui/symbols.js           panel symboli z ostatnio użytymi (notatka) i symbole pod polem tekstu (rysunek)
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
@@ -54,7 +57,8 @@ js/core/csv.js             kodowanie, separator, odczyt i zapis CSV
 js/core/tablefile.js       rozpoznanie formatu pliku, wspólna postać tabeli
 js/core/importer.js        nagłówki → pola, wiersze pliku → wiersze importu, walidacja
 js/core/exporter.js        zakres eksportu → plik XLSX (z arkuszem notatek) lub CSV; wzór importu
-js/core/note-format.js     treść notatki: bezpieczny HTML ↔ dokument ↔ tekst sformatowany komórki arkusza
+js/core/note-format.js     treść notatki: bezpieczny HTML ↔ dokument ↔ tekst sformatowany komórki arkusza; wyrównanie i interlinia, adres linku wpisany ręcznie
+js/core/symbols.js         symbole do wstawiania: grupy, nazwy, ostatnio użyte
 js/core/note-import.js     arkusz notatek: rozpoznanie, wiersze → notatki lekcji z obrazami
 js/core/page-curl.js       zaginana kartka notatki: chwyt, zgięcie, odbicie płata, ograniczenia papieru
 js/core/note-refs.js       sygnatury obrazów notatki i odwołania [[sygnatura]] w treści, podpisy i numery „Rys. N.”
@@ -64,7 +68,7 @@ js/core/fsrs.js            algorytm powtórek FSRS-6 (przeniesiony z py-fsrs 6.3
 js/core/quiz.js            quizy: pytania wyboru, rundy par, test mieszany, odpowiedzi, wynik
 js/core/stats.js           statystyki: statusy w kierunkach, elementy, szeregi dzienne, zestawienia, czas nauki
 js/core/listen.js          słuchanie: kroki pojęcia (pojęcie, przerwa, odpowiedź, definicja, przykład), szacunek czasu
-js/core/text.js            normalizacja tekstu, tagi, odmiana liczebników
+js/core/text.js            normalizacja tekstu, tagi, odmiana liczebników, data i godzina do wstawienia w notatce
 js/core/sorting.js         kolejność list biblioteki: ręczna, nazwa A–Z i Z–A (po polsku), data utworzenia; nowa kolejność po przeniesieniu
 ```
 
@@ -358,6 +362,31 @@ następnego pola). Zaznaczenie zapamiętane przy `selectionchange` przychodzi z 
 poleceniem z klawiatury albo przycisku edytor bierze bieżące (`captureSelection`), a przy oknie koloru –
 to sprzed otwarcia. „Kopiuj notatkę” (`portableNoteHtml`) zamienia wcięcie, wielkość i własny kolor
 na style.
+
+Od 1.20 **wyrównanie, interlinia, linki, symbole, data, PDF**. Blok (`<p>`, `<h3>`, `<li>`) może mieć
+`data-align` (`center` / `right` / `justify`; do lewej – bez atrybutu) i `data-line` (`1` / `1.5` / `2`;
+1,15 – bez atrybutu); w dokumencie to `align` i `line` bloku. Filtr czyta je też z wklejonego HTML
+(`text-align`, `align`, `<center>` – dziedziczone z bloku nadrzędnego jak w CSS, ale nie przez listę
+zagnieżdżoną; interlinia – tylko z `data-line`). `portableNoteHtml` dopisuje style dla Worda
+(`text-align`, `line-height` 100 / 150 / 200%) i zostawia atrybuty, żeby wklejone z powrotem do notatki
+nic nie traciło. Zmiany, których `execCommand` nie zrobi (wyrównanie, interlinia, „Usuń formatowanie”
+z blokami, wstawienie odwołania i nowej strony), robi `js/ui/note-editing.js`: kopia treści pola ze
+znacznikami zaznaczenia (znaki U+E000 / U+E001), zmiana kopii, potem `insertHTML` całej treści jako
+**jeden krok cofania**. Przed podmianą na początek pola trafia pusty `<p data-s>` (wartownik) – bez
+niego Chromium wstawia treść do wnętrza pierwszego bloku, gdy jest nim nagłówek, punkt listy albo
+`<blockquote>`; po cofnięciu wartownik wraca (ukryty w CSS, przy zapisie znika). Miejsce kursora
+opisuje klucz `{ block, offset }` (numer bloku z tekstem, znaki od początku bloku, `<br>` – jeden
+znak); historia podmian przywraca kursor po `historyUndo` / `historyRedo` (przeglądarka zaznaczałaby
+całą treść). „Usuń formatowanie” zamienia fragment treści od bloku początku do bloku końca zaznaczenia
+w dokument, zdejmuje znaczniki w zakresie (zostaje `href`), bloki objęte zaznaczeniem stają się
+akapitami, a puste akapity zostają (znak zastępczy U+E002). Link: `createLink` / `unlink` /
+`insertHTML` (`normalizeLink` – `www.` i domena dostają `https://`, e-mail – `mailto:`, inne protokoły
+odrzucone). Symbole i data – `insertText`. PDF (`note-print.js`): `noteFlow()` z `note-book.js` składa
+całą notatkę jednym ciągiem (te same jednostki co strony książki: bloki, listy, obrazy z podpisami,
+podziały stron), element `.note-print` trafia na koniec `<body>`, a `@media print` ukrywa resztę
+strony (strona A4, jasne kolory, obraz najwyżej 225 mm, podział `break-after: page`); po `afterprint`
+element znika. „Kopiuj notatkę” daje obrazowi `width` / `height` najwyżej 605 × 860 px (16 cm szerokości
+tekstu strony A4 przy 96 dpi).
 
 Od 1.18 **podpisy i numeracja** (`note-refs.js`): `caption` w opisie obrazu (`cleanImageCaption`, do
 120 znaków; zapis notatki: brak pola – podpis bez zmian, `''` – usunięty). `figureNumbers(html, images,
@@ -658,7 +687,10 @@ przewija:
 ## Nauka z fiszkami
 
 Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany w
-`js/ui/screens/study-setup.js` i `study-session.js`.
+`js/ui/screens/study-setup.js` i `study-session.js`. Od 1.20 nad fiszką jest `library.lessonPath()`
+(dziedzina i moduł w osobnym elemencie, który skraca się pierwszy), a ustawienia `studyShowReview`
+i `studyShowLast` (domyślnie `true`) ukrywają na ekranie Nauka grupy „Powtórka na dziś” i „Ostatnia
+sesja”.
 
 - **Sesja to kolejka** `[{ termID, direction }]` zbudowana z wybranego materiału, kierunku
   (PL → EN, EN → PL albo mieszany – wtedy każde pojęcie raz, w jednym z kierunków), zakresu

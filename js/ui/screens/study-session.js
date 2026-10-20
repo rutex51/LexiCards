@@ -509,7 +509,8 @@ export class StudySessionScreen {
     this.elements.card = cardElement;
     this.elements.front = frontFace;
     this.elements.back = backFace;
-    this.elements.lessonName = library.getLesson(term.lessonID)?.name ?? '';
+    // Nad fiszką cała ścieżka (od 1.20): dziedzina › moduł › lekcja.
+    this.elements.lessonPath = library.lessonPath(term.lessonID).split(' › ').filter(Boolean);
     return cardElement;
   }
 
@@ -702,7 +703,9 @@ export class StudySessionScreen {
     const body = h('div', { class: 'study', dataset: { testid: 'study-session' } },
       h('div', { class: 'study__header' },
         h('div', { class: 'study__meta' },
-          h('span', { class: 'study__lesson', dataset: { testid: 'study-lesson' } }, this.elements.lessonName),
+          h('span', { class: 'study__lesson', title: this.elements.lessonPath.join(' › '), dataset: { testid: 'study-lesson' } },
+            this.elements.lessonPath.length > 1 ? h('span', { class: 'study__path' }, `${this.elements.lessonPath.slice(0, -1).join(' › ')} › `) : null,
+            h('span', { class: 'study__lesson-name' }, this.elements.lessonPath[this.elements.lessonPath.length - 1] ?? '')),
           h('span', { class: 'study__counter', dataset: { testid: 'study-counter' } }, `${number} z ${total}`)
         ),
         h('div', {

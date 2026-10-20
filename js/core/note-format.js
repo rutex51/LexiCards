@@ -3,6 +3,8 @@
 // W bazie notatka jest zapisana jako HTML z wąskiego, stałego zestawu znaczników:
 //   bloki:  <p>, <h3>, <ul>/<ol> z <li> (listy zagnieżdżone do trzech poziomów),
 //           <hr data-page=""> – podział na strony (od 1.3), od 1.18 <p data-indent="1–4"> – wcięcie,
+//           od 1.20 data-align="center | right | justify" (wyrównanie) i data-line="1 | 1.5 | 2"
+//           (interlinia) przy <p>, <h3> i <li>,
 //   wewnątrz: <strong>, <em>, <u>, <s>, <sup>, <sub>, <span data-color="…">, <a href>, <br>,
 //           od 1.18 <span data-size="s | l | xl"> – wielkość tekstu, a w data-color także własny
 //           kolor #rrggbb (wtedy z style="--note-color: …", z którego kolor bierze arkusz stylów).
@@ -15,9 +17,10 @@
 // HTML, zwykły tekst oraz tekst sformatowany komórki Excela (eksport) – i odwrotnie: tekst
 // sformatowany z komórki (import) zamienia się w dokument.
 //
-//   Dokument: { blocks: [{ type: 'p' | 'h' | 'li' | 'break', list?: 'ul' | 'ol', depth?: 0–2, indent?: 1–4, runs }] }
+//   Dokument: { blocks: [{ type: 'p' | 'h' | 'li' | 'break', list?: 'ul' | 'ol', depth?: 0–2, indent?: 1–4,
+//   align?, line?, runs }] }
 //   ('break' – nowa strona; bez tekstu, nigdy na początku, na końcu ani dwa razy z rzędu;
-//   indent – wcięcie akapitu i nagłówka, od 1.18)
+//   indent – wcięcie akapitu i nagłówka, od 1.18; align i line – wyrównanie i interlinia, od 1.20)
 //   Fragment: { text, b?, i?, u?, s?, sup?, sub?, color?, size?, href? } – '\n' w tekście to nowy
 //   wiersz; color – nazwa z palety albo (od 1.18) własny '#rrggbb', size – 's' | 'l' | 'xl'.
 //
@@ -61,6 +64,27 @@ const SIZE_IDS = new Set(['s', 'l', 'xl']);
 const FONT_SIZE_IDS = { 1: 's', 2: 's', 3: null, 4: 'l', 5: 'l', 6: 'xl', 7: 'xl' };
 /** Wcięcie akapitu (od 1.18): najwyżej cztery stopnie. */
 export const MAX_INDENT = 4;
+
+/** Wyrównanie akapitu (od 1.20): do lewej (zwykłe – bez znacznika), do środka, do prawej, wyjustowane. */
+export const NOTE_ALIGNS = Object.freeze([
+  { id: null, label: 'Do lewej' },
+  { id: 'center', label: 'Do środka' },
+  { id: 'right', label: 'Do prawej' },
+  { id: 'justify', label: 'Wyjustuj' }
+]);
+const ALIGN_IDS = new Set(['center', 'right', 'justify']);
+
+/**
+ * Interlinia (od 1.20): 1,15 to zwykły odstęp notatki (bez znacznika). portable – zapis w schowku
+ * (Word i Outlook czytają procent jako wielokrotność pojedynczej interlinii).
+ */
+export const NOTE_LINE_SPACINGS = Object.freeze([
+  { id: '1', label: '1,0', portable: '100%' },
+  { id: null, label: '1,15', portable: null },
+  { id: '1.5', label: '1,5', portable: '150%' },
+  { id: '2', label: '2,0', portable: '200%' }
+]);
+const LINE_IDS = new Set(['1', '1.5', '2']);
 
 /** Najdłuższa treść notatki (znaki HTML) – ochrona przed przypadkowym wklejeniem całej książki. */
 export const NOTE_HTML_LIMIT = 200_000;
@@ -250,6 +274,29 @@ export function safeHref(value) {
 }
 
 /**
+ * Adres linku wpisany ręcznie (od 1.20): pełny adres http(s) albo mailto, „www.…” i sama domena
+ * (dostają https://), adres e-mail (dostaje mailto:). Inny protokół albo nie-adres – null.
+ */
+export function normalizeLink(value) {
+  const text = String(value ?? '').trim();
+  if (text === '' || /\s/.test(text)) return null;
+  if (/^(https?:\/\/|mailto:)/i.test(text)) return safeHref(text);
+  if (/^[^@/:]+@[^@/:]+\.[^@/:.]+$/.test(text)) return safeHref(`mailto:${text}`);
+  if (/^[a-z][a-z0-9+-]*:/i.test(text)) return null;
+  if (/^[\p{L}\p{N}-]+(\.[\p{L}\p{N}-]+)+(:\d+)?([/?#].*)?$/u.test(text)) return safeHref(`https://${text}`);
+  return null;
+}
+
+/** Wyrównanie bloku z atrybutów (data-align, styl text-align, dawny align); 'left' – zwykłe, undefined – brak. */
+function blockAlign(attributes) {
+  const data = attributes['data-align'];
+  if (ALIGN_IDS.has(data)) return data;
+  const value = String(parseStyle(attributes.style)['text-align'] ?? attributes.align ?? '').toLowerCase();
+  if (ALIGN_IDS.has(value)) return value;
+  return value === 'left' || value === 'start' ? 'left' : undefined;
+}
+
+/**
  * Formatowanie wynikające z elementu: dziedziczone formatowanie rodzica plus własne. editor –
  * treść z edytora notatki: <font color> i <font size> to kolor i wielkość nadane w edytorze
  * (w HTML wklejonym z innych miejsc kolory spoza palety i wielkości czcionki to wygląd źródła).
@@ -367,10 +414,20 @@ export function docFromHtml(html, { editor = false } = {}) {
     let word = null;
     // Wcięcie akapitu (od 1.18): <blockquote> (edytor, cytaty ze stron) i data-indent.
     let indent = 0;
+    // Wyrównanie i interlinia (od 1.20): najbliższy blok, który je ustawia (jak dziedziczenie w CSS);
+    // punkt listy zagnieżdżonej ma własne – nie przejmuje ich od punktu nadrzędnego.
+    let align;
+    let line;
+    let inherit = true;
     for (let index = stack.length - 1; index >= 0; index -= 1) {
       const { tag } = stack[index];
       if (tag === 'blockquote') indent += 1;
       indent += stack[index].indent ?? 0;
+      if (inherit) {
+        align ??= stack[index].align;
+        line ??= stack[index].line;
+      }
+      if (tag === 'ul' || tag === 'ol') inherit = false;
       if (tag === 'ul' || tag === 'ol') {
         lists += 1;
       } else if (tag === 'li' && !item) {
@@ -380,6 +437,9 @@ export function docFromHtml(html, { editor = false } = {}) {
       }
       if (stack[index].word !== null && stack[index].word !== undefined && word === null) word = stack[index].word;
     }
+    const paragraph = {};
+    if (align && align !== 'left') paragraph.align = align;
+    if (line) paragraph.line = line;
     if (item) {
       let listType = 'ul';
       let depth = -1;
@@ -390,12 +450,13 @@ export function docFromHtml(html, { editor = false } = {}) {
           depth += 1;
         }
       }
-      current = { type: 'li', list: listType, depth: Math.min(MAX_DEPTH, Math.max(0, depth)), runs: [] };
+      current = { type: 'li', list: listType, depth: Math.min(MAX_DEPTH, Math.max(0, depth)), ...paragraph, runs: [] };
     } else if (word !== null) {
-      current = { type: 'li', list: 'ul', depth: word, runs: [], wordList: true };
+      current = { type: 'li', list: 'ul', depth: word, ...paragraph, runs: [], wordList: true };
     } else {
       current = { type: heading ? 'h' : 'p', runs: [] };
       if (indent > 0) current.indent = Math.min(MAX_INDENT, indent);
+      Object.assign(current, paragraph);
     }
   };
 
@@ -510,7 +571,12 @@ export function docFromHtml(html, { editor = false } = {}) {
       const word = tag === 'p' ? wordListLevel(attributes) : null;
       if (BLOCKS.has(tag)) blockBoundary(tag);
       const indent = /^[1-9]$/.test(attributes['data-indent'] ?? '') && BLOCKS.has(tag) ? Number(attributes['data-indent']) : 0;
-      stack.push({ tag, marks: elementMarks(tag, attributes, topMarks(), editor), word, indent });
+      const block = BLOCKS.has(tag) && tag !== 'table' && tag !== 'tr';
+      stack.push({
+        tag, marks: elementMarks(tag, attributes, topMarks(), editor), word, indent,
+        align: block ? (tag === 'center' ? 'center' : blockAlign(attributes)) : undefined,
+        line: block && LINE_IDS.has(attributes['data-line']) ? attributes['data-line'] : undefined
+      });
       continue;
     }
 
@@ -605,6 +671,16 @@ function inlineHtml(runs) {
   return html;
 }
 
+/** Atrybuty bloku: wcięcie (akapit i nagłówek), wyrównanie i interlinia (od 1.20). */
+function blockAttributes(block) {
+  let attributes = '';
+  const indent = block.type === 'li' ? 0 : Math.min(MAX_INDENT, Math.max(0, Math.floor(block.indent ?? 0)));
+  if (indent > 0) attributes += ` data-indent="${indent}"`;
+  if (ALIGN_IDS.has(block.align)) attributes += ` data-align="${block.align}"`;
+  if (LINE_IDS.has(block.line)) attributes += ` data-line="${block.line}"`;
+  return attributes;
+}
+
 /** Zamienia dokument na znormalizowany HTML notatki. */
 export function htmlFromDoc(doc) {
   let html = '';
@@ -622,9 +698,8 @@ export function htmlFromDoc(doc) {
     if (runs.length === 0) continue;
     if (block.type !== 'li') {
       closeLists(0);
-      const indent = Math.min(MAX_INDENT, Math.max(0, Math.floor(block.indent ?? 0)));
-      const attribute = indent > 0 ? ` data-indent="${indent}"` : '';
-      html += block.type === 'h' ? `<h3${attribute}>${inlineHtml(runs)}</h3>` : `<p${attribute}>${inlineHtml(runs)}</p>`;
+      const attributes = blockAttributes(block);
+      html += block.type === 'h' ? `<h3${attributes}>${inlineHtml(runs)}</h3>` : `<p${attributes}>${inlineHtml(runs)}</p>`;
       continue;
     }
     const list = block.list === 'ol' ? 'ol' : 'ul';
@@ -641,7 +716,7 @@ export function htmlFromDoc(doc) {
       html += `<${list}>`;
       open.push(list);
     }
-    html += `<li>${inlineHtml(runs)}`;
+    html += `<li${blockAttributes(block)}>${inlineHtml(runs)}`;
   }
   closeLists(0);
   return html;
@@ -657,8 +732,8 @@ export function normalizeNoteHtml(html, options = {}) {
  * robi je polecenie „indent” przeglądarki, więc wcięcie można zwiększać i zmniejszać z cofaniem.
  */
 export function editorNoteHtml(html) {
-  return String(html ?? '').replace(/<(p|h3) data-indent="(\d)">([\s\S]*?)<\/\1>/g,
-    (match, tag, level, inner) => `${'<blockquote>'.repeat(Number(level))}<${tag}>${inner}</${tag}>${'</blockquote>'.repeat(Number(level))}`);
+  return String(html ?? '').replace(/<(p|h3) data-indent="(\d)"([^>]*)>([\s\S]*?)<\/\1>/g,
+    (match, tag, level, rest, inner) => `${'<blockquote>'.repeat(Number(level))}<${tag}${rest}>${inner}</${tag}>${'</blockquote>'.repeat(Number(level))}`);
 }
 
 // ---------------------------------------------------------------- zwykły tekst
@@ -969,8 +1044,29 @@ export function portableNoteHtml(html) {
     // Własny kolor (od 1.18) zostaje też w data-color – po wklejeniu w notatce kolor jest ten sam.
     .replace(/<span data-color="(#[0-9a-f]{6})" style="--note-color: #[0-9a-f]{6}">/g, (match, hex) => `<span data-color="${hex}" style="color:${hex}">`)
     .replace(/<span data-size="(s|l|xl)">/g, (match, id) => `<span style="font-size:${NOTE_SIZES.find((size) => size.id === id).em}em">`)
-    .replace(/<(p|h3) data-indent="(\d)">/g, (match, tag, level) => `<${tag} style="margin-left:${Number(level) * 2}em">`)
+    .replace(/<(p|h3|li)((?: data-(?:indent|align|line)="[^"]*")+)>/g, (match, tag, attributes) => portableBlock(tag, attributes))
     .replace(/ target="_blank" rel="noopener noreferrer"/g, '');
+}
+
+/**
+ * Blok z wcięciem, wyrównaniem albo interlinią w schowku: styl dla innych aplikacji, a wyrównanie
+ * i interlinia (od 1.20) także w atrybutach – po wklejeniu z powrotem do notatki zostają te same.
+ */
+function portableBlock(tag, attributes) {
+  const values = Object.fromEntries([...attributes.matchAll(/data-(\w+)="([^"]*)"/g)].map((match) => [match[1], match[2]]));
+  const styles = [];
+  let kept = '';
+  if (values.indent) styles.push(`margin-left:${Number(values.indent) * 2}em`);
+  if (values.align) {
+    styles.push(`text-align:${values.align}`);
+    kept += ` data-align="${values.align}"`;
+  }
+  const line = NOTE_LINE_SPACINGS.find((spacing) => spacing.id === values.line);
+  if (line?.portable) {
+    styles.push(`line-height:${line.portable}`);
+    kept += ` data-line="${line.id}"`;
+  }
+  return `<${tag}${kept} style="${styles.join(';')}">`;
 }
 
 /** Czy dokument (albo HTML) nie ma żadnej treści. */

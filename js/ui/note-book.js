@@ -87,6 +87,49 @@ function contentUnits(html, images, imagesFirst = false, language = 'pl', number
   return all.map((unit, source) => ({ ...unit, source }));
 }
 
+/**
+ * Cała treść notatki jednym ciągiem – do druku i zapisu PDF (od 1.20): bloki tekstu, listy, obrazy
+ * z podpisami w miejscach odwołań (pozostałe przed tekstem albo po nim) i podziały stron. images –
+ * obrazy z sygnaturami ({ url, label, caption, … }, bez pliku – url null).
+ */
+export function noteFlow({ html, images, imagesFirst = false, numberFigures = false, language = 'pl' }) {
+  const root = h('div', { class: 'note-flow' });
+  let text = null;
+  let list = null;
+  for (const unit of contentUnits(html, images, imagesFirst, language, numberFigures)) {
+    if (unit.kind === 'break') {
+      root.append(h('div', { class: 'note-flow__break', 'aria-hidden': 'true' }));
+      text = null;
+      list = null;
+    } else if (unit.kind === 'image') {
+      const meta = images[unit.index] ?? {};
+      root.append(h('figure', { class: 'note-flow__figure', dataset: { testid: 'note-print-figure' } },
+        meta.url
+          ? h('img', { src: meta.url, alt: '' })
+          : h('p', { class: 'note-flow__missing' }, meta.label ? `Brak pliku obrazu „${meta.label}”` : 'Brak pliku obrazu'),
+        unit.caption ? h('figcaption', { class: 'note-flow__caption' }, unit.caption) : null));
+      text = null;
+      list = null;
+    } else {
+      if (!text) {
+        text = h('div', { class: 'note-text note-flow__text', lang: language });
+        root.append(text);
+      }
+      if (unit.kind === 'item') {
+        if (list?.id !== unit.listID) {
+          list = { id: unit.listID, element: document.createElement(unit.list) };
+          text.append(list.element);
+        }
+        list.element.append(unit.node);
+      } else {
+        list = null;
+        text.append(unit.node);
+      }
+    }
+  }
+  return root;
+}
+
 /** Punkt tekstu (węzeł, przesunięcie) dla przesunięcia liczonego w znakach treści elementu. */
 function textPoint(element, offset) {
   const walker = document.createTreeWalker(element, window.NodeFilter.SHOW_TEXT);
@@ -292,8 +335,11 @@ function paginate(units, images, content, available, language = 'pl') {
     }
     if (best < 0) return null;
     const cut = starts[best];
+    const head = textSlice(unit.node, 0, cut);
+    // Akapit wyjustowany (od 1.20): ostatni wiersz przed podziałem też do obu krawędzi.
+    head.classList.add('note-page__split');
     return [
-      { ...unit, node: textSlice(unit.node, 0, cut) },
+      { ...unit, node: head },
       { ...unit, node: textSlice(unit.node, cut, full.length), continued: unit.kind === 'item' ? true : unit.continued }
     ];
   };

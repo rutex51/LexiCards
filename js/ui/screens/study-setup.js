@@ -173,8 +173,10 @@ export class StudySetupScreen {
     const planned = this.count > 0 ? Math.min(this.count, matching) : matching;
     const session = library.getStudySession();
     const active = session && !isSessionFinished(session) ? session : null;
-    const repeatable = active ? null : library.getRepeatableStudy();
-    const reviewCount = active ? 0 : todaysReviewQueue(library).length;
+    // „Powtórka na dziś” i „Ostatnia sesja” można ukryć w Ustawieniach (od 1.20) – są też na Starcie.
+    const settings = library.getSettings();
+    const repeatable = active || settings.studyShowLast === false ? null : library.getRepeatableStudy();
+    const reviewCount = active || settings.studyShowReview === false ? 0 : todaysReviewQueue(library).length;
 
     // Telefon: „Rozpocznij” to środkowy przycisk paska zakładek; szeroki ekran: przycisk na pasku poleceń.
     const wide = ctx.isWide();
