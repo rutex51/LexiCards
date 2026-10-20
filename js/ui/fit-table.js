@@ -1,5 +1,6 @@
 // Tabela pasowań ISO 286 (od 1.25): pasowania zalecane (dotknięcie – wybór od razu) i dowolna klasa
-// tolerancji albo pasowanie złożone z litery i klasy dokładności otworu i wałka.
+// tolerancji albo pasowanie złożone z litery i klasy dokładności otworu i wałka. Od 1.26 tytuł okna
+// „Tabela pasowań” (krótszy – mieści się na telefonie), norma – w podpowiedzi.
 
 import { HOLE_LETTERS, IT_GRADES, PREFERRED_FITS, SHAFT_LETTERS, isTableFit, toleranceClass } from '../core/fits.js';
 import { field, segmented } from './components.js';
@@ -65,7 +66,7 @@ export function openFitTable({ value = '', onPick }) {
     sheet?.close();
   };
   openFormSheet({
-    title: 'Tabela pasowań (ISO 286)',
+    title: 'Tabela pasowań',
     submitLabel: 'Wybierz',
     build: (api) => {
       sheet = api;
@@ -81,7 +82,7 @@ export function openFitTable({ value = '', onPick }) {
             refresh();
           }
         }), builders.hole, builders.shaft, preview)),
-        h('p', { class: 'field__hint' }, 'Wielka litera – otwór, mała – wałek; liczba – klasa dokładności IT. Pasowanie – klasa otworu i wałka (H7/g6). '
+        h('p', { class: 'field__hint' }, 'Klasy tolerancji i pasowania według ISO 286. Wielka litera – otwór, mała – wałek; liczba – klasa dokładności IT. Pasowanie – klasa otworu i wałka (H7/g6). '
           + 'W oknie tolerancji widać tylko ostatnio wybrane.')
       ];
     },

@@ -2,6 +2,7 @@
 // rośnie razem z tekstem) oraz rysowanie na płótnie – na stronie edytora i na obrazie w notatce.
 
 import { STICKY_ICON, STICKY_MIN, elementBox, leaderStart, stickyColor } from '../core/drawing.js';
+import { cellAlign, displayCell } from '../core/tables.js';
 import { TEXT_LINE, measureText, textFont, textLines } from './canvas-text.js';
 
 /** Kolor tła nagłówka tabeli i tekstu karteczki. */
@@ -13,13 +14,13 @@ const STICKY_INK = '#1d1d1f';
 const tablePad = (table) => table.size * 0.35;
 const isHead = (table, row, column) => (table.header && row === 0) || (table.headerColumn && column === 0);
 
-/** Naturalne szerokości kolumn: najdłuższy wiersz tekstu komórki (bez łamania) i odstępy. */
+/** Naturalne szerokości kolumn: najdłuższy wiersz tekstu komórki (bez łamania, od 1.26 w formacie kolumny) i odstępy. */
 function naturalWidths(table) {
   const pad = tablePad(table);
   const columns = table.rows[0].length;
   return Array.from({ length: columns }, (_, column) => Math.max(table.size * 2, ...table.rows.map((row, index) => {
     const font = textFont(table.size, isHead(table, index, column) ? '600' : '');
-    return Math.max(0, ...row[column].split('\n').map((line) => measureText(line, font))) + pad * 2;
+    return Math.max(0, ...displayCell(table, index, column).split('\n').map((line) => measureText(line, font))) + pad * 2;
   })));
 }
 
@@ -29,16 +30,22 @@ export function naturalTableWidth(table, limit = Infinity) {
   return Math.ceil(Math.min(limit, Math.max(table.rows[0].length * table.size * 3, total)));
 }
 
+/** Szerokości kolumn: od 1.26 z udziałów kolumn (colWidths), bez nich – naturalne w proporcji do szerokości tabeli. */
+export function tableColumnWidths(table) {
+  if (table.colWidths?.length === table.rows[0].length) return table.colWidths.map((share) => share * table.width);
+  const natural = naturalWidths(table);
+  const total = natural.reduce((sum, width) => sum + width, 0);
+  return natural.map((width) => (width / total) * table.width);
+}
+
 /**
- * Układ tabeli: szerokości kolumn (naturalne, rozciągnięte albo ściśnięte do szerokości tabeli),
- * wiersze tekstu każdej komórki (łamane do szerokości kolumny) i wysokości wierszy.
+ * Układ tabeli: szerokości kolumn (naturalne, rozciągnięte albo ściśnięte do szerokości tabeli; od 1.26
+ * albo ustawione), wiersze tekstu każdej komórki (łamane do szerokości kolumny) i wysokości wierszy.
  */
 export function tableLayout(table) {
   const pad = tablePad(table);
-  const natural = naturalWidths(table);
-  const total = natural.reduce((sum, width) => sum + width, 0);
-  const widths = natural.map((width) => (width / total) * table.width);
-  const lines = table.rows.map((row, index) => row.map((cell, column) => textLines(cell, table.size, Math.max(table.size, widths[column] - pad * 2),
+  const widths = tableColumnWidths(table);
+  const lines = table.rows.map((row, index) => row.map((_, column) => textLines(displayCell(table, index, column), table.size, Math.max(table.size, widths[column] - pad * 2),
     isHead(table, index, column) ? '600' : '')));
   const heights = lines.map((cells) => Math.max(1, ...cells.map((cell) => cell.length)) * table.size * TEXT_LINE + pad * 2);
   return { pad, widths, heights, lines };
@@ -68,7 +75,7 @@ export function paintTable(ctx, table) {
       ctx.fillStyle = table.color;
       ctx.font = textFont(table.size, head ? '600' : '');
       ctx.textBaseline = 'alphabetic';
-      const align = table.align[column] ?? 'left';
+      const align = cellAlign(table, index, column);
       ctx.textAlign = align;
       const x = align === 'center' ? left + widths[column] / 2 : align === 'right' ? left + widths[column] - pad : left + pad;
       lines[index][column].forEach((line, lineIndex) => {

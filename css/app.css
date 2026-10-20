@@ -24,6 +24,8 @@
   --text-3: #8e8e93;
   --placeholder: #737378;
   --separator: rgba(60, 60, 67, 0.22);
+  /* Obwódka sekcji w oknach formularzy (od 1.26). */
+  --outline: rgba(60, 60, 67, 0.17);
   --fill: rgba(118, 118, 128, 0.13);
   --pressed: rgba(118, 118, 128, 0.2);
   --hover: rgba(118, 118, 128, 0.08);
@@ -136,6 +138,7 @@
     --text-3: #7c7c80;
     --placeholder: #98989d;
     --separator: rgba(120, 120, 128, 0.36);
+    --outline: rgba(120, 120, 128, 0.32);
     --fill: rgba(118, 118, 128, 0.24);
     --pressed: rgba(118, 118, 128, 0.36);
     --hover: rgba(118, 118, 128, 0.16);
@@ -210,6 +213,7 @@
   --text-3: #7c7c80;
   --placeholder: #98989d;
   --separator: rgba(120, 120, 128, 0.36);
+  --outline: rgba(120, 120, 128, 0.32);
   --fill: rgba(118, 118, 128, 0.24);
   --pressed: rgba(118, 118, 128, 0.36);
   --hover: rgba(118, 118, 128, 0.16);
@@ -1690,9 +1694,11 @@ a.row__main:active,
   cursor: pointer;
 }
 
+/* Od 1.26 słowo nie łamie się w środku („Pasowan-ie”) – mniejsze marginesy, wyraz w całości. */
 .segmented__option span {
   display: block;
-  padding: 8px 6px;
+  padding: 8px 3px;
+  overflow-wrap: normal;
   border-radius: 9px;
   font-size: var(--size-sub);
   font-weight: 500;
@@ -3675,20 +3681,22 @@ a.row__main:active,
   height: calc(var(--vv-height, 100dvh) - max(env(safe-area-inset-top), 10px));
 }
 
+/* Od 1.26 okna formularzy są białe (jak panele edytora rysunku), sekcje – w cienkich ramkach; kartka notatki – na szarym tle jak dotąd. */
 .sheet__panel {
   display: flex;
   flex-direction: column;
   height: 100%;
   border-radius: 16px 16px 0 0;
-  background: var(--sheet-bg);
+  background: var(--elevated);
   box-shadow: var(--shadow);
   overflow: hidden;
 }
 
+/* Tytuł między przyciskami (od 1.26 skracany wielokropkiem – nie nachodzi na przycisk na telefonie). */
 .sheet__header {
   flex: none;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 4px;
   min-height: 54px;
@@ -3710,9 +3718,12 @@ a.row__main:active,
 .sheet__header .button:disabled { color: var(--text-3); opacity: 1; }
 
 .sheet__title {
+  overflow: hidden;
   font-size: var(--size-body);
   font-weight: 600;
   text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sheet__body {
@@ -3728,6 +3739,50 @@ a.row__main:active,
 }
 
 .sheet__body > * { flex: none; }
+
+/*
+ * Sekcje okna (od 1.26): każde pole i przełącznik – w cienkiej zaokrąglonej ramce, bez kresek między
+ * polami; aktywne pole – ramka w kolorze aplikacji. Grupa pól (formGroup) i kilka przełączników pod
+ * sobą – jedna ramka i linie między nimi.
+ */
+.dialog.sheet:not(.note-dialog) { --surface: var(--elevated); }
+.dialog.sheet:not(.note-dialog) .sheet__body { gap: 14px; }
+.dialog.sheet:not(.note-dialog) .field,
+.dialog.sheet:not(.note-dialog) .switch {
+  padding: 11px 14px 12px;
+  border: 1px solid var(--outline);
+  border-radius: 14px;
+  box-shadow: none;
+}
+.dialog.sheet:not(.note-dialog) .field:focus-within { border-color: var(--accent); box-shadow: none; border-radius: 14px; }
+.dialog.sheet:not(.note-dialog) .field__label { margin-bottom: 4px; }
+.dialog.sheet:not(.note-dialog) .sheet__body > .field__hint,
+.dialog.sheet:not(.note-dialog) .sheet__body > .form-note,
+.dialog.sheet:not(.note-dialog) .drawing__dim-preview { padding: 0 4px; }
+.dialog.sheet:not(.note-dialog) .form-group__title { padding: 0 4px 6px; }
+.dialog.sheet:not(.note-dialog) .form-group__body,
+.dialog.sheet:not(.note-dialog) div:has(> .switch + .switch) {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  border: 1px solid var(--outline);
+  border-radius: 14px;
+  background: none;
+  overflow: hidden;
+}
+.dialog.sheet:not(.note-dialog) .form-group__body .field,
+.dialog.sheet:not(.note-dialog) .form-group__body .switch,
+.dialog.sheet:not(.note-dialog) div:has(> .switch + .switch) > .switch {
+  padding: 9px 14px 10px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: 0 -1px 0 var(--outline);
+}
+.dialog.sheet:not(.note-dialog) .form-group__body .field:focus-within { box-shadow: 0 -1px 0 var(--outline), inset 3px 0 0 var(--accent); }
+/* Przełącznik w polu albo w liście okna – bez własnej ramki. */
+.dialog.sheet:not(.note-dialog) .field .switch,
+.dialog.sheet:not(.note-dialog) .group__list .switch { border: 0; border-radius: 0; }
+.dialog.sheet:not(.note-dialog) .group__list .switch { padding: 8px var(--gutter); }
 .sheet--picker .sheet__submit { visibility: hidden; }
 
 /* Komunikat i pytanie. */
@@ -4258,11 +4313,17 @@ a.row__main:active,
 .note-table th { font-weight: 650; background: var(--fill); }
 .note-table tbody th { background: transparent; }
 .note-table tr { break-inside: avoid; }
+/* Szerokości kolumn ustawione w oknie tabeli (od 1.26) – stały układ, tekst łamie się w kolumnie. */
+.note-table--fixed { table-layout: fixed; }
+.note-table--fixed th,
+.note-table--fixed td { overflow-wrap: anywhere; }
 
 /* Akapit wyjustowany podzielony między strony: ostatni wiersz na stronie też do obu krawędzi. */
 .note-text .note-page__split[data-align="justify"] { text-align-last: justify; }
 
-/* Okno notatki. */
+/* Okno notatki – na szarym tle (kartka i pasek narzędzi jak dotąd). */
+.note-dialog .sheet__panel { background: var(--sheet-bg); }
+
 @media (min-width: 700px) {
   .dialog.sheet.note-dialog { width: min(720px, calc(100vw - 48px)); }
   .note-dialog .sheet__panel { max-height: min(900px, calc(var(--vv-height, 100dvh) - 48px)); }
@@ -4730,6 +4791,94 @@ a.row__main:active,
 
 .note-sizes__option:active { background: var(--pressed); }
 
+/* Wstaw obiekt (od 1.26): nowy rysunek, zdjęcie, tabela i lista obiektów notatki pod paskiem. */
+.note-objects {
+  display: grid;
+  gap: 8px;
+  padding: 10px 8px 2px;
+}
+
+.note-objects__new {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.note-objects__label {
+  color: var(--text-2);
+  font-size: var(--size-foot);
+  font-weight: 600;
+}
+
+.note-objects__new .note-objects__label { margin-right: 2px; }
+
+.note-objects__create {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--fill);
+  color: var(--text);
+  font-size: var(--size-sub);
+  font-weight: 500;
+}
+
+.note-objects__create:active { background: var(--pressed); }
+.note-objects__create:disabled { color: var(--text-3); }
+
+.note-objects__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+  max-height: min(42vh, 320px);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.note-objects__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid var(--outline);
+  border-radius: 12px;
+  color: var(--text);
+  text-align: left;
+}
+
+.note-objects__item:active { background: var(--pressed); }
+
+.note-objects__thumb {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--fill);
+  color: var(--text-2);
+  overflow: hidden;
+}
+
+.note-objects__thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+.note-objects__text { display: grid; min-width: 0; }
+
+.note-objects__name,
+.note-objects__meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.note-objects__name { font-weight: 600; }
+.note-objects__meta { color: var(--text-2); font-size: var(--size-foot); }
+.note-objects__empty { color: var(--text-2); font-size: var(--size-sub); }
+
 /* Wyrównanie i interlinia (od 1.20). */
 .note-paragraph {
   display: grid;
@@ -4960,23 +5109,54 @@ a.row__main:active,
 .table-editor__grid { border-collapse: separate; border-spacing: 4px; margin: 0 -4px; }
 .table-editor__grid th { padding: 0; }
 .table-editor__align {
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   width: 100%;
   height: 30px;
   border-radius: 8px;
   color: var(--text-2);
 }
+/* Kolumna (od 1.26): przycisk formatu i wyrównania, uchwyt szerokości na granicy z następną kolumną. */
+.table-editor__column { position: relative; }
+.table-editor__format { font-size: var(--size-foot); font-weight: 600; }
+.table-editor__grip {
+  position: absolute;
+  top: -2px;
+  right: -10px;
+  z-index: 1;
+  width: 16px;
+  height: 34px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.table-editor__grip::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 6px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--text-3);
+}
+.table-editor__grip:hover::before,
+.table-editor__grip:active::before { background: var(--accent); }
 .table-editor__align:active { background: var(--pressed); }
 .table-editor__cell {
   display: block;
   width: 9.5rem;
+  min-width: 4rem;
   min-height: 42px;
   padding: 8px 10px;
   resize: none;
   field-sizing: content;
   line-height: 1.35;
 }
+/* Od 1.26 okno jest białe – komórka w cienkiej ramce, z kursorem – w kolorze aplikacji. */
+.dialog.sheet .table-editor__cell { border: 1px solid var(--outline); border-radius: 10px; }
+.dialog.sheet .table-editor__cell:focus { border-color: var(--accent); }
 .table-editor__cell--head { font-weight: 650; background: var(--fill); }
 .table-editor__status:empty { display: none; }
 .table-editor__options { display: grid; gap: 4px; }
@@ -6100,7 +6280,7 @@ svg.icon--note { color: var(--note-icon); }
 }
 
 /* Wybór wielkości i koloru po dotknięciu – bez ramki pola (z klawiatury ramka zostaje). */
-:root.input-pointer .drawing__element-options .field:focus-within { box-shadow: 0 -1px 0 var(--separator); }
+:root.input-pointer .dialog.sheet .drawing__element-options .field:focus-within { border-color: var(--outline); }
 
 /* Ustawienia pióra pod paskiem narzędzi. */
 .drawing__settings {
@@ -6352,6 +6532,8 @@ button.drawing__pill .icon { color: var(--text-2); }
 }
 
 .drawing__chip--accent { background: var(--accent-fill); color: var(--on-accent); }
+/* W oknie (od 1.26, „Tabela pasowań…”) – lżej: delikatne tło w kolorze aplikacji. */
+.dialog.sheet .drawing__chip--accent { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .drawing__chip--block { display: block; width: 100%; margin: 10px 0 0; }
 
 /* Polecenia zaznaczenia na telefonie – same ikony (napis czyta czytnik ekranu), krótsze napisy na pasku. */

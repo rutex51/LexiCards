@@ -21,8 +21,9 @@
 //   (startCap, endCap) i wymiary widoczne na stałe (dims), a w strokes także szyki { tool: 'array', … }
 //   (core/arrays.js) – elementy powielone w szyku liniowym albo kołowym;
 //   od 1.21 tabele { tool: 'table', x, y, width, height, size, color, rows, header, headerColumn, align }
-//   (tabela jak w notatce – core/tables.js; height zmierzona) i karteczki { tool: 'sticky', x, y, width,
-//   height, size, color: nazwa koloru karteczki, text, created: 'rrrr-mm-dd', collapsed?, hidden?,
+//   (tabela jak w notatce – core/tables.js, od 1.26 też headAlign, formats i colWidths; height zmierzona)
+//   i karteczki { tool: 'sticky', x, y, width, height, size, color: nazwa koloru karteczki, text,
+//   created: 'rrrr-mm-dd', collapsed?, hidden?,
 //   leader? } – collapsed: zwinięta do ikony, hidden: bez niej na obrazie rysunku w notatce,
 //   leader { x, y }: strzałka od karteczki do punktu strony; od 1.22 element może mieć id, a odcinek,
 //   strzałka i karteczka – przyklejone końce attach { start?, end?, leader? } (core/attach.js);

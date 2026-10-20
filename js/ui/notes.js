@@ -20,7 +20,7 @@ import {
 } from '../core/note-refs.js';
 import { FILE_NAME_MAX, cleanFileName, fileExtension, fileTypeOf, formatDuration, recordingName, renamedFile } from '../core/note-files.js';
 import {
-  NOTE_TABLE_LIMIT, findTableByLabel, nextTableLabel, tableCaption, tableHtml, tableNumbers, tableSize, tableText, withTableLabels
+  NOTE_TABLE_LIMIT, displayCell, findTableByLabel, nextTableLabel, tableCaption, tableHtml, tableNumbers, tableSize, tableText, withTableLabels
 } from '../core/tables.js';
 import { formatClock, formatDay, formatDayTime, joinList, pluralAttachments, pluralImages, pluralTables } from '../core/text.js';
 import { attachmentList, fileBadge, fileDescription, openAttachment } from './attachments.js';
@@ -90,19 +90,21 @@ const FORMAT_GROUPS = [
   {
     label: 'Wstaw',
     buttons: [
+      // Od 1.26: rysunek, zdjęcie albo tabela w miejscu kursora – lista obiektów notatki pod paskiem.
+      { command: 'object', icon: 'insertObject', label: 'Wstaw rysunek, zdjęcie albo tabelę' },
       // Od 1.20: link, symbole, data i godzina.
       { command: 'link', icon: 'link', label: 'Link', keys: 'Ctrl+K' },
       { command: 'symbol', icon: 'omega', label: 'Symbole' },
       { command: 'date', icon: 'calendar', label: 'Data i godzina' },
       { command: 'pageBreak', icon: 'pageBreak', label: 'Nowa strona' },
-      // Wzory (od 1.11): zapis $…$ i ściągawka zapisu.
-      { command: 'equation', icon: 'sigma', label: 'Wzór', keys: '$…$' },
-      { command: 'equationHelp', icon: 'info', label: 'Równania – ściągawka' }
+      // Wzory (od 1.11): zapis $…$ w tekście; od 1.26 przycisk otwiera okno „Równania” (podgląd,
+      // ściągawka zapisu, „Wstaw”) – zamiast samych znaków dolara i osobnej ikony ściągawki.
+      { command: 'equation', icon: 'sigma', label: 'Równania – wzór i ściągawka' }
     ]
   }
 ];
 /** Polecenia bez stanu włączenia (przycisk nie jest przełącznikiem). */
-const ACTION_COMMANDS = ['color', 'size', 'removeFormat', 'pageBreak', 'equation', 'equationHelp', 'indent', 'outdent', 'paragraph', 'symbol', 'date'];
+const ACTION_COMMANDS = ['color', 'size', 'removeFormat', 'pageBreak', 'equation', 'object', 'indent', 'outdent', 'paragraph', 'symbol', 'date'];
 const ALIGN_ICONS = { left: 'alignLeft', center: 'alignCenter', right: 'alignRight', justify: 'alignJustify' };
 
 const escapeHtml = (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -865,8 +867,13 @@ function noteEditor({
   const labeledImages = withImageLabels(images.map((image) => ({ ...image })));
   const state = {
     images: labeledImages,
-    /** Tabele (od 1.21): { label, caption?, rows, header, headerColumn, align } – kopie, zmieniane w miejscu. */
-    tables: withTableLabels(tables.map((table) => ({ ...table, rows: table.rows.map((row) => [...row]), align: [...table.align] })),
+    /** Tabele (od 1.21): { label, caption?, rows, header, headerColumn, align, od 1.26 headAlign?, formats?, colWidths? } – kopie, zmieniane w miejscu. */
+    tables: withTableLabels(tables.map((table) => ({
+      ...table, rows: table.rows.map((row) => [...row]), align: [...table.align],
+      ...(table.headAlign ? { headAlign: [...table.headAlign] } : {}),
+      ...(table.formats ? { formats: [...table.formats] } : {}),
+      ...(table.colWidths ? { colWidths: [...table.colWidths] } : {})
+    })),
       labeledImages.map((image) => image.label)),
     imagesFirst,
     numberFigures,
@@ -997,7 +1004,60 @@ function noteEditor({
   const symbols = symbolPanel({ testID: 'note-symbols', className: 'note-symbols', onPick: (symbol) => run('insertText', symbol) });
   const symbolsPanel = symbols.element;
   symbolsPanel.hidden = true;
-  const panels = [colorPanel, sizePanel, paragraphPanel, symbolsPanel];
+  /**
+   * Wstaw obiekt (od 1.26): pod paskiem – nowy rysunek, zdjęcie albo tabela i lista obiektów notatki;
+   * dotknięcie wstawia odwołanie [[sygnatura]] w miejscu kursora (bez przewijania do kafelków).
+   * Lista odświeża się przy każdej zmianie obrazów i tabel, póki panel jest otwarty.
+   */
+  const objectsPanel = h('div', { class: 'note-objects', hidden: true, role: 'group', 'aria-label': 'Wstaw obiekt', dataset: { testid: 'note-objects' } });
+  function renderObjectsPanel() {
+    const inText = new Set([...area.querySelectorAll('p')].map((paragraph) => referenceLabel(paragraph.textContent)).filter(Boolean).map(labelKey));
+    const keep = (event) => event.preventDefault();
+    const create = (label, iconName, testID, disabled, onClick) => h('button', {
+      type: 'button', class: 'note-objects__create', disabled, dataset: { testid: testID }, onMousedown: keep,
+      onClick: () => {
+        objectsPanel.hidden = true;
+        onClick();
+      }
+    }, icon(iconName, { size: 18 }), h('span', null, label));
+    const imagesFull = state.images.length + state.pending >= NOTE_IMAGE_LIMIT;
+    const items = [
+      ...state.images.map((image) => ({ item: image, kind: isDrawing(image) ? 'Rysunek' : 'Zdjęcie' })),
+      ...state.tables.map((table) => ({ item: table, kind: 'Tabela' }))
+    ];
+    const row = ({ item, kind }) => h('li', null, h('button', {
+      type: 'button', class: 'note-objects__item', dataset: { testid: 'note-object-item', label: item.label }, onMousedown: keep,
+      onClick: () => {
+        objectsPanel.hidden = true;
+        insertReference(item);
+      }
+    },
+      h('span', { class: 'note-objects__thumb', 'aria-hidden': 'true' },
+        kind === 'Tabela' || !item.url ? icon(kind === 'Tabela' ? 'table' : 'image', { size: 20 }) : h('img', { src: item.url, alt: '', draggable: 'false' })),
+      h('span', { class: 'note-objects__text' },
+        h('span', { class: 'note-objects__name' }, item.label),
+        h('span', { class: 'note-objects__meta' }, [kind, item.caption, inText.has(labelKey(item.label)) ? 'już w tekście' : null].filter(Boolean).join(' · ')))));
+    replaceChildren(objectsPanel,
+      h('div', { class: 'note-objects__new' },
+        h('span', { class: 'note-objects__label' }, 'Nowy'),
+        create('Rysunek', 'pen', 'note-object-new-drawing', imagesFull, async () => {
+          const drawn = await drawNew();
+          if (drawn) insertReference(drawn);
+        }),
+        create('Zdjęcie', 'image', 'note-object-new-photo', imagesFull, () => {
+          insertAddedImages = true;
+          fileInput.click();
+        }),
+        create('Tabela', 'table', 'note-object-new-table', state.tables.length >= NOTE_TABLE_LIMIT, () => addTable({ insert: true }))),
+      items.length > 0
+        ? [h('p', { class: 'note-objects__label' }, 'W notatce – dotknij, żeby wstawić w miejscu kursora'),
+          h('ul', { class: 'note-objects__list', role: 'list' }, items.map(row))]
+        : h('p', { class: 'note-objects__empty' }, 'Notatka nie ma jeszcze rysunków, zdjęć ani tabel – dodaj nowy obiekt powyżej.'));
+  }
+  const refreshObjectsPanel = () => {
+    if (!objectsPanel.hidden) renderObjectsPanel();
+  };
+  const panels = [colorPanel, sizePanel, paragraphPanel, symbolsPanel, objectsPanel];
   /** Pokazuje jeden panel pod paskiem albo chowa go, gdy był już widoczny. */
   const togglePanel = (panel, render = null) => {
     const show = panel.hidden;
@@ -1035,8 +1095,8 @@ function noteEditor({
       case 'symbol': togglePanel(symbolsPanel, symbols.refresh); break;
       case 'indent': case 'outdent': indent(name === 'indent'); break;
       case 'pageBreak': insertBlock(h('hr', { 'data-page': '' })); break;
-      case 'equation': insertEquation(); break;
-      case 'equationHelp': openMathHelp({ onInsert: (text) => run('insertText', text) }); break;
+      case 'equation': editEquation(); break;
+      case 'object': togglePanel(objectsPanel, renderObjectsPanel); break;
       case 'removeFormat': rewrite(clearFormatting); break;
       case 'link': editLink(); break;
       case 'date': chooseDate(); break;
@@ -1069,16 +1129,15 @@ function noteEditor({
     }
   };
 
-  /** Wzór: zaznaczony tekst dostaje znaki dolara ($zaznaczenie$), bez zaznaczenia – „$$” z kursorem w środku. */
-  function insertEquation() {
+  /**
+   * Wzór (od 1.26): okno „Równania” – zapis z podglądem i ściągawka; „Wstaw” wpisuje $zapis$ w miejscu
+   * kursora (zaznaczony tekst – jako zapis w oknie, po „Wstaw” zastąpiony wzorem).
+   */
+  function editEquation() {
     restoreSelection();
-    const selection = window.getSelection();
-    const selected = selection.rangeCount > 0 && area.contains(selection.anchorNode) ? selection.toString() : '';
-    document.execCommand('insertText', false, selected ? `$${selected}$` : '$$');
-    if (!selected) selection.modify?.('move', 'backward', 'character');
-    if (selection.rangeCount > 0) state.range = selection.getRangeAt(0).cloneRange();
-    syncEmpty();
-    updateToolbar();
+    const range = liveRange();
+    const selected = range && !range.collapsed ? range.toString().trim().replace(/^\$+|\$+$/g, '') : '';
+    openMathHelp({ value: selected, onInsert: (text) => run('insertText', text) });
   }
 
   function run(command, value = null) {
@@ -1263,6 +1322,7 @@ function noteEditor({
   area.addEventListener('input', (event) => {
     editing.onInput(event);
     syncEmpty();
+    refreshObjectsPanel();
   });
   // Ctrl+kliknięcie (Cmd na Macu) otwiera link z edytora w nowej karcie.
   area.addEventListener('click', (event) => {
@@ -1350,13 +1410,17 @@ function noteEditor({
   const gridObserver = new ResizeObserver(() => layoutGrid());
   gridObserver.observe(grid);
   const status = h('p', { class: 'note-images__status', role: 'status' });
+  /** Zdjęcia wybrane z panelu „Wstaw obiekt” (od 1.26) trafiają też do tekstu – w miejscu kursora. */
+  let insertAddedImages = false;
   const fileInput = h('input', {
     type: 'file', accept: 'image/*', multiple: true, hidden: true, dataset: { testid: 'note-image-input' },
     onChange: () => {
-      addFiles([...fileInput.files]);
+      addFiles([...fileInput.files], { insert: insertAddedImages });
+      insertAddedImages = false;
       fileInput.value = '';
     }
   });
+  fileInput.addEventListener('cancel', () => { insertAddedImages = false; });
 
   const moveImage = (index, delta) => {
     const [image] = state.images.splice(index, 1);
@@ -1492,12 +1556,13 @@ function noteEditor({
     if (skipped > 0) toast(`Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów – pominięte kartki: ${skipped}.`, { kind: 'error' });
   }
 
+  /** Nowy rysunek; zwraca obraz rysunku (do wstawienia odwołania) albo null. */
   async function drawNew() {
-    if (state.images.length + state.pending >= NOTE_IMAGE_LIMIT) return;
+    if (state.images.length + state.pending >= NOTE_IMAGE_LIMIT) return null;
     const label = nextDrawingLabel(state.images.map((image) => image.label));
     const { embed, embedded } = embedder(null);
     const result = await openDrawingEditor({ title: label, onEmbed: embed });
-    if (!result) return;
+    if (!result) return null;
     let main = null;
     if (result.drawing) {
       // Rysunek przed osadzonymi z niego obrazami.
@@ -1509,6 +1574,7 @@ function noteEditor({
     }
     addPages(result.pages, main, embedded);
     renderImages();
+    return main;
   }
 
   /** Poprawka rysunku albo rysowanie na zdjęciu – obraz zostaje na swoim miejscu, z tą samą sygnaturą. */
@@ -1577,7 +1643,10 @@ function noteEditor({
     const full = state.images.length + state.pending >= NOTE_IMAGE_LIMIT;
     tiles.push(h('button', {
       type: 'button', class: 'note-images__add', disabled: full, dataset: { testid: 'note-image-add' },
-      onClick: () => fileInput.click()
+      onClick: () => {
+        insertAddedImages = false;
+        fileInput.click();
+      }
     }, icon('plus', { size: 22 }), h('span', null, 'Dodaj obraz')));
     tiles.push(h('button', {
       type: 'button', class: 'note-images__add note-images__add--draw', disabled: full, dataset: { testid: 'note-image-draw' },
@@ -1586,10 +1655,11 @@ function noteEditor({
     replaceChildren(grid, tiles);
     layoutGrid();
     updatePreviewOptions();
+    refreshObjectsPanel();
     status.textContent = state.pending > 0 ? 'Przygotowanie obrazu…' : (full ? `Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów.` : '');
   }
 
-  async function addFiles(files) {
+  async function addFiles(files, { insert = false } = {}) {
     const room = NOTE_IMAGE_LIMIT - state.images.length - state.pending;
     const accepted = files.slice(0, Math.max(0, room));
     if (accepted.length < files.length) toast(`Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów.`);
@@ -1600,6 +1670,7 @@ function noteEditor({
         const prepared = await prepareImage(file, { name: file.name || null });
         // Nowy obraz dostaje kolejną wolną sygnaturę „Obraz N”.
         state.images = withImageLabels([...state.images, { ...prepared, stored: false, url: urls.add(prepared), label: null }]);
+        if (insert) insertReference(state.images.at(-1));
       } catch (error) {
         toast(error?.message ?? 'Nie udało się dodać obrazu.', { kind: 'error' });
       } finally {
@@ -1635,7 +1706,7 @@ function noteEditor({
     grid,
     status,
     h('p', { class: 'field__hint' },
-      'Dotknij obrazu, żeby wstawić go do tekstu, zmienić sygnaturę albo podpis, powiększyć, przesunąć albo usunąć – rysunek możesz też poprawić, a na zdjęciu rysować. '
+      'Dotknij obrazu, żeby wstawić go do tekstu (szybciej – przyciskiem „Wstaw rysunek, zdjęcie albo tabelę” na pasku), zmienić sygnaturę albo podpis, powiększyć, przesunąć albo usunąć – rysunek możesz też poprawić, a na zdjęciu rysować. '
       + 'Kolejność zmienisz, przeciągając obraz (palcem – po chwili przytrzymania). Linijka ',
       h('code', null, '[[sygnatura]]'),
       ' w tekście to miejsce obrazu w notatce; obrazy bez odwołania są przed tekstem albo po nim. Obraz możesz też wkleić do tekstu – trafi tutaj.'),
@@ -1659,17 +1730,20 @@ function noteEditor({
     const { rows, columns } = tableSize(table);
     return h('span', { class: 'note-tables__preview', 'aria-hidden': 'true' },
       h('table', null, table.rows.slice(0, 4).map((row, index) => h('tr', { class: index === 0 && table.header ? 'note-tables__head' : null },
-        row.slice(0, 3).map((cell) => h('td', null, cell.split('\n')[0].slice(0, 14)))))),
+        row.slice(0, 3).map((_, column) => h('td', null, displayCell(table, index, column).split('\n')[0].slice(0, 14)))))),
       h('span', { class: 'note-tables__size' }, `${rows} × ${columns}`));
   };
 
-  function addTable() {
+  /** Nowa tabela; insert (od 1.26, z panelu „Wstaw obiekt”) – także odwołanie w miejscu kursora. */
+  function addTable({ insert = false } = {}) {
     if (state.tables.length >= NOTE_TABLE_LIMIT) return;
     openTableEditor({
       title: 'Nowa tabela', submitLabel: 'Dodaj',
       onSave: (table) => {
-        state.tables.push({ ...table, label: nextTableLabel(allLabels()) });
+        const added = { ...table, label: nextTableLabel(allLabels()) };
+        state.tables.push(added);
         renderTables();
+        if (insert) insertReference(added);
       }
     });
   }
@@ -1719,6 +1793,7 @@ function noteEditor({
     }, icon('table', { size: 22 }), h('span', null, 'Dodaj tabelę')));
     replaceChildren(tableGrid, tiles);
     updatePreviewOptions();
+    refreshObjectsPanel();
   }
 
   const tablesSection = h('section', { class: 'note-editor__tables' },
@@ -1980,7 +2055,7 @@ function noteEditor({
           }
         }))
       ),
-      h('div', { class: 'note-editor__toolbar' }, toolbar, colorPanel, sizePanel, paragraphPanel, symbolsPanel),
+      h('div', { class: 'note-editor__toolbar' }, toolbar, colorPanel, sizePanel, paragraphPanel, symbolsPanel, objectsPanel),
       area
     )
   );
@@ -2026,8 +2101,10 @@ function noteEditor({
         htmlEN: current.en,
         imagesFirst: state.imagesFirst,
         numberFigures: state.numberFigures,
-        tables: state.tables.map(({ label, caption, rows, header, headerColumn, align }) => ({
-          label, ...(caption ? { caption } : {}), rows, header, headerColumn, align
+        tables: state.tables.map(({ label, caption, rows, header, headerColumn, align, headAlign, formats, colWidths }) => ({
+          label, ...(caption ? { caption } : {}), rows, header, headerColumn, align,
+          // Od 1.26: wyrównanie nagłówka, formaty i szerokości kolumn.
+          ...(headAlign ? { headAlign } : {}), ...(formats ? { formats } : {}), ...(colWidths ? { colWidths } : {})
         })),
         images: state.images.map((image) => (image.stored
           ? { id: image.id, label: image.label, caption: image.caption ?? null }

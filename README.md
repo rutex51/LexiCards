@@ -1,4 +1,4 @@
-# LexiCards 1.25
+# LexiCards 1.26
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -34,8 +34,9 @@ Rysunek: liniuszek promieniowy, przewracanie kartek kółkiem i przyciskami ‹ 
 Nauka w kalendarzu – plik .ics do Outlooka z powtarzaniem, przypomnieniem, prywatnością i linkami do lekcji (wersja 1.23): [docs/RELEASE-1.23.md](docs/RELEASE-1.23.md).
 Rysunek: figury z odręcznych kształtów (przytrzymane pióro), łamana i wielokąt z punktami w wierzchołkach, kartki przewracane od rogu jak w notatkach, zaznaczenie przed kółkiem liniuszka (wersja 1.24); spirala na grzbiecie kartki (1.24.1); powiększanie dwoma palcami w miejscu palców (1.24.2): [docs/RELEASE-1.24.md](docs/RELEASE-1.24.md).
 Rysunek: wymiary bez jednostki w mm (albo cm, m, calach) z oznaczeniem „Wymiary w mm”, odchyłki w ramce tolerancji, znak +/− przy odchyłkach, tabela pasowań ISO 286 z ostatnio użytymi, zamykanie paneli (wersja 1.25); kartka przewracana nad spiralą (1.25.1): [docs/RELEASE-1.25.md](docs/RELEASE-1.25.md).
+Jeden wygląd okien (białe, sekcje w cienkich ramkach), „Wstaw obiekt” na pasku notatki, przycisk Σ z oknem równań, tabele – formaty kolumn (liczby, waluta, data), wyrównanie nagłówka i szerokości kolumn (wersja 1.26): [docs/RELEASE-1.26.md](docs/RELEASE-1.26.md).
 
-## Co potrafi wersja 1.25
+## Co potrafi wersja 1.26
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -80,7 +81,11 @@ Rysunek: wymiary bez jednostki w mm (albo cm, m, calach) z oznaczeniem „Wymiar
   oprócz linków, a Ctrl+Z cofa też wstawienie odwołania do obrazu i nowej strony. Od 1.21 **tabele** –
   osobne obiekty notatki jak obrazy („Tabela 1”, `[[Tabela 1]]` w tekście, podpis „Tab. 1.” nad
   tabelą), wypełniane w oknie tabeli także wklejeniem fragmentu arkusza Excel albo tabeli z Worda;
-  długa tabela dzieli się między strony po wierszach, z nagłówkiem na każdej stronie.
+  długa tabela dzieli się między strony po wierszach, z nagłówkiem na każdej stronie. Od 1.26 kolumna
+  tabeli ma **format** (tekst, liczba całkowita, liczba „1 234,56”, waluta – zł, €, $, £, CHF – i data
+  „20.10.2026”), **wyrównanie nagłówka** osobno od wartości i **szerokość** (uchwyt między kolumnami);
+  przycisk **Wstaw rysunek, zdjęcie albo tabelę** na pasku notatki wstawia obiekt w miejscu kursora –
+  nowy albo z listy obiektów notatki, bez przewijania do kafelków.
 - Załączniki notatek: PDF, Word, Excel, PowerPoint i inne pliki do 50 MB. Na iPhonie otwierasz je
   przez systemowy arkusz udostępniania (Word, Excel, Książki, „Zachowaj w Plikach”…), na komputerze
   PDF otwiera się w nowej karcie, a pozostałe pliki są pobierane i otwierają się w swoich programach.
@@ -89,8 +94,8 @@ Rysunek: wymiary bez jednostki w mm (albo cm, m, calach) z oznaczeniem „Wymiar
   („Notatka głosowa 2026-10-19 15.01.m4a”, z czasem trwania) i odtwarzasz je w aplikacji.
 - Równania w notatkach: wzór wpisujesz tekstem między znakami dolara (`$x^2 + y^2 = r^2$`,
   `$\frac{a}{b}$`, `$\sqrt{x}$`…), a podgląd notatki pokazuje go jak w podręczniku; `$$…$$` – wzór
-  w osobnym wierszu. Przycisk **Σ** wstawia wzór, a ikona **ⓘ** obok otwiera ściągawkę zapisu
-  z polem do wypróbowania. Czytanie na głos i słuchanie czytają wzór słowami („x do kwadratu”).
+  w osobnym wierszu. Przycisk **Σ** (od 1.26 jedyny – bez osobnej ikony ⓘ) otwiera okno **Równania**:
+  zapis z podglądem, ściągawka i **Wstaw**. Czytanie na głos i słuchanie czytają wzór słowami („x do kwadratu”).
 - Rysunki odręczne w notatce: **Narysuj** przy obrazach otwiera edytor na cały ekran – pióro
   z naciskiem rysika (Apple Pencil, rysik w laptopie), zakreślacz, gumka całych kresek albo
   fragmentów (cztery wielkości), zaznaczanie prostokątem (przesuń, powiel, usuń), linijka z kątem,
@@ -160,7 +165,9 @@ Rysunek: wymiary bez jednostki w mm (albo cm, m, calach) z oznaczeniem „Wymiar
   je po kolei albo oba naraz; obrazy i załączniki, które już są na urządzeniu, zostają.
 - Motyw jasny, ciemny albo zgodny z systemem i kolor aplikacji do wyboru (niebieski, antracytowy,
   pomarańczowy, zielony, czerwony); układ na telefon i na szeroki ekran. Ikony dziedzin mają
-  szare tło, a inny kolor można wybrać w edycji dziedziny.
+  szare tło, a inny kolor można wybrać w edycji dziedziny. Od 1.26 wszystkie okna (formularze, okna
+  rysunku, tabeli, kalendarza, równań) wyglądają tak samo: białe tło jak panele edytora rysunku, każde
+  pole i przełącznik w cienkiej zaokrąglonej ramce, aktywne pole – ramka w kolorze aplikacji.
 - Praca bez internetu po pierwszym otwarciu.
 - 40 przykładowych pojęć (Business English, Metrology) do wczytania jednym przyciskiem.
 
@@ -189,7 +196,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.22 – liniuszek promieniowy, przewracanie kartek kółkiem, przyciąganie końców do krawędzi i narożników; 1.22.1 – wymiary techniczne, tolerancje, symbole metrologiczne](docs/RELEASE-1.22.md),
 [wersja 1.23 – nauka w kalendarzu (.ics)](docs/RELEASE-1.23.md),
 [wersja 1.24 – figury z odręcznych kształtów, łamana, przewracanie kartek od rogu; 1.24.1 – spirala na grzbiecie kartki; 1.24.2 – powiększanie dwoma palcami](docs/RELEASE-1.24.md),
-[wersja 1.25 – jednostki wymiarów, odchyłki w ramce tolerancji, tabela pasowań; 1.25.1 – kartka nad spiralą](docs/RELEASE-1.25.md).
+[wersja 1.25 – jednostki wymiarów, odchyłki w ramce tolerancji, tabela pasowań; 1.25.1 – kartka nad spiralą](docs/RELEASE-1.25.md),
+[wersja 1.26 – jeden wygląd okien, „Wstaw obiekt”, okno równań, formaty i szerokości kolumn tabel](docs/RELEASE-1.26.md).
 
 ## Jak korzystać
 
@@ -298,8 +306,8 @@ w dwóch wierszach, na telefonie przewijany w bok). **Tekst:** pogrubienie, kurs
 od 1.18 **indeks górny i dolny** (x², x₂; Ctrl+. i Ctrl+,), **wielkość tekstu** (Mała, Średnia, Duża,
 Bardzo duża), kolor i **Usuń formatowanie**. **Akapit:** nagłówek, listy, od 1.18 **wcięcie**
 (przyciski albo Tab i Shift+Tab – do czterech stopni, w liście – punkt poziom niżej), od 1.20
-**wyrównanie i interlinia**. **Wstaw:** od 1.20 link, symbole, data i godzina, a także nowa strona,
-wzór i ściągawka. Panel koloru ma pięć kolorów, do trzech ostatnich **własnych** (wspólnych
+**wyrównanie i interlinia**. **Wstaw:** od 1.26 rysunek, zdjęcie albo tabela (lista pod paskiem), od 1.20
+link, symbole, data i godzina, a także nowa strona i wzór (okno **Równania** ze ściągawką). Panel koloru ma pięć kolorów, do trzech ostatnich **własnych** (wspólnych
 z rysunkiem) i **„+”** – okno z siatką kolorów, suwakami R, G, B z kodem HEX i – w Chrome i Edge na
 komputerze – pipetką.
 
@@ -353,9 +361,15 @@ i polskie znaki w odwołaniu nie mają znaczenia; po zmianie sygnatury odwołani
 Odwołanie do sygnatury, której notatka nie ma, jest w podglądzie czerwone. Obrazy bez odwołania są
 przed tekstem albo po nim – według wyboru przy obrazach.
 
+**Wstaw obiekt** (od 1.26): przycisk z obrazem i plusem na pasku (grupa **Wstaw**) otwiera pod paskiem
+listę: **Nowy – Rysunek, Zdjęcie, Tabela** (nowy obiekt od razu trafia do tekstu w miejscu kursora) i obiekty
+tej notatki – rysunki, zdjęcia i tabele z miniaturą, sygnaturą, podpisem i dopiskiem „już w tekście”;
+dotknięcie wstawia odwołanie `[[sygnatura]]` w miejscu kursora. Lista odświeża się sama, gdy dodasz,
+usuniesz albo przemianujesz obiekt.
+
 **Tabele** (od 1.21): w edytorze, między obrazami a załącznikami, jest sekcja **Tabele** – **Dodaj
-tabelę** otwiera okno tabeli: siatka pól (na początek 3 × 3), nad kolumnami strzałki wyrównania
-(do lewej, do środka, do prawej), przyciski **+ Wiersz**, **+ Kolumna**, **− Wiersz**, **− Kolumna**
+tabelę** otwiera okno tabeli: siatka pól (na początek 3 × 3), nad kolumnami przyciski kolumny (do 1.25
+strzałki wyrównania; od 1.26 okno **Kolumna N** – zob. niżej), przyciski **+ Wiersz**, **+ Kolumna**, **− Wiersz**, **− Kolumna**
 (działają przy komórce z kursorem – wiersz pod nią, kolumna na prawo), przełączniki **Pierwszy wiersz –
 nagłówek** (domyślnie włączony) i **Pierwsza kolumna – nagłówki wierszy**. Tab przechodzi do
 następnej komórki, Enter zaczyna nowy wiersz w komórce. **Wklejenie** fragmentu arkusza (Excel –
@@ -372,6 +386,18 @@ częścią. Tabele bez odwołania stoją za obrazami (przed tekstem albo po nim)
 prawdziwą tabelę dla Worda, OneNote i poczty (zwykły tekst – komórki po tabulatorze), PDF – tabelę
 z nagłówkiem powtarzanym na każdej stronie wydruku. Czytanie na głos i słuchanie czytają wiersze
 (komórki po przecinku). Notatka ma najwyżej 30 tabel.
+
+Od 1.26 przycisk nad kolumną (ikona wyrównania i skrót formatu: „Abc”, „123”, „0,00”, „zł”, „Data”)
+otwiera okno **Kolumna N**: **Format wartości** – Tekst, Liczba całkowita (1235), Liczba (1 234,56),
+Waluta (zł, €, $, £, CHF – „1 234,56 zł”) albo Data („20.10.2026”), **Wyrównanie wartości** i osobno
+**Wyrównanie wiersza nagłówka**. Liczbę albo datę wpisujesz jak zwykle („1234,5”, „1.234,56”, „0.99”,
+„2026-10-20”, „1/2/26”) – komórka z kursorem pokazuje tekst jak wpisany, bez kursora (i w podglądzie,
+na rysunku, w „Kopiuj”, PDF i słuchaniu) – w formacie kolumny; tekst, który nie jest liczbą, zostaje jak
+jest, a nagłówki nie mają formatu. Liczba i waluta wyrównują wartości do prawej (gdy było do lewej).
+Nagłówek idzie za wyrównaniem wartości, dopóki nie wybierzesz mu innego. **Szerokość kolumn**: uchwyt
+(pionowa kreska) między przyciskami kolumn – przeciągnięcie poszerza jedną kolumnę kosztem następnej;
+**Równe kolumny** / **Kolumny z treści** – wszystkie tej samej szerokości albo znów według tekstu.
+W podglądzie notatki kolumny mają ustawione szerokości (tekst łamie się w kolumnie).
 
 **Notatka po angielsku:** w edytorze nad tekstem jest przełącznik **Polski / Angielski** – każda
 wersja ma osobną treść, obrazy są wspólne. W podglądzie notatki z obiema wersjami przełącznik
@@ -438,8 +464,8 @@ nagrywa AAC (`.m4a`), Chrome i Edge – AAC (`.m4a`), gdy system ma koder, inacz
 **Równania:** wzór wpisujesz w tekście notatki zapisem jak w LaTeX, między znakami dolara: `$x^2$`
 w zdaniu, `$$…$$` – w osobnym wierszu, na środku. W edytorze zapis zostaje tekstem (łatwo go
 poprawić), a w podglądzie notatki zamienia się we wzór – przeglądarka składa go sama, bez internetu.
-Przycisk **Σ** na pasku formatowania wstawia `$$` z kursorem w środku (zaznaczony tekst obejmuje
-znakami dolara), a **ⓘ** obok otwiera okno **Równania**: pole **Wypróbuj** z podglądem i opisem
+Przycisk **Σ** na pasku formatowania (od 1.26 – do 1.25 wstawiał `$$`, a ściągawkę otwierała osobna
+ikona **ⓘ**) otwiera okno **Równania** (zaznaczony tekst trafia do pola zapisu): pole **Wypróbuj** z podglądem i opisem
 błędu (np. „Nieznane polecenie”), przykłady w grupach – potęgi i indeksy (`x^2`, `a_1`, `x^{10}`),
 ułamki i pierwiastki (`\frac{a}{b}`, `\sqrt{x}`, `\sqrt[3]{x}`), znaki działań i relacje (`\cdot`,
 `\le`, `\ne`, `\to`, `\in`), sumy, całki i granice, litery greckie (`\alpha`, `\pi`, `\Delta`), nawiasy,
@@ -623,7 +649,7 @@ najpierw do widoku całej strony (bez animacji, gdy system prosi o ograniczenie 
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę
 i dalej poza ekran, a gdy zgięcie dochodzi do grzbietu, płynnie znika i spirala wychodzi spod niego
-(poprzednia kartka wraca tą samą drogą). To tylko wygląd edytora – obraz rysunku w notatce,
+(poprzednia kartka wraca tą samą drogą); od 1.26 płat znika później – widać go prawie do końca przewracania. To tylko wygląd edytora – obraz rysunku w notatce,
 wycinek i „Osadź” są bez spirali, a kreska narysowana pod dziurką zostaje cała. Strona ze zdjęciem
 („Rysuj na zdjęciu”) – bez spirali.
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno
@@ -665,7 +691,9 @@ w notatce (wklejanie z Excela i Worda, nagłówki, wyrównanie), a pod siatką �
 (Mała, Średnia, Duża, Bardzo duża) i **kolor** (tekst i linie). **Wstaw** kładzie tabelę na środku
 widocznej części strony (szerokość – według treści) i od razu ją zaznacza: przeciągnięcie przesuwa,
 narożnik (kwadracik w prawym dolnym rogu) zmienia szerokość – tekst w komórkach się zawija, wysokość
-wynika z treści. Dotknięcie zaznaczonej tabeli albo **Edytuj** – poprawka w oknie tabeli. Tabelę
+wynika z treści. Od 1.26 na górnej krawędzi zaznaczonej tabeli są **uchwyty granic kolumn** – przeciągnięcie
+zmienia szerokość dwóch sąsiednich kolumn (tabela zostaje tej samej szerokości); formaty i wyrównanie
+nagłówka z okna tabeli działają też na rysunku. Dotknięcie zaznaczonej tabeli albo **Edytuj** – poprawka w oknie tabeli. Tabelę
 zaznaczasz, kopiujesz, powielasz, osadzasz i usuwasz jak inne elementy (gumka **Całe kreski** usuwa ją
 w całości, **Fragmenty** – nie przecina). Na zdjęciu (**Rysuj na zdjęciu**) działa tak samo.
 

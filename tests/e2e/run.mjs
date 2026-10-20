@@ -2825,25 +2825,28 @@ test('równania w notatce: $…$ jako wzór w podglądzie, kwoty zostają tekste
   assert.ok(!spoken.includes('\\'), 'bez znaków zapisu');
   await dialog.locator('[data-testid=note-listen]').click();
 
-  // Edytor: przycisk wzoru wstawia $$ z kursorem w środku.
+  // Edytor (od 1.26): przycisk Σ otwiera okno „Równania” – wzór wpisany w oknie trafia do tekstu jako $…$.
   await dialog.locator('[data-testid=note-right]').click();
   const editor = dialog.locator('[data-testid=note-editor]');
   await editor.waitFor();
+  assert.equal(await dialog.locator('[data-testid=note-format-equationHelp]').count(), 0, 'bez osobnej ikony ściągawki');
   await editor.click();
   await page.keyboard.press('Control+End');
   await page.keyboard.press('Enter');
   await dialog.locator('[data-testid=note-format-equation]').click();
-  await page.keyboard.type('E=mc^2');
+  const help = page.locator('dialog.sheet[open]', { hasText: 'Wypróbuj' });
+  await help.waitFor();
+  await help.locator('[data-testid=math-try]').fill('E=mc^2');
+  await help.getByRole('button', { name: 'Wstaw' }).click();
+  await help.waitFor({ state: 'detached' });
   await waitUntil(async () => (await editor.textContent()).includes('$E=mc^2$'), 'Wzór wpisany między znaki dolara');
-  // Kursor stoi przed zamykającym $ – dalszy tekst za wzorem.
-  await page.keyboard.press('End');
+  // Kursor za wzorem – dalszy tekst.
   await page.keyboard.type(' oraz ');
   await dialog.locator('[data-testid=note-format-equation]').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(OUTPUT, 'rownania-edytor-telefon.png') });
 
-  // Ściągawka: pole „Wypróbuj” z podglądem, błąd zapisu, przykład wpisany dotknięciem, „Wstaw”.
-  await dialog.locator('[data-testid=note-format-equationHelp]').click();
-  const help = page.locator('dialog.sheet[open]', { hasText: 'Wypróbuj' });
+  // Ściągawka (to samo okno): pole „Wypróbuj” z podglądem, błąd zapisu, przykład wpisany dotknięciem, „Wstaw”.
+  await dialog.locator('[data-testid=note-format-equation]').click();
   await help.waitFor();
   await expectText(help.locator('.sheet__title'), 'Równania');
   assert.ok(await help.locator('[data-testid=math-example]').count() >= 25, 'przykłady w ściągawce');
@@ -5408,9 +5411,14 @@ test('notatka 1.21: tabela – okno tabeli (wklejenie z Excela, wiersz i kolumna
   assert.equal(await tableEditor(page).locator('[data-testid=table-cell-0-3]').count(), 1, 'czwarta kolumna');
   await tableEditor(page).locator('[data-testid=table-remove-column]').click();
   assert.equal(await tableEditor(page).locator('[data-testid=table-cell-0-3]').count(), 0);
+  // Od 1.26 przycisk nad kolumną otwiera okno kolumny (format, wyrównanie wartości i nagłówka).
   await tableEditor(page).locator('[data-testid=table-align-1]').click();
-  await tableEditor(page).locator('[data-testid=table-align-1]').click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Kolumna 2');
+  await sheet(page).locator('[data-testid=table-column-align] .segmented__option', { hasText: 'Do prawej' }).click();
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 2, 'Okno kolumny zamknięte');
   assert.equal(await tableEditor(page).locator('[data-testid=table-cell-1-1]').evaluate((cell) => getComputedStyle(cell).textAlign), 'right');
+  assert.equal(await tableEditor(page).locator('[data-testid=table-cell-0-1]').evaluate((cell) => getComputedStyle(cell).textAlign), 'right', 'nagłówek za wartościami');
   await settled(tableEditor(page));
   await page.screenshot({ path: path.join(OUTPUT, 'notatka-121-okno-tabeli.png') });
   await sheetSubmit(page).click();
@@ -7339,7 +7347,7 @@ test('rysunek 1.25 na telefonie: panel z przyciskiem zamknięcia; tolerancja wym
   assert.equal(await recent.count(), 7, '6 ostatnich i „Tabela pasowań…”');
   await sheet.locator('[data-testid=drawing-dim-fit-table]').click();
   const table = page.locator('dialog.sheet[open]').last();
-  await expectText(table.locator('.sheet__title'), 'Tabela pasowań (ISO 286)');
+  await expectText(table.locator('.sheet__title'), 'Tabela pasowań');
   await settled(table);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-tabela-pasowan-telefon.png') });
   await table.locator('[data-testid=fit-table-H7-k6]').click();
@@ -7473,6 +7481,10 @@ test('rysunek 1.25.1: przewracana kartka przechodzi nad spiralę i poza stronę,
   const outside = await flipPixel(page, ...at(-120, 500));
   assert.ok(outside[3] === 255 && Math.min(...outside.slice(0, 3)) > 200, `płat poza stroną (${outside})`);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-kartka-nad-spirala.png') });
+  // Od 1.26 płat znika później: w 700 ms (płaska część kartki ok. 5% strony) jeszcze przykrywa spiralę.
+  await moment(700);
+  const late = await flipPixel(page, ...at(-36, 550));
+  assert.ok(late[3] === 255 && Math.min(...late.slice(0, 3)) > 200, `płat nad spiralą jeszcze w 700 ms (${late})`);
   // Zgięcie przy grzbiecie – płat znika, spirala znów widoczna.
   await moment(840);
   const revealed = await flipPixel(page, ...at(-36, 550));
@@ -7482,6 +7494,147 @@ test('rysunek 1.25.1: przewracana kartka przechodzi nad spiralę i poza stronę,
   // Po animacji zwoje znów na warstwie bieżącej.
   const live = await page.locator('[data-testid=drawing-canvas]').evaluate((canvas, [fx, fy]) => [...canvas.getContext('2d').getImageData(Math.round(canvas.width * fx), Math.round(canvas.height * fy), 1, 1).data], at(-36, 550));
   assert.ok(live[3] > 200, `zwój na warstwie bieżącej (${live})`);
+}, { device: DESKTOP });
+
+// ---------------------------------------------------------------- 1.26: okna, wstawianie obiektów, tabele
+
+test('notatka 1.26 na telefonie: Wstaw obiekt – nowa tabela w miejscu kursora i lista obiektów; tabela – formaty kolumn, wyrównanie nagłówka, szerokość kolumn; podgląd i zapis', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate((id) => window.lexicards.library.saveNote(id, { html: '<p>Wymiary:</p><p>Koniec.</p>' }), ids.statements);
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await page.click('[data-testid=lesson-note]');
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-right]').click();
+  const editor = dialog.locator('[data-testid=note-editor]');
+  await editor.waitFor();
+  // Kursor za „Wymiary:”.
+  await editor.locator('p').first().click();
+  await page.keyboard.press('End');
+  const panel = dialog.locator('[data-testid=note-objects]');
+  await dialog.locator('[data-testid=note-format-object]').click();
+  await expectText(panel, 'Notatka nie ma jeszcze rysunków, zdjęć ani tabel');
+  await dialog.locator('[data-testid=note-object-new-table]').click();
+  await tableEditor(page).waitFor();
+  assert.equal(await panel.isHidden(), true, 'panel schowany');
+  await pasteIntoCell(page, '0-0', 'Pozycja\tIlość\tCena\tData\nŚruba M6\t1200\t1234,5\t2026-10-20\nNakrętka\t35,7\t0.99\t1/2/26');
+  const cell = (at) => tableEditor(page).locator(`[data-testid=table-cell-${at}]`);
+  const align = (at) => cell(at).evaluate((element) => getComputedStyle(element).textAlign);
+  const column = async (index, apply) => {
+    await tableEditor(page).locator(`[data-testid=table-align-${index}]`).click();
+    await expectText(sheet(page).locator('.sheet__title'), `Kolumna ${index + 1}`);
+    await apply(sheet(page));
+    await sheetSubmit(page).click();
+    await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 2, 'Okno kolumny zamknięte');
+  };
+  // Cena – złote (wartości same do prawej), nagłówek idzie za nimi; Ilość – liczba całkowita, nagłówek do środka; Data.
+  await column(2, (columnSheet) => columnSheet.locator('[data-testid=table-column-format]').selectOption('pln'));
+  await expectValue(cell('1-2'), '1 234,50 zł');
+  await expectValue(cell('2-2'), '0,99 zł');
+  assert.deepEqual([await align('1-2'), await align('0-2')], ['right', 'right']);
+  await column(1, async (columnSheet) => {
+    await columnSheet.locator('[data-testid=table-column-format]').selectOption('integer');
+    await columnSheet.locator('[data-testid=table-column-head-align] .segmented__option', { hasText: 'Do środka' }).click();
+  });
+  await expectValue(cell('2-1'), '36');
+  assert.deepEqual([await align('0-1'), await align('1-1')], ['center', 'right'], 'nagłówek osobno od wartości');
+  await column(3, (columnSheet) => columnSheet.locator('[data-testid=table-column-format]').selectOption('date'));
+  await expectValue(cell('2-3'), '01.02.2026');
+  // Z kursorem – tekst jak wpisany.
+  await cell('1-2').focus();
+  await expectValue(cell('1-2'), '1234,5');
+  // Uchwyt między 1. a 2. kolumną: pierwsza szersza, druga węższa.
+  await tableEditor(page).locator('.table-editor__scroll').evaluate((element) => { element.scrollLeft = 0; });
+  const widths = () => tableEditor(page).locator('tbody tr:first-child textarea').evaluateAll((cells) => cells.map((element) => element.getBoundingClientRect().width));
+  const before = await widths();
+  const grip = await tableEditor(page).locator('[data-testid=table-width-0]').boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 + 50, grip.y + grip.height / 2, { steps: 6 });
+  await page.mouse.up();
+  const after = await widths();
+  assert.ok(after[0] > before[0] + 30 && after[1] < before[1] - 30, `szerokości ${before} → ${after}`);
+  assert.ok(Math.abs(after.reduce((sum, value) => sum + value, 0) - before.reduce((sum, value) => sum + value, 0)) < 4, 'tabela tej samej szerokości');
+  await expectText(tableEditor(page).locator('[data-testid=table-widths]'), 'Kolumny z treści');
+  await settled(tableEditor(page));
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-126-tabela-formaty-telefon.png') });
+  await sheetSubmit(page).click();
+  await tableEditor(page).waitFor({ state: 'detached' });
+  // Odwołanie w miejscu kursora; lista obiektów – „już w tekście”.
+  await waitUntil(async () => (await editor.innerText()).replace(/\n+/g, '|') === 'Wymiary:|[[Tabela 1]]|Koniec.', 'Odwołanie za „Wymiary:”');
+  await dialog.locator('[data-testid=note-format-object]').click();
+  await expectText(panel.locator('[data-testid=note-object-item]'), 'Tabela 1');
+  await expectText(panel.locator('[data-testid=note-object-item]'), 'Tabela · już w tekście');
+  await panel.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-126-wstaw-obiekt-telefon.png') });
+  await dialog.locator('[data-testid=note-format-object]').click();
+  assert.equal(await panel.isHidden(), true);
+
+  // Zapis i podgląd: wartości w formacie, wyrównanie nagłówka, szerokości kolumn.
+  await dialog.locator('[data-testid=note-right]').click();
+  const table = dialog.locator('[data-testid=note-table]');
+  await table.waitFor();
+  const saved = (await storedNote(page, ids.statements)).tables[0];
+  assert.deepEqual([saved.formats, saved.align, saved.headAlign], [['text', 'integer', 'pln', 'date'], ['left', 'right', 'right', 'left'], ['left', 'center', 'right', 'left']]);
+  assert.equal(saved.rows[1][2], '1234,5', 'komórka zapisana jak wpisana');
+  assert.equal(saved.colWidths.length, 4);
+  assert.ok(saved.colWidths[0] > saved.colWidths[3], `pierwsza kolumna szersza (${saved.colWidths})`);
+  assert.deepEqual(await table.locator('tbody tr').first().locator('td').allTextContents(), ['Śruba M6', '1200', '1 234,50 zł', '20.10.2026']);
+  assert.equal(await table.locator('thead th').nth(1).evaluate((element) => getComputedStyle(element).textAlign), 'center');
+  assert.equal(await table.locator('col').count(), 4);
+  await table.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-126-tabela-podglad-telefon.png') });
+}, { device: PHONE });
+
+test('rysunek 1.26: tabela – uchwyt granicy kolumn na rysunku zmienia szerokość dwóch kolumn, formaty w komórkach (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Tabela</p>');
+  const frame = await pageFrame(page);
+  await editor.locator('[data-testid=drawing-insert-table]').click();
+  await pasteIntoCell(page, '0-0', 'Wymiar\tWartość\tUwagi\nA\t50\tok\nB\t1234,5\t');
+  await tableEditor(page).locator('[data-testid=table-widths]').click();
+  await expectText(tableEditor(page).locator('[data-testid=table-widths]'), 'Kolumny z treści');
+  await tableEditor(page).locator('[data-testid=table-align-1]').click();
+  await sheet(page).locator('[data-testid=table-column-format]').selectOption('number');
+  await sheetSubmit(page).click();
+  // Otwarte zostają okno notatki i okno tabeli.
+  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 2, 'Okno kolumny zamknięte');
+  await sheetSubmit(page).click();
+  await tableEditor(page).waitFor({ state: 'detached' });
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Tabela');
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  const table = (await savedStrokes(page, ids.statements)).find((stroke) => stroke.tool === 'table');
+  assert.deepEqual([table.formats, table.colWidths], [['text', 'number', 'text'], [0.3333, 0.3333, 0.3333]]);
+  // Ponownie: zaznaczenie tabeli, uchwyt granicy 1. i 2. kolumny na górnej krawędzi – o 40 w prawo.
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('.note-images__item--drawing .note-images__open').click();
+  await menuItem(page, 'Edytuj rysunek');
+  await editor.waitFor();
+  await nextFrames(page);
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await page.mouse.click(...frame.screen(table.x + table.width * 0.5, table.y + table.height * 0.6));
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Tabela');
+  const border = table.x + table.width / 3;
+  await page.mouse.move(...frame.screen(border, table.y));
+  await page.mouse.down();
+  await page.mouse.move(...frame.screen(border + 40, table.y + 4), { steps: 8 });
+  await page.mouse.up();
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-126-tabela-kolumny.png') });
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  const moved = (await savedStrokes(page, ids.statements)).find((stroke) => stroke.tool === 'table');
+  const share = 40 / table.width;
+  assert.ok(Math.abs(moved.colWidths[0] - (1 / 3 + share)) < 0.01 && Math.abs(moved.colWidths[1] - (1 / 3 - share)) < 0.01, `udziały ${moved.colWidths}`);
+  assert.equal(moved.colWidths[2], 0.3333, 'trzecia bez zmian');
+  assert.deepEqual([moved.x, moved.y, moved.width], [table.x, table.y, table.width], 'tabela w tym samym miejscu i tej samej szerokości');
 }, { device: DESKTOP });
 
 // ---------------------------------------------------------------- nauka z fiszkami

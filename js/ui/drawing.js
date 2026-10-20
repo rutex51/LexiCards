@@ -53,6 +53,7 @@ import { layoutMath } from '../core/math-layout.js';
 import { constrainCorner, cornerOf, cornerPath, foldGeometry } from '../core/page-curl.js';
 import { recognizeStroke } from '../core/recognize.js';
 import { rememberFit } from '../core/fits.js';
+import { cleanColumnWidths, moveColumnBorder } from '../core/tables.js';
 import { openFitTable } from './fit-table.js';
 import {
   DIM_PREFIXES, FIT_RE, LABEL_TEXT_MAX, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_FILLS, SHAPE_FILL_LABELS, SHAPE_LABELS, SKEW_DEGREES_LIMIT,
@@ -83,7 +84,7 @@ import { paintShape, paintTemplate } from './drawing-paint.js';
 import { prepareImage } from './images.js';
 import { symbolField } from './symbols.js';
 import { TEXT_FONT, TEXT_LINE, measureText, textFont, textLines } from './canvas-text.js';
-import { measureSticky, measureTable, naturalTableWidth, paintSticky, paintStickyPopover, paintTable, stickyDate, stickyPopoverBox } from './drawing-boxes.js';
+import { measureSticky, measureTable, naturalTableWidth, paintSticky, paintStickyPopover, paintTable, stickyDate, stickyPopoverBox, tableColumnWidths } from './drawing-boxes.js';
 import { openTableEditor } from './table-editor.js';
 
 const PEN_KEY = 'lexicards-pen-seen';
@@ -3322,8 +3323,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     /**
      * Płat przewracanej kartki znika (od 1.25.1), gdy zgięcie dochodzi do grzbietu: płaska część kartki
      * mniejsza niż ta część strony – płat coraz bardziej przezroczysty, spirala wychodzi spod niego.
+     * Od 1.26 później (5% zamiast 18%) – płat widać prawie do końca przewracania.
      */
-    const FLAP_FADE = 0.18;
+    const FLAP_FADE = 0.05;
     /** Ścieżka wielokąta [{ x, y }, …]. */
     function polygonPath(ctx, polygon) {
       ctx.beginPath();
@@ -4616,7 +4618,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const [only] = selection;
       return isBox(only) ? only : null;
     }
-    /** Uchwyty: narożnik (zmiana wielkości; zwinięta karteczka – bez niego) i koniec strzałki karteczki. */
+    /**
+     * Uchwyty: narożnik (zmiana wielkości; zwinięta karteczka – bez niego), koniec strzałki karteczki
+     * i (od 1.26) granice kolumn tabeli na górnej krawędzi – szerokość dwóch sąsiednich kolumn.
+     */
     function boxHandles(element) {
       // Symbol metrologiczny (od 1.22.1): bez narożnika – tylko koniec strzałki albo wierzchołek chropowatości.
       if (element.tool === 'roughness') return [{ id: 'target', x: element.x, y: element.y }];
@@ -4624,6 +4629,13 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const handles = [];
       if (!(element.tool === 'sticky' && element.collapsed)) handles.push({ id: 'resize', x: element.x + element.width, y: element.y + element.height });
       if (element.tool === 'sticky' && element.leader) handles.push({ id: 'target', x: element.leader.x, y: element.leader.y });
+      if (element.tool === 'table') {
+        let x = element.x;
+        tableColumnWidths(element).slice(0, -1).forEach((width, column) => {
+          x += width;
+          handles.push({ id: `col-${column}`, x, y: element.y });
+        });
+      }
       return handles;
     }
     function boxHandleAt(point) {
@@ -4646,6 +4658,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         const point = toScreen(handle);
         ctx.beginPath();
         if (handle.id === 'target') ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+        else if (handle.id.startsWith('col-')) ctx.roundRect(point.x - 4, point.y - 11, 8, 22, 4);
         else ctx.rect(point.x - 7, point.y - 7, 14, 14);
         ctx.fill();
         ctx.stroke();
@@ -4661,6 +4674,15 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       // Wierzchołek chropowatości (od 1.22.1) przesuwa cały symbol.
       if (handle === 'target' && original.tool === 'roughness') return { ...original, x: Math.round(point.x * 100) / 100, y: Math.round(point.y * 100) / 100 };
       if (handle === 'target') return { ...original, leader: { x: Math.round(point.x), y: Math.round(point.y) } };
+      if (handle.startsWith('col-')) {
+        // Granica kolumn (od 1.26): lewa kolumna do wskaźnika, prawa – o tyle węższa; tabela tej samej szerokości.
+        const column = Number(handle.slice(4));
+        const widths = tableColumnWidths(original);
+        const left = original.x + widths.slice(0, column).reduce((sum, width) => sum + width, 0);
+        const shares = moveColumnBorder(widths.map((width) => width / original.width), column, (point.x - left - widths[column]) / original.width);
+        const next = { ...original, colWidths: cleanColumnWidths(shares, shares.length) };
+        return { ...next, ...measureTable(next) };
+      }
       if (original.tool === 'table') {
         const next = { ...original, width: Math.round(Math.max(original.rows[0].length * original.size * 2, point.x - original.x)) };
         return { ...next, ...measureTable(next) };

@@ -258,6 +258,14 @@ działa na adapterze pamięciowym i wyświetla ostrzeżenie, że dane znikną po
   notatki (`svg.icon--note`) ma od 1.10.5 stały ciemnożółty kolor – w obu motywach i przy każdym
   kolorze aplikacji.
 
+Od 1.26 **jeden wygląd okien** (`css/app.css`, sekcja okien): arkusz formularza (`openFormSheet`) ma białe
+tło `--elevated` – jak panele edytora rysunku – a każde pole (`.field`) i przełącznik (`.switch`) leży
+w cienkiej zaokrąglonej ramce `--outline` (aktywne pole – ramka w kolorze aplikacji, bez grubej ramki
+wokół pola); grupa pól (`formGroup`) i kilka przełączników pod sobą (`div:has(> .switch + .switch)`) – jedna
+ramka i linie między nimi. Okno notatki (`.note-dialog`) zostaje na szarym tle `--sheet-bg` (kartka i pasek
+narzędzi). Tytuł okna stoi między przyciskami (`auto 1fr auto`) i skraca się wielokropkiem; przełącznik
+segmentowy ma mniejsze marginesy i nie łamie słowa w środku.
+
 ## Praca offline i aktualizacje
 
 `npm run build` wylicza identyfikator wydania ze skrótu treści wszystkich plików aplikacji
@@ -448,6 +456,33 @@ w komórkach dla Worda i OneNote; `tableText` – komórki po tabulatorze (zwyk�
 `htmlWithTables` – arkusz notatek eksportu (komórka nie ma tabel: podpis i wiersze „a | b | c”),
 `tableSpeech` – słuchanie lekcji (`noteSteps`: w miejscu odwołania, każda tabela raz). W kafelkach
 edytora tabele mają te same polecenia co obrazy (`renameImage` i `editCaption` obsługują oba rodzaje).
+
+Od 1.26 tabela ma też (`cleanTable` zapisuje je tylko, gdy coś zmieniają): `headAlign` – wyrównanie wiersza
+nagłówka osobno od wartości (`cellAlign`; brak – jak `align`), `formats` – format wartości kolumny
+(`TABLE_FORMATS`: 'text', 'integer', 'number', waluty 'pln' | 'eur' | 'usd' | 'gbp' | 'chf', 'date') i `colWidths` –
+udział kolumn w szerokości (suma 1, najmniej 2%; `cleanColumnWidths`, `moveColumnBorder` – granica między
+kolumnami, `widthsWithColumn` / `widthsWithoutColumn` – przy dodaniu i usunięciu kolumny). Komórka jest
+zapisana jak wpisana; `displayCell` pokazuje ją w formacie kolumny (`parseNumber` – spacje, apostrof
+i kropki tysięcy, przecinek albo kropka dziesiętna, symbol waluty pomijany; `formatNumber` – twarda spacja
+co trzy cyfry, przecinek, minus „−”; `parseDate` – rrrr-mm-dd, dd.mm.rrrr, d/m/rr), a nagłówki, puste,
+wielowierszowe i nie-liczby – bez zmian. `tableHtml` (podgląd, druk, schowek; `<colgroup>` i
+`table-layout: fixed` przy `colWidths`), `tableText`, `tableLines` i `tableSpeech` używają wartości
+pokazywanych. W oknie tabeli przycisk kolumny otwiera okno **Kolumna N** (`openColumnSheet`: format,
+wyrównanie wartości i nagłówka – nagłówek idzie za wartościami, dopóki nie wybierze się mu innego; liczba
+i waluta przy wyrównaniu do lewej – do prawej), uchwyt `.table-editor__grip` między przyciskami zmienia
+`colWidths` przeciąganiem (szerokość komórek w oknie – udział × liczba kolumn × 9,5 rem), a komórka bez
+kursora pokazuje `displayCell` (z kursorem – tekst jak wpisany). Na rysunku `tableColumnWidths`
+(`drawing-boxes.js`) bierze `colWidths` albo naturalne proporcje, a zaznaczona tabela ma uchwyty `col-N`
+na górnej krawędzi (granice kolumn, `editBoxHandle`).
+
+Od 1.26 pasek notatki ma przycisk **Wstaw obiekt** (`command: 'object'`, panel `note-objects` pod paskiem,
+jak symbole): **Nowy – Rysunek** (`drawNew()` zwraca obraz rysunku), **Zdjęcie** (`addFiles(files,
+{ insert })` – wybór z panelu) i **Tabela** (`addTable({ insert })`) wstawiają też odwołanie w miejscu
+kursora (`insertReference` – jak „Wstaw do tekstu”); niżej lista obrazów i tabel notatki (miniatura,
+rodzaj, podpis, „już w tekście” – akapity `referenceLabel` w edytorze). `renderImages`, `renderTables`
+i wpisywanie tekstu odświeżają otwarty panel (`refreshObjectsPanel`). Przycisk **Σ** (`editEquation`)
+otwiera `openMathHelp` z zaznaczonym tekstem jako zapisem – `$…$` trafia do tekstu po „Wstaw”;
+osobnej ikony ściągawki (`equationHelp`) już nie ma.
 
 Od 1.6 **sygnatury i odwołania** (`js/core/note-refs.js`): każdy obraz ma w notatce `label` –
 brakujący albo powtórzony dostaje kolejną wolną „Obraz N” (`withImageLabels`, przy zapisie, w kopii
@@ -790,7 +825,7 @@ zmian), `paintCoils` – na warstwie bieżącej na początku `renderLive` (nad k
 płótnie animacji (spirala stoi, kartka obraca się wokół niej; od 1.25.1 `paintTurn(…, between)` rysuje
 zwoje nad płaską częścią kartki, a pod płatem, warstwa bieżąca ich wtedy nie rysuje – `coilsOnFlip`;
 płat nie jest przycinany przy grzbiecie – przechodzi nad spiralę i poza stronę – i znika płynnie, gdy
-płaska część kartki jest mniejsza niż `FLAP_FADE` (0,18) strony – krycie płata `1 − smoothstep`): przednia połowa zwoju – od
+płaska część kartki jest mniejsza niż `FLAP_FADE` (od 1.26 0,05, w 1.25.1 – 0,18) strony – krycie płata `1 − smoothstep`): przednia połowa zwoju – od
 dziurki nad krawędzią (cień `shadowBlur` w pikselach urządzenia, połysk), tylna – pod kartką, widoczna za
 krawędzią; zwój widziany lekko z ukosa (`tilt`). `fitScale` i `clampView` zostawiają miejsce
 `SPIRAL_OUT` z obu stron (strona na środku), a przy powiększeniu przesunięcie w prawo odsłania spiralę.
