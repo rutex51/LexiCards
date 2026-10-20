@@ -38,22 +38,22 @@ import {
   ARRAY_LABELS, ARRAY_MAX, arrayDefaults, arraySize, cleanArrayParams, expandArray, isArray, itemsBounds, makeArray, polarRadius, withPolarRadius
 } from '../core/arrays.js';
 import {
-  endPoint, findSnap, followersOf, keepLinksTo, newElementId, relinkCopies, resolveAttachments, segmentBetween, withLink
+  endPoint, findSnap, followersOf, keepLinksTo, newElementId, relinkCopies, resolveAttachments, segmentBetween, snapNormal, withLink
 } from '../core/attach.js';
 import {
   DrawingHistory, ELEMENT_TEXT_MAX, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA,
   HIGHLIGHTER_COLORS, HIGHLIGHTER_RANGE, INK_COLORS, RAY_STEPS, STICKY_COLORS, STICKY_MIN, STICKY_TEXT_MAX, STICKY_TEXT_SIZES, TABLE_TEXT_SIZES, isBox, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
   SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings,
-  defaultToolSettings, dimensionText, elementBox, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
+  defaultToolSettings, dimFactor, dimUnitLabel, dimensionParts, elementBox, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
   isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
   hasContent, rulerDegrees, rulerOffset, rulerPoint, scaleUnitLabel, screenScale, screenScaleValue, selectionBounds, smoothPoint, snapRulerAngle,
   snapToStrokes, splitByPolygon, strokeBounds, strokesAt, strokesInPolygon, strokesInRect, toScaleLength, touchesStroke, translateStroke
 } from '../core/drawing.js';
 import { layoutMath } from '../core/math-layout.js';
 import {
-  DIM_FONT, DIM_GAP, LABEL_TEXT_MAX, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_FILLS, SHAPE_FILL_LABELS, SHAPE_LABELS, SKEW_DEGREES_LIMIT,
-  canFill, dimCenter, dimPlaces, guideLinesIn, isSegment, isShape, labelFrame, labelMaxWidth, moveShapeHandle, nearestGuideLine, nearestRay,
-  nearestRing, rayAngles, resizeShape, ringsIn,
+  DIM_PREFIXES, FIT_RE, LABEL_TEXT_MAX, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_FILLS, SHAPE_FILL_LABELS, SHAPE_LABELS, SKEW_DEGREES_LIMIT,
+  canFill, dimCenter, dimGeometry, dimOffset, dimOffsetAt, dimPlaces, guideLinesIn, isLinearDim, isSegment, isShape, labelFrame, labelMaxWidth, moveShapeHandle, nearestGuideLine, nearestRay,
+  nearestRing, rayAngles, resizeShape, ringsIn, stackDimOffset, withDimOffset, withDimTolerance,
   segmentCaps, segmentDegrees, setSegment, shapeContains, shapeFromDrag, shapeHandles, shapePoint, shownDims, skewDegrees, touchesShape,
   withCaps, withDims
 } from '../core/shapes.js';
@@ -67,6 +67,13 @@ import { field, segmented, textArea, toggle } from './components.js';
 import { confirmDialog, mountDialog, openFormSheet, openMenu, showError } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
+import {
+  DATUM_LETTER_RE, DATUM_RE, GDT_DATUMS_MAX, GDT_SYMBOLS, ROUGHNESS_KINDS, ROUGHNESS_KIND_LABELS, ROUGHNESS_TEXT_MAX, SYMBOL_TEXT_SIZES, cleanGdtValue,
+  datumSide, gdtSymbol, isSymbol, nextDatumLetter
+} from '../core/gdt.js';
+import {
+  gdtGlyphCanvas, measureGdt, measureRoughness, paintDatum, paintGdt, paintRoughness, paintTechnicalDim
+} from './drawing-gdt.js';
 import { openMathHelp } from './math.js';
 import { paintShape, paintTemplate } from './drawing-paint.js';
 import { prepareImage } from './images.js';
@@ -280,6 +287,10 @@ function measureLabel(shape) {
 function remeasure(stroke) {
   if (isArray(stroke)) return { ...stroke, items: stroke.items.map(remeasure) };
   if (isShape(stroke)) return measureLabel(stroke);
+  // Symbole metrologiczne (od 1.22.1): pola ramki i tekst chropowatości – z czcionki tego urządzenia.
+  if (stroke.tool === 'gdt') return { ...stroke, ...measureGdt(stroke) };
+  if (stroke.tool === 'roughness') return { ...stroke, ...measureRoughness(stroke) };
+  if (stroke.tool === 'datum') return stroke;
   // Tabela i karteczka (od 1.21): wysokość z treści.
   if (stroke.tool === 'table') return { ...stroke, ...measureTable(stroke) };
   if (stroke.tool === 'sticky') return { ...stroke, ...measureSticky(stroke) };
@@ -305,28 +316,15 @@ function paintLabel(ctx, shape) {
 }
 
 /**
- * Stałe wymiary kształtu (od 1.19): napisy w kolorze kształtu, prosto, na środku linii ramki – tam,
- * gdzie w edytorze są pola wymiarów; biała obwódka – czytelne na kratce i na wypełnieniu.
+ * Stałe wymiary kształtu (od 1.19), od 1.22.1 jak w rysunku technicznym: linie pomocnicze, linia
+ * wymiarowa ze strzałkami (kąt – łuk) i liczba w kolorze kształtu; `text: false` – same linie
+ * (zaznaczony kształt: liczby są w polach wymiarów), `offsets` – podgląd innego odsunięcia.
  */
-function paintDims(ctx, shape, scale) {
-  const keys = shownDims(shape);
-  if (keys.length === 0) return;
-  const places = dimPlaces(shape);
-  ctx.save();
-  ctx.font = `600 ${DIM_FONT}px ${TEXT_FONT}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.lineJoin = 'round';
-  for (const key of keys) {
-    const text = dimensionText(shape, key, scale);
-    const center = dimCenter(places[key], ctx.measureText(text).width + 6, DIM_FONT * 1.2, DIM_GAP);
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
-    ctx.strokeText(text, center.x, center.y);
-    ctx.fillStyle = shape.color;
-    ctx.fillText(text, center.x, center.y);
+function paintDims(ctx, shape, scale, style, { text = true, offsets = null } = {}) {
+  for (const key of shownDims(shape)) {
+    const offset = offsets?.[key];
+    paintTechnicalDim(ctx, shape, key, text ? dimensionParts(shape, key, scale, style) : null, { offset, dashed: offset !== undefined });
   }
-  ctx.restore();
 }
 
 /**
@@ -351,10 +349,23 @@ export function paintStroke(ctx, stroke, options = {}) {
     if (!(options.image && stroke.hidden)) paintSticky(ctx, stroke, options);
     return;
   }
+  // Symbole metrologiczne (od 1.22.1).
+  if (stroke.tool === 'gdt') {
+    paintGdt(ctx, stroke);
+    return;
+  }
+  if (stroke.tool === 'datum') {
+    paintDatum(ctx, stroke);
+    return;
+  }
+  if (stroke.tool === 'roughness') {
+    paintRoughness(ctx, stroke);
+    return;
+  }
   if (isShape(stroke)) {
     paintShape(ctx, stroke);
     if (stroke.label) paintLabel(ctx, stroke);
-    if (options.dims !== false) paintDims(ctx, stroke, options.scale);
+    if (options.dims !== false) paintDims(ctx, stroke, options.scale, options.dimStyle);
     return;
   }
   if (isElement(stroke)) {
@@ -426,7 +437,7 @@ export function paintDrawing(ctx, drawing, media = {}, skip = null, plain = null
     // Karteczki mają numery w kolejności na rysunku (od 1.21).
     if (stroke.tool === 'sticky') number += 1;
     if (!skip?.has(stroke)) {
-      paintStroke(ctx, stroke, { scale: drawing.scale, dims: stroke !== plain, number: stroke.tool === 'sticky' ? number : null, editor, image });
+      paintStroke(ctx, stroke, { scale: drawing.scale, dimStyle: drawing.dimStyle, dims: stroke !== plain, number: stroke.tool === 'sticky' ? number : null, editor, image });
     }
   }
 }
@@ -612,6 +623,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     let pickHover = null;
     /** Miejsce przyciągnięcia pod myszą przy narzędziu kształtów – odcinek albo strzałka (od 1.22). */
     let edgeHover = null;
+    // Symbol metrologiczny czekający na dotknięcie miejsca na rysunku (od 1.22.1): { element }.
+    let symbolPlacing = null;
     /** Długość ostatniej kreski wzdłuż linijki (jednostki strony) albo null. */
     let measured = null;
     /** Kolejne wklejenia tego samego schowka – każde trochę niżej i w prawo. */
@@ -1122,8 +1135,20 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         onPointerdown: (event) => event.stopPropagation(),
         onClick: () => toggleDim(key)
       });
-      const box = h('div', { class: 'drawing__dim', hidden: true }, h('label', { class: 'drawing__dim-field', title: label }, input, unit), eye);
-      const field = { key, kind, label, box, input, unit, eye, shown: null, dirty: false };
+      // Od 1.22.1: znak i tolerancja wymiaru (lewy górny róg) i uchwyt – przeciągnięcie odsuwa linię wymiarową.
+      const marks = h('button', {
+        type: 'button', class: 'drawing__dim-marks', 'aria-pressed': 'false', 'aria-label': `${label}: znak i tolerancja`, title: 'Znak przed liczbą (⌀, R, □) i tolerancja',
+        dataset: { testid: `drawing-dim-marks-${key}` },
+        onPointerdown: (event) => event.stopPropagation(),
+        onClick: () => editDimMarks(key)
+      }, '±');
+      const grip = h('button', {
+        type: 'button', class: 'drawing__dim-grip', hidden: true, 'aria-label': `${label}: przeciągnij, żeby odsunąć linię wymiarową`,
+        title: 'Przeciągnij – odsunięcie linii wymiarowej (następne wymiary dostaną ten sam odstęp)', dataset: { testid: `drawing-dim-grip-${key}` },
+        onPointerdown: (event) => startDimDrag(event, key)
+      }, icon('dimDrag', { size: 14 }));
+      const box = h('div', { class: 'drawing__dim', hidden: true }, h('label', { class: 'drawing__dim-field', title: label }, input, unit), eye, marks, grip);
+      const field = { key, kind, label, box, input, unit, eye, marks, grip, shown: null, dirty: false };
       input.addEventListener('input', () => { field.dirty = true; });
       input.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
@@ -1149,10 +1174,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       dims.append(box);
       return [key, field];
     }));
-    /** Wartość pola dla kształtu (długości w skali rysunku, kąty w stopniach). */
+    /** Wartość pola dla kształtu (długości w skali rysunku – od 1.22.1 w stylu technicznym w mm, kąty w stopniach). */
     function dimValue(key, shape) {
-      if (key === 'width' || key === 'length') return toScaleLength(shape.w, drawing.scale);
-      if (key === 'height') return toScaleLength(shape.h, drawing.scale);
+      const factor = dimFactor(drawing.scale, drawing.dimStyle);
+      if (key === 'width' || key === 'length') return toScaleLength(shape.w, drawing.scale) * factor;
+      if (key === 'height') return toScaleLength(shape.h, drawing.scale) * factor;
       if (key === 'skew') return skewDegrees(shape);
       return segmentDegrees(shape);
     }
@@ -1168,7 +1194,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         requestLive();
         return;
       }
-      const units = fromScaleLength(value, drawing.scale);
+      const units = fromScaleLength(value / dimFactor(drawing.scale, drawing.dimStyle), drawing.scale);
       let next;
       if (field.key === 'width') next = resizeShape(shape, { w: units });
       else if (field.key === 'height') next = resizeShape(shape, { h: units });
@@ -1192,10 +1218,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
      * punktu tylko pokazują wartości. Odcinek: „pod” i „za końcem” – w kierunku czytelnym (dimPlaces).
      */
     function placeDims(shape) {
-      const show = Boolean(shape) && (!active || active.kind === 'shape-edit');
+      const show = Boolean(shape) && (!active || active.kind === 'shape-edit' || active.kind === 'dim-offset');
       dims.hidden = !show;
       if (!show) return;
-      dims.classList.toggle('drawing__dims--busy', Boolean(active));
+      dims.classList.toggle('drawing__dims--busy', Boolean(active) && active.kind !== 'dim-offset');
       const places = dimPlaces(shape);
       const shown = shownDims(shape);
       for (const field of Object.values(dimFields)) {
@@ -1204,7 +1230,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         if (!place) continue;
         if (document.activeElement !== field.input && !field.dirty) {
           field.input.value = formatNumber(dimValue(field.key, shape));
-          field.unit.textContent = field.kind === 'length' ? scaleUnitLabel(drawing.scale) : '°';
+          field.unit.textContent = field.kind === 'length' ? dimUnitLabel(drawing.scale, drawing.dimStyle) : '°';
         }
         // Oko (od 1.19): wymiar widoczny na rysunku także po odznaczeniu kształtu.
         const visible = shown.includes(field.key);
@@ -1215,9 +1241,13 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           field.eye.title = visible ? 'Widoczny na rysunku – dotknij, żeby ukryć' : 'Pokaż ten wymiar na rysunku na stałe';
           replaceChildren(field.eye, icon(visible ? 'eye' : 'eyeOff', { size: 15 }));
         }
-        const anchor = toScreen(place.point);
+        field.grip.hidden = !visible;
+        field.marks.setAttribute('aria-pressed', String(Boolean(shape.dimTols?.[field.key])));
         const [width, height] = [field.box.offsetWidth, field.box.offsetHeight];
-        const center = dimCenter({ point: anchor, normal: place.normal }, width, height, DIM_SCREEN_GAP);
+        // Wymiar widoczny na stałe (od 1.22.1) – pole w miejscu liczby nad linią wymiarową.
+        const offset = active?.kind === 'dim-offset' && active.key === field.key ? active.offset : undefined;
+        const center = visible ? toScreen(dimGeometry(shape, field.key, offset).text)
+          : dimCenter({ point: toScreen(place.point), normal: place.normal }, width, height, DIM_SCREEN_GAP);
         const x = Math.min(view.width - width / 2 - 4, Math.max(width / 2 + 4, center.x));
         const y = Math.min(view.height - height / 2 - 4, Math.max(height / 2 + 4, center.y));
         field.box.style.left = `${Math.round(x - width / 2)}px`;
@@ -1229,10 +1259,177 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const shape = editedShape();
       if (!shape || active) return;
       const shown = shownDims(shape);
-      replaceShape(shape, withDims(shape, shown.includes(key) ? shown.filter((item) => item !== key) : [...shown, key]));
+      replaceShape(shape, shown.includes(key) ? withDims(shape, shown.filter((item) => item !== key)) : showDim(shape, key));
       updateToolbar();
       requestRender();
     }
+    /**
+     * Kształt z widocznym wymiarem `key` (od 1.22.1): linia wymiarowa w odsunięciu z wzoru (ostatnio
+     * przeciągniętego), a gdy wchodziłaby na inną – piętro dalej; kąt – domyślny łuk.
+     */
+    function showDim(shape, key) {
+      const next = withDims(shape, [...shownDims(shape), key]);
+      if (!isLinearDim(key) || Number.isFinite(shape.dimOffsets?.[key])) return next;
+      return withDimOffset(next, key, stackDimOffset(drawing.strokes, next, key, tools.dimOffset));
+    }
+    /** Przeciąganie uchwytu pola wymiaru: podgląd odsunięcia (przerywany), po puszczeniu – zapis i wzór dla następnych. */
+    function startDimDrag(event, key) {
+      event.preventDefault();
+      event.stopPropagation();
+      const shape = editedShape();
+      if (!shape || active) return;
+      const grip = event.currentTarget;
+      grip.setPointerCapture?.(event.pointerId);
+      active = { kind: 'dim-offset', id: event.pointerId, key, shape, offset: dimOffset(shape, key) };
+      // Miejsce chwytu względem liczby – linia wymiarowa nie przeskakuje pod palec.
+      const start = toDrawing(event);
+      const text = dimGeometry(shape, key).text;
+      const [grabX, grabY] = [start.x - text.x, start.y - text.y];
+      const move = (moveEvent) => {
+        if (moveEvent.pointerId !== event.pointerId || active?.kind !== 'dim-offset') return;
+        const point = toDrawing(moveEvent);
+        active.offset = dimOffsetAt(shape, key, { x: point.x - grabX, y: point.y - grabY });
+        requestLive();
+      };
+      const finish = (upEvent) => {
+        if (upEvent.pointerId !== event.pointerId) return;
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', finish);
+        window.removeEventListener('pointercancel', finish);
+        const done = active;
+        active = null;
+        if (done?.kind !== 'dim-offset') return;
+        if (upEvent.type === 'pointerup' && done.offset !== dimOffset(shape, key)) {
+          replaceShape(shape, withDimOffset(shape, key, done.offset));
+          if (isLinearDim(key)) {
+            tools.dimOffset = done.offset;
+            saveTools(tools);
+          }
+          updateToolbar();
+        }
+        requestRender();
+      };
+      // Na oknie – ruch dociera także wtedy, gdy wskaźnik zjedzie z uchwytu.
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', finish);
+      window.addEventListener('pointercancel', finish);
+      requestLive();
+    }
+    /**
+     * Znak i tolerancja wymiaru (od 1.22.1): ⌀, R, □ przed liczbą (długości), tolerancja ± (symetryczna),
+     * odchyłki (górna i dolna) albo pasowanie („H7”, „H7/g6”); wartości w jednostkach liczby wymiaru.
+     * Zapis pokazuje wymiar na rysunku (oko).
+     */
+    function editDimMarks(key) {
+      const shape = editedShape();
+      if (!shape || active) return;
+      const dimField = dimFields[key];
+      const linear = isLinearDim(key);
+      const current = shape.dimTols?.[key] ?? {};
+      const choice = { prefix: current.prefix ?? '', kind: current.kind ?? 'none' };
+      const unit = linear ? dimUnitLabel(drawing.scale, drawing.dimStyle) : '°';
+      const number = (value) => (Number.isFinite(value) ? formatNumber(value) : '');
+      const decimal = (testID, label, value) => h('input', {
+        class: 'input', type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', 'aria-label': label,
+        value: number(value), dataset: { testid: testID }, onInput: () => refresh()
+      });
+      const symmetric = decimal('drawing-dim-tol-value', 'Tolerancja ±', current.value);
+      const upper = decimal('drawing-dim-tol-upper', 'Odchyłka górna', current.upper);
+      const lower = decimal('drawing-dim-tol-lower', 'Odchyłka dolna', current.lower);
+      const fit = h('input', {
+        class: 'input', type: 'text', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Pasowanie', placeholder: 'H7',
+        value: current.fit ?? '', dataset: { testid: 'drawing-dim-tol-fit' }, onInput: () => refresh()
+      });
+      const preview = h('p', { class: 'drawing__dim-preview', dataset: { testid: 'drawing-dim-tol-preview' } });
+      const blocks = {
+        sym: field('Tolerancja ±', h('div', { class: 'drawing__dim-tol-row' }, symmetric, h('span', null, unit))),
+        dev: h('div', { class: 'drawing__dim-tol-pair' },
+          field('Górna', h('div', { class: 'drawing__dim-tol-row' }, upper, h('span', null, unit))),
+          field('Dolna', h('div', { class: 'drawing__dim-tol-row' }, lower, h('span', null, unit)))),
+        fit: field('Pasowanie', h('div', null, fit, h('div', { class: 'drawing__quick' },
+          ['H7', 'H8', 'g6', 'h6', 'js6', 'H7/g6', 'H7/h6', 'H7/k6'].map((item) => chip(item, `drawing-dim-fit-${item.replace('/', '-')}`, () => {
+            fit.value = item;
+            refresh();
+          })))), { hint: 'Wielka litera – otwór, mała – wałek; „H7/g6” – pasowanie otworu z wałkiem.' })
+      };
+      /** Oznaczenie z pól albo { error }. */
+      function read() {
+        const marks = { prefix: choice.prefix };
+        if (choice.kind === 'sym') {
+          const value = parseDecimal(symmetric.value);
+          if (value === null || value === 0) return { error: 'Wpisz tolerancję, np. 0,1.' };
+          Object.assign(marks, { kind: 'sym', value: Math.abs(value) });
+        } else if (choice.kind === 'dev') {
+          const [high, low] = [parseDecimal(upper.value), parseDecimal(lower.value)];
+          if (high === null || low === null) return { error: 'Wpisz obie odchyłki, np. +0,1 i −0,05.' };
+          if (high < low) return { error: 'Odchyłka górna nie może być mniejsza od dolnej.' };
+          Object.assign(marks, { kind: 'dev', upper: high, lower: low });
+        } else if (choice.kind === 'fit') {
+          if (!FIT_RE.test(fit.value.trim())) return { error: 'Wpisz pasowanie, np. H7, g6 albo H7/g6.' };
+          Object.assign(marks, { kind: 'fit', fit: fit.value.trim() });
+        }
+        return { marks };
+      }
+      function refresh() {
+        for (const [kind, block] of Object.entries(blocks)) block.hidden = choice.kind !== kind;
+        const { marks } = read();
+        const sample = withDimTolerance(shape, key, marks ?? { prefix: choice.prefix });
+        preview.textContent = `Na rysunku: ${dimensionTextOf(sample, key)}`;
+      }
+      let pending = null;
+      openFormSheet({
+        title: `${dimField.label} – znak i tolerancja`,
+        submitLabel: 'Gotowe',
+        build: () => [
+          linear ? field('Znak przed liczbą', segmented({
+            name: `drawing-dim-prefix-${Date.now()}`, label: 'Znak przed liczbą', value: choice.prefix,
+            options: DIM_PREFIXES.map((prefix) => ({ value: prefix, label: prefix || 'Brak' })),
+            onChange: (value) => {
+              choice.prefix = value;
+              refresh();
+            }
+          })) : null,
+          field('Tolerancja', segmented({
+            name: `drawing-dim-tol-${Date.now()}`, label: 'Tolerancja', value: choice.kind,
+            options: [{ value: 'none', label: 'Brak' }, { value: 'sym', label: '±' }, { value: 'dev', label: 'Odchyłki' }, ...(linear ? [{ value: 'fit', label: 'Pasowanie' }] : [])],
+            onChange: (value) => {
+              choice.kind = value;
+              refresh();
+            }
+          })),
+          blocks.sym, blocks.dev, blocks.fit,
+          preview,
+          h('p', { class: 'field__hint' }, `Wartości w ${linear ? `jednostkach liczby wymiaru (${unit})` : 'stopniach'}. Wymiar z tolerancją jest widoczny na rysunku. `
+            + 'Liczby „50” (mm) albo „5 cm” – w panelu linijki (dotknij kąta linijki).')
+        ],
+        onSubmit: (api) => {
+          const { marks, error } = read();
+          if (error) {
+            api.setError(error);
+            return false;
+          }
+          pending = marks;
+          return true;
+        },
+        onClose: () => {
+          if (!pending) return;
+          const now = editedShape();
+          if (!now || now !== shape) return;
+          let next = withDimTolerance(shape, key, pending);
+          if (!shownDims(next).includes(key)) next = showDim(next, key);
+          replaceShape(shape, next);
+          updateToolbar();
+          requestRender();
+        }
+      });
+      refresh();
+    }
+    /** Napis wymiaru w bieżącym stylu rysunku (podgląd w oknie). */
+    const dimensionTextOf = (shape, key) => {
+      const { main, tolerance } = dimensionParts(shape, key, drawing.scale, drawing.dimStyle);
+      if (!tolerance) return main;
+      return tolerance.kind === 'dev' ? `${main} ${tolerance.upper} / ${tolerance.lower}` : tolerance.kind === 'sym' ? `${main}${tolerance.text}` : `${main} ${tolerance.text}`;
+    };
 
     // ---- liniuszek (od 1.15): równoległe linie przez całą stronę, poprzeczne, kółko do przesuwania;
     // od 1.22 promieniowy – okręgi wokół kółka i promienie z niego
@@ -1352,7 +1549,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         ctx.save();
         ctx.translate(active.dx, active.dy);
         for (const stroke of selection) {
-          if (stroke !== kept) paintStroke(ctx, stroke, { scale: drawing.scale, editor: true, number: stroke.tool === 'sticky' ? stickyNumber(drawing, stroke) : null });
+          if (stroke !== kept) paintStroke(ctx, stroke, { scale: drawing.scale, dimStyle: drawing.dimStyle, editor: true, number: stroke.tool === 'sticky' ? stickyNumber(drawing, stroke) : null });
         }
         ctx.restore();
         if (kept) paintStroke(ctx, movedSticky(kept, active.dx, active.dy), { editor: true, number: stickyNumber(drawing, kept) });
@@ -1360,11 +1557,15 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       if (active?.kind === 'box-edit') paintStroke(ctx, active.preview, { editor: true, number: stickyNumber(drawing, active.original) });
       // Przyklejone końce idące za przesuwanym albo zmienianym kształtem (od 1.22).
       for (const [original, preview] of activeFollowers() ?? []) {
-        paintStroke(ctx, preview, { scale: drawing.scale, editor: true, number: original.tool === 'sticky' ? stickyNumber(drawing, original) : null });
+        paintStroke(ctx, preview, { scale: drawing.scale, dimStyle: drawing.dimStyle, editor: true, number: original.tool === 'sticky' ? stickyNumber(drawing, original) : null });
       }
       if (active?.kind === 'shape-new' && active.shape) paintStroke(ctx, active.shape);
       if (active?.kind === 'shape-edit') paintStroke(ctx, active.preview, { dims: false });
-      if (active?.kind === 'array-center') paintStroke(ctx, active.preview, { scale: drawing.scale });
+      if (active?.kind === 'array-center') paintStroke(ctx, active.preview, { scale: drawing.scale, dimStyle: drawing.dimStyle });
+      // Zaznaczony kształt (od 1.22.1): linie wymiarów technicznych – liczby są w polach wymiarów;
+      // przeciągany uchwyt pola – podgląd odsunięcia (przerywany).
+      const dimmed = editedShape();
+      if (dimmed) paintDims(ctx, dimmed, drawing.scale, drawing.dimStyle, { text: false, offsets: active?.kind === 'dim-offset' ? { [active.key]: active.offset } : null });
       if (guide) paintGuide(ctx);
       ctx.restore();
       if (placing && drawing.template) paintPlacement(ctx);
@@ -1439,7 +1640,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       // Miejsca przyciągnięcia końców (od 1.22): w trakcie rysowania i przeciągania, a z myszą – też przed.
       const snaps = active?.kind === 'shape-new' ? [active.startSnap, active.endSnap]
         : active?.kind === 'shape-edit' || active?.kind === 'box-edit' ? [active.snap]
-          : !active && tool === 'shape' ? [edgeHover] : [];
+          : !active && (tool === 'shape' || symbolPlacing) ? [edgeHover] : [];
       for (const snap of snaps) if (snap) paintSnapMarker(ctx, snap);
       if (ruler) paintRuler(ctx);
       if (active?.kind === 'stroke' && active.edge && active.edge.to >= active.edge.from) paintLength(ctx, active.edge);
@@ -1483,6 +1684,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const only = items.length === 1 ? items[0] : null;
       selectionCount.textContent = snip ? 'Wycinek' : selectionKind === 'region' ? 'Fragment' : only?.tool === 'text' ? 'Pole tekstowe' : only?.tool === 'math' ? 'Wzór'
         : only?.tool === 'table' ? 'Tabela' : only?.tool === 'sticky' ? `Karteczka ${stickyNumber(drawing, only)}`
+        : only?.tool === 'gdt' ? gdtSymbol(only.symbol).label : only?.tool === 'datum' ? `Baza ${only.letter}` : only?.tool === 'roughness' ? 'Chropowatość'
         : isShape(only) ? SHAPE_LABELS[only.shape] : isArray(only) ? `${ARRAY_LABELS[only.kind]} · ${arraySize(only)}`
         : items.some(isElement) ? plural(items.length, 'element', 'elementy', 'elementów') : plural(items.length, 'kreska', 'kreski', 'kresek');
       // Wycinek (od 1.17): tylko kopiuj i osadź – rysunek się nie zmienia.
@@ -1501,7 +1703,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       fillButton.hidden = !shape || !canFill(shape);
       capsButton.hidden = !shape || !isSegment(shape);
       // Magnes (od 1.22): przy odcinku, strzałce i karteczce ze strzałką.
-      const withEnds = Boolean(shape && isSegment(shape)) || Boolean(sticky?.leader);
+      // Od 1.22.1 także strzałka ramki tolerancji, trójkąt bazy i wierzchołek chropowatości.
+      const withEnds = Boolean(shape && isSegment(shape)) || Boolean(sticky?.leader) || (!snip && selection.size === 1 && isSymbol(only));
       magnetButton.hidden = !withEnds;
       if (withEnds) {
         const label = tools.edgeSnap ? 'Przyciąganie wł.' : 'Przyciąganie wył.';
@@ -2075,6 +2278,14 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       refreshGuidePanel?.();
       requestLive();
     }
+    /** Styl liczb wymiarów (od 1.22.1) – zapisywany z rysunkiem, jak skala. */
+    function setDimStyle(value) {
+      if ((drawing.dimStyle === 'technical') === (value === 'technical')) return;
+      if (value === 'technical') drawing.dimStyle = 'technical';
+      else delete drawing.dimStyle;
+      changed = true;
+      requestRender();
+    }
     function renderRulerPanel() {
       const valueInput = h('input', {
         class: 'input drawing__scale-value', type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': 'Ile ma jedna kratka',
@@ -2119,11 +2330,21 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         screenText.textContent = `Przy powiększeniu ${Math.round(view.zoom * 100)}% kratka ma na tym ekranie ok. ${formatNumber(millimeters)} mm – `
           + `rysunek widać w skali ok. ${formatRatio(ratio)}. To szacunek: przeglądarka nie podaje wielkości ekranu.`;
       }
+      // Od 1.22.1: liczby wymiarów na rysunku – z jednostką („5 cm”) albo technicznie, w milimetrach („50”).
+      const dimStyleControl = segmented({
+        name: `drawing-dim-style-${Date.now()}`, label: 'Liczby wymiarów', value: drawing.dimStyle === 'technical' ? 'technical' : 'unit',
+        options: [{ value: 'unit', label: '„5 cm”' }, { value: 'technical', label: '„50” (mm)' }],
+        onChange: (value) => setDimStyle(value)
+      });
+      dimStyleControl.dataset.testid = 'drawing-dim-style';
       replaceChildren(rulerPanel,
         h('h3', { class: 'drawing__settings-title' }, 'Linijka i skala'),
         h('p', { class: 'drawing__settings-label' }, 'Skala rysunku'),
         h('div', { class: 'drawing__scale' }, h('span', null, '1 kratka ='), valueInput, unitSelect),
         screenText,
+        h('p', { class: 'drawing__settings-label' }, 'Liczby wymiarów na rysunku'),
+        dimStyleControl,
+        h('p', { class: 'field__hint' }, '„50” – jak w rysunku technicznym: milimetry (przy jednostkach imperialnych – cale), bez jednostki.'),
         h('button', {
           type: 'button', class: 'drawing__chip drawing__chip--block', dataset: { testid: 'drawing-scale-actual' },
           onClick: () => {
@@ -2378,6 +2599,20 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
             updateToolbar();
           }
         }, icon(SHAPE_ICONS[kind], { size: 26 }), h('span', null, SHAPE_LABELS[kind])))),
+        // Od 1.22.1: symbole metrologiczne – okno, potem dotknięcie krawędzi albo narożnika.
+        h('p', { class: 'drawing__settings-label' }, 'Symbole metrologiczne'),
+        h('div', { class: 'drawing__shape-kinds drawing__shape-kinds--symbols' }, [
+          ['gdt', 'gdtFrame', 'Ramka tolerancji', () => editGdt()],
+          ['datum', 'datumMark', 'Baza', () => editDatum()],
+          ['roughness', 'roughness', 'Chropowatość', () => editRoughness()]
+        ].map(([kind, iconName, label, open]) => h('button', {
+          type: 'button', class: 'drawing__shape-kind', dataset: { testid: `drawing-symbol-${kind}` },
+          onClick: () => {
+            closeSettings();
+            updateToolbar();
+            open();
+          }
+        }, icon(iconName, { size: 26 }), h('span', null, label)))),
         // Od 1.17: wypełnienie nowych kształtów (i zaznaczonego).
         h('p', { class: 'drawing__settings-label' }, 'Wypełnienie'),
         h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Wypełnienie' }, SHAPE_FILLS.map((fill) => h('button', {
@@ -2790,7 +3025,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         flash(`W jednym oknie najwyżej ${PAGE_LIMIT} kartek.`);
         return;
       }
-      const next = { ...emptyDrawing({ paper: drawing.photo ? 'grid' : drawing.paper }), paperLevel: drawing.paperLevel ?? DEFAULT_PAPER_LEVEL, scale: { ...drawing.scale } };
+      const next = {
+        ...emptyDrawing({ paper: drawing.photo ? 'grid' : drawing.paper }), paperLevel: drawing.paperLevel ?? DEFAULT_PAPER_LEVEL, scale: { ...drawing.scale },
+        ...(drawing.dimStyle ? { dimStyle: drawing.dimStyle } : {})
+      };
       pages.push(makePage(next));
       showPage(pages.length - 1);
       flash(`Kartka ${pages.length} – po „Gotowe” trafi do notatki jako osobny rysunek.`);
@@ -2952,10 +3190,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       updateToolbar();
       requestRender();
     }
-    /** Karteczka ze strzałką przesuwana sama (od 1.21) – koniec strzałki zostaje tam, gdzie wskazuje; inaczej null. */
+    /** Karteczka ze strzałką (od 1.22.1 też ramka tolerancji i znak bazy) przesuwana sama – koniec strzałki zostaje tam, gdzie wskazuje; inaczej null. */
     function keptTarget() {
       const [only] = selection;
-      return selection.size === 1 && only?.tool === 'sticky' && only.leader ? only : null;
+      return selection.size === 1 && ['sticky', 'gdt', 'datum'].includes(only?.tool) && only.leader ? only : null;
     }
     const movedSticky = (sticky, dx, dy) => ({ ...translateStroke(sticky, dx, dy), leader: sticky.leader });
 
@@ -3378,7 +3616,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const inkChoice = (hex) => INK_COLORS.find((color) => color.hex === hex)?.id ?? (isHexColor(hex) ? hex : tools.penColor);
 
     /** Wielkość i kolor pola tekstowego albo wzoru (w oknie wstawiania i poprawiania). */
-    function elementOptions(choice) {
+    function elementOptions(choice, sizeLabels = TEXT_SIZE_LABELS) {
       const colors = [
         ...INK_COLORS.map((color) => ({ value: color.id, hex: color.hex, label: color.label, testID: `drawing-element-color-${color.id}` })),
         ...tools.customColors.map((hex, index) => ({ value: hex, hex, label: `Własny kolor ${hex.toUpperCase()}`, testID: `drawing-element-color-custom-${index}` }))
@@ -3397,7 +3635,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       return h('div', { class: 'drawing__element-options' },
         field('Wielkość', segmented({
           name: `drawing-element-size-${Date.now()}`, label: 'Wielkość', value: String(choice.size),
-          options: TEXT_SIZE_LABELS.map((label, index) => ({ value: String(index), label })),
+          options: sizeLabels.map((label, index) => ({ value: String(index), label })),
           onChange: (value) => { choice.size = Number(value); }
         })),
         field('Kolor', h('div', { class: 'drawing__element-colors', role: 'group', 'aria-label': 'Kolor' }, swatchButtons)));
@@ -3519,7 +3757,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
 
     // ---- tabele i karteczki (od 1.21)
     /** Poprawka zaznaczonej tabeli albo karteczki. */
-    const editBox = (element) => (element.tool === 'table' ? editTable(element) : editSticky(element));
+    const editBox = (element) => (element.tool === 'table' ? editTable(element) : element.tool === 'sticky' ? editSticky(element)
+      : element.tool === 'gdt' ? editGdt(element) : element.tool === 'datum' ? editDatum(element) : editRoughness(element));
     /** Nowy albo poprawiony element zaznaczony – od razu można go przesunąć. */
     function selectOnly(element) {
       if (tool !== 'select') setTool('select');
@@ -3650,6 +3889,264 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       Object.assign(next, measureSticky(next));
       putBox(element, next);
     }
+    // ---- symbole metrologiczne (od 1.22.1): ramka tolerancji, znak bazy, chropowatość
+    /** Wielkość (Mała, Średnia, Duża) i kolor symbolu – jak przy polu tekstowym. */
+    function symbolOptions(choice) {
+      return elementOptions(choice, ['Mała', 'Średnia', 'Duża']);
+    }
+    const symbolChoice = (element) => {
+      const known = element ? SYMBOL_TEXT_SIZES.indexOf(element.size) : -1;
+      return { size: known >= 0 ? known : 1, color: element ? inkChoice(element.color) : tools.penColor };
+    };
+    /** Nowy symbol – po oknie czeka na dotknięcie miejsca; poprawiony – w tym samym miejscu (jeden krok cofania). */
+    function putSymbol(element, next) {
+      if (element) {
+        // Ten sam identyfikator i przyklejenia – strzałka zostaje przy krawędzi.
+        const index = drawing.strokes.indexOf(element);
+        replaceElement(element, { ...next, ...(element.id ? { id: element.id } : {}), ...(element.attach ? { attach: element.attach } : {}) });
+        if (drawing.strokes[index]) selectOnly(drawing.strokes[index]);
+        return;
+      }
+      clearSelection();
+      symbolPlacing = { element: next };
+      flash(next.tool === 'roughness' ? 'Dotknij krawędzi – tam stanie wierzchołek symbolu (Esc – bez wstawiania).'
+        : next.tool === 'datum' ? 'Dotknij krawędzi – tam stanie trójkąt bazy (Esc – bez wstawiania).'
+          : 'Dotknij krawędzi albo narożnika – tam będzie strzałka ramki (Esc – bez wstawiania).');
+      updateToolbar();
+      requestLive();
+    }
+    function cancelSymbolPlacing() {
+      symbolPlacing = null;
+      edgeHover = null;
+      flash('Bez wstawiania symbolu.');
+      requestLive();
+    }
+    /**
+     * Symbol w dotkniętym miejscu: koniec strzałki (trójkąt, wierzchołek) przyciągnięty do krawędzi albo
+     * narożnika i przyklejony; ramka i kwadrat bazy – obok, z dala od środka elementu pod spodem.
+     */
+    function placeSymbol(point, event) {
+      const snap = edgeSnapAt(point, event);
+      const target = snap ?? point;
+      const element = { ...symbolPlacing.element };
+      symbolPlacing = null;
+      edgeHover = null;
+      const end = { x: Math.round(target.x * 100) / 100, y: Math.round(target.y * 100) / 100 };
+      notice.hidden = true;
+      if (element.tool === 'roughness') {
+        Object.assign(element, end);
+      } else {
+        element.leader = end;
+        // Prostopadle do krawędzi, na zewnątrz (bez krawędzi – w górę w prawo); bliższy brzeg ramki ok. 2 kratki od niej.
+        const [dx, dy] = snap ? snapNormal(snap, elementBox) : [0.7071, -0.7071];
+        const reach = (element.tool === 'datum' ? 60 : 90) + Math.abs(dx) * (element.width / 2) + Math.abs(dy) * (element.height / 2);
+        const fit = (value, size, room) => Math.round(Math.min(Math.max(0, value), Math.max(0, room - size)));
+        element.x = fit(end.x + dx * reach - element.width / 2, element.width, drawing.width);
+        element.y = fit(end.y + dy * reach - element.height / 2, element.height, drawing.height);
+      }
+      history.begin();
+      drawing.strokes.push(element);
+      const index = drawing.strokes.length - 1;
+      drawing.strokes[index] = linkEnds(element, [[element.tool === 'roughness' ? 'tip' : 'leader', snap]]);
+      commitStep();
+      selectOnly(drawing.strokes[index]);
+    }
+    /** Pola wyboru symbolu tolerancji: 14 symboli ISO 1101 (rysowane kreską). */
+    function gdtSymbolPicker(choice, onChange) {
+      const buttons = GDT_SYMBOLS.map((symbol) => h('button', {
+        type: 'button', class: 'drawing__gdt-symbol', role: 'radio', 'aria-checked': String(symbol.id === choice.symbol),
+        'aria-label': symbol.label, title: symbol.label, dataset: { symbol: symbol.id, testid: `drawing-gdt-symbol-${symbol.id}` },
+        onClick: () => {
+          choice.symbol = symbol.id;
+          for (const button of buttons) button.setAttribute('aria-checked', String(button.dataset.symbol === symbol.id));
+          onChange();
+        }
+      }, gdtGlyphCanvas(symbol.id, 30, '#1d1d1f')));
+      return h('div', { class: 'drawing__gdt-symbols', role: 'radiogroup', 'aria-label': 'Symbol tolerancji' }, buttons);
+    }
+    /**
+     * Ramka tolerancji (nowa albo poprawka): symbol, ⌀, wartość tolerancji, Ⓜ / Ⓛ, do trzech baz
+     * (tolerancje kształtu – bez baz), wielkość i kolor; podgląd ramki.
+     */
+    function editGdt(element = null) {
+      if (!element) clearSelection();
+      const choice = {
+        ...symbolChoice(element), symbol: element?.symbol ?? 'perpendicularity', diameter: element?.diameter === true,
+        modifier: element?.modifier ?? ''
+      };
+      const value = h('input', {
+        class: 'input', type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', placeholder: '0,05', maxLength: 16,
+        'aria-label': 'Tolerancja', value: element?.value ?? '', dataset: { testid: 'drawing-gdt-value' }, onInput: () => refresh()
+      });
+      const toggleButton = (label, testID, onClick) => h('button', { type: 'button', class: 'drawing__chip drawing__gdt-toggle', 'aria-pressed': 'false', dataset: { testid: testID }, onClick }, label);
+      const diameter = toggleButton('⌀', 'drawing-gdt-diameter', () => {
+        choice.diameter = !choice.diameter;
+        refresh();
+      });
+      diameter.setAttribute('aria-label', 'Strefa tolerancji – średnica (⌀)');
+      const modifiers = ['M', 'L'].map((letter) => {
+        const button = toggleButton(letter === 'M' ? 'Ⓜ' : 'Ⓛ', `drawing-gdt-modifier-${letter}`, () => {
+          choice.modifier = choice.modifier === letter ? '' : letter;
+          refresh();
+        });
+        button.dataset.letter = letter;
+        button.setAttribute('aria-label', letter === 'M' ? 'Maksimum materiału (Ⓜ)' : 'Minimum materiału (Ⓛ)');
+        return button;
+      });
+      const datums = Array.from({ length: GDT_DATUMS_MAX }, (_, index) => h('input', {
+        class: 'input drawing__gdt-datum', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'characters', maxLength: 5,
+        'aria-label': `Baza ${index + 1}`, value: element?.datums?.[index] ?? '', dataset: { testid: `drawing-gdt-datum-${index + 1}` },
+        onInput: (event) => {
+          event.target.value = event.target.value.toUpperCase();
+          refresh();
+        }
+      }));
+      const datumHint = h('p', { class: 'field__hint' });
+      const symbolName = h('p', { class: 'drawing__gdt-name', dataset: { testid: 'drawing-gdt-name' } });
+      const preview = h('canvas', { class: 'drawing__gdt-preview', dataset: { testid: 'drawing-gdt-preview' } });
+      const options = symbolOptions(choice);
+      /** Ramka z pól okna (bez położenia). */
+      const build = () => {
+        const form = gdtSymbol(choice.symbol).form;
+        const next = {
+          tool: 'gdt', x: element?.x ?? 0, y: element?.y ?? 0, size: SYMBOL_TEXT_SIZES[choice.size], color: inkHex(choice.color),
+          symbol: choice.symbol, value: cleanGdtValue(value.value),
+          datums: form ? [] : datums.map((input) => input.value.trim().toUpperCase()).filter(Boolean),
+          ...(choice.diameter ? { diameter: true } : {}), ...(choice.modifier ? { modifier: choice.modifier } : {}),
+          ...(element?.leader ? { leader: element.leader } : {})
+        };
+        return { ...next, ...measureGdt(next) };
+      };
+      function refresh() {
+        const form = gdtSymbol(choice.symbol).form;
+        symbolName.textContent = gdtSymbol(choice.symbol).label;
+        diameter.setAttribute('aria-pressed', String(choice.diameter));
+        for (const button of modifiers) button.setAttribute('aria-pressed', String(button.dataset.letter === choice.modifier));
+        for (const input of datums) input.disabled = form;
+        datumHint.textContent = form ? 'Tolerancja kształtu – bez baz.' : 'Wielka litera, np. A; wspólna baza – A-B. Puste pola pomijam.';
+        const sample = build();
+        const ratio = window.devicePixelRatio || 1;
+        const scale = Math.min(1.4, 300 / Math.max(1, sample.width + 8));
+        preview.width = Math.round((sample.width + 8) * scale * ratio);
+        preview.height = Math.round((sample.height + 8) * scale * ratio);
+        preview.style.width = `${Math.round((sample.width + 8) * scale)}px`;
+        preview.style.height = `${Math.round((sample.height + 8) * scale)}px`;
+        const ctx = preview.getContext('2d');
+        ctx.setTransform(ratio * scale, 0, 0, ratio * scale, 0, 0);
+        paintGdt(ctx, { ...sample, x: 4, y: 4 });
+      }
+      let pending = null;
+      openFormSheet({
+        title: element ? 'Ramka tolerancji' : 'Nowa ramka tolerancji',
+        submitLabel: element ? 'Zapisz' : 'Wstaw',
+        build: () => [
+          field('Symbol (ISO 1101)', h('div', null, gdtSymbolPicker(choice, refresh), symbolName)),
+          field('Tolerancja', h('div', { class: 'drawing__gdt-row' }, diameter, value, ...modifiers)),
+          field('Bazy', h('div', null, h('div', { class: 'drawing__gdt-row' }, datums), datumHint)),
+          field('Podgląd', preview),
+          options,
+          h('p', { class: 'field__hint' }, element ? 'Koniec strzałki przeciągniesz na rysunku (kółko) – przyciąga się do krawędzi i narożników.'
+            : 'Po „Wstaw” dotknij krawędzi albo narożnika – tam będzie strzałka (przyciąga się do niej i zostaje przy niej, gdy przesuwasz kształt); ramkę przeciągniesz potem w wybrane miejsce.')
+        ],
+        onSubmit: (api) => {
+          const sample = build();
+          if (!sample.value) {
+            api.setError('Wpisz tolerancję, np. 0,05.');
+            return false;
+          }
+          const typed = datums.map((input) => input.value.trim().toUpperCase()).filter(Boolean);
+          if (!gdtSymbol(choice.symbol).form && typed.some((datum) => !DATUM_RE.test(datum))) {
+            api.setError('Baza to wielka litera, np. A (wspólna – A-B).');
+            return false;
+          }
+          pending = sample;
+          return true;
+        },
+        onClose: () => {
+          if (pending) putSymbol(element, pending);
+        }
+      });
+      refresh();
+      requestAnimationFrame(() => value.focus());
+    }
+    /** Znak bazy: litera (kolejna wolna), wielkość i kolor. */
+    function editDatum(element = null) {
+      if (!element) clearSelection();
+      const choice = symbolChoice(element);
+      const letter = h('input', {
+        class: 'input drawing__gdt-datum', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'characters', maxLength: 2,
+        'aria-label': 'Litera bazy', value: element?.letter ?? nextDatumLetter(drawing.strokes), dataset: { testid: 'drawing-datum-letter' },
+        onInput: (event) => { event.target.value = event.target.value.toUpperCase(); }
+      });
+      let pending = null;
+      openFormSheet({
+        title: element ? `Baza ${element.letter}` : 'Nowy znak bazy',
+        submitLabel: element ? 'Zapisz' : 'Wstaw',
+        build: () => [
+          field('Litera', letter, { hint: 'Wielka litera, np. A – ta sama co w polu bazy ramki tolerancji.' }),
+          symbolOptions(choice),
+          h('p', { class: 'field__hint' }, element ? 'Trójkąt bazy przeciągniesz na rysunku (kółko) – przyciąga się do krawędzi.'
+            : 'Po „Wstaw” dotknij krawędzi – tam stanie zaczerniony trójkąt; kwadrat z literą przeciągniesz potem w wybrane miejsce.')
+        ],
+        onSubmit: (api) => {
+          const value = letter.value.trim().toUpperCase();
+          if (!DATUM_LETTER_RE.test(value)) {
+            api.setError('Wpisz wielką literę, np. A.');
+            return false;
+          }
+          const size = SYMBOL_TEXT_SIZES[choice.size];
+          const side = datumSide(size);
+          pending = {
+            tool: 'datum', x: element?.x ?? 0, y: element?.y ?? 0, size, color: inkHex(choice.color), letter: value, width: side, height: side,
+            ...(element?.leader ? { leader: element.leader } : {})
+          };
+          return true;
+        },
+        onClose: () => {
+          if (pending) putSymbol(element, pending);
+        }
+      });
+      requestAnimationFrame(() => letter.focus());
+    }
+    /** Chropowatość (ISO 1302): rodzaj obróbki, wymaganie („Ra 1,6”), wielkość i kolor. */
+    function editRoughness(element = null) {
+      if (!element) clearSelection();
+      const choice = { ...symbolChoice(element), kind: element?.kind ?? 'removal' };
+      const text = h('input', {
+        class: 'input', type: 'text', autocomplete: 'off', spellcheck: 'false', maxLength: ROUGHNESS_TEXT_MAX, 'aria-label': 'Wymaganie',
+        value: element?.text ?? 'Ra 1,6', dataset: { testid: 'drawing-roughness-text' }
+      });
+      let pending = null;
+      openFormSheet({
+        title: element ? 'Chropowatość' : 'Nowy symbol chropowatości',
+        submitLabel: element ? 'Zapisz' : 'Wstaw',
+        build: () => [
+          field('Obróbka', segmented({
+            name: `drawing-roughness-kind-${Date.now()}`, label: 'Obróbka', value: choice.kind,
+            options: ROUGHNESS_KINDS.map((kind) => ({ value: kind, label: ROUGHNESS_KIND_LABELS[kind] })),
+            onChange: (kind) => { choice.kind = kind; }
+          })),
+          field('Wymaganie', h('div', null, text, h('div', { class: 'drawing__quick' },
+            ['Ra 0,4', 'Ra 0,8', 'Ra 1,6', 'Ra 3,2', 'Ra 6,3', 'Ra 12,5', 'Rz 6,3', 'Rz 25'].map((item) => chip(item, `drawing-roughness-${item.replace(/[\s,]/g, '')}`, () => {
+              text.value = item;
+            })))), { hint: 'Pod poziomą kreską symbolu (ISO 1302); puste – sam symbol.' }),
+          symbolOptions(choice),
+          h('p', { class: 'field__hint' }, element ? 'Wierzchołek przeciągniesz na rysunku (kółko) – przyciąga się do krawędzi i przesuwa cały symbol.'
+            : 'Po „Wstaw” dotknij krawędzi – tam stanie wierzchołek symbolu (zostaje przy krawędzi, gdy przesuwasz kształt).')
+        ],
+        onSubmit: () => {
+          const next = {
+            tool: 'roughness', x: element?.x ?? 0, y: element?.y ?? 0, size: SYMBOL_TEXT_SIZES[choice.size], color: inkHex(choice.color),
+            text: text.value.trim().replace(/(\d)\.(\d)/g, '$1,$2').slice(0, ROUGHNESS_TEXT_MAX), kind: choice.kind
+          };
+          pending = { ...next, ...measureRoughness(next) };
+          return true;
+        },
+        onClose: () => {
+          if (pending) putSymbol(element, pending);
+        }
+      });
+    }
     function toggleCollapsed() {
       const [only] = selection;
       if (selection.size !== 1 || only?.tool !== 'sticky') return;
@@ -3670,6 +4167,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     }
     /** Uchwyty: narożnik (zmiana wielkości; zwinięta karteczka – bez niego) i koniec strzałki karteczki. */
     function boxHandles(element) {
+      // Symbol metrologiczny (od 1.22.1): bez narożnika – tylko koniec strzałki albo wierzchołek chropowatości.
+      if (element.tool === 'roughness') return [{ id: 'target', x: element.x, y: element.y }];
+      if (isSymbol(element)) return element.leader ? [{ id: 'target', x: element.leader.x, y: element.leader.y }] : [];
       const handles = [];
       if (!(element.tool === 'sticky' && element.collapsed)) handles.push({ id: 'resize', x: element.x + element.width, y: element.y + element.height });
       if (element.tool === 'sticky' && element.leader) handles.push({ id: 'target', x: element.leader.x, y: element.leader.y });
@@ -3707,6 +4207,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     }
     /** Element po przeciągnięciu uchwytu: narożnik – szerokość (tabela) albo wielkość (karteczka), koniec strzałki – nowe miejsce. */
     function editBoxHandle(original, handle, point) {
+      // Wierzchołek chropowatości (od 1.22.1) przesuwa cały symbol.
+      if (handle === 'target' && original.tool === 'roughness') return { ...original, x: Math.round(point.x * 100) / 100, y: Math.round(point.y * 100) / 100 };
       if (handle === 'target') return { ...original, leader: { x: Math.round(point.x), y: Math.round(point.y) } };
       if (original.tool === 'table') {
         const next = { ...original, width: Math.round(Math.max(original.rows[0].length * original.size * 2, point.x - original.x)) };
@@ -4268,7 +4770,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       } else if (done.kind === 'array-center' && !cancelled && done.moved) {
         replaceArray(done.original, done.preview);
       } else if (done.kind === 'box-edit' && !cancelled && done.moved) {
-        if (done.handle === 'target') replaceLinked(done.original, done.preview, [['leader', done.snap]]);
+        if (done.handle === 'target') replaceLinked(done.original, done.preview, [[done.original.tool === 'roughness' ? 'tip' : 'leader', done.snap]]);
         else replaceShape(done.original, done.preview);
       } else if (done.kind === 'move' && !cancelled) {
         const tap = Math.abs(done.dx) * view.scale < TAP_SLOP && Math.abs(done.dy) * view.scale < TAP_SLOP;
@@ -4374,6 +4876,12 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       }
       if (!placing) closeSettings();
       const point = toDrawing(event);
+      // Wstawianie symbolu metrologicznego (od 1.22.1): dotknięcie – miejsce strzałki, trójkąta albo wierzchołka.
+      // Gdy aplikacja zna już rysik, palec (i dłoń) przesuwa stronę – symbol wstawia rysik albo mysz.
+      if (symbolPlacing && !active && !gesture && touches.size === 0 && !(penSeen && event.pointerType === 'touch')) {
+        placeSymbol(point, event);
+        return;
+      }
       if (event.pointerType === 'touch') {
         // Kolejny palec dołącza do trwającego gestu.
         if (gesture) {
@@ -4458,7 +4966,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         } else if (tool === 'eraser') {
           hover = toDrawing(event);
           requestLive();
-        } else if (tool === 'shape' && isSegment({ shape: tools.shape })) {
+        } else if (symbolPlacing || (tool === 'shape' && isSegment({ shape: tools.shape }))) {
           const snap = edgeSnapAt(toDrawing(event), event);
           if (snap || edgeHover) {
             edgeHover = snap;
@@ -4608,6 +5116,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       if ((event.key === 'PageUp' || event.key === 'PageDown') && !typing(event.target) && !panelOpen()) {
         event.preventDefault();
         flipTo(pageIndex + (event.key === 'PageDown' ? 1 : -1));
+        return;
+      }
+      if (event.key === 'Escape' && symbolPlacing) {
+        event.preventDefault();
+        cancelSymbolPlacing();
         return;
       }
       if (event.key === 'Escape' && panelOpen()) {

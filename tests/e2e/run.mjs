@@ -6540,6 +6540,293 @@ test('rysunek 1.22 na telefonie: ‹ Kartka 2 z 2 › mieści się w pasku, przy
   await expectText(pages, 'Kartka 2 z 2');
 }, { device: PHONE });
 
+// ---------------------------------------------------------------- 1.22.1: wymiary techniczne i symbole metrologiczne
+
+test('rysunek 1.22.1: wymiar jak w rysunku technicznym – linia wymiarowa pod kształtem, uchwyt odsuwa ją (wzór dla następnych), piętro przy sąsiednim wymiarze; znak ⌀ i pasowanie, odchyłki; styl „50” (mm); zapis (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Wymiary</p>');
+  const frame = await pageFrame(page);
+  const { at } = frame;
+  const dark = async (x, y, side = 8) => (await darkest(page, ...at(x, y), side)) < 110;
+  const panel = editor.locator('[data-testid=drawing-shape-panel]');
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+  const sheet = page.locator('dialog.sheet[open]').last();
+  const deselect = async () => {
+    await drawStroke(page, [[...at(1500, 1050), 0.5]]);
+    await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Odznaczony');
+  };
+
+  // Prostokąt 5 × 2 cm (220 × 88) od (300, 300); oko przy szerokości – linia wymiarowa 40 pod dolną krawędzią (388).
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-shape-rect]').click();
+  await drawStroke(page, segment(at(300, 300), at(520, 388), 10));
+  await expectText(selectionCount, 'Prostokąt');
+  await editor.locator('[data-testid=drawing-dim-width]').fill('5');
+  await editor.locator('[data-testid=drawing-dim-width]').press('Enter');
+  await editor.locator('[data-testid=drawing-dim-height]').fill('2');
+  await editor.locator('[data-testid=drawing-dim-height]').press('Enter');
+  await editor.locator('[data-testid=drawing-dim-eye-width]').click();
+  await waitUntil(() => editor.locator('[data-testid=drawing-dim-grip-width]').isVisible(), 'Uchwyt przy widocznym wymiarze');
+  await deselect();
+  // Linia wymiarowa (y ≈ 428), linie pomocnicze przy końcach, groty – na rysunku po odznaczeniu.
+  await waitUntil(() => dark(410, 428, 6), 'Linia wymiarowa 40 pod kształtem');
+  assert.ok(await dark(301, 420, 6), 'linia pomocnicza przy lewym końcu');
+  assert.ok(!(await dark(410, 470, 10)), 'pod linią wymiarową pusto');
+
+  // Zaznaczony: uchwyt pola szerokości przeciągnięty o ok. 60 jednostek w dół – podgląd przerywany, po puszczeniu nowe odsunięcie.
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await drawStroke(page, [[...at(410, 340), 0.5]]);
+  await expectText(selectionCount, 'Prostokąt');
+  await waitUntil(() => editor.locator('[data-testid=drawing-dim-grip-width]').isVisible(), 'Uchwyt widoczny');
+  const grip = await editor.locator('[data-testid=drawing-dim-grip-width]').boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 + 60 * frame.scale, { steps: 6 });
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-wymiar-przeciaganie-ipad.png') });
+  await page.mouse.up();
+  // Wysokość po włączeniu oka – to samo odsunięcie (wzór).
+  await editor.locator('[data-testid=drawing-dim-eye-height]').click();
+  await deselect();
+  await waitUntil(() => dark(410, 488, 6), 'Linia wymiarowa odsunięta (ok. 100)');
+  assert.ok(!(await dark(410, 428, 4)), 'w starym miejscu linii pusto');
+
+  // Drugi prostokąt tuż obok (ta sama dolna krawędź) – jego szerokość na kolejnym piętrze.
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-shape-rect]').click();
+  await drawStroke(page, segment(at(530, 330), at(640, 388), 10));
+  await expectText(selectionCount, 'Prostokąt');
+  await editor.locator('[data-testid=drawing-dim-eye-width]').click();
+
+  // Styl „50”: pola w milimetrach.
+  await deselect();
+  await editor.locator('[data-testid=drawing-ruler]').click();
+  await editor.locator('[data-testid=drawing-ruler-angle]').click();
+  const rulerPanel = editor.locator('[data-testid=drawing-ruler-panel]');
+  await rulerPanel.waitFor();
+  await rulerPanel.locator('[data-testid=drawing-dim-style] .segmented__option', { hasText: '„50”' }).click();
+  await page.keyboard.press('Escape');
+  await waitUntil(() => rulerPanel.isHidden(), 'Panel linijki zamknięty');
+  await editor.locator('[data-testid=drawing-ruler]').click();
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await drawStroke(page, [[...at(410, 340), 0.5]]);
+  await expectText(selectionCount, 'Prostokąt');
+  await expectValue(editor.locator('[data-testid=drawing-dim-width]'), '50');
+  await expectText(editor.locator('.drawing__dim:not([hidden]) .drawing__dim-unit').first(), 'mm');
+
+  // Znak i tolerancja: szerokość ⌀50 H7, wysokość 20 +0,1/−0,05.
+  await editor.locator('[data-testid=drawing-dim-marks-width]').click();
+  await expectText(sheet.locator('.sheet__title'), 'Szerokość – znak i tolerancja');
+  await sheet.locator('.segmented__option', { hasText: '⌀' }).click();
+  await sheet.locator('.segmented__option', { hasText: 'Pasowanie' }).click();
+  await sheet.locator('[data-testid=drawing-dim-fit-H7]').click();
+  await expectText(sheet.locator('[data-testid=drawing-dim-tol-preview]'), 'Na rysunku: ⌀50 H7');
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno zamknięte');
+  await editor.locator('[data-testid=drawing-dim-marks-height]').click();
+  await sheet.locator('.segmented__option', { hasText: 'Odchyłki' }).click();
+  await sheet.locator('[data-testid=drawing-dim-tol-upper]').fill('-0,1');
+  await sheet.locator('[data-testid=drawing-dim-tol-lower]').fill('0,05');
+  await sheetSubmit(page).click();
+  await expectText(sheet.locator('.form-message--error'), 'Odchyłka górna nie może być mniejsza od dolnej.');
+  await sheet.locator('[data-testid=drawing-dim-tol-upper]').fill('+0,1');
+  await sheet.locator('[data-testid=drawing-dim-tol-lower]').fill('-0,05');
+  await expectText(sheet.locator('[data-testid=drawing-dim-tol-preview]'), 'Na rysunku: 20 +0,1 / −0,05');
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno zamknięte');
+  await waitUntil(async () => (await editor.locator('[data-testid=drawing-dim-marks-height]').getAttribute('aria-pressed')) === 'true', 'Oznaczenie przy wysokości');
+  await deselect();
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-wymiary-techniczne-ipad.png') });
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const [image] = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id)).map((item) => item.drawing), ids.statements);
+  assert.equal(image.dimStyle, 'technical');
+  const [first, second] = image.strokes;
+  assert.deepEqual(first.dims, ['width', 'height']);
+  assert.ok(first.dimOffsets.width >= 90 && first.dimOffsets.width <= 110, `odsunięcie po przeciągnięciu ok. 100 (${first.dimOffsets.width})`);
+  assert.equal(first.dimOffsets.height, first.dimOffsets.width, 'wysokość – ten sam wzór');
+  assert.equal(second.dimOffsets.width, first.dimOffsets.width + 36, 'sąsiedni wymiar – piętro dalej');
+  assert.deepEqual(first.dimTols, { width: { prefix: '⌀', kind: 'fit', fit: 'H7' }, height: { kind: 'dev', upper: 0.1, lower: -0.05 } });
+}, { device: IPAD });
+
+test('rysunek 1.22.1: ramka tolerancji (pozycja, ⌀, Ⓜ, bazy A i B; płaskość – bez baz), znak bazy, chropowatość – wstawione dotknięciem krawędzi, przyklejone i za przesuniętym prostokątem; Esc – bez wstawiania; poprawka ramki; zapis (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Symbole</p>');
+  const frame = await pageFrame(page);
+  const panel = editor.locator('[data-testid=drawing-shape-panel]');
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  const sheet = page.locator('dialog.sheet[open]').last();
+  const drag = async (from, to) => {
+    await page.mouse.move(...frame.screen(...from));
+    await page.mouse.down();
+    await page.mouse.move(...frame.screen(...to), { steps: 8 });
+    await page.mouse.up();
+  };
+  const symbol = async (kind) => {
+    await editor.locator('[data-testid=drawing-tool-shape]').click();
+    await panel.locator(`[data-testid=drawing-symbol-${kind}]`).click();
+    await sheet.waitFor();
+  };
+  const closed = () => waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno zamknięte');
+
+  // Prostokąt 600–900 × 400–600.
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-shape-rect]').click();
+  await drag([600, 400], [900, 600]);
+  await expectText(selectionCount, 'Prostokąt');
+
+  // Ramka: płaskość – pola baz wyłączone; pozycja z ⌀, 0,05, Ⓜ, bazy a i B (wielkie litery).
+  await symbol('gdt');
+  await expectText(sheet.locator('.sheet__title'), 'Nowa ramka tolerancji');
+  assert.equal(await sheet.locator('.drawing__gdt-symbol').count(), 14, '14 symboli ISO 1101');
+  await sheet.locator('[data-testid=drawing-gdt-symbol-flatness]').click();
+  await expectText(sheet.locator('[data-testid=drawing-gdt-name]'), 'Płaskość');
+  assert.equal(await sheet.locator('[data-testid=drawing-gdt-datum-1]').isDisabled(), true, 'tolerancja kształtu – bez baz');
+  await sheet.locator('[data-testid=drawing-gdt-symbol-position]').click();
+  await expectText(sheet.locator('[data-testid=drawing-gdt-name]'), 'Pozycja');
+  await sheetSubmit(page).click();
+  await expectText(sheet.locator('.form-message--error'), 'Wpisz tolerancję');
+  await sheet.locator('[data-testid=drawing-gdt-diameter]').click();
+  await sheet.locator('[data-testid=drawing-gdt-value]').fill('0.05');
+  await sheet.locator('[data-testid=drawing-gdt-modifier-M]').click();
+  await sheet.locator('[data-testid=drawing-gdt-datum-1]').fill('a');
+  await sheet.locator('[data-testid=drawing-gdt-datum-2]').fill('B');
+  assert.equal(await sheet.locator('[data-testid=drawing-gdt-modifier-M]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await sheet.locator('[data-testid=drawing-gdt-datum-1]').inputValue(), 'A');
+  await settled(sheet);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-ramka-tolerancji-okno.png') });
+  await sheetSubmit(page).click();
+  await closed();
+  await expectText(notice, 'Dotknij krawędzi albo narożnika');
+  // Najechanie myszą – znacznik; kliknięcie 4 jednostki obok prawej krawędzi – strzałka na krawędzi.
+  await page.mouse.move(...frame.screen(904, 520));
+  await page.mouse.click(...frame.screen(904, 520));
+  await expectText(selectionCount, 'Pozycja');
+  assert.equal(await editor.locator('[data-testid=drawing-selection-magnet]').isVisible(), true, 'magnes przy ramce');
+
+  // Znak bazy: litera A (pierwsza wolna) – dotknięcie dolnej krawędzi.
+  await symbol('datum');
+  await expectValue(sheet.locator('[data-testid=drawing-datum-letter]'), 'A');
+  await sheetSubmit(page).click();
+  await closed();
+  await expectText(notice, 'tam stanie trójkąt bazy');
+  await page.mouse.click(...frame.screen(700, 603));
+  await expectText(selectionCount, 'Baza A');
+  // Następna baza – B; Anuluj – nic.
+  await symbol('datum');
+  await expectValue(sheet.locator('[data-testid=drawing-datum-letter]'), 'B');
+  await sheet.locator('.sheet__header .button--plain').click();
+  await closed();
+
+  // Chropowatość: z usunięciem materiału, Ra 3,2 – na górnej krawędzi.
+  await symbol('roughness');
+  await sheet.locator('[data-testid=drawing-roughness-Ra32]').click();
+  await expectValue(sheet.locator('[data-testid=drawing-roughness-text]'), 'Ra 3,2');
+  await sheetSubmit(page).click();
+  await closed();
+  await expectText(notice, 'tam stanie wierzchołek');
+  await page.mouse.click(...frame.screen(650, 398));
+  await expectText(selectionCount, 'Chropowatość');
+
+  // Esc w trakcie wskazywania – bez wstawiania.
+  await symbol('gdt');
+  await sheet.locator('[data-testid=drawing-gdt-value]').fill('0,2');
+  await sheetSubmit(page).click();
+  await closed();
+  await expectText(notice, 'tam będzie strzałka ramki');
+  await page.keyboard.press('Escape');
+  await expectText(notice, 'Bez wstawiania symbolu');
+
+  // Prostokąt przesunięty o (−100, +50): strzałka, trójkąt i wierzchołek idą za nim.
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await page.mouse.click(...frame.screen(80, 1060));
+  await page.mouse.click(...frame.screen(750, 500));
+  await expectText(selectionCount, 'Prostokąt');
+  await drag([750, 500], [650, 550]);
+  await page.mouse.click(...frame.screen(80, 1060));
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-symbole-metrologiczne.png') });
+
+  // Poprawka ramki: dotknięcie zaznaczonej – okno z wartościami, tolerancja 0,1; strzałka zostaje przyklejona.
+  const saved = () => page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing.strokes, ids.statements);
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  let strokes = await saved();
+  assert.deepEqual(strokes.map((stroke) => stroke.tool), ['shape', 'gdt', 'datum', 'roughness']);
+  const [rect, gdt, datum, rough] = strokes;
+  const right = rect.x + rect.w / 2;
+  const bottom = rect.y + rect.h / 2;
+  const top = rect.y - rect.h / 2;
+  assert.deepEqual([gdt.symbol, gdt.value, gdt.diameter, gdt.modifier, gdt.datums], ['position', '0,05', true, 'M', ['A', 'B']]);
+  assert.ok(Math.abs(gdt.leader.x - right) < 0.05 && Math.abs(gdt.leader.y - (520 + 50)) < 3, `strzałka ramki na przesuniętej prawej krawędzi (${JSON.stringify(gdt.leader)})`);
+  assert.equal(gdt.attach.leader.id, rect.id);
+  assert.ok(gdt.x > right, 'ramka na prawo od prostokąta (prostopadle do krawędzi)');
+  assert.ok(Math.abs(datum.leader.y - bottom) < 0.05 && datum.y > bottom, 'trójkąt bazy na dolnej krawędzi, kwadrat pod nią');
+  assert.equal(datum.letter, 'A');
+  assert.ok(Math.abs(rough.y - top) < 0.05 && Math.abs(rough.x - 550) < 3, `wierzchołek chropowatości na górnej krawędzi (${rough.x}, ${rough.y})`);
+  assert.deepEqual([rough.text, rough.kind, rough.attach.tip.id], ['Ra 3,2', 'removal', rect.id]);
+
+  // Edycja: ponownie edytor rysunku, dotknięcie ramki dwa razy – okno, nowa wartość.
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('.note-images__open').first().click();
+  await menuItem(page, 'Edytuj rysunek');
+  await editor.waitFor();
+  await waitUntil(() => editor.locator('[data-testid=drawing-canvas]').evaluate((canvas) => canvas.width > 0), 'Płótno gotowe');
+  await nextFrames(page);
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  const inFrame = [gdt.x + gdt.cells[0] + gdt.cells[1] / 2, gdt.y + gdt.height / 2];
+  await page.mouse.click(...frame.screen(...inFrame));
+  await expectText(selectionCount, 'Pozycja');
+  await page.mouse.click(...frame.screen(...inFrame));
+  await expectText(sheet.locator('.sheet__title'), 'Ramka tolerancji');
+  await expectValue(sheet.locator('[data-testid=drawing-gdt-value]'), '0,05');
+  await sheet.locator('[data-testid=drawing-gdt-value]').fill('0,1');
+  await sheetSubmit(page).click();
+  await closed();
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  strokes = await saved();
+  assert.equal(strokes[1].value, '0,1');
+  assert.deepEqual(strokes[1].attach, gdt.attach, 'po poprawce – nadal przyklejona');
+}, { device: DESKTOP });
+
+test('rysunek 1.22.1 na telefonie: okno ramki tolerancji i okno tolerancji wymiaru mieszczą się bez przewijania w bok', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const panel = editor.locator('[data-testid=drawing-shape-panel]');
+  const sheet = page.locator('dialog.sheet[open]').last();
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-symbol-gdt]').click();
+  await sheet.waitFor();
+  const grid = await sheet.locator('.drawing__gdt-symbols').boundingBox();
+  assert.ok(grid.x >= 0 && grid.x + grid.width <= 390, 'symbole w szerokości ekranu');
+  assert.equal(await overflowX(page), 0, 'okno ramki bez przewijania w bok');
+  await settled(sheet);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-ramka-tolerancji-telefon.png') });
+  await sheet.locator('.sheet__header .button--plain').click();
+  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno zamknięte');
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-shape-rect]').click();
+  await drawStroke(page, segment([0.3, 0.45], [0.7, 0.6], 10), { type: 'touch', id: 7 });
+  await editor.locator('[data-testid=drawing-dim-marks-width]').click();
+  await sheet.locator('.segmented__option', { hasText: 'Odchyłki' }).click();
+  assert.equal(await overflowX(page), 0, 'okno tolerancji bez przewijania w bok');
+}, { device: PHONE });
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

@@ -5972,6 +5972,56 @@ svg.icon--note { color: var(--note-icon); }
 
 .drawing__dim-eye[aria-pressed="true"] { background: #0058be; color: #ffffff; }
 
+/*
+ * Od 1.22.1: znak i tolerancja wymiaru (kółko „±” na lewym górnym rogu) i uchwyt do odsuwania linii
+ * wymiarowej (prawy dolny róg, tylko przy wymiarze widocznym na stałe).
+ */
+.drawing__dim-marks,
+.drawing__dim-grip {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #0058be;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #0058be;
+  font: 700 14px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
+}
+
+.drawing__dim-marks { top: -11px; left: -11px; }
+.drawing__dim-grip { right: -11px; bottom: -11px; cursor: grab; touch-action: none; }
+.drawing__dim-marks[aria-pressed="true"] { background: #0058be; color: #ffffff; }
+
+.drawing__dim-marks::before,
+.drawing__dim-grip::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+.drawing__dim-tol-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawing__dim-tol-row .input { max-width: 9rem; }
+
+.drawing__dim-tol-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.drawing__dim-preview {
+  margin: 0;
+  font-weight: 600;
+}
+
 .drawing__dims--busy .drawing__dim { pointer-events: none; opacity: 0.85; }
 
 .drawing__dim:focus-within {
@@ -6503,6 +6553,72 @@ button.drawing__pill .icon { color: var(--text-2); }
 }
 
 .drawing__shape-kind[aria-checked="true"] { background: var(--fill); font-weight: 600; }
+
+/* Symbole metrologiczne (od 1.22.1): przyciski w panelu kształtów i okno ramki tolerancji. */
+.drawing__shape-kinds--symbols { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.drawing__gdt-symbols {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.drawing__gdt-symbol {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  min-width: 0;
+  border-radius: 10px;
+  background: var(--fill);
+}
+
+.drawing__gdt-symbol canvas { max-width: 100%; height: auto; }
+
+.drawing__gdt-symbol[aria-checked="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.drawing__gdt-name {
+  margin: 6px 0 0;
+  font-size: var(--size-sub);
+  font-weight: 600;
+}
+
+.drawing__gdt-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Kilka pól w jednym wierszu – każde z tłem, żeby było widać, gdzie wpisać. */
+.drawing__gdt-row .input,
+.drawing__dim-tol-row .input {
+  min-height: 40px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--fill);
+}
+
+.drawing__gdt-row .input { flex: 1 1 6rem; min-width: 0; }
+.drawing__gdt-row .input:disabled { opacity: 0.45; }
+.drawing__gdt-row .drawing__gdt-datum { flex: 0 1 4.5rem; text-align: center; text-transform: uppercase; }
+
+.drawing__gdt-toggle {
+  min-width: 44px;
+  margin-left: 0;
+  font-size: 20px;
+}
+
+.drawing__gdt-toggle[aria-pressed="true"] { background: var(--accent-fill); color: var(--on-accent); }
+
+.drawing__gdt-preview {
+  display: block;
+  max-width: 100%;
+  margin-top: 4px;
+}
 
 /* Linijka i skala: „1 kratka = [liczba] [jednostka]”, szacunek skali na ekranie, przyciąganie. */
 .drawing__scale {

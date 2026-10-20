@@ -18,7 +18,9 @@
 //   łamany do szerokości kształtu; width i height – zmierzone przy wpisaniu (granice, dotknięcie);
 //   od 1.19 startCap, endCap – zakończenia odcinka i strzałki (SEGMENT_CAPS; zapisane tylko, gdy inne
 //   niż domyślne: odcinek – bez, strzałka – grot na końcu), dims – wymiary widoczne na rysunku na stałe
-//   (['width', 'height', 'skew'] albo odcinek ['length', 'angle']).
+//   (['width', 'height', 'skew'] albo odcinek ['length', 'angle']); od 1.22.1 rysowane jak w rysunku
+//   technicznym – dimOffsets { klucz: odsunięcie linii wymiarowej albo promień łuku } i dimTols
+//   { klucz: { prefix?, kind?: 'sym' | 'dev' | 'fit', value?, upper?, lower?, fit? } } (znak i tolerancja).
 
 export const SHAPES = Object.freeze(['line', 'arrow', 'rect', 'ellipse', 'triangle', 'diamond', 'trapezoid']);
 export const SHAPE_LABELS = Object.freeze({
@@ -526,16 +528,246 @@ export function dimCenter(place, width, height, gap) {
 /** Wymiary widoczne na stałe (w kolejności) – tylko pasujące do kształtu. */
 export const shownDims = (shape) => (Array.isArray(shape.dims) ? dimKeys(shape).filter((key) => shape.dims.includes(key)) : []);
 
-/** Szacowane narożniki stałych wymiarów (granice kształtu; napis ma najwyżej ok. 4 czcionki szerokości). */
-function dimCorners(shape) {
-  const keys = shownDims(shape);
-  if (keys.length === 0) return [];
-  const places = dimPlaces(shape);
-  const [width, height] = [DIM_FONT * 4, DIM_FONT * 1.3];
-  return keys.flatMap((key) => {
-    const center = dimCenter(places[key], width, height, DIM_GAP);
-    return [[-1, -1], [1, 1]].map(([a, b]) => ({ x: center.x + (a * width) / 2, y: center.y + (b * height) / 2 }));
+// ---------------------------------------------------------------- wymiary techniczne (od 1.22.1)
+
+/**
+ * Stały wymiar rysowany jak w rysunku technicznym: linie pomocnicze od kształtu, linia wymiarowa
+ * ze strzałkami w odsunięciu `offset` (jednostki strony) i liczba nad nią; kąt – łuk ze strzałkami
+ * o promieniu `offset` od linii odniesienia. Odsunięcie zapisane w kształcie (`dimOffsets`), a gdy
+ * go nie ma – domyślne.
+ */
+export const DIM_OFFSET = 40;
+/** Kolejne „piętro” wymiarów, gdy linie wymiarowe wchodziłyby na siebie. */
+export const DIM_TIER = 36;
+/** Przerwa między kształtem a linią pomocniczą, wysunięcie linii pomocniczej za linię wymiarową, strzałka, grubość linii. */
+export const DIM_EXT_GAP = 4;
+export const DIM_EXT_OVER = 8;
+export const DIM_ARROW = 13;
+export const DIM_LINE = 1.5;
+/** Odsunięcie: najmniej – tuż za przerwą, najwięcej – ok. 14 kratek. */
+export const DIM_OFFSET_LIMITS = Object.freeze({ min: 12, max: 600 });
+/** Znak przed liczbą wymiaru (średnica, promień, kwadrat) i rodzaje tolerancji: ±, odchyłki, pasowanie. */
+export const DIM_PREFIXES = Object.freeze(['', '⌀', 'R', '□']);
+export const DIM_TOLERANCES = Object.freeze(['sym', 'dev', 'fit']);
+export const isLinearDim = (key) => key === 'width' || key === 'height' || key === 'length';
+
+/** Domyślny promień łuku kąta: połowa ramienia (boku albo odcinka), od 36 do 140. */
+function defaultArcRadius(shape, key) {
+  const side = key === 'skew' ? Math.hypot(shape.skew * shape.h, shape.h) : shape.w;
+  return clamp(side * 0.5, 36, 140);
+}
+
+/** Odsunięcie linii wymiarowej (albo promień łuku kąta) wymiaru `key`. */
+export function dimOffset(shape, key) {
+  const saved = shape.dimOffsets?.[key];
+  if (finite(saved)) return saved;
+  return isLinearDim(key) ? DIM_OFFSET : defaultArcRadius(shape, key);
+}
+
+/**
+ * Punkty mierzone i kierunki wymiaru liniowego: a, b – punkty kształtu, normal – na zewnątrz (tam stoi
+ * linia wymiarowa). Szerokość – dolna krawędź (elipsa i romb – skrajne punkty), wysokość – prostopadle
+ * do podstawy, po prawej (trójkąt – wierzchołek, trapez – górny prawy narożnik); odcinek – jego końce,
+ * linia wymiarowa po stronie bez łuku kąta odcinka.
+ */
+function linearMeasure(shape, key) {
+  const [cos, sin] = [Math.cos(shape.angle), Math.sin(shape.angle)];
+  const turn = ([x, y]) => [x * cos - y * sin, x * sin + y * cos];
+  if (isSegment(shape)) {
+    // Po stronie bez łuku kąta (łuk – między poziomem a odcinkiem, przy początku).
+    const sweep = Math.atan2(sin, cos);
+    return { a: shapePoint(shape, -0.5, 0), b: shapePoint(shape, 0.5, 0), normal: turn([0, sweep < -1e-9 ? -1 : 1]) };
+  }
+  if (key === 'width') {
+    const v = shape.shape === 'ellipse' || shape.shape === 'diamond' ? 0 : 0.5;
+    return { a: shapePoint(shape, -0.5, v), b: shapePoint(shape, 0.5, v), normal: turn([0, 1]) };
+  }
+  const top = shape.shape === 'ellipse' || shape.shape === 'diamond' ? [0, -0.5]
+    : shape.shape === 'triangle' ? [shape.adjust - 0.5, -0.5]
+      : shape.shape === 'trapezoid' ? [0.5 - shape.adjust, -0.5] : [0.5, -0.5];
+  const bottom = shape.shape === 'ellipse' || shape.shape === 'diamond' ? [0, 0.5] : [0.5, 0.5];
+  return { a: shapePoint(shape, ...top), b: shapePoint(shape, ...bottom), normal: turn([1, 0]) };
+}
+
+/**
+ * Kąt napisu wzdłuż kierunku (dx, dy), czytelny – od −90° do 90°, bez 90° (nigdy do góry nogami):
+ * liczbę pionowego wymiaru czyta się od prawej strony rysunku, od dołu do góry (ISO 129).
+ */
+function readableAngle(dx, dy) {
+  let angle = Math.atan2(dy, dx);
+  if (angle > Math.PI / 2 - 1e-9) angle -= Math.PI;
+  if (angle < -Math.PI / 2 - 1e-9) angle += Math.PI;
+  return angle;
+}
+
+/**
+ * Geometria stałego wymiaru (od 1.22.1). Liniowy: { kind: 'linear', from, to – końce linii wymiarowej,
+ * ext – dwie linie pomocnicze [[od, do]], text – { x, y, angle } środek liczby (nad linią w kierunku
+ * czytania), normal }. Kąt: { kind: 'angle', center, radius, start, sweep – łuk (radiany na ekranie),
+ * ref – linia odniesienia [od, do], text – { x, y, angle: 0 } }.
+ */
+export function dimGeometry(shape, key, offset = dimOffset(shape, key)) {
+  if (!isLinearDim(key)) {
+    // Pochylenie: przy lewym dolnym narożniku, od prostopadłej do podstawy do lewego boku;
+    // kąt odcinka: na początku, od poziomu w prawo do odcinka.
+    const center = key === 'skew' ? shapePoint(shape, -0.5, 0.5) : shapePoint(shape, -0.5, 0);
+    const start = key === 'skew' ? shape.angle - Math.PI / 2 : 0;
+    const sweep = key === 'skew' ? Math.atan(shape.skew) : Math.atan2(Math.sin(shape.angle), Math.cos(shape.angle));
+    const radius = offset;
+    const reach = radius + DIM_EXT_OVER;
+    const middle = start + sweep / 2;
+    const away = radius + DIM_FONT * 0.95;
+    return {
+      kind: 'angle', center, radius, start, sweep,
+      ref: [center, { x: center.x + Math.cos(start) * reach, y: center.y + Math.sin(start) * reach }],
+      text: { x: center.x + Math.cos(middle) * away, y: center.y + Math.sin(middle) * away, angle: 0 }
+    };
+  }
+  const { a, b, normal } = linearMeasure(shape, key);
+  const along = (point) => point.x * normal[0] + point.y * normal[1];
+  const base = Math.max(along(a), along(b)) + offset;
+  const foot = (point) => {
+    const reach = base - along(point);
+    return { x: point.x + normal[0] * reach, y: point.y + normal[1] * reach };
+  };
+  const [from, to] = [foot(a), foot(b)];
+  const ext = [[a, from], [b, to]].map(([point, end]) => {
+    const gap = Math.min(DIM_EXT_GAP, Math.max(0, base - along(point)));
+    return [
+      { x: point.x + normal[0] * gap, y: point.y + normal[1] * gap },
+      { x: end.x + normal[0] * DIM_EXT_OVER, y: end.y + normal[1] * DIM_EXT_OVER }
+    ];
   });
+  const angle = readableAngle(to.x - from.x, to.y - from.y);
+  // Nad linią w kierunku czytania (dla poziomej – w górę strony).
+  const up = [Math.sin(angle), -Math.cos(angle)];
+  const lift = DIM_FONT * 0.5 + 5;
+  const middle = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+  return { kind: 'linear', from, to, ext, normal, text: { x: middle.x + up[0] * lift, y: middle.y + up[1] * lift, angle } };
+}
+
+/** Odsunięcie wskaźnika `point` od kształtu dla wymiaru `key` (przeciąganie liczby) – w granicach. */
+export function dimOffsetAt(shape, key, point) {
+  if (!isLinearDim(key)) {
+    const { center } = dimGeometry(shape, key, 1);
+    return clamp(Math.round(Math.hypot(point.x - center.x, point.y - center.y) - DIM_FONT * 0.95), DIM_OFFSET_LIMITS.min, DIM_OFFSET_LIMITS.max);
+  }
+  const { a, b, normal } = linearMeasure(shape, key);
+  const along = (item) => item.x * normal[0] + item.y * normal[1];
+  // Liczba stoi nad linią wymiarową w kierunku czytania – po stronie kształtu albo po drugiej.
+  const geometry = dimGeometry(shape, key, 0);
+  const lift = along(geometry.text) - along(geometry.from);
+  return clamp(Math.round(along(point) - lift - Math.max(along(a), along(b))), DIM_OFFSET_LIMITS.min, DIM_OFFSET_LIMITS.max);
+}
+
+/**
+ * Odsunięcie nowego wymiaru liniowego: `offset` (wzór z poprzednich), a gdy jego linia wymiarowa
+ * wchodziłaby na inną (równoległą, w tym samym miejscu, zachodzącą na siebie) – kolejne „piętro”.
+ */
+export function stackDimOffset(strokes, shape, key, offset) {
+  if (!isLinearDim(key)) return offset;
+  const others = [];
+  for (const stroke of strokes) {
+    if (!isShape(stroke)) continue;
+    for (const other of shownDims(stroke)) {
+      if (!isLinearDim(other) || (stroke === shape && other === key)) continue;
+      others.push(dimGeometry(stroke, other));
+    }
+  }
+  const span = (line, dx, dy) => [line.from, line.to].map((point) => point.x * dx + point.y * dy).sort((p, q) => p - q);
+  let next = offset;
+  for (let tier = 0; tier < 8; tier += 1) {
+    const line = dimGeometry(shape, key, next);
+    const [dx, dy] = [-line.normal[1], line.normal[0]];
+    const [low, high] = span(line, dx, dy);
+    const level = line.from.x * line.normal[0] + line.from.y * line.normal[1];
+    const clash = others.some((item) => {
+      if (Math.abs(item.normal[0] * line.normal[1] - item.normal[1] * line.normal[0]) > 0.03) return false;
+      const distance = Math.abs(item.from.x * line.normal[0] + item.from.y * line.normal[1] - level);
+      if (distance > DIM_TIER * 0.6) return false;
+      const [a, b] = span(item, dx, dy);
+      return a < high + DIM_FONT && b > low - DIM_FONT;
+    });
+    if (!clash) return next;
+    next += DIM_TIER;
+  }
+  return next;
+}
+
+/** Narożniki stałych wymiarów do granic kształtu: linie, łuki i szacowany napis (ok. 5 czcionek szerokości). */
+function dimCorners(shape) {
+  const corners = [];
+  const [width, height] = [DIM_FONT * 5, DIM_FONT * 1.4];
+  for (const key of shownDims(shape)) {
+    const geometry = dimGeometry(shape, key);
+    const { text } = geometry;
+    corners.push({ x: text.x - width / 2, y: text.y - height / 2 }, { x: text.x + width / 2, y: text.y + height / 2 });
+    if (geometry.kind === 'linear') {
+      corners.push(...geometry.ext.flat());
+    } else {
+      const { center, radius } = geometry;
+      corners.push({ x: center.x - radius, y: center.y - radius }, { x: center.x + radius, y: center.y + radius }, geometry.ref[1]);
+    }
+  }
+  return corners;
+}
+
+/** Sprawdzone odsunięcia (liczby) i oznaczenia (znak, tolerancja) wymiarów kształtu – tylko jego wymiarów. */
+function cleanDimExtras(raw, shape) {
+  const keys = dimKeys(shape);
+  const offsets = {};
+  const tolerances = {};
+  if (raw.dimOffsets && typeof raw.dimOffsets === 'object') {
+    for (const key of keys) {
+      const value = raw.dimOffsets[key];
+      if (finite(value)) offsets[key] = clamp(Math.round(value), DIM_OFFSET_LIMITS.min, DIM_OFFSET_LIMITS.max);
+    }
+  }
+  if (raw.dimTols && typeof raw.dimTols === 'object') {
+    for (const key of keys) {
+      const clean = cleanDimTolerance(raw.dimTols[key], isLinearDim(key));
+      if (clean) tolerances[key] = clean;
+    }
+  }
+  return {
+    ...(Object.keys(offsets).length > 0 ? { dimOffsets: offsets } : {}),
+    ...(Object.keys(tolerances).length > 0 ? { dimTols: tolerances } : {})
+  };
+}
+
+/** Pasowanie: „H7”, „g6”, „H7/g6”, „js6” (litery i klasa). */
+export const FIT_RE = /^[A-Za-z]{1,3}\d{1,2}(\/[A-Za-z]{1,3}\d{1,2})?$/;
+
+/**
+ * Sprawdzone oznaczenie wymiaru albo null: { prefix?: '⌀' | 'R' | '□' (tylko długości), kind?: 'sym' |
+ * 'dev' | 'fit', value? (±), upper?, lower? (odchyłki), fit? (pasowanie) }.
+ */
+export function cleanDimTolerance(raw, linear = true) {
+  if (!raw || typeof raw !== 'object') return null;
+  const result = {};
+  if (linear && DIM_PREFIXES.includes(raw.prefix) && raw.prefix) result.prefix = raw.prefix;
+  const limit = (value) => clamp(Math.round(value * 1e6) / 1e6, -1e6, 1e6);
+  if (raw.kind === 'sym' && finite(raw.value) && raw.value !== 0) Object.assign(result, { kind: 'sym', value: Math.abs(limit(raw.value)) });
+  else if (raw.kind === 'dev' && finite(raw.upper) && finite(raw.lower)) Object.assign(result, { kind: 'dev', upper: limit(raw.upper), lower: limit(raw.lower) });
+  else if (raw.kind === 'fit' && linear && typeof raw.fit === 'string' && FIT_RE.test(raw.fit.trim())) Object.assign(result, { kind: 'fit', fit: raw.fit.trim() });
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+/** Kształt z oznaczeniem wymiaru `key` (null – bez znaku i tolerancji) – nowy obiekt. */
+export function withDimTolerance(shape, key, tolerance) {
+  const next = { ...shape };
+  const tolerances = { ...(shape.dimTols ?? {}) };
+  const clean = cleanDimTolerance(tolerance, isLinearDim(key));
+  if (clean) tolerances[key] = clean;
+  else delete tolerances[key];
+  if (Object.keys(tolerances).length > 0) next.dimTols = tolerances;
+  else delete next.dimTols;
+  return next;
+}
+
+/** Kształt z odsunięciem wymiaru `key` – nowy obiekt. */
+export function withDimOffset(shape, key, offset) {
+  return { ...shape, dimOffsets: { ...(shape.dimOffsets ?? {}), [key]: clamp(Math.round(offset), DIM_OFFSET_LIMITS.min, DIM_OFFSET_LIMITS.max) } };
 }
 
 /** Kształt z wymiarami widocznymi na stałe (klucze z dimKeys) – nowy obiekt; pusta lista usuwa pole. */
@@ -588,7 +820,9 @@ export function cleanShape(raw, pageWidth, pageHeight, isColor) {
     ...(label ? { label } : {}),
     ...(caps.startCap ? { startCap: caps.startCap } : {}),
     ...(caps.endCap ? { endCap: caps.endCap } : {}),
-    ...(dims ? { dims } : {})
+    ...(dims ? { dims } : {}),
+    // Od 1.22.1: odsunięcia linii wymiarowych i oznaczenia wymiarów (znak, tolerancja).
+    ...cleanDimExtras(raw, { shape: raw.shape })
   };
 }
 

@@ -6,17 +6,19 @@
 // Przyklejony koniec – w `attach` elementu: odcinek { start?, end? }, karteczka { leader? }; każde
 // to { id, kind: 'corner', index } (narożnik) albo { id, kind: 'edge', index, t } (krawędź – numer
 // boku i miejsce na nim 0–1; elipsa – { id, kind: 'edge', angle }: kąt na elipsie w jej układzie).
+// Od 1.22.1 także strzałka ramki tolerancji i trójkąt znaku bazy { leader? } oraz wierzchołek symbolu
+// chropowatości { tip? } – przyklejony wierzchołek przesuwa cały symbol.
 
 import { isSegment, isShape, shapeOutline, shapePoint } from './shapes.js';
 
 const ID_RE = /^[a-z0-9]{6,16}$/;
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
 const round = (value) => Math.round(value * 100) / 100;
-/** Końce, które mogą być przyklejone: odcinek i strzałka – oba, karteczka – koniec strzałki. */
-const ENDS = Object.freeze({ shape: ['start', 'end'], sticky: ['leader'] });
+/** Końce, które mogą być przyklejone: odcinek i strzałka – oba, karteczka i symbole – koniec strzałki, chropowatość – wierzchołek. */
+const ENDS = Object.freeze({ shape: ['start', 'end'], sticky: ['leader'], gdt: ['leader'], datum: ['leader'], roughness: ['tip'] });
 
-/** Elementy z ramką (prostokąt) – pole tekstowe, wzór, tabela, karteczka. */
-const isFramed = (stroke) => ['text', 'math', 'table', 'sticky'].includes(stroke?.tool);
+/** Elementy z ramką (prostokąt) – pole tekstowe, wzór, tabela, karteczka, symbol metrologiczny. */
+const isFramed = (stroke) => ['text', 'math', 'table', 'sticky', 'gdt', 'datum', 'roughness'].includes(stroke?.tool);
 const plainBox = (stroke) => ({ x: stroke.x, y: stroke.y, width: stroke.width, height: stroke.height });
 
 /**
@@ -111,6 +113,30 @@ export function findSnap(strokes, point, radius, { exclude = new Set(), boxOf = 
   return corner ?? edge;
 }
 
+/**
+ * Kierunek na zewnątrz elementu w miejscu przyciągnięcia (od 1.22.1 – nowa ramka tolerancji i znak bazy
+ * stają prostopadle do krawędzi): bok – prostopadle do niego, od środka elementu; elipsa i narożnik –
+ * od środka. Wektor jednostkowy [dx, dy].
+ */
+export function snapNormal(snap, boxOf = plainBox) {
+  const { target } = snap;
+  const box = isShape(target) ? null : boxOf(target);
+  const center = box ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : { x: target.x, y: target.y };
+  const away = [snap.x - center.x, snap.y - center.y];
+  const unit = ([x, y]) => {
+    const length = Math.hypot(x, y);
+    return length > 1e-9 ? [x / length, y / length] : [0, -1];
+  };
+  const geometry = snapGeometry(target, boxOf);
+  const side = snap.kind === 'edge' && Number.isInteger(snap.ref?.index) ? geometry?.edges[snap.ref.index] : null;
+  if (!side) return unit(away);
+  const [a, b] = side;
+  let normal = unit([a.y - b.y, b.x - a.x]);
+  const facing = normal[0] * away[0] + normal[1] * away[1];
+  if (facing < -1e-6 || (Math.abs(facing) <= 1e-6 && normal[1] > 0)) normal = [-normal[0], -normal[1]];
+  return normal;
+}
+
 /** Punkt przyklejonego końca na elemencie `target` albo null (np. narożnik, którego już nie ma). */
 export function attachPoint(target, ref, boxOf = plainBox) {
   const geometry = snapGeometry(target, boxOf);
@@ -197,12 +223,14 @@ export function withLink(stroke, end, ref) {
 /** Bieżący punkt końca `end` elementu: początek lub koniec odcinka, koniec strzałki karteczki. */
 export function endPoint(stroke, end) {
   if (end === 'leader') return stroke.leader ?? null;
+  if (end === 'tip') return { x: stroke.x, y: stroke.y };
   return shapePoint(stroke, end === 'start' ? -0.5 : 0.5, 0);
 }
 
 /** Element z końcem `end` w punkcie `point` (odcinek o długości mniejszej niż 1 – bez zmian). */
 function movedEnd(stroke, end, point) {
   if (end === 'leader') return { ...stroke, leader: { x: round(point.x), y: round(point.y) } };
+  if (end === 'tip') return { ...stroke, x: round(point.x), y: round(point.y) };
   const other = endPoint(stroke, end === 'start' ? 'end' : 'start');
   const [a, b] = end === 'start' ? [point, other] : [other, point];
   if (Math.hypot(b.x - a.x, b.y - a.y) < 1) return stroke;

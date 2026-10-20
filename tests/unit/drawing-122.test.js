@@ -8,7 +8,7 @@ import { makeArray } from '../../js/core/arrays.js';
 import {
   endPoint, findSnap, followersOf, keepLinksTo, newElementId, resolveAttachments, segmentBetween, withLink, withoutLinks
 } from '../../js/core/attach.js';
-import { cleanDrawing, cleanToolSettings, defaultToolSettings, emptyDrawing, translateStroke } from '../../js/core/drawing.js';
+import { DRAWING_VERSION, cleanDrawing, cleanToolSettings, defaultToolSettings, emptyDrawing, translateStroke } from '../../js/core/drawing.js';
 import { nearestRay, nearestRing, rayAngles, ringsIn } from '../../js/core/shapes.js';
 
 const near = (actual, expected, message, tolerance = 1e-6) => assert.ok(Math.abs(actual - expected) < tolerance, `${message}: ${actual} ≠ ${expected}`);
@@ -115,7 +115,7 @@ test('przyklejenie 1.22: koniec strzałki idzie za przesuniętym i zmienionym ks
   const sticky = { tool: 'sticky', x: 100, y: 600, width: 300, height: 200, size: 30, color: 'pink', text: 'Uwaga', created: '2026-10-20',
     leader: { x: 400, y: 450 }, attach: { leader: { id: 'abc12345', kind: 'edge', index: 2, t: 0.5 }, start: { id: 'abc12345', kind: 'corner', index: 0 } } };
   const cleaned = cleanDrawing({ ...emptyDrawing(), strokes: [rect, attached, { ...rect, id: 'ZŁE id' }, { ...attached, attach: { end: { id: 'abc12345', kind: 'wierzchołek' } } }, sticky] });
-  assert.equal(cleaned.version, 7);
+  assert.equal(cleaned.version, DRAWING_VERSION);
   assert.equal(cleaned.strokes[0].id, 'abc12345');
   assert.deepEqual(cleaned.strokes[1].attach, { end: { id: 'abc12345', kind: 'corner', index: 0 } });
   assert.equal('id' in cleaned.strokes[2], false, 'złe id – pominięte');

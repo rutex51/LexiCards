@@ -135,6 +135,11 @@ const ICONS = {
   shapeDiamond: [p('M12 3.5l8.5 8.5-8.5 8.5L3.5 12z')],
   shapeTrapezoid: [p('M7.5 6.5h9l4 11h-17z')],
   // Magnes (od 1.22): przyciąganie końców do krawędzi i narożników.
+  // Od 1.22.1: uchwyt odsunięcia linii wymiarowej, ramka tolerancji, znak bazy, chropowatość.
+  dimDrag: [p('M12 4v16'), p('M8.5 7.5L12 4l3.5 3.5'), p('M8.5 16.5L12 20l3.5-3.5')],
+  gdtFrame: [p('M2.5 8h19v8h-19z'), p('M9 8v8'), p('M15.5 8v8'), p('M4 14h3.5'), p('M5.75 14v-4')],
+  datumMark: [p('M8 3.5h8v7H8z'), p('M12 10.5v5'), filled('M8 20.5h8L12 15.5z')],
+  roughness: [p('M3.5 12.5l3.2 6.5 5.6-14h9')],
   magnet: [p('M6 4h4v8a2 2 0 0 0 4 0V4h4v8a6 6 0 0 1-12 0z'), p('M6 8h4M14 8h4')],
   guide: [p('M3.5 6.5h17'), p('M3.5 12h17'), p('M3.5 17.5h17'), { d: 'M8 4l-3 16M14 4l-3 16M20 4l-3 16', 'stroke-dasharray': '1.6 2', 'stroke-width': 1.2 }],
   paper: [p('M5 4h14v16H5z'), { d: 'M5 9.3h14M5 14.6h14M9.7 4v16M14.3 4v16', 'stroke-width': 1.1 }],

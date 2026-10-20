@@ -25,22 +25,28 @@
 //   height, size, color: nazwa koloru karteczki, text, created: 'rrrr-mm-dd', collapsed?, hidden?,
 //   leader? } – collapsed: zwinięta do ikony, hidden: bez niej na obrazie rysunku w notatce,
 //   leader { x, y }: strzałka od karteczki do punktu strony; od 1.22 element może mieć id, a odcinek,
-//   strzałka i karteczka – przyklejone końce attach { start?, end?, leader? } (core/attach.js).
+//   strzałka i karteczka – przyklejone końce attach { start?, end?, leader? } (core/attach.js);
+//   od 1.22.1 wymiary kształtu rysowane jak w rysunku technicznym (odsunięcia i tolerancje – core/shapes.js),
+//   dimStyle: 'technical' – liczby wymiarów w milimetrach bez jednostki („50”; brak – „5 cm”), a w strokes
+//   symbole metrologiczne: ramka tolerancji 'gdt', znak bazy 'datum', chropowatość 'roughness' (core/gdt.js).
 
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import {
-  SEGMENT_CAPS, SHAPES, SHAPE_FILLS, capPoints, cleanShape, isShape, segmentDegrees, shapeAsStroke, shapeBounds, shapeOutline, skewDegrees, touchesShape
+  DIM_OFFSET, DIM_OFFSET_LIMITS, SEGMENT_CAPS, SHAPES, SHAPE_FILLS, capPoints, cleanShape, isLinearDim, isShape, segmentDegrees, shapeAsStroke, shapeBounds,
+  shapeOutline, skewDegrees, touchesShape
 } from './shapes.js';
 import { keepLinks } from './attach.js';
+import { cleanSymbol, isSymbol, symbolBox, symbolLeaderStart } from './gdt.js';
 import { cleanTable } from './tables.js';
 import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
 
 /**
  * 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13), 3 – kształty, jasność tła, szablon (1.15),
  * 4 – wypełnienie i tekst kształtu (1.17), 5 – zakończenia odcinka, stałe wymiary i szyki (1.19),
- * 6 – tabele i karteczki (1.21), 7 – identyfikatory elementów i przyklejone końce odcinków (1.22).
+ * 6 – tabele i karteczki (1.21), 7 – identyfikatory elementów i przyklejone końce odcinków (1.22),
+ * 8 – wymiary techniczne (odsunięcia, tolerancje, styl liczb) i symbole metrologiczne (1.22.1).
  */
-export const DRAWING_VERSION = 7;
+export const DRAWING_VERSION = 8;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -85,13 +91,33 @@ export const SENSITIVITY = Object.freeze({ off: 0, low: 0.5, medium: 1, high: 1.
 export const SENSITIVITY_LABELS = Object.freeze({ off: 'Wył.', low: 'Mała', medium: 'Średnia', high: 'Duża' });
 
 /**
- * Stały wymiar kształtu (od 1.19) jako napis: szerokość, wysokość i długość w skali rysunku („5 cm”),
- * kąt pochylenia i kierunek odcinka w stopniach („15°”).
+ * Stały wymiar kształtu (od 1.19): szerokość, wysokość i długość w skali rysunku („5 cm”), kąt
+ * pochylenia i kierunek odcinka w stopniach („15°”). Od 1.22.1 styl 'technical' – długości
+ * w milimetrach (przy jednostkach imperialnych – w calach) bez jednostki („50”), znak przed liczbą
+ * (⌀, R, □) i tolerancja: { kind: 'sym', text: '±0,1' }, { kind: 'dev', upper: '+0,1', lower: '−0,05' }
+ * albo pasowanie { kind: 'fit', text: 'H7' }. Wynik: { main, tolerance }.
  */
-export function dimensionText(shape, key, scale) {
-  if (key === 'skew') return `${formatNumber(skewDegrees(shape))}°`;
-  if (key === 'angle') return `${formatNumber(segmentDegrees(shape))}°`;
-  return formatLength(key === 'height' ? shape.h : shape.w, scale);
+export function dimensionParts(shape, key, scale, style = 'unit') {
+  const marks = shape.dimTols?.[key] ?? null;
+  const degrees = key === 'skew' ? skewDegrees(shape) : key === 'angle' ? segmentDegrees(shape) : null;
+  const units = key === 'height' ? shape.h : shape.w;
+  let main = degrees !== null ? `${formatNumber(degrees)}°`
+    : style === 'technical' ? formatNumber(toScaleLength(units, scale) * dimFactor(scale, style)) : formatLength(units, scale);
+  if (marks?.prefix && isLinearDim(key)) main = `${marks.prefix}${main}`;
+  const suffix = degrees !== null ? '°' : '';
+  const signed = (value) => `${value > 0 ? `+${formatNumber(value)}` : value < 0 ? `−${formatNumber(-value)}` : '0'}${suffix}`;
+  let tolerance = null;
+  if (marks?.kind === 'sym') tolerance = { kind: 'sym', text: `±${formatNumber(marks.value)}${suffix}` };
+  else if (marks?.kind === 'dev') tolerance = { kind: 'dev', upper: signed(marks.upper), lower: signed(marks.lower) };
+  else if (marks?.kind === 'fit') tolerance = { kind: 'fit', text: marks.fit };
+  return { main, tolerance };
+}
+/** Wymiar jako jeden napis („⌀20 H7”, „50±0,1”, „30 +0,1/−0,05”). */
+export function dimensionText(shape, key, scale, style = 'unit') {
+  const { main, tolerance } = dimensionParts(shape, key, scale, style);
+  if (!tolerance) return main;
+  if (tolerance.kind === 'dev') return `${main} ${tolerance.upper}/${tolerance.lower}`;
+  return tolerance.kind === 'sym' ? `${main}${tolerance.text}` : `${main} ${tolerance.text}`;
 }
 
 /** Skala rysunku (od 1.14): jedna kratka = value jednostek – SI albo imperialnych; meters – długość jednostki. */
@@ -131,6 +157,16 @@ export function formatLength(units, scale) {
 export const toScaleLength = (units, scale) => (units / PAPER_STEP) * cleanScale(scale).value;
 export const fromScaleLength = (length, scale) => (length / cleanScale(scale).value) * PAPER_STEP;
 export const scaleUnitLabel = (scale) => unitOf(cleanScale(scale).unit).label;
+/**
+ * Wymiary w stylu technicznym (od 1.22.1): mnożnik z jednostki skali do milimetrów (SI) albo cali
+ * (imperialne) i skrót tej jednostki; styl opisowy – bez zmiany (jednostka skali).
+ */
+export function dimFactor(scale, style) {
+  if (style !== 'technical') return 1;
+  const unit = unitOf(cleanScale(scale).unit);
+  return unit.meters / (unit.system === 'imperial' ? 0.0254 : 0.001);
+}
+export const dimUnitLabel = (scale, style) => (style !== 'technical' ? scaleUnitLabel(scale) : unitOf(cleanScale(scale).unit).system === 'imperial' ? 'in' : 'mm');
 
 /** Liczba wpisana po polsku albo z kropką („4,5”, „ -12.5 cm”, „15°”) albo null. */
 export function parseDecimal(text) {
@@ -208,7 +244,7 @@ export const TEXT_SIZE_LABELS = Object.freeze(['Mała', 'Średnia', 'Duża', 'Ba
 export const ELEMENT_TEXT_MAX = 2000;
 
 /** Czy to pole tekstowe, wzór, (od 1.15) kształt, (od 1.19) szyk albo (od 1.21) tabela lub karteczka – a nie kreska z punktami. */
-export const isElement = (stroke) => ['text', 'math', 'shape', 'array', 'table', 'sticky'].includes(stroke?.tool);
+export const isElement = (stroke) => ['text', 'math', 'shape', 'array', 'table', 'sticky', 'gdt', 'datum', 'roughness'].includes(stroke?.tool);
 
 // ---------------------------------------------------------------- tabele i karteczki (od 1.21)
 
@@ -227,16 +263,19 @@ export const STICKY_ICON = 60;
 export const STICKY_MIN = Object.freeze({ width: 160, height: 120 });
 export const STICKY_TEXT_MAX = 1000;
 export const stickyColor = (id) => STICKY_COLORS.find((color) => color.id === id) ?? STICKY_COLORS[0];
-export const isBox = (stroke) => stroke?.tool === 'table' || stroke?.tool === 'sticky';
+/** Tabela, karteczka i (od 1.22.1) symbol metrologiczny – element z oknem poprawki i uchwytami. */
+export const isBox = (stroke) => stroke?.tool === 'table' || stroke?.tool === 'sticky' || isSymbol(stroke);
 
 /** Prostokąt elementu { x, y, width, height }: zwinięta karteczka (od 1.21) – sama ikona. */
 export function elementBox(element) {
   if (element.tool === 'sticky' && element.collapsed) return { x: element.x, y: element.y, width: STICKY_ICON, height: STICKY_ICON };
+  if (isSymbol(element)) return symbolBox(element);
   return { x: element.x, y: element.y, width: element.width, height: element.height };
 }
 
-/** Początek strzałki karteczki: punkt na brzegu karteczki (albo ikony) w stronę celu. */
+/** Początek strzałki karteczki: punkt na brzegu karteczki (albo ikony) w stronę celu; od 1.22.1 także ramki tolerancji i znaku bazy. */
 export function leaderStart(sticky) {
+  if (isSymbol(sticky)) return symbolLeaderStart(sticky);
   const box = elementBox(sticky);
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   const dx = sticky.leader.x - center.x;
@@ -282,7 +321,9 @@ export function defaultToolSettings() {
     // Od 1.21: kolor ostatnio dodanej karteczki.
     stickyColor: 'yellow',
     // Od 1.22: końce odcinków i strzałek przyciągane do krawędzi i narożników (magnes).
-    edgeSnap: true
+    edgeSnap: true,
+    // Od 1.22.1: odsunięcie linii wymiarowej – wzór dla następnych wymiarów (ostatnio przeciągnięte).
+    dimOffset: DIM_OFFSET
   };
 }
 
@@ -372,7 +413,8 @@ export function cleanToolSettings(raw) {
     arrowCaps: cleanCaps(raw.arrowCaps, base.arrowCaps),
     arrayKind: ARRAY_KINDS.includes(raw.arrayKind) ? raw.arrayKind : base.arrayKind,
     stickyColor: STICKY_COLORS.some((color) => color.id === raw.stickyColor) ? raw.stickyColor : base.stickyColor,
-    edgeSnap: typeof raw.edgeSnap === 'boolean' ? raw.edgeSnap : base.edgeSnap
+    edgeSnap: typeof raw.edgeSnap === 'boolean' ? raw.edgeSnap : base.edgeSnap,
+    dimOffset: finite(raw.dimOffset) ? clamp(Math.round(raw.dimOffset), DIM_OFFSET_LIMITS.min, DIM_OFFSET_LIMITS.max) : base.dimOffset
   };
 }
 
@@ -434,8 +476,8 @@ export function touchesStroke(stroke, x, y, radius) {
   if (isElement(stroke)) {
     const box = elementBox(stroke);
     if (x >= box.x - radius && x <= box.x + box.width + radius && y >= box.y - radius && y <= box.y + box.height + radius) return true;
-    // Strzałka karteczki (od 1.21) też się liczy.
-    if (stroke.tool === 'sticky' && stroke.leader) {
+    // Strzałka karteczki (od 1.21) i symbolu metrologicznego (od 1.22.1) też się liczy.
+    if (stroke.leader) {
       const start = leaderStart(stroke);
       return segmentDistance(x, y, start.x, start.y, stroke.leader.x, stroke.leader.y) <= radius + 4;
     }
@@ -480,11 +522,13 @@ export function strokeBounds(stroke) {
   if (isElement(stroke)) {
     const box = elementBox(stroke);
     bounds = { minX: box.x, minY: box.y, maxX: box.x + box.width, maxY: box.y + box.height };
-    if (stroke.tool === 'sticky' && stroke.leader) {
-      bounds.minX = Math.min(bounds.minX, stroke.leader.x - 6);
-      bounds.minY = Math.min(bounds.minY, stroke.leader.y - 6);
-      bounds.maxX = Math.max(bounds.maxX, stroke.leader.x + 6);
-      bounds.maxY = Math.max(bounds.maxY, stroke.leader.y + 6);
+    if (stroke.leader) {
+      // Trójkąt bazy (od 1.22.1) – wokół końca o pół wielkości tekstu.
+      const reach = stroke.tool === 'datum' ? stroke.size * 0.6 : 6;
+      bounds.minX = Math.min(bounds.minX, stroke.leader.x - reach);
+      bounds.minY = Math.min(bounds.minY, stroke.leader.y - reach);
+      bounds.maxX = Math.max(bounds.maxX, stroke.leader.x + reach);
+      bounds.maxY = Math.max(bounds.maxY, stroke.leader.y + reach);
     }
     boundsCache.set(stroke, bounds);
     return bounds;
@@ -611,7 +655,7 @@ function elementCorners(element) {
     const box = elementBox(element);
     const corners = [[box.x, box.y], [box.x + box.width, box.y], [box.x + box.width, box.y + box.height], [box.x, box.y + box.height]];
     // Koniec strzałki karteczki (od 1.21) też musi być w obszarze.
-    if (element.tool === 'sticky' && element.leader) corners.push([element.leader.x, element.leader.y]);
+    if (element.leader) corners.push([element.leader.x, element.leader.y]);
     return corners;
   }
   const { points } = shapeOutline(element);
@@ -1021,6 +1065,7 @@ export function cleanDrawing(raw) {
     paperLevel: cleanLevel(raw.paperLevel, DEFAULT_PAPER_LEVEL),
     strokes,
     scale: cleanScale(raw.scale),
+    ...(raw.dimStyle === 'technical' ? { dimStyle: 'technical' } : {}),
     ...(template ? { template } : {}),
     ...(photo ? { photo } : {})
   };
@@ -1060,6 +1105,7 @@ function cleanElement(raw, pageWidth, pageHeight) {
 function cleanElementData(raw, pageWidth, pageHeight) {
   if (raw.tool === 'shape') return cleanShape(raw, pageWidth, pageHeight, (color) => HEX.test(color ?? ''));
   if (raw.tool === 'table' || raw.tool === 'sticky') return cleanBox(raw, pageWidth, pageHeight);
+  if (isSymbol(raw)) return cleanSymbol(raw, pageWidth, pageHeight);
   const content = raw.tool === 'text' ? raw.text : raw.source;
   if (typeof content !== 'string' || content.trim() === '' || !HEX.test(raw.color ?? '')) return null;
   if (![raw.x, raw.y, raw.size, raw.width, raw.height].every(finite)) return null;

@@ -42,6 +42,7 @@ js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $�
 js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek (równoległy, od 1.22 promieniowy), kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka, od 1.22 przyciąganie końców i magnes), Shift i Ctrl, środkowy przycisk, szyk, kartki (od 1.22 kółko, ‹ › i animacja przewracania), obraz PNG / JPEG
 js/ui/drawing-paint.js     rysunek na płótnie: kształty geometryczne (z zakończeniami odcinka), szablon (boisko liniami, obraz mnożony z tłem)
 js/ui/drawing-boxes.js     tabele i karteczki na rysunku (od 1.21): układ i pomiar (szerokości kolumn, łamanie, wysokość z treści), rysowanie, strzałka, ikona zwiniętej, treść obok ikony
+js/ui/drawing-gdt.js       wymiary techniczne i symbole metrologiczne na płótnie (od 1.22.1): linie pomocnicze, linia wymiarowa, łuk, liczba z tolerancją, ramka tolerancji, znak bazy, chropowatość; znaki ⌀ □ Ⓜ Ⓛ i 14 symboli ISO 1101 rysowane kreską
 js/ui/canvas-text.js       tekst na płótnie rysunku: czcionka, wysokość wiersza, pomiar i łamanie wierszy (pola tekstowe, tekst kształtu, tabele, karteczki)
 js/ui/images.js            obrazy w przeglądarce: odczyt, zmniejszanie dużych zdjęć, adresy do wyświetlenia
 js/core/library.js         model w pamięci + wszystkie operacje na danych
@@ -53,7 +54,8 @@ js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (
 js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, skala, przyciąganie linijki, obszar zaznaczania, tabele i karteczki (prostokąt, strzałka), sprawdzanie danych rysunku
 js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
 js/core/shapes.js          kształty geometryczne (punkty, obrys, punkty konstrukcyjne, Shift, wymiary z klawiatury i na stałe, wypełnienie, tekst, zakończenia odcinka, sprawdzanie) i liniuszek (najbliższa linia; od 1.22 najbliższy okrąg i promień, okręgi na stronie, kierunki promieni)
-js/core/attach.js          przyciąganie i przyklejanie końców (od 1.22): narożniki i boki elementów, najbliższy punkt, identyfikatory, końce za elementem, odklejanie, kopie, sprawdzanie przyklejeń
+js/core/attach.js          przyciąganie i przyklejanie końców (od 1.22): narożniki i boki elementów, najbliższy punkt, identyfikatory, końce za elementem, odklejanie, kopie, sprawdzanie przyklejeń; od 1.22.1 kierunek na zewnątrz krawędzi
+js/core/gdt.js             symbole metrologiczne (od 1.22.1): lista ISO 1101, układ ramki tolerancji, znaku bazy i chropowatości (ISO 1302), początek strzałki, trójkąt bazy, kolejna litera bazy, sprawdzanie
 js/core/arrays.js          szyk liniowy i kołowy: kopie elementów, przesunięcie, obrót wokół środka, parametry, sprawdzanie
 js/core/templates.js       tło rysunku: poziomy jasności, szablon – boisko (105 × 68 m), dopasowanie, środek, wielkość (też w % i narożnikiem), sprawdzanie
 js/core/zip.js             odczyt i zapis archiwów ZIP (także kawałkami przez Blob – duże pliki)
@@ -667,6 +669,39 @@ powielenie i wklejenie – `relinkCopies` (nowe identyfikatory, przyklejenia tyl
 – `withoutLinks`. Sprawdzanie (`cleanElement` → `keepLinks`) przepuszcza tylko poprawne `id`
 i odnośniki do istniejących końców. Starsza wersja aplikacji pomija `id` i `attach` (rysunek bez
 zmian), a przy poprawce rysunku zapisze końce tam, gdzie są – bez przyklejenia.
+Od 1.22.1 (format rysunku 8): **wymiary techniczne** (`js/core/shapes.js`). `dimGeometry(shape, key,
+offset)` – wymiar liniowy: punkty mierzone `linearMeasure` (szerokość – dolna krawędź, elipsa i romb –
+skrajne punkty; wysokość – prostopadle do podstawy, po prawej, od wierzchołka trójkąta albo górnego
+narożnika trapezu; długość odcinka – po stronie bez łuku kąta), linia wymiarowa za dalszym punktem
+w odsunięciu, linie pomocnicze od przerwy `DIM_EXT_GAP` do `DIM_EXT_OVER` za linię, środek liczby nad
+linią w kierunku czytania (`readableAngle` – od −90° do 90° bez 90°: pion od dołu do góry, ISO 129);
+kąt (pochylenie – przy lewym dolnym narożniku od pionu, odcinek – na początku od poziomu) – środek,
+promień, początek i rozwartość łuku, linia odniesienia. `dimOffsets` w kształcie (brak – `DIM_OFFSET`
+40, łuk – połowa ramienia), `dimOffsetAt` – odsunięcie z położenia przeciąganej liczby,
+`stackDimOffset` – kolejne piętro (`DIM_TIER` 36), gdy równoległa linia wymiarowa innego wymiaru jest
+w tym samym miejscu i zachodzi na nową (z zapasem czcionki); `dimTols` – `cleanDimTolerance` (znak tylko
+dla długości, ± bez zera, odchyłki – obie, pasowanie – `FIT_RE`). Napis – `dimensionParts(shape, key,
+scale, style)` w `js/core/drawing.js` (`dimStyle: 'technical'` rysunku – `dimFactor` do mm albo cali,
+`dimUnitLabel` dla pól). Rysowanie – `paintTechnicalDim` (`js/ui/drawing-gdt.js`): groty zaczernione,
+przy krótkim wymiarze na zewnątrz; liczba z białą obwódką, znak ⌀ / □ kreską, odchyłki 0,64 czcionki
+jedna nad drugą. Zaznaczony kształt: warstwa zapisanych kresek pomija jego wymiary (`plain`), warstwa
+bieżąca rysuje same linie (`paintDims(…, { text: false })`), a pola wymiarów (`placeDims`) stoją
+w miejscu liczby; uchwyt (`startDimDrag`, nasłuch na `window`, miejsce chwytu względem liczby) –
+czynność `dim-offset` z podglądem przerywanym, po puszczeniu `withDimOffset` i wzór `tools.dimOffset`
+(dla długości); oko – `showDim` (wzór i piętro). Przycisk ± – `editDimMarks` (`withDimTolerance`).
+**Symbole metrologiczne** (`js/core/gdt.js`, `isSymbol`, w `isBox` i `isElement`): ramka `gdt` – pola
+`cells` mierzone w edytorze (`measureGdt`; `cleanSymbol` szacuje, gdy złe), strzałka od środka boku
+zwróconego do celu (`symbolLeaderStart`); znak bazy `datum` – kwadrat i `leader` (środek podstawy
+trójkąta, `datumTriangle` – podstawa prostopadle do linii); chropowatość `roughness` – (x, y) to
+wierzchołek, `roughnessLayout` – ramiona pod 60° (1,4 h i 2,8 h), kreska nad tekstem, zamknięcie albo
+koło, `symbolBox` → `elementBox`. Przyklejanie: końce `leader` (ramka, baza) i `tip` (chropowatość –
+`movedEnd` przesuwa cały symbol); przesunięte same ramka i baza zostawiają koniec strzałki na miejscu
+(`keptTarget`). Wstawianie: okno (`editGdt`, `editDatum`, `editRoughness`), potem `symbolPlacing` –
+dotknięcie (bez palca, gdy rysuje tylko rysik) → `placeSymbol`: `edgeSnapAt`, ramka i kwadrat obok
+w kierunku `snapNormal` (prostopadle do boku, od środka elementu), jeden krok cofania z `linkEnds`.
+Uchwyt `target` w `boxHandles` (bez narożnika wielkości). Szyk pomija symbole. Starsza wersja aplikacji
+pomija symbole, `dimStyle`, `dimOffsets` i `dimTols` (obraz w notatce zostaje), a przy poprawce
+rysunku zapisze go bez nich.
 **Przewracanie kartek** (od 1.22): `flipTo(index)` – zdjęcie płótna zapisanych kresek przed i po
 `showPage` (`snapshotBase`) i osobne płótno `drawing__flip` nad stroną; `stepFlip` (520 ms, krzywa
 cubic in-out, pierwsza klatka od razu) i `paintCurl` – kartka nad linią zgięcia płasko, część spod
@@ -1074,7 +1109,8 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
   skala, przyciąganie linijki, obszar zaznaczania, własne kolory, kształty z punktami konstrukcyjnymi,
   liniuszek, jasność tła i szablon, wypełnienie i tekst kształtu, wymiary z klawiatury, zakończenia
   odcinka, Shift, stałe wymiary, szyk liniowy i kołowy, wielkość szablonu w % i z narożnika, od 1.22
-  liniuszek promieniowy, przyciąganie do narożników i krawędzi, przyklejone końce),
+  liniuszek promieniowy, przyciąganie do narożników i krawędzi, przyklejone końce, od 1.22.1 wymiary
+  techniczne – geometria, piętra, tolerancje, styl liczb – i symbole metrologiczne),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

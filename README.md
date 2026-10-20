@@ -30,7 +30,7 @@ Wcięcia (Tab), indeksy, wielkość i własny kolor tekstu, podpisy obrazów „
 Rysunek: wielkość szablonu, Shift i Ctrl, środkowy przycisk myszy, szyk, kilka kartek, zakończenia odcinka, stałe wymiary (wersja 1.19): [docs/RELEASE-1.19.md](docs/RELEASE-1.19.md).
 Notatki: wyrównanie i interlinia, linki, symbole, data i godzina, PDF, pełne „Usuń formatowanie”, Ctrl+Z po wstawieniu sygnatury; ścieżka nad fiszką (wersja 1.20): [docs/RELEASE-1.20.md](docs/RELEASE-1.20.md).
 Tabele w notatkach („Tab. N.”) i na rysunku, okno grubości zakreślacza, karteczki na rysunku (wersja 1.21); wybór daty i godziny – kalendarz i bębny (1.21.1): [docs/RELEASE-1.21.md](docs/RELEASE-1.21.md).
-Rysunek: liniuszek promieniowy, przewracanie kartek kółkiem i przyciskami ‹ › z animacją, końce odcinka i strzałki przyciągane do krawędzi i narożników (wersja 1.22): [docs/RELEASE-1.22.md](docs/RELEASE-1.22.md).
+Rysunek: liniuszek promieniowy, przewracanie kartek kółkiem i przyciskami ‹ › z animacją, końce odcinka i strzałki przyciągane do krawędzi i narożników (wersja 1.22); wymiary jak w rysunku technicznym z tolerancjami, ramka tolerancji, baza, chropowatość (1.22.1): [docs/RELEASE-1.22.md](docs/RELEASE-1.22.md).
 
 ## Co potrafi wersja 1.22
 
@@ -114,7 +114,11 @@ Rysunek: liniuszek promieniowy, przewracanie kartek kółkiem i przyciskami ‹ 
   w notatce) – i okno grubości zakreślacza (do 60). Od 1.22: **liniuszek promieniowy** (okręgi
   i promienie ze środka – kreska po łuku albo po promieniu), kartki przewracane **kółkiem myszy**
   i przyciskami **‹ ›** z animacją oraz **przyciąganie końców** odcinka i strzałki do krawędzi
-  i narożników (koniec przyklejony idzie za kształtem; z Alt – swobodnie, magnes wł./wył.). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
+  i narożników (koniec przyklejony idzie za kształtem; z Alt – swobodnie, magnes wł./wył.). Od 1.22.1:
+  **wymiary jak w rysunku technicznym** (linie pomocnicze, linia wymiarowa ze strzałkami, łuk kąta,
+  odsunięcie przeciąganiem, piętra), znak ⌀ R □, tolerancje (±, odchyłki, pasowania), liczby „50” (mm)
+  albo „5 cm” oraz **symbole metrologiczne** – ramka tolerancji (14 symboli ISO 1101), znak bazy
+  i chropowatość (ISO 1302) ze strzałką przyklejoną do krawędzi. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
@@ -172,7 +176,7 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.19 – szablon, Shift i Ctrl, środkowy przycisk, szyk, kartki, zakończenia odcinka, stałe wymiary](docs/RELEASE-1.19.md),
 [wersja 1.20 – wyrównanie i interlinia, linki, symbole, data i godzina, PDF, „Usuń formatowanie”, ścieżka nad fiszką](docs/RELEASE-1.20.md),
 [wersja 1.21 – tabele w notatkach i na rysunku, grubość zakreślacza, karteczki; 1.21.1 – wybór daty i godziny](docs/RELEASE-1.21.md),
-[wersja 1.22 – liniuszek promieniowy, przewracanie kartek kółkiem, przyciąganie końców do krawędzi i narożników](docs/RELEASE-1.22.md).
+[wersja 1.22 – liniuszek promieniowy, przewracanie kartek kółkiem, przyciąganie końców do krawędzi i narożników; 1.22.1 – wymiary techniczne, tolerancje, symbole metrologiczne](docs/RELEASE-1.22.md).
 
 ## Jak korzystać
 
@@ -532,7 +536,33 @@ Wklej, Szyk) są wolne – chyba że skopiowane razem z elementem. Z wciśnięty
 na iPadzie i iPhonie – **magnes** **Przyciąganie wł. / wył.** nad zaznaczonym odcinkiem, strzałką
 albo karteczką ze strzałką i przełącznik w panelu kształtów (to samo ustawienie, zapamiętane na urządzeniu).
 **Wymiary na stałe** (od 1.19): oko w rogu pola wymiaru – po odznaczeniu kształtu zostaje w tym miejscu
-napis z wymiarem („5 cm”, „15°”), który zmienia się i przesuwa razem z kształtem.
+napis z wymiarem („5 cm”, „15°”), który zmienia się i przesuwa razem z kształtem. Od 1.22.1 wymiar
+jest rysowany **jak w rysunku technicznym**: linie pomocnicze od kształtu, linia wymiarowa ze strzałkami
+(przy krótkim wymiarze – strzałki z zewnątrz) i liczba nad nią; wysokość – prostopadle do podstawy, po
+prawej (liczba czytana od prawej strony, od dołu do góry); kąt pochylenia – łuk od pionu do boku, kąt
+odcinka – łuk od poziomu, a długość odcinka – po drugiej stronie. Przy zaznaczonym kształcie pole wymiaru
+stoi w miejscu liczby, a **uchwyt ↕** w jego prawym dolnym rogu przeciąga linię wymiarową (podgląd
+przerywany); ostatnie odsunięcie jest **wzorem dla następnych wymiarów**, a gdy nowa linia wymiarowa
+wchodziłaby na inną (równoległą, w tym samym miejscu) – staje **piętro dalej**. Przycisk **±** w lewym
+górnym rogu pola: **znak przed liczbą** (⌀, R, □) i **tolerancja** – **±** („50±0,1”), **odchyłki**
+górna i dolna (małe, jedna nad drugą: „50 +0,1/−0,05”) albo **pasowanie** („⌀20 H7”, „H7/g6”;
+gotowe H7, H8, g6, h6, js6, H7/g6…), z podglądem; zapis pokazuje wymiar na rysunku. **Liczby wymiarów**
+w panelu linijki (dotknij kąta linijki): **„5 cm”** (jak dotąd, w skali rysunku) albo **„50”** –
+technicznie, w milimetrach bez jednostki (przy jednostkach imperialnych – w calach); pola wymiarów
+pokazują i przyjmują wtedy milimetry. Znaki ⌀ i □ są rysowane kreską – tak samo na iPadzie i w Windows.
+**Symbole metrologiczne** (od 1.22.1): w panelu kształtów – **Ramka tolerancji**, **Baza**,
+**Chropowatość**. Okno ramki: **14 symboli ISO 1101** (prostoliniowość, płaskość, okrągłość, walcowość,
+kształt wyznaczonego zarysu i powierzchni, równoległość, prostopadłość, nachylenie, pozycja,
+współosiowość, symetria, bicie, bicie całkowite – rysowane kreską), **tolerancja** z ⌀ przed nią i Ⓜ
+albo Ⓛ za nią, do **trzech baz** (A, B, wspólna A-B; przy tolerancjach kształtu – bez baz), wielkość,
+kolor i podgląd. Znak bazy – litera (kolejna wolna: A, B, C… bez I, O, Q). Chropowatość – **obróbka**
+(dowolna, z usunięciem materiału, bez usunięcia), **wymaganie** pod poziomą kreską symbolu jak w ISO
+1302 („Ra 1,6”; gotowe Ra 0,4–12,5, Rz 6,3, Rz 25). Po **Wstaw** dotknij krawędzi albo narożnika:
+strzałka ramki, zaczerniony trójkąt bazy albo wierzchołek chropowatości **przyciąga się** do niej (ok.
+3 mm, myszą znacznik już przy najechaniu) i zostaje **przyklejony** – idzie za kształtem; ramka i kwadrat
+bazy stają obok, prostopadle do krawędzi (przeciągniesz je w inne miejsce, a koniec strzałki zostaje).
+Esc – bez wstawiania. Zaznaczony symbol: kółko – koniec strzałki (chropowatość – wierzchołek, przesuwa
+cały symbol), dotknięcie albo **Edytuj** – okno poprawki, magnes jak przy strzałkach.
 **Szyk** (od 1.19): polecenie **Szyk** nad zaznaczeniem – **liniowy** (obiektów w rzędzie, odstęp,
 rzędów, odstęp rzędów; w skali rysunku) albo **kołowy** (obiektów, kąt wypełnienia, promień, pierścienie,
 obracanie obiektów). Szyk to jeden element: przeciągnięcie przesuwa wszystkie kopie, dotknięcie albo
@@ -843,7 +873,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 26. **Wersja 1.19: rysunek – skala szablonu wpisywana i przeciągnięciem narożnika, Shift (proporcje), Ctrl (chwilowe zaznaczanie), przesuwanie środkowym przyciskiem, szyk liniowy i kołowy, kilka kartek, zakończenia odcinka, stałe wymiary** – gotowe.
 27. **Wersja 1.20: notatki – wyrównanie i interlinia, linki (Ctrl+K), symbole, data i godzina, PDF (okno drukowania A4), „Usuń formatowanie” – wszystko oprócz linków, Ctrl+Z po „Wstaw do tekstu” i „Nowa strona”, „Kopiuj” z obrazami w wielkości strony A4; Nauka – ścieżka nad fiszką, ukrywanie grup** – gotowe.
 28. **Wersja 1.21: tabele w notatkach, na rysunku i na zdjęciu („Tab. N.”), okno grubości zakreślacza, karteczki na rysunku; 1.21.1 – wybór daty (kalendarz) i godziny (bębny) zamiast pól przeglądarki** – gotowe.
-29. **Wersja 1.22: rysunek – liniuszek promieniowy, kółko i przyciski ‹ › przewracają kartki (z animacją), przyciąganie i przyklejanie końców odcinka i strzałki do krawędzi i narożników** – gotowe; **1.22.1 – wymiarowanie techniczne z tolerancjami i symbole GD&T** – w przygotowaniu.
+29. **Wersja 1.22: rysunek – liniuszek promieniowy, kółko i przyciski ‹ › przewracają kartki (z animacją), przyciąganie i przyklejanie końców odcinka i strzałki do krawędzi i narożników; 1.22.1 – wymiary jak w rysunku technicznym (odsunięcie, piętra, ⌀ R □, tolerancje, pasowania, „50” / „5 cm”), ramka tolerancji ISO 1101, znak bazy, chropowatość ISO 1302** – gotowe.
 30. **Wersja 1.23: eksport sesji nauki do kalendarza (plik .ics dla Outlooka) – cykliczne, prywatne, z linkami do lekcji** – w przygotowaniu.
 31. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
 
