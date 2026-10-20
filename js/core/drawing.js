@@ -30,11 +30,14 @@
 //   dimStyle: 'technical' – liczby wymiarów w milimetrach bez jednostki („50”; brak – „5 cm”), a w strokes
 //   symbole metrologiczne: ramka tolerancji 'gdt', znak bazy 'datum', chropowatość 'roughness' (core/gdt.js);
 //   od 1.24 kształty także łamana 'polyline' i wielokąt 'polygon' z wierzchołkami (nodes) – z rozpoznania
-//   odręcznego kształtu (core/recognize.js).
+//   odręcznego kształtu (core/recognize.js); od 1.25 (format 10) dimUnit – jednostka liczb technicznych
+//   ('mm' | 'cm' | 'm' | 'in'; brak – mm albo cale przy skali imperialnej), tolerancje długości kształtów
+//   w milimetrach (starsze rysunki – przeliczane przy wczytaniu), ramka tolerancji może mieć odchyłki.
 
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
+import { DEFAULT_RECENT_FITS, cleanRecentFits } from './fits.js';
 import {
-  DIM_OFFSET, DIM_OFFSET_LIMITS, SEGMENT_CAPS, SHAPES, SHAPE_FILLS, capPoints, cleanShape, isLinearDim, isShape, segmentDegrees, shapeAsStroke, shapeBounds,
+  DIM_OFFSET, DIM_OFFSET_LIMITS, FIT_RE, SEGMENT_CAPS, SHAPES, SHAPE_FILLS, capPoints, cleanShape, isLinearDim, isShape, scaleDimTolerances, segmentDegrees, shapeAsStroke, shapeBounds,
   shapeOutline, skewDegrees, touchesShape
 } from './shapes.js';
 import { keepLinks } from './attach.js';
@@ -48,7 +51,7 @@ import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
  * 6 – tabele i karteczki (1.21), 7 – identyfikatory elementów i przyklejone końce odcinków (1.22),
  * 8 – wymiary techniczne (odsunięcia, tolerancje, styl liczb) i symbole metrologiczne (1.22.1).
  */
-export const DRAWING_VERSION = 9;
+export const DRAWING_VERSION = 10;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -94,29 +97,35 @@ export const SENSITIVITY_LABELS = Object.freeze({ off: 'Wył.', low: 'Mała', me
 
 /**
  * Stały wymiar kształtu (od 1.19): szerokość, wysokość i długość w skali rysunku („5 cm”), kąt
- * pochylenia i kierunek odcinka w stopniach („15°”). Od 1.22.1 styl 'technical' – długości
- * w milimetrach (przy jednostkach imperialnych – w calach) bez jednostki („50”), znak przed liczbą
+ * pochylenia i kierunek odcinka w stopniach („15°”). Od 1.22.1 styl 'technical' – długości bez
+ * jednostki („50”; od 1.25 w jednostce `format.unit` – mm, cm, m albo cale), znak przed liczbą
  * (⌀, R, □) i tolerancja: { kind: 'sym', text: '±0,1' }, { kind: 'dev', upper: '+0,1', lower: '−0,05' }
- * albo pasowanie { kind: 'fit', text: 'H7' }. Wynik: { main, tolerance }.
+ * albo pasowanie { kind: 'fit', text: 'H7' }. Od 1.25 liczby tolerancji długości są zapisane
+ * w milimetrach i pokazywane w jednostce liczby wymiaru. format – z dimFormat(rysunek) albo
+ * dawny styl ('technical' | 'unit'). Wynik: { main, tolerance }.
  */
-export function dimensionParts(shape, key, scale, style = 'unit') {
+export function dimensionParts(shape, key, scale, format = 'unit') {
   const marks = shape.dimTols?.[key] ?? null;
   const degrees = key === 'skew' ? skewDegrees(shape) : key === 'angle' ? segmentDegrees(shape) : null;
   const units = key === 'height' ? shape.h : shape.w;
+  const technical = formatOf(format).style === 'technical';
   let main = degrees !== null ? `${formatNumber(degrees)}°`
-    : style === 'technical' ? formatNumber(toScaleLength(units, scale) * dimFactor(scale, style)) : formatLength(units, scale);
+    : technical ? formatNumber(toScaleLength(units, scale) * dimFactor(scale, format)) : formatLength(units, scale);
   if (marks?.prefix && isLinearDim(key)) main = `${marks.prefix}${main}`;
   const suffix = degrees !== null ? '°' : '';
-  const signed = (value) => `${value > 0 ? `+${formatNumber(value)}` : value < 0 ? `−${formatNumber(-value)}` : '0'}${suffix}`;
+  // Tolerancja długości: z milimetrów do jednostki liczby wymiaru; kąta – w stopniach.
+  const per = degrees !== null ? 1 : dimMillimeters(scale, format);
+  const shown = (value) => formatTolerance(value / per);
+  const signed = (value) => `${value > 0 ? `+${shown(value)}` : value < 0 ? `−${shown(-value)}` : '0'}${suffix}`;
   let tolerance = null;
-  if (marks?.kind === 'sym') tolerance = { kind: 'sym', text: `±${formatNumber(marks.value)}${suffix}` };
+  if (marks?.kind === 'sym') tolerance = { kind: 'sym', text: `±${shown(marks.value)}${suffix}` };
   else if (marks?.kind === 'dev') tolerance = { kind: 'dev', upper: signed(marks.upper), lower: signed(marks.lower) };
   else if (marks?.kind === 'fit') tolerance = { kind: 'fit', text: marks.fit };
   return { main, tolerance };
 }
 /** Wymiar jako jeden napis („⌀20 H7”, „50±0,1”, „30 +0,1/−0,05”). */
-export function dimensionText(shape, key, scale, style = 'unit') {
-  const { main, tolerance } = dimensionParts(shape, key, scale, style);
+export function dimensionText(shape, key, scale, format = 'unit') {
+  const { main, tolerance } = dimensionParts(shape, key, scale, format);
   if (!tolerance) return main;
   if (tolerance.kind === 'dev') return `${main} ${tolerance.upper}/${tolerance.lower}`;
   return tolerance.kind === 'sym' ? `${main}${tolerance.text}` : `${main} ${tolerance.text}`;
@@ -142,6 +151,13 @@ export function cleanScale(raw) {
   return { value: clamp(raw.value, 1e-6, 1e9), unit: raw.unit };
 }
 
+/** Liczba tolerancji (od 1.25): do czterech cyfr znaczących (0,0005), przecinek dziesiętny. */
+export function formatTolerance(value) {
+  if (!finite(value) || value === 0) return '0';
+  const decimals = Math.min(6, Math.max(0, 3 - Math.floor(Math.log10(Math.abs(value)))));
+  return String(Number(value.toFixed(decimals))).replace('.', ',');
+}
+
 /** Liczba po polsku: przecinek dziesiętny, kilka cyfr znaczących, bez zbędnych zer. */
 export function formatNumber(value) {
   const size = Math.abs(value);
@@ -160,15 +176,50 @@ export const toScaleLength = (units, scale) => (units / PAPER_STEP) * cleanScale
 export const fromScaleLength = (length, scale) => (length / cleanScale(scale).value) * PAPER_STEP;
 export const scaleUnitLabel = (scale) => unitOf(cleanScale(scale).unit).label;
 /**
- * Wymiary w stylu technicznym (od 1.22.1): mnożnik z jednostki skali do milimetrów (SI) albo cali
- * (imperialne) i skrót tej jednostki; styl opisowy – bez zmiany (jednostka skali).
+ * Jednostki liczb wymiarów w stylu technicznym (od 1.25 do wyboru; 1.22.1 – mm albo cale przy skali
+ * imperialnej): skrót przy polach, ile mm ma jednostka, nazwa w oznaczeniu „Wymiary w …” na rysunku.
  */
-export function dimFactor(scale, style) {
-  if (style !== 'technical') return 1;
-  const unit = unitOf(cleanScale(scale).unit);
-  return unit.meters / (unit.system === 'imperial' ? 0.0254 : 0.001);
+export const DIM_UNITS = Object.freeze([
+  { id: 'mm', label: 'mm', millimeters: 1, note: 'mm' },
+  { id: 'cm', label: 'cm', millimeters: 10, note: 'cm' },
+  { id: 'm', label: 'm', millimeters: 1000, note: 'm' },
+  { id: 'in', label: 'in', millimeters: 25.4, note: 'calach' }
+]);
+const dimUnitOf = (id) => DIM_UNITS.find((unit) => unit.id === id) ?? null;
+/** Domyślna jednostka liczb technicznych: mm, przy skali w jednostkach imperialnych – cale. */
+export const defaultDimUnit = (scale) => (unitOf(cleanScale(scale).unit).system === 'imperial' ? 'in' : 'mm');
+/** Format liczb wymiarów rysunku: { style: 'technical' | 'unit', unit } (od 1.25; unit – tylko technicznie). */
+export function dimFormat(drawing) {
+  if (drawing?.dimStyle !== 'technical') return { style: 'unit', unit: null };
+  return { style: 'technical', unit: dimUnitOf(drawing.dimUnit)?.id ?? defaultDimUnit(drawing.scale) };
 }
-export const dimUnitLabel = (scale, style) => (style !== 'technical' ? scaleUnitLabel(scale) : unitOf(cleanScale(scale).unit).system === 'imperial' ? 'in' : 'mm');
+/** Format z obiektu albo dawnego napisu stylu. */
+const formatOf = (format) => (typeof format === 'string' || !format ? { style: format === 'technical' ? 'technical' : 'unit', unit: null } : format);
+/** Jednostka liczb wymiaru: { label, millimeters } – technicznie wybrana, opisowo – jednostka skali. */
+function dimUnitIn(scale, format) {
+  const { style, unit } = formatOf(format);
+  if (style === 'technical') return dimUnitOf(unit) ?? dimUnitOf(defaultDimUnit(scale));
+  const scaleUnit = unitOf(cleanScale(scale).unit);
+  return { id: scaleUnit.id, label: scaleUnit.label, millimeters: scaleUnit.meters * 1000 };
+}
+/** Ile milimetrów ma jednostka liczby wymiaru (tolerancje zapisane w mm – od 1.25). */
+export const dimMillimeters = (scale, format) => dimUnitIn(scale, format).millimeters;
+/** Mnożnik z jednostki skali do jednostki liczb wymiaru (styl opisowy – 1). */
+export function dimFactor(scale, format) {
+  if (formatOf(format).style !== 'technical') return 1;
+  return (unitOf(cleanScale(scale).unit).meters * 1000) / dimMillimeters(scale, format);
+}
+export const dimUnitLabel = (scale, format) => dimUnitIn(scale, format).label;
+/** Oznaczenie jednostki na rysunku przy liczbach bez jednostki („Wymiary w mm”) albo null (od 1.25). */
+export const dimUnitNote = (format) => (formatOf(format).style === 'technical' ? `Wymiary w ${dimUnitOf(formatOf(format).unit)?.note ?? 'mm'}` : null);
+/**
+ * Czy rysunek ma liczby, których dotyczy oznaczenie jednostki: widoczne wymiary długości albo ramki
+ * tolerancji (od 1.25).
+ */
+export function hasMeasuredContent(drawing) {
+  return drawing.strokes.some((stroke) => stroke.tool === 'gdt'
+    || (isShape(stroke) && Array.isArray(stroke.dims) && stroke.dims.some((key) => isLinearDim(key))));
+}
 
 /** Liczba wpisana po polsku albo z kropką („4,5”, „ -12.5 cm”, „15°”) albo null. */
 export function parseDecimal(text) {
@@ -327,7 +378,9 @@ export function defaultToolSettings() {
     // Od 1.22.1: odsunięcie linii wymiarowej – wzór dla następnych wymiarów (ostatnio przeciągnięte).
     dimOffset: DIM_OFFSET,
     // Od 1.24: kreska pióra przytrzymana na końcu zamienia się w figurę.
-    recognize: true
+    recognize: true,
+    // Od 1.25: ostatnio użyte pasowania (okno tolerancji wymiaru pokazuje tylko je).
+    recentFits: [...DEFAULT_RECENT_FITS]
   };
 }
 
@@ -419,7 +472,8 @@ export function cleanToolSettings(raw) {
     stickyColor: STICKY_COLORS.some((color) => color.id === raw.stickyColor) ? raw.stickyColor : base.stickyColor,
     edgeSnap: typeof raw.edgeSnap === 'boolean' ? raw.edgeSnap : base.edgeSnap,
     dimOffset: finite(raw.dimOffset) ? clamp(Math.round(raw.dimOffset), DIM_OFFSET_LIMITS.min, DIM_OFFSET_LIMITS.max) : base.dimOffset,
-    recognize: typeof raw.recognize === 'boolean' ? raw.recognize : base.recognize
+    recognize: typeof raw.recognize === 'boolean' ? raw.recognize : base.recognize,
+    recentFits: cleanRecentFits(raw.recentFits, (fit) => FIT_RE.test(fit))
   };
 }
 
@@ -1047,9 +1101,14 @@ export function cleanDrawing(raw) {
   const height = finite(raw.height) && raw.height >= 1 ? clamp(Math.round(raw.height), 16, 8192) : null;
   if (!width || !height) return null;
   const strokes = [];
+  // Od 1.25 (format 10) tolerancje długości są w milimetrach; starsze – w jednostce liczby wymiaru
+  // (styl „50” – mm, przy skali imperialnej cale; styl „5 cm” – jednostka skali).
+  const scale = cleanScale(raw.scale);
+  const legacy = !(finite(raw.version) && raw.version >= 10);
+  const toMillimeters = !legacy ? 1 : raw.dimStyle === 'technical' ? dimMillimeters(scale, { style: 'technical', unit: defaultDimUnit(scale) }) : dimMillimeters(scale, 'unit');
   for (const stroke of Array.isArray(raw.strokes) ? raw.strokes.slice(0, MAX_STROKES) : []) {
     const clean = cleanStroke(stroke, width, height, true);
-    if (clean) strokes.push(clean);
+    if (clean) strokes.push(toMillimeters === 1 ? clean : tolerancesInMillimeters(clean, toMillimeters));
   }
   const template = cleanTemplate(raw.template, width, height, photoBytes);
   let photo = null;
@@ -1069,11 +1128,17 @@ export function cleanDrawing(raw) {
     paper: PAPERS.includes(raw.paper) ? raw.paper : 'plain',
     paperLevel: cleanLevel(raw.paperLevel, DEFAULT_PAPER_LEVEL),
     strokes,
-    scale: cleanScale(raw.scale),
-    ...(raw.dimStyle === 'technical' ? { dimStyle: 'technical' } : {}),
+    scale,
+    ...(raw.dimStyle === 'technical' ? { dimStyle: 'technical', ...(dimUnitOf(raw.dimUnit) ? { dimUnit: raw.dimUnit } : {}) } : {}),
     ...(template ? { template } : {}),
     ...(photo ? { photo } : {})
   };
+}
+
+/** Kształt (i kształty w szyku) z tolerancjami długości przeliczonymi do mm – `factor` mm w dawnej jednostce. */
+function tolerancesInMillimeters(stroke, factor) {
+  if (isArray(stroke)) return { ...stroke, items: stroke.items.map((item) => tolerancesInMillimeters(item, factor)) };
+  return isShape(stroke) && stroke.dimTols ? scaleDimTolerances(stroke, factor) : stroke;
 }
 
 /**

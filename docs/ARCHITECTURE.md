@@ -40,6 +40,7 @@ js/ui/symbols.js           panel symboli z ostatnio użytymi (notatka) i symbole
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
+js/ui/fit-table.js         okno „Tabela pasowań” (od 1.25): pasowania zalecane, dowolna klasa albo pasowanie z litery i klasy IT
 js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek (równoległy, od 1.22 promieniowy), kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka, od 1.22 przyciąganie końców i magnes, od 1.24 punkty w wierzchołkach łamanej), figury z odręcznych kształtów (od 1.24 – przytrzymane pióro), spirala na grzbiecie (od 1.24.1), Shift i Ctrl, środkowy przycisk, szyk, kartki (od 1.22 kółko, ‹ › i animacja przewracania, od 1.24 zagięcie od rogu), obraz PNG / JPEG
 js/ui/drawing-paint.js     rysunek na płótnie: kształty geometryczne (z zakończeniami odcinka), szablon (boisko liniami, obraz mnożony z tłem)
 js/ui/drawing-boxes.js     tabele i karteczki na rysunku (od 1.21): układ i pomiar (szerokości kolumn, łamanie, wysokość z treści), rysowanie, strzałka, ikona zwiniętej, treść obok ikony
@@ -56,6 +57,7 @@ js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, hi
 js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
 js/core/shapes.js          kształty geometryczne (punkty, obrys, punkty konstrukcyjne, Shift, wymiary z klawiatury i na stałe, wypełnienie, tekst, zakończenia odcinka, od 1.24 łamana i wielokąt z wierzchołkami, sprawdzanie) i liniuszek (najbliższa linia; od 1.22 najbliższy okrąg i promień, okręgi na stronie, kierunki promieni)
 js/core/recognize.js       figury z odręcznych kształtów (od 1.24): rogi kreski (ShortStraw), boki i wierzchołki, odcinek, strzałka, łamana, trójkąt, czworokąty, wielokąt, okrąg i elipsa
+js/core/fits.js            pasowania ISO 286 (od 1.25): litery otworów i wałków, klasy IT, pasowania zalecane, ostatnio użyte
 js/core/attach.js          przyciąganie i przyklejanie końców (od 1.22): narożniki i boki elementów, najbliższy punkt, identyfikatory, końce za elementem, odklejanie, kopie, sprawdzanie przyklejeń; od 1.22.1 kierunek na zewnątrz krawędzi
 js/core/gdt.js             symbole metrologiczne (od 1.22.1): lista ISO 1101, układ ramki tolerancji, znaku bazy i chropowatości (ISO 1302), początek strzałki, trójkąt bazy, kolejna litera bazy, sprawdzanie
 js/core/arrays.js          szyk liniowy i kołowy: kopie elementów, przesunięcie, obrót wokół środka, parametry, sprawdzanie
@@ -703,6 +705,28 @@ bieżąca rysuje same linie (`paintDims(…, { text: false })`), a pola wymiaró
 w miejscu liczby; uchwyt (`startDimDrag`, nasłuch na `window`, miejsce chwytu względem liczby) –
 czynność `dim-offset` z podglądem przerywanym, po puszczeniu `withDimOffset` i wzór `tools.dimOffset`
 (dla długości); oko – `showDim` (wzór i piętro). Przycisk ± – `editDimMarks` (`withDimTolerance`).
+Od 1.25 (format rysunku 10): **jednostka liczb wymiarów** – `drawing.dimUnit` ('mm' | 'cm' | 'm' | 'in',
+`DIM_UNITS`; tylko przy `dimStyle: 'technical'`, brak – `defaultDimUnit`: mm, przy skali imperialnej
+cale). `dimFormat(drawing)` → `{ style, unit }` zastępuje dawny napis stylu w `dimensionParts`, `dimFactor`,
+`dimUnitLabel` (napis 'technical' | 'unit' nadal działa – jednostka domyślna); `paintStroke` dostaje
+`dimFormat`. **Tolerancje długości są w mm** (`dimTols` – value, upper, lower), pokazywane w jednostce
+liczby wymiaru (`dimMillimeters`, `formatTolerance` – do czterech cyfr znaczących), kąty – w stopniach;
+`cleanDrawing` rysunków w formacie < 10 przelicza je do mm (`tolerancesInMillimeters`, `scaleDimTolerances`:
+styl „50” – mm albo cale, styl „5 cm” – jednostka skali; też kształty w szyku), schowek czyta się jako
+format 10. Oznaczenie **„Wymiary w …”** (`dimUnitNote`) rysuje `paintDrawing` (`paintUnitNote`, lewy dolny
+róg za dziurkami spirali, 22 jednostki) przy stylu technicznym, gdy `hasMeasuredContent` (wymiar długości
+na stałe albo ramka tolerancji) – w edytorze i na obrazie w notatce. Edytor: `setDimFormat(style, unit)`,
+w panelu linijki styl i `dimUnitChoice`; okno tolerancji (`editDimMarks`) przy długości najpierw
+`technicalForTolerancing` (rysunek „5 cm” → mm, „Anuluj” – `restore`), wybór jednostki w oknie (wpisane
+liczby przeliczane), odchyłki – `signedInput` (przycisk znaku, `inputmode: decimal`, wpisany znak
+przechodzi na przycisk), pasowania – `tools.recentFits` (`rememberFit`, najwyżej 6) i `openFitTable`
+(`js/ui/fit-table.js`: `PREFERRED_FITS` – dotknięcie wybiera; budowanie z `HOLE_LETTERS`, `SHAFT_LETTERS`,
+`IT_GRADES`, `isTableFit`); po zapisie – komunikat `announceTechnical`. Ramka tolerancji: wstawiona albo
+poprawiona na rysunku „5 cm” – `technicalAfterFrame` (po wstawieniu dotknięciem). **Odchyłki w ramce**:
+`upper`, `lower` w elemencie `gdt` (liczby jak wpisane, obie albo żadna, górna ≥ dolna – `cleanSymbol`),
+napisy `gdtDeviations` / `signedDeviation`, w `measureGdt` i `paintGdt` małe, górna nad dolną, przed Ⓜ/Ⓛ.
+Panele pod paskiem mają nagłówek `panelTitle` (przyklejony przy przewijaniu) z przyciskiem zamknięcia
+`drawing-panel-close` → `closeSettings`.
 **Symbole metrologiczne** (`js/core/gdt.js`, `isSymbol`, w `isBox` i `isElement`): ramka `gdt` – pola
 `cells` mierzone w edytorze (`measureGdt`; `cleanSymbol` szacuje, gdy złe), strzałka od środka boku
 zwróconego do celu (`symbolLeaderStart`); znak bazy `datum` – kwadrat i `leader` (środek podstawy
@@ -1193,7 +1217,9 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
   liniuszek promieniowy, przyciąganie do narożników i krawędzi, przyklejone końce, od 1.22.1 wymiary
   techniczne – geometria, piętra, tolerancje, styl liczb – i symbole metrologiczne, od 1.24
   rozpoznawanie odręcznych kształtów – figury, przyciąganie kierunków, kształty odrzucane – oraz łamana
-  i wielokąt: wierzchołki, punkty, przesuwanie wierzchołka, dane),
+  i wielokąt: wierzchołki, punkty, przesuwanie wierzchołka, dane; od 1.25 jednostki liczb wymiarów,
+  oznaczenie „Wymiary w …”, tolerancje w mm i przeliczenie starszych rysunków, odchyłki w ramce
+  tolerancji, tabela pasowań i ostatnio użyte),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

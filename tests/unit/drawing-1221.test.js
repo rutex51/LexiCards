@@ -114,7 +114,8 @@ test('wymiary techniczne 1.22.1: styl „50” (mm) i „5 cm”, znak ⌀ R □
   assert.equal(dimensionText(marked, 'height', CM, 'technical'), '20 +0,1/−0,05');
   assert.deepEqual(dimensionParts(marked, 'height', CM, 'technical').tolerance, { kind: 'dev', upper: '+0,1', lower: '−0,05' });
   assert.equal(dimensionText(withDimTolerance(shape, 'width', { prefix: 'R', kind: 'sym', value: -0.1 }), 'width', CM, 'technical'), 'R50±0,1');
-  assert.equal(dimensionText(withDimTolerance(shape, 'width', { kind: 'dev', upper: 0, lower: -0.2 }), 'width', CM), '5 cm 0/−0,2');
+  // Od 1.25 tolerancje długości w mm – przy liczbach „5 cm” pokazane w cm (−2 mm = −0,2 cm).
+  assert.equal(dimensionText(withDimTolerance(shape, 'width', { kind: 'dev', upper: 0, lower: -2 }), 'width', CM), '5 cm 0/−0,2');
   // Kąt: bez znaku i pasowania, tolerancja w stopniach.
   const skewed = rect({ skew: Math.tan((25 * Math.PI) / 180) });
   assert.equal(dimensionText(withDimTolerance(skewed, 'skew', { prefix: '⌀', kind: 'sym', value: 1 }), 'skew', CM), '25°±1°');
@@ -137,7 +138,7 @@ test('wymiary techniczne 1.22.1: styl „50” (mm) i „5 cm”, znak ⌀ R □
   // Rysunek: styl liczb i wersja formatu; ustawienia – wzór odsunięcia.
   const drawing = cleanDrawing({ width: 1600, height: 1100, strokes: [cleaned], dimStyle: 'technical' });
   assert.equal(drawing.version, DRAWING_VERSION);
-  assert.equal(DRAWING_VERSION, 9);
+  assert.equal(DRAWING_VERSION, 10);
   assert.equal(drawing.dimStyle, 'technical');
   assert.equal('dimStyle' in cleanDrawing({ width: 1600, height: 1100, strokes: [], dimStyle: 'mm' }), false);
   assert.equal(defaultToolSettings().dimOffset, DIM_OFFSET);

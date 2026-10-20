@@ -130,7 +130,7 @@ test('kształty w rysunku: sprawdzanie danych, zaznaczanie prostokątem i lassem
     ]
   });
   assert.equal(cleaned.version, DRAWING_VERSION);
-  assert.equal(DRAWING_VERSION, 9, 'od 1.24 – łamana i wielokąt (1.22.1 – wymiary techniczne i symbole, 1.22 – przyklejone końce, 1.21 – tabele i karteczki, 1.19 – zakończenia odcinka, stałe wymiary i szyki)');
+  assert.equal(DRAWING_VERSION, 10, 'od 1.25 – jednostka liczb wymiarów i tolerancje w mm (1.24 – łamana i wielokąt, 1.22.1 – wymiary techniczne i symbole, 1.22 – przyklejone końce, 1.21 – tabele i karteczki, 1.19 – zakończenia odcinka, stałe wymiary i szyki)');
   assert.equal(cleaned.strokes.length, 3);
   assert.deepEqual([cleaned.strokes[0].color, cleaned.strokes[0].size, cleaned.strokes[0].skew], ['#abcdef', 40, 2.5]);
   near(cleaned.strokes[0].angle, Math.PI);

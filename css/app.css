@@ -6029,6 +6029,34 @@ svg.icon--note { color: var(--note-icon); }
   gap: 12px;
 }
 
+/* Odchyłka ze znakiem (od 1.25): przycisk +/− przed polem – klawiatura liczb na iPhonie nie ma znaków. */
+.drawing__signed {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.drawing__signed .input { flex: 1 1 auto; min-width: 0; }
+
+.drawing__sign {
+  flex: none;
+  min-width: 40px;
+  margin-left: 0;
+  padding: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+/* Tabela pasowań (od 1.25): grupy pasowań zalecanych, litery i klasy dokładności. */
+.drawing__fit-group { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; margin-top: 4px; }
+.drawing__fit-kind { min-width: 5.5rem; color: var(--text-2); font-size: var(--size-sub); }
+.drawing__fit-group .drawing__quick { margin-top: 4px; }
+.drawing__fit-builder { margin-top: 8px; }
+.drawing__fit-chip { min-width: 40px; }
+.drawing__fit-chip[aria-pressed="true"] { background: var(--accent-fill); color: var(--on-accent); }
+
 .drawing__dim-preview {
   margin: 0;
   font-weight: 600;
@@ -6094,6 +6122,39 @@ svg.icon--note { color: var(--note-icon); }
   font-size: 1.1rem;
   font-weight: 700;
 }
+
+/*
+ * Nagłówek panelu z przyciskiem zamknięcia (od 1.25) – przyklejony u góry, także gdy panel się
+ * przewija (telefon: panel zakrywa stronę).
+ */
+.drawing__settings-head {
+  position: sticky;
+  top: -16px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -16px -18px 0;
+  padding: 16px 12px 0 18px;
+  background: var(--elevated);
+}
+
+.drawing__settings-head .drawing__settings-title { margin-bottom: 8px; }
+
+.drawing__settings-close {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--text-2);
+}
+
+.drawing__settings-close:hover { color: var(--text); }
 
 .drawing__settings-label {
   display: flex;

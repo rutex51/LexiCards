@@ -6617,7 +6617,7 @@ test('rysunek 1.22.1: wymiar jak w rysunku technicznym – linia wymiarowa pod k
 
   // Znak i tolerancja: szerokość ⌀50 H7, wysokość 20 +0,1/−0,05.
   await editor.locator('[data-testid=drawing-dim-marks-width]').click();
-  await expectText(sheet.locator('.sheet__title'), 'Szerokość – znak i tolerancja');
+  await expectText(sheet.locator('.sheet__title'), 'Szerokość – tolerancja');
   await sheet.locator('.segmented__option', { hasText: '⌀' }).click();
   await sheet.locator('.segmented__option', { hasText: 'Pasowanie' }).click();
   await sheet.locator('[data-testid=drawing-dim-fit-H7]').click();
@@ -7258,6 +7258,182 @@ test('rysunek 1.24.2 na telefonie: dwa palce – powiększenie w miejscu rozsuwa
   assert.equal(await editor.locator('[data-testid=drawing-zoom]').textContent(), zoomBefore, 'przesuwanie nie zmienia powiększenia');
   assert.ok(Math.hypot(panned.x - (moved.x - 60), panned.y - (moved.y - 40)) < 3, `przesunięcie o (−60, −40) (${JSON.stringify(panned)} / ${JSON.stringify(moved)})`);
 }, { device: PHONE });
+
+// ---------------------------------------------------------------- 1.25: jednostki wymiarów, odchyłki, pasowania, zamykanie paneli
+
+/** Ciemne piksele obrazu rysunku z notatki (PNG) w prostokącie strony [x0, y0, x1, y1]. */
+const imageInk = (page, lessonID, box, index = 0) => page.evaluate(async ([id, [x0, y0, x1, y1], at]) => {
+  const image = (await window.lexicards.library.noteImages(id))[at];
+  const bitmap = await createImageBitmap(new Blob([image.bytes], { type: image.type }));
+  const canvas = Object.assign(document.createElement('canvas'), { width: bitmap.width, height: bitmap.height });
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0);
+  const { data } = ctx.getImageData(x0, y0, x1 - x0, y1 - y0);
+  let count = 0;
+  for (let index = 0; index < data.length; index += 4) if (Math.max(data[index], data[index + 1], data[index + 2]) < 120) count += 1;
+  return count;
+}, [lessonID, box, index]);
+
+test('rysunek 1.25 na telefonie: panel z przyciskiem zamknięcia; tolerancja wymiaru – rysunek „5 cm” przechodzi na mm bez jednostki (Anuluj – wraca), odchyłki ze znakiem z przycisku +/−, jednostka w oknie, ostatnie pasowania i tabela ISO 286; „Wymiary w mm” na obrazie', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Tolerancje</p>');
+  const { at } = await pageFrame(page);
+  const panel = editor.locator('[data-testid=drawing-shape-panel]');
+  const sheet = page.locator('dialog.sheet[open]').last();
+  const sheets = () => page.locator('dialog.sheet[open]').count();
+  const unitOfWidth = editor.locator('[data-testid=drawing-dim-box-width] .drawing__dim-unit');
+  // Panel kształtów zakrywa stronę – zamyka go przycisk ✕ w nagłówku.
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.waitFor();
+  await panel.locator('[data-testid=drawing-panel-close]').click();
+  await waitUntil(() => panel.isHidden(), 'Panel zamknięty przyciskiem');
+  // Prostokąt 520 × 176 jednostek (11,8 × 4 cm).
+  await drawStroke(page, segment(at(300, 300), at(820, 476), 10), { type: 'touch', id: 23 });
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Prostokąt');
+  await expectText(unitOfWidth, 'cm');
+  // Okno tolerancji: od razu mm; Anuluj – z powrotem „5 cm”.
+  await editor.locator('[data-testid=drawing-dim-marks-width]').click();
+  await expectText(sheet.locator('.sheet__title'), 'Szerokość – tolerancja');
+  await sheet.locator('.segmented__option', { hasText: 'Odchyłki' }).click();
+  await expectText(sheet.locator('.drawing__dim-tol-pair .drawing__dim-tol-row span').first(), 'mm');
+  await sheet.locator('.sheet__header .button--plain').click();
+  await waitUntil(async () => (await sheets()) === 1, 'Okno zamknięte');
+  await expectText(unitOfWidth, 'cm');
+
+  await editor.locator('[data-testid=drawing-dim-marks-width]').click();
+  await sheet.locator('.segmented__option', { hasText: 'Odchyłki' }).click();
+  const upperSign = sheet.locator('[data-testid=drawing-dim-tol-upper-sign]');
+  const lowerSign = sheet.locator('[data-testid=drawing-dim-tol-lower-sign]');
+  assert.deepEqual([await upperSign.textContent(), await lowerSign.textContent()], ['+', '−'], 'znaki domyślnie: górna +, dolna −');
+  assert.equal(await sheet.locator('[data-testid=drawing-dim-tol-upper]').getAttribute('inputmode'), 'decimal', 'klawiatura liczb');
+  await sheet.locator('[data-testid=drawing-dim-tol-upper]').fill('0,1');
+  await sheet.locator('[data-testid=drawing-dim-tol-lower]').fill('0,05');
+  await expectText(sheet.locator('[data-testid=drawing-dim-tol-preview]'), 'Na rysunku: 118 +0,1 / −0,05');
+  // Znak z przycisku: górna −0,1 < dolna −0,05 – błąd; z powrotem +.
+  await upperSign.click();
+  await expectText(upperSign, '−');
+  await sheetSubmit(page).click();
+  await expectText(sheet.locator('.form-message--error'), 'Odchyłka górna nie może być mniejsza od dolnej.');
+  await upperSign.click();
+  // Jednostka w oknie: cm – liczby przeliczone; z powrotem mm.
+  const unit = sheet.locator('[data-testid=drawing-dim-tol-unit]');
+  await unit.locator('.segmented__option', { hasText: 'cm' }).click();
+  await expectValue(sheet.locator('[data-testid=drawing-dim-tol-upper]'), '0,01');
+  await expectValue(sheet.locator('[data-testid=drawing-dim-tol-lower]'), '0,005');
+  await expectText(sheet.locator('[data-testid=drawing-dim-tol-preview]'), 'Na rysunku: 11,8 +0,01 / −0,005');
+  await unit.locator('.segmented__option', { hasText: 'mm' }).click();
+  await expectValue(sheet.locator('[data-testid=drawing-dim-tol-upper]'), '0,1');
+  await settled(sheet);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-odchylki-znak-telefon.png') });
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await sheets()) === 1, 'Okno zamknięte');
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Wymiary w mm');
+  await expectText(unitOfWidth, 'mm');
+
+  // Pasowanie wysokości: ostatnie pasowania (6) i tabela – pasowanie zalecane H7/k6 dotknięciem.
+  await editor.locator('[data-testid=drawing-dim-marks-height]').click();
+  await sheet.locator('.segmented__option', { hasText: 'Pasowanie' }).click();
+  const recent = sheet.locator('[data-testid=drawing-dim-fit-recent] .drawing__chip');
+  assert.equal(await recent.count(), 7, '6 ostatnich i „Tabela pasowań…”');
+  await sheet.locator('[data-testid=drawing-dim-fit-table]').click();
+  const table = page.locator('dialog.sheet[open]').last();
+  await expectText(table.locator('.sheet__title'), 'Tabela pasowań (ISO 286)');
+  await settled(table);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-tabela-pasowan-telefon.png') });
+  await table.locator('[data-testid=fit-table-H7-k6]').click();
+  await waitUntil(async () => (await sheets()) === 2, 'Tabela zamknięta');
+  await expectValue(sheet.locator('[data-testid=drawing-dim-tol-fit]'), 'H7/k6');
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await sheets()) === 1, 'Okno zamknięte');
+  // Ponownie: H7/k6 pierwsze wśród ostatnich; z tabeli – dowolne pasowanie K7/js6 (otwór K, wałek js).
+  await editor.locator('[data-testid=drawing-dim-marks-height]').click();
+  await expectText(sheet.locator('[data-testid=drawing-dim-fit-recent] .drawing__chip').first(), 'H7/k6');
+  await sheet.locator('[data-testid=drawing-dim-fit-table]').click();
+  await table.locator('.segmented__option', { hasText: 'Pasowanie' }).click();
+  await table.locator('[data-testid=fit-table-hole-letter-K]').click();
+  await table.locator('[data-testid=fit-table-shaft-letter-js]').click();
+  await table.locator('[data-testid=fit-table-shaft-grade-5]').click();
+  await expectText(table.locator('[data-testid=fit-table-preview]'), 'Wybrane: K7/js5');
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await sheets()) === 2, 'Tabela zamknięta');
+  await expectValue(sheet.locator('[data-testid=drawing-dim-tol-fit]'), 'K7/js5');
+  await sheet.locator('.sheet__header .button--plain').click();
+  await waitUntil(async () => (await sheets()) === 1, 'Okno zamknięte');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const drawing = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  assert.equal(drawing.dimStyle, 'technical');
+  assert.equal('dimUnit' in drawing, false, 'mm – domyślnie');
+  assert.deepEqual(drawing.strokes[0].dimTols, { width: { kind: 'dev', upper: 0.1, lower: -0.05 }, height: { kind: 'fit', fit: 'H7/k6' } });
+  // „Wymiary w mm” w lewym dolnym rogu obrazu w notatce.
+  assert.ok(await imageInk(page, ids.statements, [52, 1050, 260, 1080]) > 40, 'oznaczenie jednostki na obrazie');
+  assert.equal(await imageInk(page, ids.statements, [52, 980, 260, 1040]), 0, 'nad oznaczeniem pusto');
+}, { device: PHONE });
+
+test('rysunek 1.25: ramka tolerancji z odchyłkami (znak z przycisku), po wstawieniu ramki rysunek „5 cm” – mm bez jednostki; jednostka cm w panelu linijki – liczby i pola w cm; zapis (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Ramka</p>');
+  const frame = await pageFrame(page);
+  const panel = editor.locator('[data-testid=drawing-shape-panel]');
+  const sheet = page.locator('dialog.sheet[open]').last();
+  const drag = async (from, to) => {
+    await page.mouse.move(...frame.screen(...from));
+    await page.mouse.down();
+    await page.mouse.move(...frame.screen(...to), { steps: 8 });
+    await page.mouse.up();
+  };
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-shape-rect]').click();
+  await drag([600, 400], [820, 576]);
+  await editor.locator('[data-testid=drawing-dim-eye-width]').click();
+  await editor.locator('[data-testid=drawing-tool-shape]').click();
+  await panel.locator('[data-testid=drawing-symbol-gdt]').click();
+  await expectText(sheet.locator('.field__label', { hasText: 'Tolerancja' }).first(), 'Tolerancja (mm)');
+  await sheet.locator('[data-testid=drawing-gdt-value]').fill('0,1');
+  await sheet.locator('[data-testid=drawing-gdt-datum-1]').fill('A');
+  await sheet.locator('[data-testid=drawing-gdt-deviations]').check({ force: true });
+  await sheet.locator('[data-testid=drawing-gdt-upper]').fill('0,02');
+  await sheet.locator('[data-testid=drawing-gdt-lower]').fill('0,01');
+  assert.equal(await sheet.locator('[data-testid=drawing-gdt-lower-sign]').textContent(), '−');
+  await settled(sheet);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-ramka-odchylki.png') });
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno zamknięte');
+  // Wstawianie zaczyna się po zamknięciu okna (komunikat) – dopiero wtedy dotknięcie krawędzi.
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Dotknij krawędzi albo narożnika');
+  await page.mouse.click(...frame.screen(824, 480));
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Wymiary w mm');
+  // Panel linijki: jednostka cm – pole szerokości zaznaczonego prostokąta w cm.
+  await editor.locator('[data-testid=drawing-ruler]').click();
+  await editor.locator('[data-testid=drawing-ruler-angle]').click();
+  const rulerPanel = editor.locator('[data-testid=drawing-ruler-panel]');
+  await rulerPanel.waitFor();
+  await rulerPanel.locator('[data-testid=drawing-dim-unit] .segmented__option', { hasText: 'cm' }).click();
+  await rulerPanel.locator('[data-testid=drawing-panel-close]').click();
+  await waitUntil(() => rulerPanel.isHidden(), 'Panel linijki zamknięty');
+  await editor.locator('[data-testid=drawing-ruler]').click();
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await drawStroke(page, [[...frame.at(700, 488), 0.5]], { type: 'mouse' });
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Prostokąt');
+  await expectValue(editor.locator('[data-testid=drawing-dim-width]'), '5');
+  await expectText(editor.locator('[data-testid=drawing-dim-box-width] .drawing__dim-unit'), 'cm');
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const drawing = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  assert.deepEqual([drawing.dimStyle, drawing.dimUnit], ['technical', 'cm']);
+  const gdt = drawing.strokes.find((stroke) => stroke.tool === 'gdt');
+  assert.deepEqual([gdt.value, gdt.upper, gdt.lower, gdt.datums], ['0,1', 0.02, -0.01, ['A']]);
+  assert.ok(await imageInk(page, ids.statements, [52, 1050, 260, 1080]) > 40, '„Wymiary w cm” na obrazie');
+}, { device: DESKTOP });
 
 // ---------------------------------------------------------------- nauka z fiszkami
 

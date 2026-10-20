@@ -4,7 +4,7 @@
 // wyglądają tak samo na iPadzie i w Windows, bez względu na czcionki systemu.
 
 import { DIM_ARROW, DIM_EXT_GAP, DIM_FONT, DIM_LINE, dimGeometry } from '../core/shapes.js';
-import { datumTriangle, gdtHeight, roughnessLayout, symbolLeaderStart } from '../core/gdt.js';
+import { datumTriangle, gdtDeviations, gdtHeight, roughnessLayout, symbolLeaderStart } from '../core/gdt.js';
 import { measureText, textFont } from './canvas-text.js';
 
 const HALO = 'rgba(255, 255, 255, 0.92)';
@@ -268,10 +268,18 @@ export function measureGdt(element) {
   const height = gdtHeight(size);
   const font = textFont(size);
   const valueWidth = (element.diameter ? size * PREFIX_WIDTH['⌀'] + gdtGap(size) : 0) + measureText(element.value, font)
-    + (element.modifier ? gdtGap(size) + size * MODIFIER_WIDTH : 0);
+    + deviationsWidth(element) + (element.modifier ? gdtGap(size) + size * MODIFIER_WIDTH : 0);
   const cells = [height, Math.max(height, Math.round(valueWidth + gdtPad(size) * 2)),
     ...element.datums.map((datum) => Math.max(height, Math.round(measureText(datum, font) + gdtPad(size) * 2)))];
   return { cells, width: cells.reduce((sum, cell) => sum + cell, 0), height };
+}
+
+/** Szerokość odchyłek po tolerancji w ramce (od 1.25): odstęp i dłuższa z dwóch małych liczb. */
+function deviationsWidth(element) {
+  const deviations = gdtDeviations(element);
+  if (!deviations) return 0;
+  const small = textFont(Math.round(element.size * 0.64), '600');
+  return gdtGap(element.size) + Math.max(measureText(deviations.upper, small), measureText(deviations.lower, small));
 }
 
 /** Linia od symbolu do celu z grotem (ramka tolerancji) albo trójkątem (znak bazy) na końcu. */
@@ -316,7 +324,8 @@ export function paintGdt(ctx, element) {
   // Pole tolerancji: ⌀, wartość, Ⓜ/Ⓛ – wyśrodkowane.
   const font = textFont(size);
   const valueWidth = measureText(element.value, font);
-  const content = (element.diameter ? size * PREFIX_WIDTH['⌀'] + gdtGap(size) : 0) + valueWidth + (element.modifier ? gdtGap(size) + size * MODIFIER_WIDTH : 0);
+  const content = (element.diameter ? size * PREFIX_WIDTH['⌀'] + gdtGap(size) : 0) + valueWidth + deviationsWidth(element)
+    + (element.modifier ? gdtGap(size) + size * MODIFIER_WIDTH : 0);
   let cursor = x + cells[0] + (cells[1] - content) / 2;
   const middle = y + height / 2;
   ctx.lineWidth = Math.max(1.4, size * 0.07);
@@ -329,6 +338,17 @@ export function paintGdt(ctx, element) {
   ctx.textBaseline = 'middle';
   ctx.fillText(element.value, cursor, middle + size * 0.04);
   cursor += valueWidth;
+  // Odchyłki (od 1.25): małe, górna nad dolną – jak przy liczbie wymiaru.
+  const deviations = gdtDeviations(element);
+  if (deviations) {
+    const small = textFont(Math.round(size * 0.64), '600');
+    ctx.font = small;
+    cursor += gdtGap(size);
+    ctx.fillText(deviations.upper, cursor, middle - size * 0.3);
+    ctx.fillText(deviations.lower, cursor, middle + size * 0.36);
+    cursor += Math.max(measureText(deviations.upper, small), measureText(deviations.lower, small));
+    ctx.font = font;
+  }
   if (element.modifier) paintModifier(ctx, cursor + gdtGap(size), middle, size, element.modifier);
   ctx.textAlign = 'center';
   let datumLeft = x + cells[0] + cells[1];

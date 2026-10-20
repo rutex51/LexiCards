@@ -849,6 +849,28 @@ export function cleanDimTolerance(raw, linear = true) {
   return Object.keys(result).length > 0 ? result : null;
 }
 
+/**
+ * Kształt z liczbami tolerancji długości pomnożonymi przez `factor` (od 1.25 – przeliczenie dawnych
+ * rysunków do mm); tolerancje kątów bez zmian.
+ */
+export function scaleDimTolerances(shape, factor) {
+  if (!shape.dimTols) return shape;
+  const exact = (value) => Number((value * factor).toPrecision(12));
+  const tolerances = {};
+  for (const [key, marks] of Object.entries(shape.dimTols)) {
+    if (!isLinearDim(key)) {
+      tolerances[key] = marks;
+      continue;
+    }
+    const next = { ...marks };
+    if (finite(next.value)) next.value = exact(next.value);
+    if (finite(next.upper)) next.upper = exact(next.upper);
+    if (finite(next.lower)) next.lower = exact(next.lower);
+    tolerances[key] = next;
+  }
+  return { ...shape, dimTols: tolerances };
+}
+
 /** Kształt z oznaczeniem wymiaru `key` (null – bez znaku i tolerancji) – nowy obiekt. */
 export function withDimTolerance(shape, key, tolerance) {
   const next = { ...shape };

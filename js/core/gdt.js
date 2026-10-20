@@ -6,7 +6,8 @@
 //   datums, cells, leader? }: (x, y) – lewy górny róg, size – wielkość tekstu, symbol – z GDT_SYMBOLS,
 //   value – tolerancja jako tekst („0,05”), diameter – znak ⌀ przed nią, modifier – 'M' (Ⓜ) albo 'L' (Ⓛ),
 //   datums – do trzech baz („A”, „B”, „A-B”), cells – szerokości pól zmierzone w edytorze, leader –
-//   koniec strzałki (punkt na krawędzi).
+//   koniec strzałki (punkt na krawędzi); od 1.25 upper i lower – odchyłki po tolerancji (liczby jak
+//   wpisane, w jednostce liczb wymiarów; obie albo żadna).
 // Znak bazy { tool: 'datum', x, y, width, height, size, color, letter, leader }: kwadrat z literą,
 //   leader – środek podstawy zaczernionego trójkąta na krawędzi.
 // Chropowatość { tool: 'roughness', x, y, size, color, text, kind, width }: (x, y) – wierzchołek symbolu
@@ -119,6 +120,17 @@ export function nextDatumLetter(strokes) {
   return letters.find((letter) => !used.has(letter)) ?? 'AA';
 }
 
+/** Liczba odchyłki ze znakiem („+0,02”, „−0,01”, „0”) – do czterech cyfr znaczących. */
+export function signedDeviation(value) {
+  if (!finite(value) || value === 0) return '0';
+  const size = Math.abs(value);
+  const decimals = Math.min(6, Math.max(0, 3 - Math.floor(Math.log10(size))));
+  return `${value > 0 ? '+' : '−'}${String(Number(size.toFixed(decimals))).replace('.', ',')}`;
+}
+/** Odchyłki ramki tolerancji jako napisy { upper, lower } albo null (od 1.25). */
+export const gdtDeviations = (element) => (finite(element.upper) && finite(element.lower)
+  ? { upper: signedDeviation(element.upper), lower: signedDeviation(element.lower) } : null);
+
 /** Tekst pola tolerancji: wartość z przecinkiem dziesiętnym, bez zbędnych spacji. */
 export const cleanGdtValue = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').replace(/(\d)\.(\d)/g, '$1,$2').slice(0, GDT_VALUE_MAX);
 
@@ -152,18 +164,21 @@ export function cleanSymbol(raw, pageWidth, pageHeight) {
   if (!GDT_SYMBOLS.some((symbol) => symbol.id === raw.symbol)) return null;
   const datums = gdtSymbol(raw.symbol).form ? [] : cleanDatums(raw.datums);
   const value = cleanGdtValue(raw.value);
+  const exact = (number) => clamp(Math.round(number * 1e6) / 1e6, -1e6, 1e6);
+  const deviations = finite(raw.upper) && finite(raw.lower) && raw.upper >= raw.lower ? { upper: exact(raw.upper), lower: exact(raw.lower) } : null;
   const height = gdtHeight(common.size);
   // Szerokości pól: symbol, tolerancja, bazy – zmierzone w edytorze; brak albo złe – szacunek.
   const count = 2 + datums.length;
   const cells = Array.isArray(raw.cells) && raw.cells.length === count && raw.cells.every((cell) => finite(cell) && cell > 0)
     ? raw.cells.map((cell) => clamp(Math.round(cell * 10) / 10, height * 0.5, pageWidth * 2))
-    : [height, Math.max(height, (value.length + (raw.diameter === true ? 1.5 : 0) + (raw.modifier ? 1.5 : 0)) * common.size * 0.62 + common.size), ...datums.map(() => height)];
+    : [height, Math.max(height, (value.length + (raw.diameter === true ? 1.5 : 0) + (raw.modifier ? 1.5 : 0) + (deviations ? 4 : 0)) * common.size * 0.62 + common.size), ...datums.map(() => height)];
   return {
     ...common,
     symbol: raw.symbol,
     value,
     ...(raw.diameter === true ? { diameter: true } : {}),
     ...(GDT_MODIFIERS.includes(raw.modifier) ? { modifier: raw.modifier } : {}),
+    ...(deviations ?? {}),
     datums,
     cells,
     width: cells.reduce((sum, cell) => sum + cell, 0),

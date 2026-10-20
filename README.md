@@ -1,4 +1,4 @@
-# LexiCards 1.24
+# LexiCards 1.25
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -33,8 +33,9 @@ Tabele w notatkach („Tab. N.”) i na rysunku, okno grubości zakreślacza, ka
 Rysunek: liniuszek promieniowy, przewracanie kartek kółkiem i przyciskami ‹ › z animacją, końce odcinka i strzałki przyciągane do krawędzi i narożników (wersja 1.22); wymiary jak w rysunku technicznym z tolerancjami, ramka tolerancji, baza, chropowatość (1.22.1): [docs/RELEASE-1.22.md](docs/RELEASE-1.22.md).
 Nauka w kalendarzu – plik .ics do Outlooka z powtarzaniem, przypomnieniem, prywatnością i linkami do lekcji (wersja 1.23): [docs/RELEASE-1.23.md](docs/RELEASE-1.23.md).
 Rysunek: figury z odręcznych kształtów (przytrzymane pióro), łamana i wielokąt z punktami w wierzchołkach, kartki przewracane od rogu jak w notatkach, zaznaczenie przed kółkiem liniuszka (wersja 1.24); spirala na grzbiecie kartki (1.24.1); powiększanie dwoma palcami w miejscu palców (1.24.2): [docs/RELEASE-1.24.md](docs/RELEASE-1.24.md).
+Rysunek: wymiary bez jednostki w mm (albo cm, m, calach) z oznaczeniem „Wymiary w mm”, odchyłki w ramce tolerancji, znak +/− przy odchyłkach, tabela pasowań ISO 286 z ostatnio użytymi, zamykanie paneli (wersja 1.25): [docs/RELEASE-1.25.md](docs/RELEASE-1.25.md).
 
-## Co potrafi wersja 1.24
+## Co potrafi wersja 1.25
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -118,7 +119,9 @@ Rysunek: figury z odręcznych kształtów (przytrzymane pióro), łamana i wielo
   i przyciskami **‹ ›** z animacją oraz **przyciąganie końców** odcinka i strzałki do krawędzi
   i narożników (koniec przyklejony idzie za kształtem; z Alt – swobodnie, magnes wł./wył.). Od 1.22.1:
   **wymiary jak w rysunku technicznym** (linie pomocnicze, linia wymiarowa ze strzałkami, łuk kąta,
-  odsunięcie przeciąganiem, piętra), znak ⌀ R □, tolerancje (±, odchyłki, pasowania), liczby „50” (mm)
+  odsunięcie przeciąganiem, piętra), znak ⌀ R □, tolerancje (±, odchyłki, pasowania; od 1.25 cała tabela
+  pasowań ISO 286 z ostatnio użytymi, znak odchyłki z przycisku +/−), liczby „50” (mm; od 1.25 do wyboru
+  mm, cm, m, cale, z oznaczeniem „Wymiary w mm” na rysunku)
   albo „5 cm” oraz **symbole metrologiczne** – ramka tolerancji (14 symboli ISO 1101), znak bazy
   i chropowatość (ISO 1302) ze strzałką przyklejoną do krawędzi. Od 1.24: **figury z odręcznych
   kształtów** – narysuj kształt i na końcu przytrzymaj pióro, a zamieni się w odcinek, strzałkę, łamaną,
@@ -185,7 +188,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.21 – tabele w notatkach i na rysunku, grubość zakreślacza, karteczki; 1.21.1 – wybór daty i godziny](docs/RELEASE-1.21.md),
 [wersja 1.22 – liniuszek promieniowy, przewracanie kartek kółkiem, przyciąganie końców do krawędzi i narożników; 1.22.1 – wymiary techniczne, tolerancje, symbole metrologiczne](docs/RELEASE-1.22.md),
 [wersja 1.23 – nauka w kalendarzu (.ics)](docs/RELEASE-1.23.md),
-[wersja 1.24 – figury z odręcznych kształtów, łamana, przewracanie kartek od rogu; 1.24.1 – spirala na grzbiecie kartki; 1.24.2 – powiększanie dwoma palcami](docs/RELEASE-1.24.md).
+[wersja 1.24 – figury z odręcznych kształtów, łamana, przewracanie kartek od rogu; 1.24.1 – spirala na grzbiecie kartki; 1.24.2 – powiększanie dwoma palcami](docs/RELEASE-1.24.md),
+[wersja 1.25 – jednostki wymiarów, odchyłki w ramce tolerancji, tabela pasowań](docs/RELEASE-1.25.md).
 
 ## Jak korzystać
 
@@ -571,17 +575,27 @@ stoi w miejscu liczby, a **uchwyt ↕** w jego prawym dolnym rogu przeciąga lin
 przerywany); ostatnie odsunięcie jest **wzorem dla następnych wymiarów**, a gdy nowa linia wymiarowa
 wchodziłaby na inną (równoległą, w tym samym miejscu) – staje **piętro dalej**. Przycisk **±** w lewym
 górnym rogu pola: **znak przed liczbą** (⌀, R, □) i **tolerancja** – **±** („50±0,1”), **odchyłki**
-górna i dolna (małe, jedna nad drugą: „50 +0,1/−0,05”) albo **pasowanie** („⌀20 H7”, „H7/g6”;
-gotowe H7, H8, g6, h6, js6, H7/g6…), z podglądem; zapis pokazuje wymiar na rysunku. **Liczby wymiarów**
-w panelu linijki (dotknij kąta linijki): **„5 cm”** (jak dotąd, w skali rysunku) albo **„50”** –
-technicznie, w milimetrach bez jednostki (przy jednostkach imperialnych – w calach); pola wymiarów
-pokazują i przyjmują wtedy milimetry. Znaki ⌀ i □ są rysowane kreską – tak samo na iPadzie i w Windows.
+górna i dolna (małe, jedna nad drugą: „50 +0,1/−0,05”) albo **pasowanie** („⌀20 H7”, „H7/g6”),
+z podglądem; zapis pokazuje wymiar na rysunku. Od 1.25: **znak odchyłki** – przycisk **+ / −** przed
+polem (klawiatura liczb iPhone'a nie ma znaków; domyślnie górna +, dolna −; wpisany znak z klawiatury
+też działa). **Pasowanie**: okno pokazuje tylko **ostatnio użyte** (6), a **Tabela pasowań…** – całą
+tabelę ISO 286: pasowania zalecane według zasady stałego otworu i stałego wałka (luźne, mieszane,
+ciasne – dotknięcie wybiera) i dowolna klasa: otwór, wałek albo pasowanie z litery (A–ZC, a–zc)
+i klasy dokładności IT01–IT18. **Liczby wymiarów** w panelu linijki (dotknij kąta linijki): **z jednostką
+„5 cm”** (w skali rysunku) albo **bez jednostki „50”** – jak w rysunku technicznym; od 1.25 w **mm, cm,
+m albo calach** (domyślnie mm, przy jednostkach imperialnych – cale), a jednostka jest w oznaczeniu
+**„Wymiary w mm”** w lewym dolnym rogu rysunku (na obrazie w notatce też; tylko gdy są wymiary długości
+albo ramki tolerancji). Pierwsza tolerancja albo ramka tolerancji na rysunku „5 cm” przełącza go na mm
+bez jednostki (Anuluj w oknie tolerancji – zostaje jak było); jednostkę zmienisz też w oknie tolerancji.
+Tolerancje długości są zapisane w mm, więc zmiana jednostki ich nie zmienia (0,1 mm to w cm 0,01).
+Znaki ⌀ i □ są rysowane kreską – tak samo na iPadzie i w Windows.
 **Symbole metrologiczne** (od 1.22.1): w panelu kształtów – **Ramka tolerancji**, **Baza**,
 **Chropowatość**. Okno ramki: **14 symboli ISO 1101** (prostoliniowość, płaskość, okrągłość, walcowość,
 kształt wyznaczonego zarysu i powierzchni, równoległość, prostopadłość, nachylenie, pozycja,
 współosiowość, symetria, bicie, bicie całkowite – rysowane kreską), **tolerancja** z ⌀ przed nią i Ⓜ
-albo Ⓛ za nią, do **trzech baz** (A, B, wspólna A-B; przy tolerancjach kształtu – bez baz), wielkość,
-kolor i podgląd. Znak bazy – litera (kolejna wolna: A, B, C… bez I, O, Q). Chropowatość – **obróbka**
+albo Ⓛ za nią, od 1.25 **odchyłki po tolerancji** (przełącznik; górna i dolna ze znakiem z przycisku
++/−, małe, jedna nad drugą – w jednostce liczb wymiarów, jak wpisane), do **trzech baz** (A, B, wspólna
+A-B; przy tolerancjach kształtu – bez baz), wielkość, kolor i podgląd. Znak bazy – litera (kolejna wolna: A, B, C… bez I, O, Q). Chropowatość – **obróbka**
 (dowolna, z usunięciem materiału, bez usunięcia), **wymaganie** pod poziomą kreską symbolu jak w ISO
 1302 („Ra 1,6”; gotowe Ra 0,4–12,5, Rz 6,3, Rz 25). Po **Wstaw** dotknij krawędzi albo narożnika:
 strzałka ramki, zaczerniony trójkąt bazy albo wierzchołek chropowatości **przyciąga się** do niej (ok.
@@ -622,7 +636,9 @@ zaznaczasz, przesuwasz, powielasz i usuwasz jak kreski; gumka **Całe kreski** u
 a gumka **Fragmenty** ich nie przecina. Wzór na rysunku składa sama aplikacja (czcionka wzorów
 systemu – na iPadzie STIX Two Math), więc trafia do obrazu rysunku w notatce i do eksportu. Drugie dotknięcie aktywnego pióra otwiera **ustawienia pióra**: czułość
 nacisku (Wył., Mała, Średnia, Duża), grubość kreski od–do (przy lekkim i mocnym nacisku), wygładzanie
-kreski i podgląd; ustawienia zostają na urządzeniu. Grubość zależy od nacisku tylko przy rysiku –
+kreski i podgląd; ustawienia zostają na urządzeniu. Od 1.25 każdy panel pod paskiem (pióro, zakreślacz,
+kolor, kształty, liniuszek, tło, linijka) ma w nagłówku przycisk **✕** – zamyka go także na telefonie,
+gdy panel zakrywa stronę (dotąd trzeba było trafić w odsłonięty skrawek strony). Grubość zależy od nacisku tylko przy rysiku –
 palcem i myszą kreska ma stałą grubość. Gdy aplikacja raz zobaczy rysik, rysuje tylko rysik, a palec
 przesuwa stronę (pigułka „Rysuje tylko rysik · palec przesuwa” w rogu) – dłoń oparta o ekran nie
 zostawia śladów; na iPhonie bez rysika rysuje palec. Dwa palce powiększają i przesuwają (od 1.24.2
@@ -925,6 +941,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 29. **Wersja 1.22: rysunek – liniuszek promieniowy, kółko i przyciski ‹ › przewracają kartki (z animacją), przyciąganie i przyklejanie końców odcinka i strzałki do krawędzi i narożników; 1.22.1 – wymiary jak w rysunku technicznym (odsunięcie, piętra, ⌀ R □, tolerancje, pasowania, „50” / „5 cm”), ramka tolerancji ISO 1101, znak bazy, chropowatość ISO 1302** – gotowe.
 30. **Wersja 1.23: nauka w kalendarzu – plik .ics dla Outlooka: powtarzanie (dni tygodnia, do dnia albo N razy), przypomnienie, prywatne i zajęte, strefa czasowa ze zmianą czasu, linki do lekcji (też do kilku lekcji naraz)** – gotowe.
 31. **Wersja 1.24: rysunki, etap 2 – zamiana odręcznych kształtów na figury (przytrzymanie pióra), łamana i wielokąt z punktami w wierzchołkach (punkty konstrukcyjne pozostałych figur są od 1.15); przewracanie kartek od rogu jak w notatkach; zaznaczenie przed kółkiem liniuszka; 1.24.1 – spirala na grzbiecie kartki w edytorze** – gotowe. Dociąganie do linii kratek – zrezygnowano (to samo daje liniuszek).
+32. **Wersja 1.25: rysunek – liczby wymiarów bez jednostki w mm, cm, m albo calach z oznaczeniem „Wymiary w mm”, domyślnie przy tolerowaniu; odchyłki w ramce tolerancji; znak odchyłki z przycisku +/− (iPhone); tabela pasowań ISO 286, w oknie – ostatnio użyte; przycisk zamknięcia paneli pod paskiem** – gotowe.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).
