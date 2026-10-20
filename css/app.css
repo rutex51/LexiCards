@@ -4841,6 +4841,18 @@ a.row__main:active,
 .picker-chip { min-height: 32px; padding: 0 12px; border-radius: 999px; background: var(--fill); color: var(--text); font-size: var(--size-sub); font-weight: 500; }
 
 .calendar { display: grid; gap: 6px; }
+
+/* Plan nauki w kalendarzu (od 1.23): dni tygodnia, liczba terminów, podsumowanie planu. */
+.calendar-plan__material { margin: 0; padding: 4px var(--gutter) 0; color: var(--text-2); font-size: var(--size-sub); }
+.calendar-plan__day { margin: 2px 0 8px; font-weight: 600; }
+.calendar-plan__days { display: flex; flex-wrap: wrap; gap: 6px; }
+.calendar-plan__weekday { min-width: 44px; }
+.calendar-plan__weekday[aria-pressed="true"] { background: var(--accent-fill); color: var(--on-accent); }
+.calendar-plan__until { margin-top: 10px; }
+.calendar-plan__count-row { display: flex; align-items: center; gap: 8px; }
+.calendar-plan__count { width: 6rem; min-height: 40px; padding: 6px 10px; border-radius: 10px; background: var(--fill); }
+.calendar-plan__switches { display: grid; gap: 4px; padding: 6px var(--gutter); }
+.calendar-plan__summary { margin: 0; padding: 8px var(--gutter); font-weight: 600; }
 .calendar__head { display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; }
 .calendar__nav { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; color: var(--accent); }
 .calendar__title {

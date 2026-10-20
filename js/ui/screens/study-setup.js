@@ -14,6 +14,7 @@ import {
 import { showError, toast } from '../dialogs.js';
 import { h } from '../dom.js';
 import { routes } from '../router.js';
+import { openStudyCalendar } from '../study-calendar.js';
 
 
 export class StudySetupScreen {
@@ -210,6 +211,16 @@ export class StudySetupScreen {
         ),
         materialGroup(ctx, this.selection, 'study'),
         lessonsGroup(ctx, this.selection, 'study'),
+        // Od 1.23: plan nauki tego materiału w kalendarzu (plik .ics).
+        group({ title: 'Kalendarz' },
+          actionRow({
+            label: 'Zaplanuj naukę w kalendarzu',
+            subtitle: 'Plik .ics do Outlooka: terminy z powtarzaniem, przypomnienie, linki do lekcji',
+            iconName: 'calendar',
+            testID: 'study-calendar',
+            onClick: () => openStudyCalendar(ctx, selectionConfig(this.selection))
+          })
+        ),
         h('section', { class: 'group' },
           h('h2', { class: 'form-group__title' }, 'Kierunek'),
           segmented({

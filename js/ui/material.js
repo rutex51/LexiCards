@@ -8,7 +8,7 @@ export const ALL = '';
 
 /**
  * Wybór startowy: zapamiętany ostatnio albo wskazany z biblioteki
- * (preset: { level: 'domain' | 'module' | 'lesson', id }).
+ * (preset: { level: 'domain' | 'module' | 'lesson', id }; od 1.23 { level: 'lessons', ids }).
  */
 export function initialSelection(library, remembered, preset) {
   let selection = {
@@ -24,6 +24,14 @@ export function initialSelection(library, remembered, preset) {
     if (module) selection = { domainID: module.domainID, moduleID: module.id, lessonIDs: new Set() };
   } else if (preset?.level === 'domain' && library.getDomain(preset.id)) {
     selection = { domainID: preset.id, moduleID: ALL, lessonIDs: new Set() };
+  } else if (preset?.level === 'lessons') {
+    // Kilka lekcji (od 1.23, link z kalendarza): lekcje modułu pierwszej z nich; wszystkie – cały moduł.
+    const lessons = (preset.ids ?? []).map((id) => library.getLesson(id)).filter(Boolean);
+    if (lessons.length > 0) {
+      const { moduleID, domainID } = lessons[0];
+      const chosen = new Set(lessons.filter((lesson) => lesson.moduleID === moduleID).map((lesson) => lesson.id));
+      selection = { domainID, moduleID, lessonIDs: chosen.size === library.listLessons(moduleID).length ? new Set() : chosen };
+    }
   }
   return selection;
 }

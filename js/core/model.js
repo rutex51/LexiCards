@@ -140,6 +140,7 @@ export function defaultSettings() {
     noteLanguage: 'pl',            // wersja notatki w podglądzie: pl | en (gdy notatka ma obie)
     domainColorsGray: true,        // wersja 1.2: tło ikon istniejących dziedzin zmienione jednorazowo na szare
     studySelection: null,          // ostatnio wybrany materiał: { domainID, moduleID, lessonIDs }
+    calendarPlan: null,            // ostatni plan nauki w kalendarzu (od 1.23, core/ics.js – cleanPlan)
     lastBackupAt: null,            // ostatni zapis pliku danych
     lastMediaBackupAt: null,       // ostatni zapis pliku obrazów i załączników (od 1.8)
     createdAt: now,

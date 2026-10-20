@@ -1,4 +1,4 @@
-# LexiCards 1.22
+# LexiCards 1.23
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -31,8 +31,9 @@ Rysunek: wielkość szablonu, Shift i Ctrl, środkowy przycisk myszy, szyk, kilk
 Notatki: wyrównanie i interlinia, linki, symbole, data i godzina, PDF, pełne „Usuń formatowanie”, Ctrl+Z po wstawieniu sygnatury; ścieżka nad fiszką (wersja 1.20): [docs/RELEASE-1.20.md](docs/RELEASE-1.20.md).
 Tabele w notatkach („Tab. N.”) i na rysunku, okno grubości zakreślacza, karteczki na rysunku (wersja 1.21); wybór daty i godziny – kalendarz i bębny (1.21.1): [docs/RELEASE-1.21.md](docs/RELEASE-1.21.md).
 Rysunek: liniuszek promieniowy, przewracanie kartek kółkiem i przyciskami ‹ › z animacją, końce odcinka i strzałki przyciągane do krawędzi i narożników (wersja 1.22); wymiary jak w rysunku technicznym z tolerancjami, ramka tolerancji, baza, chropowatość (1.22.1): [docs/RELEASE-1.22.md](docs/RELEASE-1.22.md).
+Nauka w kalendarzu – plik .ics do Outlooka z powtarzaniem, przypomnieniem, prywatnością i linkami do lekcji (wersja 1.23): [docs/RELEASE-1.23.md](docs/RELEASE-1.23.md).
 
-## Co potrafi wersja 1.22
+## Co potrafi wersja 1.23
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -129,7 +130,8 @@ Rysunek: liniuszek promieniowy, przewracanie kartek kółkiem i przyciskami ‹ 
   obracana fiszka na stosie następnych, trzy kafelki oceny (pojęcie, definicja, przykład), zatwierdzanie gestem albo
   przyciskiem, cofanie, podsumowanie i runda powtórkowa. Postępy są osobne dla każdego kierunku.
   Zakresy „Nie znam pojęcia”, „Nie znam definicji” i „Nie znam przykładu” zbierają fiszki
-  z konkretnym brakiem z ostatniej oceny.
+  z konkretnym brakiem z ostatniej oceny. Od 1.23 **plan nauki w kalendarzu**: plik .ics do Outlooka
+  (terminy z powtarzaniem, przypomnienie, prywatne, linki do wybranych lekcji) – bez serwera.
 - Powtórki w odstępach według algorytmu FSRS-6, osobno dla PL → EN i EN → PL: „Powtórka na dziś”
   na Starcie, zakres „Do powtórki” z fiszkami po terminie, podpowiedź przy przyciskach, za ile fiszka
   wróci, termin i poziom utrwalenia w szczegółach pojęcia, docelowa skuteczność i okres powtórek
@@ -176,7 +178,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.19 – szablon, Shift i Ctrl, środkowy przycisk, szyk, kartki, zakończenia odcinka, stałe wymiary](docs/RELEASE-1.19.md),
 [wersja 1.20 – wyrównanie i interlinia, linki, symbole, data i godzina, PDF, „Usuń formatowanie”, ścieżka nad fiszką](docs/RELEASE-1.20.md),
 [wersja 1.21 – tabele w notatkach i na rysunku, grubość zakreślacza, karteczki; 1.21.1 – wybór daty i godziny](docs/RELEASE-1.21.md),
-[wersja 1.22 – liniuszek promieniowy, przewracanie kartek kółkiem, przyciąganie końców do krawędzi i narożników; 1.22.1 – wymiary techniczne, tolerancje, symbole metrologiczne](docs/RELEASE-1.22.md).
+[wersja 1.22 – liniuszek promieniowy, przewracanie kartek kółkiem, przyciąganie końców do krawędzi i narożników; 1.22.1 – wymiary techniczne, tolerancje, symbole metrologiczne](docs/RELEASE-1.22.md),
+[wersja 1.23 – nauka w kalendarzu (.ics)](docs/RELEASE-1.23.md).
 
 ## Jak korzystać
 
@@ -714,6 +717,22 @@ Grupy „Powtórka na dziś” i „Ostatnia sesja” na ekranie Nauka można uk
 Ekran Nauka** – na Starcie te przyciski zostają zawsze.
 Na komputerze działa klawiatura: spacja odwraca, 1 2 3 przełączają kafelki, ← i → zatwierdzają, Z cofa.
 
+**Nauka w kalendarzu** (od 1.23): w zakładce **Nauka**, po wyborze materiału, **Zaplanuj naukę
+w kalendarzu** otwiera okno planu: tytuł wydarzenia, **pierwszy dzień** (kalendarz), **godzina**
+(bębny), **czas trwania** (15 min – 1,5 h), **powtarzanie** – jednorazowo, codziennie albo w wybrane
+dni tygodnia (Pn–Nd), koniec – po liczbie terminów albo w wybranym dniu – **przypomnienie** (brak,
+5, 10, 15, 30 min, 1 h przed), **Prywatne** (inni widzą tylko zajęty czas), **Pokaż jako: zajęty**
+i **Linki do lekcji w opisie**; pod spodem podsumowanie („pn, śr, pt o 17:30 przez 45 min, od
+21 października 2026, do 18 grudnia 2026”). **Zapisz .ics** zapisuje plik (na iPhonie – arkusz
+udostępniania, „Zachowaj w Plikach”). W Outlooku: **Kalendarz → Dodaj kalendarz → Prześlij z pliku**
+(albo otwórz plik). Wydarzenie ma strefę czasową urządzenia z regułami zmiany czasu – nauka o 17:30
+zostaje o 17:30 także po zmianie czasu. W opisie: link **Rozpocznij naukę** (Nauka z tym samym
+materiałem – także z kilkoma lekcjami jednego modułu) i lista lekcji (Moduł › Lekcja) z linkiem do
+każdej. Linki działają tam, gdzie są dane aplikacji: na Windows w tej przeglądarce; na iPhonie link
+otworzy Safari, a aplikacja z ekranu początkowego ma osobne dane. Ponowny import tego samego pliku
+może zdublować wydarzenia (usuń stare albo importuj do osobnego kalendarza); zmiana planu to nowy
+plik – nic nie synchronizuje się samo. Okno pamięta ostatni plan.
+
 ### Powtórki
 
 Każda zatwierdzona fiszka dostaje termin następnej powtórki (algorytm FSRS), osobno dla każdego
@@ -874,7 +893,7 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 27. **Wersja 1.20: notatki – wyrównanie i interlinia, linki (Ctrl+K), symbole, data i godzina, PDF (okno drukowania A4), „Usuń formatowanie” – wszystko oprócz linków, Ctrl+Z po „Wstaw do tekstu” i „Nowa strona”, „Kopiuj” z obrazami w wielkości strony A4; Nauka – ścieżka nad fiszką, ukrywanie grup** – gotowe.
 28. **Wersja 1.21: tabele w notatkach, na rysunku i na zdjęciu („Tab. N.”), okno grubości zakreślacza, karteczki na rysunku; 1.21.1 – wybór daty (kalendarz) i godziny (bębny) zamiast pól przeglądarki** – gotowe.
 29. **Wersja 1.22: rysunek – liniuszek promieniowy, kółko i przyciski ‹ › przewracają kartki (z animacją), przyciąganie i przyklejanie końców odcinka i strzałki do krawędzi i narożników; 1.22.1 – wymiary jak w rysunku technicznym (odsunięcie, piętra, ⌀ R □, tolerancje, pasowania, „50” / „5 cm”), ramka tolerancji ISO 1101, znak bazy, chropowatość ISO 1302** – gotowe.
-30. **Wersja 1.23: eksport sesji nauki do kalendarza (plik .ics dla Outlooka) – cykliczne, prywatne, z linkami do lekcji** – w przygotowaniu.
+30. **Wersja 1.23: nauka w kalendarzu – plik .ics dla Outlooka: powtarzanie (dni tygodnia, do dnia albo N razy), przypomnienie, prywatne i zajęte, strefa czasowa ze zmianą czasu, linki do lekcji (też do kilku lekcji naraz)** – gotowe.
 31. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja

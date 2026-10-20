@@ -25,7 +25,8 @@ js/ui/dialogs.js           arkusze, pytania, menu (także z wyborem jednej pozyc
 js/ui/reorder-drag.js      przeciąganie wierszy w trybie zmiany kolejności (uchwyt, w obrębie grupy, przewijanie przy krawędzi)
 js/ui/grid-drag.js         przeciąganie kafelków w siatce (obrazy w edytorze notatki): mysz i rysik od razu, palec po przytrzymaniu, przewijanie przy krawędzi
 js/ui/color-picker.js      wybór własnego koloru: siatka, suwaki RGB z kodem HEX, pipetka; ostatnie własne kolory wspólne dla rysunku i notatek
-js/ui/router.js            adresy po znaku # i historia przeglądarki
+js/ui/router.js            adresy po znaku # i historia przeglądarki (od 1.23 Nauka z kilkoma lekcjami: #/study/lessons/id1+id2)
+js/ui/study-calendar.js    plan nauki w kalendarzu (od 1.23): okno (dzień, godzina, czas, powtarzanie, przypomnienie, prywatność), plik .ics
 js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
 js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspólny dla nauki i quizu
 js/ui/charts.js            wykresy SVG (w czasie, pasek udziałów, miernik) z podpowiedzią i tabelą danych
@@ -73,6 +74,7 @@ js/core/calendar.js        kalendarz (od 1.21.1): siatka miesiąca od poniedzia�
 js/core/tables.js          tabele (od 1.21): sprawdzanie, wklejony tekst z tabulatorami i tabela HTML → wiersze, sygnatury „Tabela N”, numery i podpisy „Tab. N.”, HTML (podgląd, schowek), tekst (schowek, arkusz, słuchanie)
 js/core/images.js          format i wymiary obrazu z nagłówka pliku
 js/core/study.js           fiszki: dobór do sesji, treść stron, ocena, postęp, podsumowanie
+js/core/ics.js             plik kalendarza .ics (od 1.23, RFC 5545): wydarzenie z powtarzaniem, przypomnieniem i prywatnością, strefa czasowa z Intl, zawijanie wierszy
 js/core/fsrs.js            algorytm powtórek FSRS-6 (przeniesiony z py-fsrs 6.3.2)
 js/core/quiz.js            quizy: pytania wyboru, rundy par, test mieszany, odpowiedzi, wynik
 js/core/stats.js           statystyki: statusy w kierunkach, elementy, szeregi dzienne, zestawienia, czas nauki
@@ -821,6 +823,26 @@ Reguły są w `js/core/study.js` (bez przeglądarki), zapis w `Library`, ekrany 
 (dziedzina i moduł w osobnym elemencie, który skraca się pierwszy), a ustawienia `studyShowReview`
 i `studyShowLast` (domyślnie `true`) ukrywają na ekranie Nauka grupy „Powtórka na dziś” i „Ostatnia
 sesja”.
+
+Od 1.23 **plan nauki w kalendarzu** (`js/ui/study-calendar.js`, `js/core/ics.js`): okno z ekranu Nauka
+dostaje materiał z `selectionConfig`; lekcje – wybrane, modułu, dziedziny albo wszystkie (w opisie
+najwyżej 30). Plan (`cleanPlan`: dzień nie wcześniejszy niż dziś, godzina, `PLAN_DURATIONS`,
+`repeat: 'once' | 'daily' | 'weekly'` z dniami 0–6 od poniedziałku, koniec `count` 1–365 albo `until`,
+`PLAN_REMINDERS`, `private`, `busy`, `links`) jest zapamiętany w ustawieniach (`calendarPlan`); gdy dziś
+jest już po godzinie – pierwszy dzień jutro. `buildCalendar` składa VCALENDAR (PUBLISH, `X-WR-CALNAME`)
+z VTIMEZONE strefy urządzenia (`Intl…resolvedOptions().timeZone`): `zoneOffset` liczy przesunięcie
+z `Intl.DateTimeFormat` (formatToParts), `timezoneLines` szuka w roku pierwszego terminu zmian
+przesunięcia (doba po dobie, potem co 15 min) i zapisuje je jako STANDARD / DAYLIGHT z regułą
+`FREQ=YEARLY;BYMONTH;BYDAY=nXX` (ostatni dzień tygodnia miesiąca – `-1`), od 1970; strefa bez zmiany
+czasu – samo STANDARD. VEVENT: `DTSTART`/`DTEND;TZID=…` (czas na zegarze), `RRULE` (`FREQ=DAILY` albo
+`WEEKLY;BYDAY=…;WKST=MO`, `COUNT` albo `UNTIL` – koniec ostatniego dnia w strefie przeliczony na UTC
+przez `zoneInstant`), pierwszy termin – najbliższy wybrany dzień tygodnia (`firstPlanDay`), `CLASS`,
+`TRANSP` i `X-MICROSOFT-CDO-BUSYSTATUS` (Outlook), `VALARM` (`TRIGGER:-PTnM`), `UID` – skrót FNV-1a
+tytułu, początku, reguły i lekcji (ten sam plan – ten sam identyfikator), `DESCRIPTION` i `URL` z linkami
+(adres strony + `routes.study…`). Tekst – `escapeText`, wiersze CRLF zawijane do 75 bajtów UTF-8
+(`foldLine`). Plik oddaje `deliverFile` (`text/calendar`). Link do kilku lekcji: `routes.studyLessons`
+→ `parseHash` daje `preset: { level: 'lessons', ids }`, a `initialSelection` wybiera moduł pierwszej
+lekcji i jego lekcje z listy (wszystkie – cały moduł).
 
 - **Sesja to kolejka** `[{ termID, direction }]` zbudowana z wybranego materiału, kierunku
   (PL → EN, EN → PL albo mieszany – wtedy każde pojęcie raz, w jednym z kierunków), zakresu

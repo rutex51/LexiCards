@@ -6827,6 +6827,88 @@ test('rysunek 1.22.1 na telefonie: okno ramki tolerancji i okno tolerancji wymia
   assert.equal(await overflowX(page), 0, 'okno tolerancji bez przewijania w bok');
 }, { device: PHONE });
 
+// ---------------------------------------------------------------- 1.23: nauka w kalendarzu (.ics)
+
+test('kalendarz 1.23: link do dwóch lekcji otwiera Naukę z nimi; „Zaplanuj naukę w kalendarzu” – pn, śr, pt o 17:30 przez 45 min do 18 grudnia, przypomnienie 30 min; plik .ics (strefa Europe/Warsaw, prywatne, zajęty, linki); plan zapamiętany (komputer)', async ({ open }) => {
+  const page = await open();
+  await page.clock.setFixedTime(new Date('2026-10-20T12:35:00Z'));
+  await loadSamples(page);
+  const material = await page.evaluate(() => {
+    const library = window.lexicards.library;
+    const module = [...library.maps.modules.values()].find((item) => library.listLessons(item.id).length >= 3);
+    return { module: module.name, lessons: library.listLessons(module.id).slice(0, 2).map((lesson) => ({ id: lesson.id, name: lesson.name })) };
+  });
+  const [first, second] = material.lessons;
+  await page.goto(`${page.url().split('#')[0]}#/study/lessons/${first.id}+${second.id}`);
+  await page.locator('[data-testid=study-calendar]').click();
+  const sheet = page.locator('dialog.sheet[open]').last();
+  await sheet.waitFor();
+  await expectText(sheet.locator('[data-testid=study-calendar-material]'), `Lekcje: ${first.name}, ${second.name} · 2 lekcje`);
+  await expectValue(sheet.locator('input[data-testid=study-calendar-title]'), `Nauka – Lekcje: ${first.name}, ${second.name}`);
+  // Dziś wtorek 20.10.2026, 14:35 – pierwszy plan: wtorek o 18:00.
+  const summary = sheet.locator('[data-testid=study-calendar-summary]');
+  await expectText(summary, 'W kalendarzu: wt o 18:00 przez 30 min, od 20 października 2026, 10 razy.');
+  assert.equal(await sheet.locator('[data-testid=study-calendar-weekday-1]').getAttribute('aria-pressed'), 'true');
+  // Pn, śr, pt (wtorek odznaczony), 17:30 cyframi na bębnie, 45 min, do 18 grudnia, przypomnienie 30 min.
+  for (const index of [0, 2, 4, 1]) await sheet.locator(`[data-testid=study-calendar-weekday-${index}]`).click();
+  await sheet.locator('[data-testid=study-calendar-time-hour]').focus();
+  await page.keyboard.type('1730');
+  await sheet.locator('.segmented__option', { hasText: '45 min' }).click();
+  await sheet.locator('.segmented__option', { hasText: 'W wybranym dniu' }).click();
+  await sheet.locator('[data-testid=study-calendar-until-next]').click();
+  await sheet.locator('[data-testid=study-calendar-until-next]').click();
+  await sheet.locator('[data-testid="study-calendar-until-day-2026-12-18"]').click();
+  await sheet.locator('.segmented__option:has(input[name=study-calendar-reminder][value="30"])').click();
+  await expectText(summary, 'W kalendarzu: pn, śr, pt o 17:30 przez 45 min, od 21 października 2026, do 18 grudnia 2026.');
+  await settled(sheet);
+  await page.screenshot({ path: path.join(OUTPUT, 'kalendarz-plan-okno.png') });
+
+  const file = await download(page, () => sheetSubmit(page).click());
+  assert.match(file.name, /^nauka-lekcje-.+\.ics$/);
+  const text = new TextDecoder().decode(file.bytes);
+  assert.ok(text.includes('\r\n') && text.split('\r\n').every((line) => new TextEncoder().encode(line).length <= 75), 'wiersze CRLF do 75 bajtów');
+  const lines = text.replace(/\r\n /g, '').split('\r\n');
+  const event = lines.slice(lines.indexOf('BEGIN:VEVENT'));
+  const field = (name) => event.find((line) => line.startsWith(`${name}:`) || line.startsWith(`${name};`));
+  assert.equal(field('DTSTART'), 'DTSTART;TZID=Europe/Warsaw:20261021T173000');
+  assert.equal(field('DTEND'), 'DTEND;TZID=Europe/Warsaw:20261021T181500');
+  assert.equal(field('RRULE'), 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;WKST=MO;UNTIL=20261218T225959Z');
+  assert.ok(lines.includes('TZID:Europe/Warsaw') && lines.includes('RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU'), 'opis strefy ze zmianą czasu');
+  assert.ok(event.includes('TRIGGER:-PT30M') && event.includes('CLASS:PRIVATE') && event.includes('X-MICROSOFT-CDO-BUSYSTATUS:BUSY'));
+  const url = field('URL').slice(4);
+  assert.ok(url.endsWith(`#/study/lessons/${first.id}+${second.id}`), url);
+  const description = field('DESCRIPTION');
+  for (const lesson of [first, second]) {
+    assert.ok(description.includes(`${material.module} › ${lesson.name}`) && description.includes(`#/study/lesson/${lesson.id}`), `lekcja ${lesson.name} z linkiem`);
+  }
+
+  // Plan zapamiętany: ponowne otwarcie – te same wybory.
+  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 0, 'Okno zamknięte');
+  await page.locator('[data-testid=study-calendar]').click();
+  await expectText(page.locator('dialog.sheet[open] [data-testid=study-calendar-summary]'), 'pn, śr, pt o 17:30 przez 45 min, od 21 października 2026, do 18 grudnia 2026');
+  await page.locator('dialog.sheet[open] .sheet__header .button--plain').click();
+  // Link z pliku: Nauka z jedną lekcją i z obiema.
+  await page.goto(`${page.url().split('#')[0]}#/study`);
+  await page.goto(url);
+  await page.locator('[data-testid=study-calendar]').click();
+  await expectText(page.locator('dialog.sheet[open] [data-testid=study-calendar-material]'), `Lekcje: ${first.name}, ${second.name}`);
+}, { device: { ...DESKTOP, timezoneId: 'Europe/Warsaw' } });
+
+test('kalendarz 1.23 na telefonie: okno planu mieści się bez przewijania w bok, dni tygodnia w szerokości ekranu', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  await page.goto(`${page.url().split('#')[0]}#/study`);
+  await page.locator('[data-testid=study-calendar]').click();
+  const sheet = page.locator('dialog.sheet[open]').last();
+  await sheet.waitFor();
+  await settled(sheet);
+  assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
+  const days = await sheet.locator('.calendar-plan__days').boundingBox();
+  assert.ok(days.x >= 0 && days.x + days.width <= 390, 'dni tygodnia w szerokości ekranu');
+  await expectText(sheet.locator('[data-testid=study-calendar-material]'), 'Wszystkie dziedziny');
+  await page.screenshot({ path: path.join(OUTPUT, 'kalendarz-plan-telefon.png') });
+});
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

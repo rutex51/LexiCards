@@ -20,6 +20,8 @@ export const routes = {
   importFile: (lessonID = null) => (lessonID ? `#/library/import/${encodeURIComponent(lessonID)}` : '#/library/import'),
   /** Przygotowanie sesji nauki; preset: { level: 'domain' | 'module' | 'lesson', id } wybiera materiał. */
   study: (preset = null) => (preset ? `#/study/${preset.level}/${encodeURIComponent(preset.id)}` : '#/study'),
+  /** Nauka z kilkoma lekcjami jednego modułu (od 1.23 – link w opisie wydarzenia kalendarza). */
+  studyLessons: (ids) => `#/study/lessons/${ids.map(encodeURIComponent).join('+')}`,
   studySession: () => '#/study/session',
   /** Słuchanie: aplikacja czyta pojęcia i odpowiedzi (np. w samochodzie); preset jak w nauce. */
   listen: (preset = null) => (preset ? `#/study/listen/${preset.level}/${encodeURIComponent(preset.id)}` : '#/study/listen'),
@@ -57,6 +59,9 @@ export function parseHash(hash) {
       }
       if (['domain', 'module', 'lesson'].includes(second) && third) {
         return { tab: 'study', name: 'study', id: `${second}:${third}`, preset: { level: second, id: third } };
+      }
+      if (second === 'lessons' && third) {
+        return { tab: 'study', name: 'study', id: `lessons:${third}`, preset: { level: 'lessons', ids: third.split('+').filter(Boolean) } };
       }
       return { tab: 'study', name: 'study' };
     case 'quiz':
