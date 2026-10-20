@@ -141,7 +141,8 @@ test('eksport XLSX: Note EN i Image label; import zastępujący bez kolumny Note
   const file = await buildExportFile(library, { level: 'lesson', id: lesson.id }, 'xlsx');
   const book = await openWorkbook(file.bytes);
   const notes = await book.readSheet(1, { rich: true });
-  assert.deepEqual(notes.rows[0].cells, ['Domain', 'Module', 'Lesson', 'Note', 'Note EN', 'Image', 'Image label']);
+  // Od 1.18 także Image caption – podpis pod obrazem.
+  assert.deepEqual(notes.rows[0].cells, ['Domain', 'Module', 'Lesson', 'Note', 'Note EN', 'Image', 'Image label', 'Image caption']);
   assert.deepEqual(notes.rows.slice(1).map((row) => [row.cells[3], row.cells[4], row.cells[6]]), [['PL', 'EN', 'Wykres'], ['', '', 'Obraz 1']]);
   assert.deepEqual(notes.images.map((item) => [item.row, item.column]), [[2, 5], [3, 5]]);
 

@@ -2,8 +2,10 @@
 //
 // W bazie notatka jest zapisana jako HTML z wąskiego, stałego zestawu znaczników:
 //   bloki:  <p>, <h3>, <ul>/<ol> z <li> (listy zagnieżdżone do trzech poziomów),
-//           <hr data-page=""> – podział na strony (od 1.3),
-//   wewnątrz: <strong>, <em>, <u>, <s>, <sup>, <sub>, <span data-color="…">, <a href>, <br>.
+//           <hr data-page=""> – podział na strony (od 1.3), od 1.18 <p data-indent="1–4"> – wcięcie,
+//   wewnątrz: <strong>, <em>, <u>, <s>, <sup>, <sub>, <span data-color="…">, <a href>, <br>,
+//           od 1.18 <span data-size="s | l | xl"> – wielkość tekstu, a w data-color także własny
+//           kolor #rrggbb (wtedy z style="--note-color: …", z którego kolor bierze arkusz stylów).
 // Każdy HTML – wklejony z Worda, strony WWW, Notatek, zapisany w edytorze albo z kopii
 // zapasowej – przechodzi przez normalizeNoteHtml(), która zostawia wyłącznie te znaczniki.
 // Dzięki temu treść jest bezpieczna do wyświetlenia (bez skryptów, stylów i obrazów z sieci)
@@ -13,9 +15,15 @@
 // HTML, zwykły tekst oraz tekst sformatowany komórki Excela (eksport) – i odwrotnie: tekst
 // sformatowany z komórki (import) zamienia się w dokument.
 //
-//   Dokument: { blocks: [{ type: 'p' | 'h' | 'li' | 'break', list?: 'ul' | 'ol', depth?: 0–2, runs }] }
-//   ('break' – nowa strona; bez tekstu, nigdy na początku, na końcu ani dwa razy z rzędu)
-//   Fragment: { text, b?, i?, u?, s?, sup?, sub?, color?, href? } – '\n' w tekście to nowy wiersz.
+//   Dokument: { blocks: [{ type: 'p' | 'h' | 'li' | 'break', list?: 'ul' | 'ol', depth?: 0–2, indent?: 1–4, runs }] }
+//   ('break' – nowa strona; bez tekstu, nigdy na początku, na końcu ani dwa razy z rzędu;
+//   indent – wcięcie akapitu i nagłówka, od 1.18)
+//   Fragment: { text, b?, i?, u?, s?, sup?, sub?, color?, size?, href? } – '\n' w tekście to nowy
+//   wiersz; color – nazwa z palety albo (od 1.18) własny '#rrggbb', size – 's' | 'l' | 'xl'.
+//
+// W edytorze (contenteditable) wcięcie to zagnieżdżone <blockquote> (tak robi polecenie „indent”
+// przeglądarki – z cofaniem), a kolor i wielkość nadane poleceniami – <font color> i <font size>;
+// zapis z edytora (opcja editor) zamienia je na postać z bazy.
 //
 // Moduł nie zależy od przeglądarki.
 
@@ -32,6 +40,27 @@ const COLOR_IDS = new Set(NOTE_COLORS.map((color) => color.id));
 const COLOR_BY_HEX = new Map(NOTE_COLORS.map((color) => [color.hex, color.id]));
 const MARKS = ['b', 'i', 'u', 's', 'sup', 'sub'];
 const MAX_DEPTH = 2;
+/** Kolor „bez koloru” nadawany w edytorze – zdejmuje kolor (nie jest kolorem tekstu). */
+export const NOTE_NO_COLOR = '#010101';
+const HEX_RE = /^#[0-9a-f]{6}$/;
+/** Kolor fragmentu: nazwa z palety albo (od 1.18) własny kolor #rrggbb. */
+const validColor = (value) => COLOR_IDS.has(value) || (HEX_RE.test(value ?? '') && value !== NOTE_NO_COLOR);
+
+/**
+ * Wielkość tekstu (od 1.18): mała, średnia (zwykła – bez znacznika), duża, bardzo duża. em –
+ * względem tekstu notatki, command – wartość polecenia „fontSize” w edytorze, points – w arkuszu.
+ */
+export const NOTE_SIZES = Object.freeze([
+  { id: 's', label: 'Mała', em: 0.85, command: '2', points: 9 },
+  { id: null, label: 'Średnia', em: 1, command: '3', points: null },
+  { id: 'l', label: 'Duża', em: 1.25, command: '5', points: 14 },
+  { id: 'xl', label: 'Bardzo duża', em: 1.6, command: '6', points: 18 }
+]);
+const SIZE_IDS = new Set(['s', 'l', 'xl']);
+/** Polecenie „fontSize” (1–7, <font size>) → wielkość tekstu; 3 – zwykła. */
+const FONT_SIZE_IDS = { 1: 's', 2: 's', 3: null, 4: 'l', 5: 'l', 6: 'xl', 7: 'xl' };
+/** Wcięcie akapitu (od 1.18): najwyżej cztery stopnie. */
+export const MAX_INDENT = 4;
 
 /** Najdłuższa treść notatki (znaki HTML) – ochrona przed przypadkowym wklejeniem całej książki. */
 export const NOTE_HTML_LIMIT = 200_000;
@@ -96,6 +125,7 @@ export function noteColorHex(id) {
 function sameMarks(a, b) {
   return MARKS.every((mark) => Boolean(a[mark]) === Boolean(b[mark]))
     && (a.color ?? null) === (b.color ?? null)
+    && (a.size ?? null) === (b.size ?? null)
     && (a.href ?? null) === (b.href ?? null);
 }
 
@@ -103,7 +133,8 @@ function marksOf(source) {
   const marks = {};
   for (const mark of MARKS) if (source[mark]) marks[mark] = true;
   if (source.sup && source.sub) delete marks.sub;
-  if (source.color && COLOR_IDS.has(source.color)) marks.color = source.color;
+  if (source.color && validColor(source.color)) marks.color = source.color;
+  if (SIZE_IDS.has(source.size)) marks.size = source.size;
   if (source.href) marks.href = source.href;
   return marks;
 }
@@ -112,6 +143,7 @@ function commonMarks(a, b) {
   const marks = {};
   for (const mark of MARKS) if (a[mark] && b[mark]) marks[mark] = true;
   if (a.color && a.color === b.color) marks.color = a.color;
+  if (a.size && a.size === b.size) marks.size = a.size;
   if (a.href && a.href === b.href) marks.href = a.href;
   return marks;
 }
@@ -217,8 +249,12 @@ export function safeHref(value) {
   return null;
 }
 
-/** Formatowanie wynikające z elementu: dziedziczone formatowanie rodzica plus własne. */
-function elementMarks(tag, attributes, parent) {
+/**
+ * Formatowanie wynikające z elementu: dziedziczone formatowanie rodzica plus własne. editor –
+ * treść z edytora notatki: <font color> i <font size> to kolor i wielkość nadane w edytorze
+ * (w HTML wklejonym z innych miejsc kolory spoza palety i wielkości czcionki to wygląd źródła).
+ */
+function elementMarks(tag, attributes, parent, editor = false) {
   const marks = { ...parent };
   switch (tag) {
     case 'b': case 'strong': marks.b = true; break;
@@ -233,13 +269,23 @@ function elementMarks(tag, attributes, parent) {
       break;
     }
     case 'font': {
+      const hex = parseColor(attributes.color);
       const color = paletteColor(attributes.color);
-      if (color) marks.color = color;
+      if (hex === NOTE_NO_COLOR) delete marks.color;
+      else if (color) marks.color = color;
+      else if (editor && hex) marks.color = hex;
+      if (editor && attributes.size in FONT_SIZE_IDS) {
+        const size = FONT_SIZE_IDS[attributes.size];
+        if (size) marks.size = size;
+        else delete marks.size;
+      }
       break;
     }
     default: break;
   }
-  if (attributes['data-color'] && COLOR_IDS.has(attributes['data-color'])) marks.color = attributes['data-color'];
+  const dataColor = String(attributes['data-color'] ?? '').toLowerCase();
+  if (validColor(dataColor)) marks.color = dataColor;
+  if (SIZE_IDS.has(attributes['data-size'])) marks.size = attributes['data-size'];
   if (attributes.style) {
     const style = parseStyle(attributes.style);
     const weight = style['font-weight'];
@@ -280,9 +326,10 @@ const LINE_BULLET_RE = /^[•·▪◦‣⁃●○■\-–—*+]\s+/u;
 
 /**
  * Zamienia HTML na dokument notatki. Rozumie dowolny HTML (także nie do końca poprawny),
- * ale zostawia tylko treść i formatowanie, które notatka obsługuje.
+ * ale zostawia tylko treść i formatowanie, które notatka obsługuje. options.editor – treść
+ * pola edytora (od 1.18: kolory spoza palety i wielkość tekstu z <font>, zob. elementMarks).
  */
-export function docFromHtml(html) {
+export function docFromHtml(html, { editor = false } = {}) {
   const source = String(html ?? '');
   const blocks = [];
   /** Otwarte elementy: { tag, marks, word } – word: poziom listy Worda. */
@@ -318,8 +365,12 @@ export function docFromHtml(html) {
     let item = null;
     let heading = false;
     let word = null;
+    // Wcięcie akapitu (od 1.18): <blockquote> (edytor, cytaty ze stron) i data-indent.
+    let indent = 0;
     for (let index = stack.length - 1; index >= 0; index -= 1) {
       const { tag } = stack[index];
+      if (tag === 'blockquote') indent += 1;
+      indent += stack[index].indent ?? 0;
       if (tag === 'ul' || tag === 'ol') {
         lists += 1;
       } else if (tag === 'li' && !item) {
@@ -344,6 +395,7 @@ export function docFromHtml(html) {
       current = { type: 'li', list: 'ul', depth: word, runs: [], wordList: true };
     } else {
       current = { type: heading ? 'h' : 'p', runs: [] };
+      if (indent > 0) current.indent = Math.min(MAX_INDENT, indent);
     }
   };
 
@@ -457,7 +509,8 @@ export function docFromHtml(html) {
       if (tag === 'tr') flush();
       const word = tag === 'p' ? wordListLevel(attributes) : null;
       if (BLOCKS.has(tag)) blockBoundary(tag);
-      stack.push({ tag, marks: elementMarks(tag, attributes, topMarks()), word });
+      const indent = /^[1-9]$/.test(attributes['data-indent'] ?? '') && BLOCKS.has(tag) ? Number(attributes['data-indent']) : 0;
+      stack.push({ tag, marks: elementMarks(tag, attributes, topMarks(), editor), word, indent });
       continue;
     }
 
@@ -543,6 +596,8 @@ function inlineHtml(runs) {
     if (run.i) text = `<em>${text}</em>`;
     if (run.b) text = `<strong>${text}</strong>`;
     if (run.color && COLOR_IDS.has(run.color)) text = `<span data-color="${run.color}">${text}</span>`;
+    else if (run.color && validColor(run.color)) text = `<span data-color="${run.color}" style="--note-color: ${run.color}">${text}</span>`;
+    if (SIZE_IDS.has(run.size)) text = `<span data-size="${run.size}">${text}</span>`;
     const href = run.href ? safeHref(run.href) : null;
     if (href) text = `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${text}</a>`;
     html += text;
@@ -567,7 +622,9 @@ export function htmlFromDoc(doc) {
     if (runs.length === 0) continue;
     if (block.type !== 'li') {
       closeLists(0);
-      html += block.type === 'h' ? `<h3>${inlineHtml(runs)}</h3>` : `<p>${inlineHtml(runs)}</p>`;
+      const indent = Math.min(MAX_INDENT, Math.max(0, Math.floor(block.indent ?? 0)));
+      const attribute = indent > 0 ? ` data-indent="${indent}"` : '';
+      html += block.type === 'h' ? `<h3${attribute}>${inlineHtml(runs)}</h3>` : `<p${attribute}>${inlineHtml(runs)}</p>`;
       continue;
     }
     const list = block.list === 'ol' ? 'ol' : 'ul';
@@ -590,9 +647,18 @@ export function htmlFromDoc(doc) {
   return html;
 }
 
-/** Normalizuje dowolny HTML do bezpiecznej postaci notatki. Pusta treść daje ''. */
-export function normalizeNoteHtml(html) {
-  return htmlFromDoc(docFromHtml(html));
+/** Normalizuje dowolny HTML do bezpiecznej postaci notatki. Pusta treść daje ''. options – jak w docFromHtml. */
+export function normalizeNoteHtml(html, options = {}) {
+  return htmlFromDoc(docFromHtml(html, options));
+}
+
+/**
+ * HTML notatki do pola edytora (od 1.18): wcięcie akapitu jako zagnieżdżone <blockquote> – tak, jak
+ * robi je polecenie „indent” przeglądarki, więc wcięcie można zwiększać i zmniejszać z cofaniem.
+ */
+export function editorNoteHtml(html) {
+  return String(html ?? '').replace(/<(p|h3) data-indent="(\d)">([\s\S]*?)<\/\1>/g,
+    (match, tag, level, inner) => `${'<blockquote>'.repeat(Number(level))}<${tag}>${inner}</${tag}>${'</blockquote>'.repeat(Number(level))}`);
 }
 
 // ---------------------------------------------------------------- zwykły tekst
@@ -629,7 +695,8 @@ export function textFromDoc(doc) {
       const indent = '    '.repeat(block.depth ?? 0);
       text += `${indent}${block.list === 'ol' ? `${numbers[index]}.` : '•'} ${content.replace(/\n/g, `\n${indent}  `)}`;
     } else {
-      text += content;
+      const indent = '    '.repeat(block.indent ?? 0);
+      text += indent + content.replace(/\n/g, `\n${indent}`);
     }
   });
   return text;
@@ -772,6 +839,8 @@ export function docFromRichText(runs) {
     }
     const leading = /^[ \t]*/.exec(text)[0];
     const indent = [...leading].reduce((sum, char) => sum + (char === '\t' ? 2 : 1), 0);
+    // Tabulatory na początku akapitu – wcięcie (od 1.18, tak zapisuje je eksport).
+    const tabs = /^\t*/.exec(leading)[0].length;
     let content = line.map((run) => ({ ...run }));
     dropLeading(content, leading.length);
     const stripped = runsText(content);
@@ -803,17 +872,22 @@ export function docFromRichText(runs) {
     }
 
     content = applyMarkdown(content).map((run) => {
-      const marks = marksOf({ ...run, color: nearestNoteColor(run.color) });
-      if (type === 'h') delete marks.b;
+      const marks = marksOf({ ...run, color: nearestNoteColor(run.color), size: sheetSize(run.size, baseSize) });
+      if (type === 'h') {
+        delete marks.b;
+        delete marks.size;
+      }
       return { text: run.text, ...marks };
     });
 
     if (type === 'p') {
+      if (paragraph && tabs > 0 && (paragraph.indent ?? 0) !== Math.min(MAX_INDENT, tabs)) paragraph = null;
       if (paragraph) {
         pushRun(paragraph.runs, '\n', {});
         for (const run of content) pushRun(paragraph.runs, run.text, run);
       } else {
         paragraph = { type: 'p', runs: [] };
+        if (tabs > 0) paragraph.indent = Math.min(MAX_INDENT, tabs);
         for (const run of content) pushRun(paragraph.runs, run.text, run);
         blocks.push(paragraph);
       }
@@ -824,6 +898,8 @@ export function docFromRichText(runs) {
     if (type === 'li') {
       block.list = list;
       block.depth = Math.min(MAX_DEPTH, Math.floor(indent / 2));
+    } else if (tabs > 0) {
+      block.indent = Math.min(MAX_INDENT, tabs);
     }
     for (const run of content) pushRun(block.runs, run.text, run);
     blocks.push(block);
@@ -834,6 +910,13 @@ export function docFromRichText(runs) {
 
 /** Rozmiar czcionki nagłówka w komórce arkusza (zwykły tekst ma 11). */
 export const SHEET_HEADING_SIZE = 13;
+
+/** Wielkość tekstu (od 1.18) z rozmiaru czcionki fragmentu komórki względem zwykłego tekstu komórki. */
+function sheetSize(points, base) {
+  if (!points || !base) return null;
+  const ratio = points / base;
+  return ratio <= 0.88 ? 's' : ratio >= 1.45 ? 'xl' : ratio >= 1.18 ? 'l' : null;
+}
 
 /**
  * Zamienia dokument na tekst sformatowany komórki arkusza – tak, żeby docFromRichText()
@@ -847,8 +930,8 @@ export function richTextFromDoc(doc) {
     if (text === '') return;
     const run = { text };
     for (const mark of MARKS) if (marks[mark]) run[mark] = true;
-    if (marks.color) run.color = noteColorHex(marks.color);
-    if (marks.size) run.size = marks.size;
+    if (marks.color) run.color = noteColorHex(marks.color) ?? (HEX_RE.test(marks.color) ? marks.color : undefined);
+    if (marks.points) run.size = marks.points;
     const last = runs[runs.length - 1];
     if (last && MARKS.every((mark) => Boolean(last[mark]) === Boolean(run[mark])) && last.color === run.color && last.size === run.size) {
       last.text += text;
@@ -864,10 +947,13 @@ export function richTextFromDoc(doc) {
     if (index > 0) push((block.type === 'p' && blocks[index - 1].type === 'p') || blocks[index - 1].type === 'break' ? '\n\n' : '\n');
     if (block.type === 'li') {
       push(`${'  '.repeat(block.depth ?? 0)}${block.list === 'ol' ? `${numbers[index]}.` : '•'} `);
+    } else if (block.indent > 0) {
+      push('\t'.repeat(block.indent));
     }
     for (const run of block.runs) {
       const text = block.type === 'p' ? run.text : run.text.replace(/\n/g, ' ');
-      push(text, block.type === 'h' ? { ...run, b: true, size: SHEET_HEADING_SIZE } : run);
+      const points = NOTE_SIZES.find((size) => size.id === run.size)?.points ?? undefined;
+      push(text, block.type === 'h' ? { ...run, b: true, points: SHEET_HEADING_SIZE } : { ...run, points });
     }
   });
   return runs;
@@ -880,6 +966,10 @@ export function richTextFromDoc(doc) {
 export function portableNoteHtml(html) {
   return normalizeNoteHtml(html)
     .replace(/<span data-color="(\w+)">/g, (match, id) => `<span style="color:${noteColorHex(id) ?? 'inherit'}">`)
+    // Własny kolor (od 1.18) zostaje też w data-color – po wklejeniu w notatce kolor jest ten sam.
+    .replace(/<span data-color="(#[0-9a-f]{6})" style="--note-color: #[0-9a-f]{6}">/g, (match, hex) => `<span data-color="${hex}" style="color:${hex}">`)
+    .replace(/<span data-size="(s|l|xl)">/g, (match, id) => `<span style="font-size:${NOTE_SIZES.find((size) => size.id === id).em}em">`)
+    .replace(/<(p|h3) data-indent="(\d)">/g, (match, tag, level) => `<${tag} style="margin-left:${Number(level) * 2}em">`)
     .replace(/ target="_blank" rel="noopener noreferrer"/g, '');
 }
 

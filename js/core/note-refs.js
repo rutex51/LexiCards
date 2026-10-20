@@ -4,6 +4,9 @@
 // więc nie zmienia się przy przesuwaniu obrazów), którą można zmienić. Linijka treści złożona
 // tylko z odwołania [[sygnatura]] to miejsce obrazu w podglądzie; obrazy bez odwołania są przed
 // tekstem albo po nim. Wielkość liter, polskie znaki i odstępy w odwołaniu nie mają znaczenia.
+// Od 1.18 obraz może mieć też podpis (np. „Wyniki sprzedaży”), widoczny pod obrazem w podglądzie –
+// z numeracją „Rys. 2. Wyniki sprzedaży”, gdy notatka ją ma włączoną (numer – kolejność obrazów
+// w podglądzie notatki).
 // Bez zależności od przeglądarki.
 
 import { docFromHtml, htmlFromDoc } from './note-format.js';
@@ -17,6 +20,24 @@ const REFERENCE_RE = /^\[\[([^[\]]+)\]\]$/;
 /** Sygnatura bez nawiasów kwadratowych i nadmiarowych odstępów, najwyżej 40 znaków. */
 export function cleanImageLabel(label) {
   return collapseWhitespace(String(label ?? '').replace(/[[\]]/g, ' ')).slice(0, IMAGE_LABEL_MAX).trim();
+}
+
+/** Najdłuższy podpis obrazu (znaki). */
+export const IMAGE_CAPTION_MAX = 120;
+
+/** Podpis obrazu bez nadmiarowych odstępów, najwyżej 120 znaków ('' – bez podpisu). */
+export function cleanImageCaption(caption) {
+  return collapseWhitespace(String(caption ?? '')).slice(0, IMAGE_CAPTION_MAX).trim();
+}
+
+/**
+ * Podpis pod obrazem w podglądzie: z numeracją – „Rys. 2. Wyniki sprzedaży” (bez podpisu – „Rys. 2.”),
+ * bez numeracji – sam podpis; null – nic pod obrazem.
+ */
+export function figureCaption(caption, number, numbered) {
+  const text = cleanImageCaption(caption);
+  if (numbered) return text ? `Rys. ${number}. ${text}` : `Rys. ${number}.`;
+  return text || null;
 }
 
 /** Klucz porównania sygnatur: bez wielkości liter, znaków diakrytycznych i odstępów. */
@@ -74,6 +95,25 @@ export function referencedLabels(html) {
     .filter((block) => block.type === 'p')
     .map((block) => referenceLabel(block.runs.map((run) => run.text).join('')))
     .filter(Boolean);
+}
+
+/**
+ * Numery rysunków (od 1.18 – podpisy „Rys. N.”): numer (od 1) każdego obrazu według kolejności
+ * w podglądzie – obrazy z odwołaniem [[sygnatura]] w miejscu pierwszego odwołania, pozostałe przed
+ * tekstem (imagesFirst) albo po nim. Zwraca tablicę numerów w kolejności obrazów notatki.
+ */
+export function figureNumbers(html, images, imagesFirst = false) {
+  const labeled = withImageLabels(images);
+  const referenced = [];
+  for (const label of referencedLabels(html)) {
+    const index = findImageByLabel(labeled, label);
+    if (index >= 0 && !referenced.includes(index)) referenced.push(index);
+  }
+  const rest = labeled.map((_, index) => index).filter((index) => !referenced.includes(index));
+  const order = imagesFirst ? [...rest, ...referenced] : [...referenced, ...rest];
+  const numbers = [];
+  order.forEach((index, position) => { numbers[index] = position + 1; });
+  return numbers;
 }
 
 /** Treść ze zmienioną sygnaturą w odwołaniach: [[from]] → [[to]]. */

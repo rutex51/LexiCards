@@ -103,6 +103,12 @@ const ICONS = {
     p('M10 7h10'), p('M10 12h10'), p('M10 17h10')
   ],
   textColor: [p('M6.5 15.5L12 3.5l5.5 12'), p('M8.4 11.3h7.2')],
+  // Notatka (od 1.18): indeks górny i dolny, wielkość tekstu, wcięcie.
+  superscript: [p('M4.5 9l7.5 9'), p('M12 9l-7.5 9'), { d: 'M15.4 7.4c.2-.9.9-1.5 1.8-1.5s1.7.6 1.7 1.5c0 1.2-1.6 1.9-3.5 3.7h3.7', 'stroke-width': 1.5 }],
+  subscript: [p('M4.5 6l7.5 9'), p('M12 6l-7.5 9'), { d: 'M15.4 15.4c.2-.9.9-1.5 1.8-1.5s1.7.6 1.7 1.5c0 1.2-1.6 1.9-3.5 3.7h3.7', 'stroke-width': 1.5 }],
+  textSize: [p('M3 18.5L8.5 5.5l5.5 13'), p('M5.1 13.6h6.8'), p('M14.5 18.5l3.2-7.5 3.3 7.5'), p('M15.7 16h4')],
+  indent: [p('M4 5.5h16'), p('M11 10h9'), p('M11 14h9'), p('M4 18.5h16'), p('M4.5 9l3.5 3-3.5 3')],
+  outdent: [p('M4 5.5h16'), p('M11 10h9'), p('M11 14h9'), p('M4 18.5h16'), p('M8 9l-3.5 3 3.5 3')],
   clearFormat: [p('M6 5h11'), p('M11.5 5L9 17'), p('M14 14l5.5 5.5'), p('M19.5 14L14 19.5')],
   zoomIn: [{ tag: 'circle', cx: 11, cy: 11, r: 6.5 }, p('M20 20l-4.3-4.3'), p('M11 8.3v5.4'), p('M8.3 11h5.4')],
   // Rysunki (od 1.12). Pasek pod zakreślaczem ma kolor wybranego zakreślacza (klasa icon__accent).

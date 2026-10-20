@@ -1,4 +1,4 @@
-# LexiCards 1.17
+# LexiCards 1.18
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -26,8 +26,9 @@ Skala na linijce, własne kolory, zaznaczanie fragmentów i lasso, kopiuj i wkle
 Jasność tła, szablon pod kreskami (boisko, obraz z pliku), liniuszek, kształty geometryczne (wersja 1.15): [docs/RELEASE-1.15.md](docs/RELEASE-1.15.md).
 Przeciąganie wierszy i kolejność list biblioteki – A–Z, Z–A, według daty (wersja 1.16): [docs/RELEASE-1.16.md](docs/RELEASE-1.16.md).
 Wycinek, „Osadź” w notatce, wymiary kształtu z klawiatury, wypełnienie i tekst kształtu (wersja 1.17): [docs/RELEASE-1.17.md](docs/RELEASE-1.17.md).
+Wcięcia (Tab), indeksy, wielkość i własny kolor tekstu, podpisy obrazów „Rys. N.”, przeciąganie obrazów w notatce (wersja 1.18): [docs/RELEASE-1.18.md](docs/RELEASE-1.18.md).
 
-## Co potrafi wersja 1.17
+## Co potrafi wersja 1.18
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -55,7 +56,10 @@ Wycinek, „Osadź” w notatce, wymiary kształtu z klawiatury, wypełnienie i 
   wielu pojęć. Przy każdym pojęciu – także w lekcji – status ostatniej oceny (Nowe, Do nauki,
   W trakcie nauki, Częściowo opanowane, Opanowane); pojęcia do powtórki pokazuje filtr.
 - Notatka do każdej lekcji: tekst z formatowaniem (pogrubienie, kursywa, podkreślenie, nagłówki,
-  listy, pięć kolorów) i obrazy, w osobnym oknie z podglądem i edycją. Otwierasz ją z listy lekcji
+  listy, pięć kolorów; od 1.18 także wcięcia – Tab i Shift+Tab, indeks górny i dolny, cztery
+  wielkości tekstu i własne kolory – siatka, suwaki RGB, pipetka) i obrazy – od 1.18 z podpisami
+  („Rys. 2. Wyniki sprzedaży” przy włączonej numeracji) i kolejnością ustawianą przeciąganiem,
+  w osobnym oknie z podglądem i edycją. Otwierasz ją z listy lekcji
   w module, z ekranu lekcji, ze szczegółów pojęcia i w trakcie nauki fiszek. Długa notatka dzieli się
   na strony mieszczące się w oknie (bez przewijania) – przewracasz je palcem jak kartki książki
   (kartka zagina się od rogu, za który ją chwycisz), przyciskami ‹ › albo strzałkami; na komputerze
@@ -141,7 +145,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.14 – skala na linijce, własne kolory, fragmenty i lasso, kopiuj i wklej](docs/RELEASE-1.14.md),
 [wersja 1.15 – jasność tła, szablon, liniuszek, kształty](docs/RELEASE-1.15.md),
 [wersja 1.16 – przeciąganie wierszy, kolejność list](docs/RELEASE-1.16.md),
-[wersja 1.17 – wycinek, „Osadź”, wymiary, wypełnienie i tekst kształtu](docs/RELEASE-1.17.md).
+[wersja 1.17 – wycinek, „Osadź”, wymiary, wypełnienie i tekst kształtu](docs/RELEASE-1.17.md),
+[wersja 1.18 – wcięcia, indeksy, wielkość i kolor tekstu, podpisy obrazów, przeciąganie obrazów](docs/RELEASE-1.18.md).
 
 ## Jak korzystać
 
@@ -220,9 +225,12 @@ trzeba najpierw zapisać w Excelu jako `.xlsx`.
 | `Note EN` | ta sama notatka po angielsku (opcjonalnie; w aplikacji przełącznik PL / EN) |
 | `Image` | obrazy wklejone do komórki („Umieść w komórce”) albo na arkusz przy tej komórce |
 | `Image label` | sygnatura obrazu z tego wiersza, np. „Schemat bilansu” (opcjonalnie; bez niej obrazy lekcji to „Obraz 1”, „Obraz 2”… po kolei) |
+| `Image caption` | podpis obrazu z tego wiersza, np. „Wyniki sprzedaży” (opcjonalnie, od 1.18) |
 
 W treści: wiersz zaczynający się od „• ” albo „- ” to punkt listy, od „1. ” – lista numerowana, od „# ” –
-nagłówek, a pusty wiersz rozdziela akapity (nowy wiersz w komórce: Alt+Enter). Kilka wierszy z tą
+nagłówek, a pusty wiersz rozdziela akapity (nowy wiersz w komórce: Alt+Enter). Znaki tabulacji na
+początku wiersza to wcięcie (od 1.18); wielkość czcionki (9, 14, 18 pt), indeksy górne i dolne
+zostają, a kolory są zamieniane na najbliższy z pięciu kolorów notatki. Kilka wierszy z tą
 samą lekcją składa się na jedną notatkę – np. jeden obraz w wierszu. Plik bez kolumny `Note EN` nie
 zmienia istniejącej wersji angielskiej notatki. Gdy plik ma i pojęcia, i notatki,
 kreator pyta, co zaimportować; w kroku „Sprawdź notatki” widać podgląd każdej notatki z obrazami
@@ -238,6 +246,21 @@ dwukrotne dotknięcie). **Edytuj** pokazuje u góry sekcję obrazów – **Dodaj
 aparat), dotknięcie obrazu – powiększ, przesuń, usuń – a pod nią tekst z paskiem formatowania. Przy
 obrazach wybierasz, gdzie są w podglądzie: **Przed tekstem** albo **Po tekście** (domyślnie po
 tekście; wybór jest zapisany w notatce). Duże zdjęcia są zmniejszane do 2048 px dłuższego boku.
+Kolejność obrazów zmieniasz przeciąganiem (od 1.18): myszą albo rysikiem od razu, palcem – po chwili
+przytrzymania; przy krawędzi siatka przewija się sama. Gdy obrazy nie mieszczą się w dwóch rzędach,
+siatka ma dwa rzędy i przewija się w bok (jak dziedziny na Starcie).
+
+**Formatowanie tekstu** (pasek nad tekstem): pogrubienie, kursywa, podkreślenie, od 1.18 **indeks
+górny i dolny** (x², x₂; Ctrl+. i Ctrl+,), **wielkość tekstu** (Mała, Średnia, Duża, Bardzo duża),
+kolor, nagłówek, listy, od 1.18 **wcięcie** (przyciski albo Tab i Shift+Tab – do czterech stopni,
+w liście – punkt poziom niżej), nowa strona, wzór i wyczyszczenie formatowania. Panel koloru ma pięć
+kolorów, do trzech ostatnich **własnych** (wspólnych z rysunkiem) i **„+”** – okno z siatką kolorów,
+suwakami R, G, B z kodem HEX i – w Chrome i Edge na komputerze – pipetką.
+
+**Podpisy obrazów** (od 1.18): w menu obrazu **Dodaj podpis** – np. „Wyniki sprzedaży” (do 120
+znaków). Podpis jest wyśrodkowany pod obrazem w podglądzie, w powiększeniu i w „Kopiuj notatkę”.
+Przełącznik **Numeruj obrazy w podglądzie** pod obrazami dodaje numer: „Rys. 2. Wyniki sprzedaży”
+(bez podpisu – „Rys. 2.”); numer to kolejność obrazu w podglądzie notatki.
 
 **Sygnatury obrazów:** każdy obraz ma sygnaturę widoczną na miniaturze – „Obraz 1”, „Obraz 2”…
 (nadaną przy dodaniu, więc nie zmienia się przy przesuwaniu obrazów); w menu obrazu **Zmień
@@ -390,7 +413,7 @@ każdym zaznaczeniem – dodaje obraz do obrazów notatki („Obraz N”, zaraz 
 a zaznaczone elementy – same, na białym tle.
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno
 **Nowe pole tekstowe** – tekst (Enter zaczyna nowy wiersz, długi wiersz łamie się sam), wielkość
-(Mała, Średnia, Duża) i kolor; przycisk **Σ** – okno **Nowy wzór**: zapis jak we wzorze w notatce,
+(Mała, Średnia, Duża, od 1.18 Bardzo duża) i kolor; przycisk **Σ** – okno **Nowy wzór**: zapis jak we wzorze w notatce,
 ale bez znaków dolara (`\frac{a}{b}`, `x^2`, `\sqrt{x}`…), z podglądem, opisem błędu i całą
 ściągawką, też z wielkością i kolorem. **Wstaw** kładzie pole albo wzór na środku widocznej części
 strony (gdy tam coś już jest – pod tym) i od razu je zaznacza, więc przeciągnięciem przesuniesz je
@@ -645,7 +668,9 @@ minutach. Otwarta aplikacja pobiera ją w tle i pokazuje komunikat z przyciskiem
 22. **Wersja 1.15: jasność kratki i linii, szablon pod kreskami (boisko, obraz z pliku), liniuszek z liniami poprzecznymi i przyciąganiem, kształty geometryczne z punktami konstrukcyjnymi** – gotowe.
 23. **Wersja 1.16: przeciąganie wierszy przy zmianie kolejności, kolejność list biblioteki – ręcznie, A–Z, Z–A, według daty utworzenia** – gotowe.
 24. **Wersja 1.17: wycinek (prawy przycisk, tryb „Wycinek”), „Osadź” – fragment rysunku jako obraz notatki, wymiary i kąt pochylenia kształtu z klawiatury, wypełnienie i tekst kształtu** – gotowe.
-25. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
+25. **Wersja 1.18: notatki – wcięcia (Tab), indeks górny i dolny, wielkość tekstu, własne kolory tekstu, podpisy obrazów z numeracją „Rys. N.”, przeciąganie obrazów (dwa rzędy z przewijaniem w bok)** – gotowe.
+26. **Wersja 1.19: rysunek – skala szablonu wpisywana i przeciągnięciem narożnika, Shift (proporcje), Ctrl (chwilowe zaznaczanie), przesuwanie środkowym przyciskiem, szyk liniowy i kołowy, kilka kartek, zakończenia odcinka, stałe wymiary** – w przygotowaniu.
+27. **Rysunki, etap 2: zamiana odręcznych kształtów na figury (przytrzymanie rysika), dociąganie do linii kratek, uchwyty** – po akceptacji makiet.
 
 Synchronizacja przez iCloud ze specyfikacji jest zastąpiona kopią zapasową w pliku (aplikacja
 w przeglądarce nie ma dostępu do iCloud, a zewnętrzny serwer jest wykluczony).

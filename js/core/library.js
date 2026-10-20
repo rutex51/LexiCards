@@ -15,7 +15,7 @@ import {
 import { createdRange, createdWithin } from './created.js';
 import { cleanFileName, fileTypeOf } from './note-files.js';
 import { NOTE_HTML_LIMIT, normalizeNoteHtml } from './note-format.js';
-import { labelKey, withImageLabels } from './note-refs.js';
+import { cleanImageCaption, labelKey, withImageLabels } from './note-refs.js';
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
 import { emptyChanges } from './storage.js';
 import { crc32 } from './zip.js';
@@ -133,7 +133,9 @@ function sameImages(metas, images) {
 function sameLabels(metas, images) {
   const current = withImageLabels(metas);
   const incoming = withImageLabels(images);
-  return current.every((meta, index) => labelKey(meta.label) === labelKey(incoming[index]?.label));
+  // Od 1.18 także podpisy obrazów.
+  return current.every((meta, index) => labelKey(meta.label) === labelKey(incoming[index]?.label)
+    && cleanImageCaption(meta.caption) === cleanImageCaption(incoming[index]?.caption));
 }
 
 function bySortOrder(a, b) {
@@ -1111,9 +1113,11 @@ export class Library {
    * w kolejności wyświetlania: { id, label? } zostawia istniejący obraz, { bytes, type, width,
    * height, name, label?, drawing? } dodaje nowy (drawing – kreski rysunku, od 1.12), pominięte
    * istniejące obrazy są usuwane; label – sygnatura
-   * (brakująca dostaje „Obraz N”). files – załączniki tak samo: { id, name? } zostawia (name –
+   * (brakująca dostaje „Obraz N”), caption – podpis pod obrazem (od 1.18; pominięty przy
+   * istniejącym obrazie – zostaje dotychczasowy). files – załączniki tak samo: { id, name? } zostawia (name –
    * nowa nazwa), { bytes, name, type } dodaje. htmlEN – treść po angielsku, imagesFirst – obrazy
-   * w podglądzie przed tekstem; bez pól htmlEN, imagesFirst i files zostaje to, co jest
+   * w podglądzie przed tekstem, numberFigures – numeracja podpisów „Rys. N.” (od 1.18); bez pól
+   * htmlEN, imagesFirst, numberFigures i files zostaje to, co jest
    * w notatce. Notatka bez tekstu, obrazów i załączników jest usuwana.
    * Zwraca zapisaną notatkę albo null.
    */
@@ -1128,7 +1132,7 @@ export class Library {
     return this.#mutate((unit) => this.#removeNote(unit, lessonID));
   }
 
-  #writeNote(unit, lessonID, { html, htmlEN, images = [], imagesFirst, files }, existing) {
+  #writeNote(unit, lessonID, { html, htmlEN, images = [], imagesFirst, numberFigures, files }, existing) {
     const clean = normalizeNoteHtml(html ?? '');
     const cleanEN = typeof htmlEN === 'string' ? normalizeNoteHtml(htmlEN) : (existing?.htmlEN ?? '');
     if (clean.length > NOTE_HTML_LIMIT || cleanEN.length > NOTE_HTML_LIMIT) throw errors.noteTooLong();
@@ -1139,12 +1143,14 @@ export class Library {
       if (imageBytes(image)) {
         const record = newNoteImage(lessonID, image);
         unit.append('noteImages', record);
-        metas.push(noteImageMeta(record, image.label));
+        metas.push(noteImageMeta(record, image.label, cleanImageCaption(image.caption) || null));
       } else {
         const meta = existing?.images.find((item) => item.id === image.id);
         if (meta && !kept.has(meta.id)) {
           kept.add(meta.id);
-          metas.push({ ...meta, label: image.label ?? meta.label ?? null });
+          const { caption: previous, ...rest } = meta;
+          const caption = image.caption === undefined ? cleanImageCaption(previous) : cleanImageCaption(image.caption);
+          metas.push({ ...rest, label: image.label ?? meta.label ?? null, ...(caption ? { caption } : {}) });
         }
       }
     }
@@ -1159,9 +1165,11 @@ export class Library {
     const now = nowISO();
     // Obrazy w podglądzie przed tekstem (od 1.5); zapis bez tego pola (np. import) zostawia wybór notatki.
     const first = typeof imagesFirst === 'boolean' ? imagesFirst : existing?.imagesFirst === true;
+    // Numeracja podpisów obrazów (od 1.18) – tak samo: bez pola zostaje wybór notatki.
+    const numbered = typeof numberFigures === 'boolean' ? numberFigures : existing?.numberFigures === true;
     const note = {
       id: lessonID, lessonID, html: clean, htmlEN: cleanEN, images: withImageLabels(metas), imagesFirst: first,
-      files: fileMetas, createdAt: existing?.createdAt ?? now, updatedAt: now
+      numberFigures: numbered, files: fileMetas, createdAt: existing?.createdAt ?? now, updatedAt: now
     };
     unit.put('notes', note);
     return note;

@@ -4178,13 +4178,46 @@ a.row__main:active,
 .note-text [data-color="green"] { color: var(--note-green); }
 .note-text [data-color="blue"] { color: var(--note-blue); }
 .note-text [data-color="purple"] { color: var(--note-purple); }
-/* Kolor nadany w edytorze (znacznik <font>): z palety – w odcieniu motywu, inny – zwykły tekst. */
-.note-text font[color] { color: inherit; }
+/* Kolor nadany w edytorze (znacznik <font>): z palety – w odcieniu motywu; „Bez koloru” – zwykły tekst. */
+.note-text font[color="#010101" i] { color: inherit; }
 .note-text font[color="#d70015" i] { color: var(--note-red); }
 .note-text font[color="#c45500" i] { color: var(--note-orange); }
 .note-text font[color="#248a3d" i] { color: var(--note-green); }
 .note-text font[color="#0040dd" i] { color: var(--note-blue); }
 .note-text font[color="#8944ab" i] { color: var(--note-purple); }
+
+/* Własny kolor (od 1.18): w ciemnym motywie rozjaśniony, żeby ciemny kolor był czytelny na ciemnym tle. */
+.note-text [data-color^="#"] { color: var(--note-color); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .note-text [data-color^="#"] { color: color-mix(in srgb, var(--note-color) 62%, #ffffff); }
+}
+:root[data-theme="dark"] .note-text [data-color^="#"] { color: color-mix(in srgb, var(--note-color) 62%, #ffffff); }
+
+/* Wielkość tekstu (od 1.18): zapisana (data-size) i nadana w edytorze (<font size>). */
+.note-text [data-size="s"],
+.note-text font[size="1"],
+.note-text font[size="2"] { font-size: 0.85em; }
+.note-text font[size="3"] { font-size: 1em; }
+.note-text [data-size="l"],
+.note-text font[size="4"],
+.note-text font[size="5"] { font-size: 1.25em; }
+.note-text [data-size="xl"],
+.note-text font[size="6"],
+.note-text font[size="7"] { font-size: 1.6em; line-height: 1.3; }
+
+/* Wcięcie (od 1.18): zapisane (data-indent) i w edytorze – zagnieżdżone <blockquote> z polecenia „indent”. */
+.note-text [data-indent="1"] { margin-left: 2em; }
+.note-text [data-indent="2"] { margin-left: 4em; }
+.note-text [data-indent="3"] { margin-left: 6em; }
+.note-text [data-indent="4"] { margin-left: 8em; }
+.note-text blockquote {
+  margin: 0 0 0 2em !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+.note-text > blockquote + *,
+.note-text > * + blockquote,
+.note-text blockquote > * + * { margin-top: 0.7em; }
 
 /* Okno notatki. */
 @media (min-width: 700px) {
@@ -4435,6 +4468,17 @@ a.row__main:active,
 
 .note-page__figure:focus-visible { outline-offset: 3px; border-radius: var(--radius); }
 
+/* Podpis pod obrazem (od 1.18): wyśrodkowany, mniejszy, tuż pod obrazem. */
+.note-page__figure-box { margin: 0; }
+.note-page__caption {
+  margin-top: 0.4em;
+  color: var(--text-2);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
 .note-sheet__footer {
   display: flex;
   align-items: center;
@@ -4534,7 +4578,8 @@ a.row__main:active,
   flex: none;
   display: grid;
   place-items: center;
-  width: 42px;
+  /* 16 przycisków (od 1.18) mieści się w oknie notatki na iPadzie i komputerze; telefon przewija pasek. */
+  width: 40px;
   height: 40px;
   border-radius: 9px;
   color: var(--text);
@@ -4592,6 +4637,36 @@ a.row__main:active,
   box-shadow: inset 0 0 0 1.5px var(--separator);
 }
 
+/* Inny kolor (od 1.18): kolorowe koło z plusem – jak w edytorze rysunku. */
+.note-colors__swatch--add {
+  display: grid;
+  place-items: center;
+  background: conic-gradient(from 0deg, #ff3b30, #ff9500, #ffcc00, #34c759, #00c7be, #007aff, #af52de, #ff2d55, #ff3b30);
+  color: #ffffff;
+}
+
+.note-colors__swatch--add .icon { stroke-width: 2.6; filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.55)); }
+
+/* Wielkość tekstu (od 1.18): cztery wielkości pod paskiem formatowania. */
+.note-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px 2px;
+}
+
+.note-sizes__option {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--fill);
+  color: var(--text);
+  line-height: 1.1;
+}
+
+.note-sizes__option:active { background: var(--pressed); }
+
 .note-editor__area {
   position: relative;
   min-height: 220px;
@@ -4620,6 +4695,38 @@ a.row__main:active,
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: 10px;
 }
+
+/* Od 1.18: najwyżej dwa rzędy, kolejne kolumny przewijane w bok (jak dziedziny na Starcie). */
+.note-images--scroll {
+  grid-template-columns: none;
+  grid-template-rows: repeat(2, auto);
+  grid-auto-flow: column;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.note-images--scroll::-webkit-scrollbar { display: none; }
+
+@media (hover: hover) and (pointer: fine) {
+  .note-images--scroll { scrollbar-width: thin; padding-bottom: 8px; }
+  .note-images--scroll::-webkit-scrollbar { display: initial; }
+}
+
+/* Przeciąganie obrazu (od 1.18): kafelek nad innymi, z cieniem; bez zaznaczania i menu systemu przy przytrzymaniu. */
+.note-images__item {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.note-images__item img { -webkit-user-drag: none; }
+.note-images__item.grid-drag--dragging {
+  z-index: 3;
+  overflow: visible;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28), inset 0 0 0 2px var(--accent);
+  cursor: grabbing;
+  opacity: 0.95;
+}
+.grid-drag--active { cursor: grabbing; }
 
 .note-images__item,
 .note-images__add {
@@ -5168,6 +5275,16 @@ svg.icon--note { color: var(--note-icon); }
   align-items: center;
   gap: 8px;
   padding: calc(env(safe-area-inset-top) + 8px) calc(env(safe-area-inset-right) + 12px) 8px calc(env(safe-area-inset-left) + 12px);
+}
+
+/* Podpis obrazu (od 1.18) pod obrazem. */
+.lightbox__caption {
+  flex: none;
+  margin: 0;
+  padding: 6px 16px calc(env(safe-area-inset-bottom) + 12px);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: var(--size-sub);
+  text-align: center;
 }
 
 .lightbox__counter {

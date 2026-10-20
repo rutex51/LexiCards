@@ -29,7 +29,7 @@ import {
   DrawingHistory, ELEMENT_TEXT_MAX, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA,
   HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, INK_COLORS, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
   SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings,
-  defaultToolSettings, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, hexToRgb, hslToHex, isClockwise,
+  defaultToolSettings, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
   isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
   rulerDegrees, rulerOffset, rulerPoint, scaleUnitLabel, screenScale, screenScaleValue, selectionBounds, smoothPoint, snapRulerAngle,
   snapToStrokes, splitByPolygon, strokeBounds, strokesAt, strokesInPolygon, strokesInRect, toScaleLength, touchesStroke, translateStroke
@@ -45,6 +45,7 @@ import {
   fitTemplate, pitchScale, scaleTemplate
 } from '../core/templates.js';
 import { plural } from '../core/text.js';
+import { TOOLS_KEY, colorTabBody } from './color-picker.js';
 import { field, segmented, textArea, toggle } from './components.js';
 import { confirmDialog, mountDialog, openFormSheet, openMenu, showError } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
@@ -53,7 +54,6 @@ import { openMathHelp } from './math.js';
 import { paintShape, paintTemplate } from './drawing-paint.js';
 import { prepareImage } from './images.js';
 
-const TOOLS_KEY = 'lexicards-drawing-tools';
 const PEN_KEY = 'lexicards-pen-seen';
 /** Zakres powiększenia względem „cała strona na ekranie”. */
 const MIN_ZOOM = 0.5;
@@ -434,23 +434,8 @@ function screenPixelsPerInch() {
   return ratio > 1 ? 110 : 96;
 }
 
-/** Siatka kolorów (od 1.14): 12 odcieni w sześciu jasnościach i wiersz szarości od bieli do czerni. */
-const COLOR_GRID = (() => {
-  const hues = [0, 22, 40, 55, 85, 135, 170, 195, 215, 250, 280, 320];
-  const rows = [[90, 86], [85, 72], [80, 58], [78, 46], [72, 35], [65, 24]];
-  const colors = rows.flatMap(([saturation, lightness]) => hues.map((hue) => hslToHex(hue, saturation, lightness)));
-  for (let step = 0; step < 12; step += 1) colors.push(hslToHex(0, 0, 100 - (step * 100) / 11));
-  return colors;
-})();
+/** Karty panelu własnego koloru (od 1.14; siatka i suwaki – wspólne z kolorem tekstu notatki, ui/color-picker.js). */
 const COLOR_TABS = [['grid', 'Siatka'], ['sliders', 'Suwaki'], ['picker', 'Pipetka']];
-const CHANNEL_LABELS = ['Czerwony', 'Zielony', 'Niebieski'];
-
-/** Kolor #rrggbb z wpisanego kodu („#12ab34”, „12AB34”, „#1a3”) albo null. */
-function parseHex(text) {
-  const value = `#${text.trim().replace(/^#/, '').toLowerCase()}`;
-  if (/^#[0-9a-f]{3}$/.test(value)) return `#${[...value.slice(1)].map((digit) => digit + digit).join('')}`;
-  return isHexColor(value) ? value : null;
-}
 
 // ---- schowek rysunku (od 1.14): kreski, pola tekstowe i wzory – w pamięci i na urządzeniu
 
@@ -1044,7 +1029,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           input.blur();
         }
       });
-      input.addEventListener('focus', () => requestAnimationFrame(() => input.select()));
+      // select() ustawia też fokus – po szybkim Esc albo Enter (pole już bez fokusu) nie wraca do pola.
+      input.addEventListener('focus', () => requestAnimationFrame(() => {
+        if (document.activeElement === input) input.select();
+      }));
       input.addEventListener('blur', () => {
         commitDim(field);
         requestLive();
@@ -1723,59 +1711,10 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       }, label));
       let body;
       let sync = () => {};
-      if (colorTab === 'grid') {
-        const cells = COLOR_GRID.map((hex, index) => h('button', {
-          type: 'button', class: 'drawing__grid-color', style: { '--swatch': hex }, 'aria-label': hex.toUpperCase(),
-          dataset: { color: hex, testid: `drawing-grid-color-${index}` }, onClick: () => setDraft(hex)
-        }));
-        body = h('div', { class: 'drawing__color-grid', role: 'group', 'aria-label': 'Siatka kolorów' }, cells);
-        sync = () => {
-          for (const cell of cells) cell.setAttribute('aria-pressed', String(cell.dataset.color === colorDraft));
-        };
-      } else if (colorTab === 'sliders') {
-        const channels = ['r', 'g', 'b'].map((name, channel) => ({
-          channel,
-          output: h('span', { class: 'drawing__channel-value' }),
-          range: h('input', {
-            type: 'range', class: 'drawing__range drawing__channel', min: 0, max: 255, step: 1, 'aria-label': CHANNEL_LABELS[channel],
-            dataset: { testid: `drawing-channel-${name}` },
-            onInput: (event) => {
-              const rgb = hexToRgb(colorDraft);
-              rgb[channel] = Number(event.target.value);
-              setDraft(rgbToHex(rgb), 'range');
-            }
-          })
-        }));
-        const hexInput = h('input', {
-          class: 'input drawing__hex', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', maxlength: 7,
-          'aria-label': 'Kod koloru (HEX)', dataset: { testid: 'drawing-color-hex' },
-          onInput: (event) => {
-            const hex = parseHex(event.target.value);
-            event.target.setAttribute('aria-invalid', String(!hex));
-            if (hex) setDraft(hex, 'hex');
-          }
-        });
-        body = h('div', { class: 'drawing__channels' },
-          channels.map(({ channel, output, range }) => h('label', { class: 'drawing__channel-row' },
-            h('span', { class: 'drawing__channel-name' }, 'RGB'[channel]), range, output)),
-          h('label', { class: 'drawing__channel-row' }, h('span', { class: 'drawing__channel-name' }, 'HEX'), hexInput));
-        sync = (source) => {
-          const rgb = hexToRgb(colorDraft);
-          for (const { channel, output, range } of channels) {
-            range.value = String(rgb[channel]);
-            output.textContent = String(rgb[channel]);
-            // Tor suwaka: od zera do pełnej składowej przy dwóch pozostałych bez zmian.
-            const low = [...rgb];
-            const high = [...rgb];
-            low[channel] = 0;
-            high[channel] = 255;
-            range.style.setProperty('--track', `linear-gradient(to right, ${rgbToHex(low)}, ${rgbToHex(high)})`);
-          }
-          if (source !== 'hex') {
-            hexInput.value = colorDraft.toUpperCase();
-            hexInput.removeAttribute('aria-invalid');
-          }
-        };
+      if (colorTab === 'grid' || colorTab === 'sliders') {
+        const part = colorTabBody(colorTab, { prefix: 'drawing', getColor: () => colorDraft, setColor: setDraft });
+        body = part.body;
+        sync = part.sync;
       } else {
         body = h('p', { class: 'drawing__picker-hint' },
           'Dotknij rysunku albo przeciągnij po nim – pipetka pobierze kolor spod palca, rysika albo kursora (także ze zdjęcia pod kreskami). Lupa pokazuje powiększone miejsce.');

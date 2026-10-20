@@ -3,7 +3,8 @@
 // Arkusz notatek ma kolumny Domain, Module, Lesson (jak arkusz pojęć), Note – treść notatki,
 // opcjonalnie Note EN – ta sama notatka po angielsku (od 1.6), Image – obrazy i Image label –
 // sygnatura obrazu z tego wiersza (od 1.6; bez niej „Obraz 1”, „Obraz 2”… po kolei). Linijka
-// [[sygnatura]] w treści to miejsce obrazu. Treść może mieć formatowanie z Excela (pogrubienie, kursywa,
+// [[sygnatura]] w treści to miejsce obrazu; od 1.18 Image caption – podpis pod obrazem.
+// Treść może mieć formatowanie z Excela (pogrubienie, kursywa,
 // podkreślenie, przekreślenie, indeksy, kolor), listy i nagłówki (zob. docFromRichText).
 // Obrazy mogą leżeć w dowolnej kolumnie: wstawione na arkusz (zakotwiczone przy komórce)
 // albo w komórkę – należą do wiersza, w którym jest ich lewy górny róg. Kilka wierszy tej samej
@@ -23,7 +24,8 @@ export const NOTE_FIELDS = Object.freeze([
   { id: 'text', label: 'Treść notatki', header: 'Note' },
   { id: 'textEN', label: 'Treść notatki po angielsku', header: 'Note EN' },
   { id: 'image', label: 'Obrazy', header: 'Image' },
-  { id: 'imageLabel', label: 'Sygnatura obrazu', header: 'Image label' }
+  { id: 'imageLabel', label: 'Sygnatura obrazu', header: 'Image label' },
+  { id: 'imageCaption', label: 'Podpis obrazu', header: 'Image caption' }
 ]);
 
 export const NOTE_HEADER = Object.freeze(NOTE_FIELDS.map((field) => field.header));
@@ -35,7 +37,9 @@ export const IMPORTABLE_IMAGE_TYPES = Object.freeze([
 
 const TEXT_PREFIXES = ['notat', 'note', 'tresc', 'content', 'tekst', 'text', 'komentarz', 'comment', 'uwag'];
 const IMAGE_PREFIXES = ['obraz', 'image', 'img', 'grafik', 'graphic', 'ilustrac', 'illustr', 'zdjec', 'photo', 'foto', 'picture', 'rysun', 'diagram', 'schemat'];
-const LABEL_PREFIXES = ['label', 'sygnatur', 'signature', 'etykiet', 'podpis', 'caption'];
+const LABEL_PREFIXES = ['label', 'sygnatur', 'signature', 'etykiet'];
+/** Podpis pod obrazem (od 1.18; wcześniej „podpis” i „caption” oznaczały sygnaturę). */
+const CAPTION_PREFIXES = ['podpis', 'caption'];
 const ENGLISH_WORDS = ['en', 'eng', 'ang', 'english'];
 
 function words(header) {
@@ -46,6 +50,9 @@ function words(header) {
 export function guessNoteField(header) {
   const parts = words(header);
   if (parts.length === 0) return null;
+  if (parts.some((word) => CAPTION_PREFIXES.some((prefix) => word.startsWith(prefix)))
+    && parts.some((word) => IMAGE_PREFIXES.some((prefix) => word.startsWith(prefix)) || CAPTION_PREFIXES.some((prefix) => word.startsWith(prefix)))
+    && !parts.some((word) => TEXT_PREFIXES.some((prefix) => word.startsWith(prefix)))) return 'imageCaption';
   if (parts.some((word) => LABEL_PREFIXES.some((prefix) => word.startsWith(prefix)))) return 'imageLabel';
   if (parts.some((word) => IMAGE_PREFIXES.some((prefix) => word.startsWith(prefix)))) return 'image';
   const field = guessField(header);
@@ -93,12 +100,12 @@ const LEVELS = ['domain', 'module', 'lesson'];
  * Buduje notatki z arkusza.
  *
  * table   – tabela z odczytu { rich: true } (CSV: zwykła tabela, bez obrazów),
- * mapping – { domain, module, lesson, text, textEN, image, imageLabel } (indeksy kolumn),
+ * mapping – { domain, module, lesson, text, textEN, image, imageLabel, imageCaption } (indeksy kolumn),
  * target  – opcjonalnie lekcja dla wszystkich wierszy: { lessonID } albo { domain, module, lesson };
  *           gdy jej nie ma, lekcję wskazują kolumny (brak kolumny lekcji to błąd).
  *
  * Zwraca:
- *   notes  – [{ key, numbers, domain, module, lesson, lessonID?, html, htmlEN?, images: [{ bytes, type, name, row, label }] }]
+ *   notes  – [{ key, numbers, domain, module, lesson, lessonID?, html, htmlEN?, images: [{ bytes, type, name, row, label, caption }] }]
  *            (htmlEN tylko wtedy, gdy arkusz ma kolumnę Note EN),
  *   issues – [{ number, severity, message }],
  *   counts – { rows, notes, images, rejected, warnings, skippedImages }.
@@ -121,14 +128,16 @@ export function buildNoteRows({ table, mapping, target = null }) {
 
   const carried = { domain: '', module: '', lesson: '' };
   const dataRows = table.rows.slice(1);
-  /** Numer wiersza → sygnatura obrazu wpisana w tym wierszu. */
+  /** Numer wiersza → sygnatura obrazu wpisana w tym wierszu i (od 1.18) podpis obrazu. */
   const labels = new Map();
+  const captions = new Map();
   const richRuns = (row, index) => (index === undefined
     ? []
     : (row.rich?.[index] ?? (String(row.cells[index] ?? '') ? [{ text: String(row.cells[index]) }] : [])));
   for (const row of dataRows) {
     const text = (index) => (index === undefined ? '' : String(row.cells[index] ?? ''));
     if (mapping.imageLabel !== undefined && text(mapping.imageLabel).trim() !== '') labels.set(row.number, text(mapping.imageLabel));
+    if (mapping.imageCaption !== undefined && text(mapping.imageCaption).trim() !== '') captions.set(row.number, text(mapping.imageCaption));
     const place = {};
     let changedAbove = false;
     for (const level of LEVELS) {
@@ -211,7 +220,10 @@ export function buildNoteRows({ table, mapping, target = null }) {
       issues.push({ number: image.row, severity: 'warning', message: `obraz${where} w formacie ${format} nie może być wyświetlony – zapisz go jako PNG albo JPEG; pominięto go` });
       continue;
     }
-    owner.group.images.push({ bytes: image.bytes, type: image.type, name: image.name ?? null, row: image.row, label: labels.get(image.row) ?? null });
+    owner.group.images.push({
+      bytes: image.bytes, type: image.type, name: image.name ?? null, row: image.row, label: labels.get(image.row) ?? null,
+      caption: captions.get(image.row) ?? null
+    });
     // Wiersz z samym obrazem też należy do notatki (np. „Wiersze 2–3”).
     if (!owner.group.numbers.includes(image.row)) owner.group.numbers.push(image.row);
   }

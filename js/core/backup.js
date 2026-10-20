@@ -16,7 +16,7 @@ import { LibraryError } from './library.js';
 import { IMAGE_EXTENSIONS, imageInfo } from './images.js';
 import { cleanFileName, fileTypeOf } from './note-files.js';
 import { normalizeNoteHtml } from './note-format.js';
-import { withImageLabels } from './note-refs.js';
+import { cleanImageCaption, withImageLabels } from './note-refs.js';
 import { blankToNull, collapseWhitespace, normalizeKey } from './text.js';
 import { ZipError, ZipWriter, openZipBlob } from './zip.js';
 
@@ -223,6 +223,7 @@ export function validateBackup(raw) {
       html,
       htmlEN,
       imagesFirst: record.imagesFirst === true,
+      numberFigures: record.numberFigures === true,
       images: withImageLabels(metas.map((meta) => imageMeta(meta, embedded.get(meta.id)))),
       files: files.map(fileMeta),
       createdAt: record.createdAt ?? nowISO(),
@@ -265,6 +266,8 @@ function imageMeta(meta, image = null) {
     crc: Number.isInteger(source.crc) ? source.crc : null,
     name: typeof source.name === 'string' ? source.name : null,
     label: typeof meta.label === 'string' ? meta.label : null,
+    // Podpis pod obrazem (od 1.18).
+    ...(cleanImageCaption(meta.caption) ? { caption: cleanImageCaption(meta.caption) } : {}),
     // Rysunek do edycji (od 1.12) – kreski są w pliku obrazów i załączników.
     ...(meta.drawing === true ? { drawing: true } : {})
   };

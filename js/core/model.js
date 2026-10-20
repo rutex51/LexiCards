@@ -312,7 +312,7 @@ export function noteFileMeta(record, name = null) {
  * Opis obrazu przechowywany w notatce (bez bajtów); `label` – sygnatura obrazu w notatce (od 1.6),
  * `drawing: true` – obraz jest rysunkiem do edycji (od 1.12; same kreski są w rekordzie obrazu).
  */
-export function noteImageMeta(record, label = null) {
+export function noteImageMeta(record, label = null, caption = null) {
   return {
     id: record.id,
     type: record.type,
@@ -322,6 +322,8 @@ export function noteImageMeta(record, label = null) {
     crc: record.crc ?? null,
     name: record.name ?? null,
     label: label ?? null,
+    // Podpis pod obrazem (od 1.18) – tylko gdy jest.
+    ...(caption ? { caption } : {}),
     ...(record.drawing ? { drawing: true } : {})
   };
 }

@@ -20,7 +20,7 @@
 // ze stroną, która po przewróceniu leży po drugiej stronie grzbietu.
 
 import { normalizeNoteHtml } from '../core/note-format.js';
-import { findImageByLabel, referenceLabel, withImageLabels } from '../core/note-refs.js';
+import { figureCaption, figureNumbers, findImageByLabel, referenceLabel, withImageLabels } from '../core/note-refs.js';
 import {
   IDENTITY, applyMatrix, constrainCorner, cornerLift, cornerOf, cornerPath, foldGeometry, gripOf, mirror, multiply, turnedCorner
 } from '../core/page-curl.js';
@@ -47,7 +47,10 @@ function reducedMotion() {
  * akapit z samym odwołaniem [[sygnatura]] staje się obrazem, odwołanie bez obrazu zostaje
  * tekstem oznaczonym na czerwono; obrazy bez odwołania są na początku albo na końcu.
  */
-function contentUnits(html, images, imagesFirst = false, language = 'pl') {
+function contentUnits(html, images, imagesFirst = false, language = 'pl', numberFigures = false) {
+  // Podpis pod obrazem (od 1.18): „Rys. N. podpis” albo sam podpis.
+  const numbers = figureNumbers(html, images, imagesFirst);
+  const captionOf = (index) => figureCaption(images[index]?.caption, numbers[index], numberFigures);
   const template = document.createElement('template');
   template.innerHTML = normalizeNoteHtml(html);
   const root = document.importNode(template.content, true);
@@ -66,7 +69,7 @@ function contentUnits(html, images, imagesFirst = false, language = 'pl') {
       const label = tag === 'p' ? referenceLabel(node.textContent) : null;
       const index = label === null ? -1 : findImageByLabel(images, label);
       if (index >= 0) {
-        units.push({ kind: 'image', index });
+        units.push({ kind: 'image', index, caption: captionOf(index) });
         referenced.add(index);
         continue;
       }
@@ -79,7 +82,7 @@ function contentUnits(html, images, imagesFirst = false, language = 'pl') {
   }
   // Wzory $…$ – już po rozpoznaniu odwołań do obrazów (te sprawdzają sam tekst).
   for (const unit of units) if (unit.node) renderMath(unit.node, language);
-  const rest = images.map((_, index) => index).filter((index) => !referenced.has(index)).map((index) => ({ kind: 'image', index }));
+  const rest = images.map((_, index) => index).filter((index) => !referenced.has(index)).map((index) => ({ kind: 'image', index, caption: captionOf(index) }));
   const all = imagesFirst ? [...rest, ...units] : [...units, ...rest];
   return all.map((unit, source) => ({ ...unit, source }));
 }
@@ -175,10 +178,21 @@ function paginate(units, images, content, available, language = 'pl') {
   /** Wysokość obrazu na stronie: cała szerokość strony, najwyżej cała wysokość (albo `limit`). */
   const imageHeight = (unit, limit = available) => Math.max(40, Math.min(width / ratioOf(unit), available, limit));
 
+  /** Wysokość podpisu pod obrazem razem z odstępem (podpis próbnie na stronie) – obraz jest o tyle niższy. */
+  const captionNode = (unit) => h('p', { class: 'note-page__caption', dataset: { testid: 'note-figure-caption' } }, unit.caption);
+  const captionHeight = (unit) => {
+    if (!unit.caption) return 0;
+    const probe = captionNode(unit);
+    content.append(probe);
+    const height = probe.getBoundingClientRect().height / scale + parseFloat(getComputedStyle(probe).marginTop || '0');
+    probe.remove();
+    return height;
+  };
   const figure = (unit) => {
     const meta = images[unit.index] ?? {};
     const ratio = ratioOf(unit);
-    const height = imageHeight(unit, unit.limit ?? available);
+    const reserved = captionHeight(unit);
+    const height = imageHeight(unit, Math.max(MIN_IMAGE_HEIGHT, (unit.limit ?? available) - reserved));
     if (!meta.url) {
       // Obraz bez pliku na urządzeniu (przywrócone same dane) – ramka z wyjaśnieniem.
       return h('button', {
@@ -190,16 +204,17 @@ function paginate(units, images, content, available, language = 'pl') {
         h('strong', null, meta.label ? `Brak pliku obrazu „${meta.label}”` : 'Brak pliku obrazu'),
         h('span', null, 'Przywróć plik obrazów i załączników w Ustawieniach.'));
     }
-    return h('button', {
+    const button = h('button', {
       type: 'button',
       class: 'note-page__figure',
       style: { height: `${height}px` },
-      'aria-label': `Powiększ obraz ${unit.index + 1} z ${images.length}`,
+      'aria-label': `Powiększ obraz ${unit.index + 1} z ${images.length}${unit.caption ? ` – ${unit.caption}` : ''}`,
       dataset: { index: String(unit.index) }
     }, h('img', {
       src: meta.url, alt: '', draggable: 'false',
       style: { width: `${Math.min(width, height * ratio)}px`, height: `${height}px` }
     }));
+    return unit.caption ? h('figure', { class: 'note-page__figure-box' }, button, captionNode(unit)) : button;
   };
 
   /** Dokłada jednostkę na bieżącą stronę; zwraca funkcję cofającą. */
@@ -418,13 +433,14 @@ const foldDepth = (geometry) => Math.max(0, ...geometry.folded.map((vertex) =>
  * element – miejsce na strony (rozciąga się na dostępną wysokość), pager – przyciski stron.
  * images: [{ url, width, height }]; onOpenImage(index) – dotknięcie obrazu.
  * spread – dwie strony obok siebie na dużym ekranie (wybór zapamiętuje onSpreadChange);
- * imagesFirst – obrazy bez odwołania przed tekstem; language – język treści ('pl' | 'en').
+ * imagesFirst – obrazy bez odwołania przed tekstem; numberFigures – podpisy „Rys. N.” (od 1.18);
+ * language – język treści ('pl' | 'en'). Podpis obrazu (caption) jest pod nim, wyśrodkowany.
  */
 export function noteBook({
-  html, images, imagesFirst = false, language = 'pl', onOpenImage, onLayout = () => {}, spread: spreadChosen = false,
+  html, images, imagesFirst = false, numberFigures = false, language = 'pl', onOpenImage, onLayout = () => {}, spread: spreadChosen = false,
   onSpreadChange = () => {}
 }) {
-  const units = contentUnits(html, withImageLabels(images), imagesFirst, language);
+  const units = contentUnits(html, withImageLabels(images), imagesFirst, language, numberFigures);
   const element = h('div', { class: 'note-book', dataset: { testid: 'note-book' } });
   const indicator = h('span', { class: 'note-pager__indicator', 'aria-live': 'polite', dataset: { testid: 'note-page-indicator' } });
   const spreadButton = h('button', {

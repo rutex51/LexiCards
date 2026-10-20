@@ -175,9 +175,12 @@ export const SELECT_SHAPES = Object.freeze(['rect', 'lasso']);
 export const SELECT_MODES = Object.freeze(['auto', 'whole', 'region', 'snip']);
 export const SELECT_MODE_LABELS = Object.freeze({ auto: 'Auto', whole: 'Całe', region: 'Fragmenty', snip: 'Wycinek' });
 
-/** Pola tekstowe i wzory (od 1.13): wielkość czcionki w jednostkach strony (kratka ma 44). */
-export const TEXT_SIZES = Object.freeze([28, 40, 56]);
-export const TEXT_SIZE_LABELS = Object.freeze(['Mała', 'Średnia', 'Duża']);
+/**
+ * Pola tekstowe i wzory (od 1.13): wielkość czcionki w jednostkach strony (kratka ma 44); od 1.18
+ * także „Bardzo duża” – te same cztery wielkości co tekst notatki.
+ */
+export const TEXT_SIZES = Object.freeze([28, 40, 56, 80]);
+export const TEXT_SIZE_LABELS = Object.freeze(['Mała', 'Średnia', 'Duża', 'Bardzo duża']);
 /** Najdłuższy tekst pola i zapis wzoru. */
 export const ELEMENT_TEXT_MAX = 2000;
 

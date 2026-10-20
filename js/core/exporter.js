@@ -30,7 +30,7 @@ export const EXPORT_HEADER = Object.freeze(IMPORT_FIELDS.map((field) => field.he
 /** Nazwy arkuszy eksportu i wzoru. */
 export const TERMS_SHEET = 'Pojęcia';
 export const NOTES_SHEET = 'Notatki';
-const NOTE_COLUMN_WIDTHS = [20, 22, 24, 64, 64, 48, 18];
+const NOTE_COLUMN_WIDTHS = [20, 22, 24, 64, 64, 48, 18, 36];
 const NOTE_IMAGE_COLUMN = NOTE_HEADER.indexOf('Image');
 
 function termRow(domain, module, lesson, term) {
@@ -116,7 +116,9 @@ function notesSheet(entries) {
         first && runs.length > 0 ? { runs } : null,
         first && runsEN.length > 0 ? { runs: runsEN } : null,
         null,
-        image ? image.label : null
+        image ? image.label : null,
+        // Podpis pod obrazem (od 1.18).
+        image?.caption ?? null
       ]);
       if (image) images.push({ ...image, row: rows.length, column: NOTE_IMAGE_COLUMN });
     }

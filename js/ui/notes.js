@@ -10,14 +10,20 @@ import { sentences } from '../core/listen.js';
 import { NOTE_FILE_LIMIT, NOTE_FILE_MAX_BYTES, NOTE_IMAGE_LIMIT } from '../core/model.js';
 import { bytesToBase64 } from '../core/base64.js';
 import { nextDrawingLabel } from '../core/drawing.js';
-import { NOTE_COLORS, PAGE_BREAK_LINE, isEmptyNoteHtml, noteText, normalizeNoteHtml, portableNoteHtml } from '../core/note-format.js';
 import {
-  IMAGE_LABEL_MAX, cleanImageLabel, findImageByLabel, labelKey, referenceLabel, referenceToken, renameReferences, withImageLabels
+  MAX_INDENT, NOTE_COLORS, NOTE_NO_COLOR, NOTE_SIZES, PAGE_BREAK_LINE, editorNoteHtml, isEmptyNoteHtml, noteText, normalizeNoteHtml,
+  portableNoteHtml
+} from '../core/note-format.js';
+import {
+  IMAGE_CAPTION_MAX, IMAGE_LABEL_MAX, cleanImageCaption, cleanImageLabel, figureCaption, figureNumbers, findImageByLabel, labelKey,
+  referenceLabel, referenceToken, renameReferences, withImageLabels
 } from '../core/note-refs.js';
 import { FILE_NAME_MAX, cleanFileName, fileExtension, fileTypeOf, formatDuration, recordingName, renamedFile } from '../core/note-files.js';
 import { joinList, pluralAttachments, pluralImages } from '../core/text.js';
 import { attachmentList, fileBadge, fileDescription, openAttachment } from './attachments.js';
-import { field, iconButton, segmented, textInput } from './components.js';
+import { enableGridDrag } from './grid-drag.js';
+import { openColorSheet, readCustomColors } from './color-picker.js';
+import { field, iconButton, segmented, textInput, toggle } from './components.js';
 import { confirmDialog, mountDialog, openFormSheet, openMenu, showError, toast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { openDrawingEditor } from './drawing.js';
@@ -31,7 +37,7 @@ import { speakThen, speechAvailable, stopSpeaking } from './speech.js';
 let titleCounter = 0;
 
 /** Kolor oznaczający „bez koloru” w edytorze – po zapisie znika (nie należy do palety). */
-const NO_COLOR = '#010101';
+const NO_COLOR = NOTE_NO_COLOR;
 /** Największy łączny rozmiar obrazów kopiowanych do schowka razem z tekstem. */
 const CLIPBOARD_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -39,16 +45,24 @@ const FORMAT_BUTTONS = [
   { command: 'bold', icon: 'bold', label: 'Pogrubienie', keys: 'Ctrl+B' },
   { command: 'italic', icon: 'italic', label: 'Kursywa', keys: 'Ctrl+I' },
   { command: 'underline', icon: 'underline', label: 'Podkreślenie', keys: 'Ctrl+U' },
+  // Od 1.18: indeks górny i dolny, wielkość tekstu, wcięcie (też Tab i Shift+Tab).
+  { command: 'superscript', icon: 'superscript', label: 'Indeks górny', keys: 'Ctrl+.' },
+  { command: 'subscript', icon: 'subscript', label: 'Indeks dolny', keys: 'Ctrl+,' },
+  { command: 'size', icon: 'textSize', label: 'Wielkość tekstu' },
+  { command: 'color', icon: 'textColor', label: 'Kolor tekstu' },
   { command: 'heading', icon: 'heading', label: 'Nagłówek' },
   { command: 'insertUnorderedList', icon: 'listBullet', label: 'Lista punktowana' },
   { command: 'insertOrderedList', icon: 'listNumber', label: 'Lista numerowana' },
+  { command: 'outdent', icon: 'outdent', label: 'Zmniejsz wcięcie', keys: 'Shift+Tab' },
+  { command: 'indent', icon: 'indent', label: 'Zwiększ wcięcie', keys: 'Tab' },
   { command: 'pageBreak', icon: 'pageBreak', label: 'Nowa strona' },
   // Wzory (od 1.11): zapis $…$ i ściągawka zapisu.
   { command: 'equation', icon: 'sigma', label: 'Wzór', keys: '$…$' },
   { command: 'equationHelp', icon: 'info', label: 'Równania – ściągawka' },
-  { command: 'color', icon: 'textColor', label: 'Kolor tekstu' },
   { command: 'removeFormat', icon: 'clearFormat', label: 'Usuń formatowanie' }
 ];
+/** Polecenia bez stanu włączenia (przycisk nie jest przełącznikiem). */
+const ACTION_COMMANDS = ['color', 'size', 'removeFormat', 'pageBreak', 'equation', 'equationHelp', 'indent', 'outdent'];
 
 // ---------------------------------------------------------------- elementy list
 
@@ -131,12 +145,16 @@ async function copyNote(note, images, language = 'pl') {
   const source = language === 'en' ? (note.htmlEN ?? '') : note.html;
   const text = noteText(source);
   const labeled = withImageLabels(images);
+  // Podpisy pod obrazami (od 1.18) – jak w podglądzie.
+  const numbers = figureNumbers(source, labeled, note.imagesFirst === true);
   let total = 0;
   const picture = (image) => {
     if (!image.bytes) return '';
     total += image.bytes.byteLength;
     if (total > CLIPBOARD_IMAGE_BYTES) return '';
-    return `<p><img src="data:${image.type};base64,${bytesToBase64(image.bytes)}" alt="" style="max-width:100%"></p>`;
+    const caption = figureCaption(image.caption, numbers[labeled.indexOf(image)], note.numberFigures === true);
+    const below = caption ? `<p style="text-align:center">${caption.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</p>` : '';
+    return `<p><img src="data:${image.type};base64,${bytesToBase64(image.bytes)}" alt="" style="max-width:100%"></p>${below}`;
   };
   const holder = document.createElement('template');
   holder.innerHTML = portableNoteHtml(source);
@@ -184,7 +202,7 @@ async function copyNote(note, images, language = 'pl') {
 /**
  * Obraz na cały ekran: powiększanie dwoma palcami, dwukrotnym dotknięciem, kółkiem z Ctrl
  * i klawiszami + / −; przesuwanie palcem; przy kilku obrazach – przewijanie w bok i strzałki.
- * images: [{ url, width, height }].
+ * images: [{ url, width, height, caption? }] – caption (od 1.18) – podpis pod obrazem.
  */
 export function openLightbox(images, startIndex = 0) {
   let index = startIndex;
@@ -193,6 +211,8 @@ export function openLightbox(images, startIndex = 0) {
   const image = h('img', { class: 'lightbox__image', alt: '', draggable: 'false' });
   const stage = h('div', { class: 'lightbox__stage', dataset: { testid: 'lightbox-stage' } }, image);
   const counter = h('span', { class: 'lightbox__counter', 'aria-live': 'polite' });
+  // Podpis obrazu (od 1.18) pod obrazem.
+  const captionLine = h('p', { class: 'lightbox__caption', hidden: true, dataset: { testid: 'lightbox-caption' } });
   const close = h('button', { type: 'button', class: 'lightbox__button lightbox__close', 'aria-label': 'Zamknij', dataset: { testid: 'lightbox-close' }, onClick: () => dialog.close() }, icon('close'));
   const previous = h('button', { type: 'button', class: 'lightbox__button lightbox__previous', 'aria-label': 'Poprzedni obraz', onClick: () => show(index - 1) }, icon('chevronLeft'));
   const next = h('button', { type: 'button', class: 'lightbox__button lightbox__next', 'aria-label': 'Następny obraz', onClick: () => show(index + 1) }, icon('chevronRight'));
@@ -233,6 +253,8 @@ export function openLightbox(images, startIndex = 0) {
     stage.classList.remove('lightbox__stage--zoomed');
     requestAnimationFrame(() => { image.style.width = `${fitWidth()}px`; });
     counter.textContent = images.length > 1 ? `${index + 1} z ${images.length}` : '';
+    captionLine.textContent = images[index].caption ?? '';
+    captionLine.hidden = !images[index].caption;
     previous.hidden = images.length < 2 || index === 0;
     next.hidden = images.length < 2 || index === images.length - 1;
   };
@@ -312,7 +334,7 @@ export function openLightbox(images, startIndex = 0) {
 
   const panel = h('div', { class: 'lightbox__panel', role: 'document' },
     h('div', { class: 'lightbox__bar' }, counter, h('span', { class: 'lightbox__spacer' }), zoomButton, close),
-    stage, previous, next
+    stage, captionLine, previous, next
   );
   dialog = mountDialog('lightbox', panel, {
     onClose: () => {
@@ -329,15 +351,15 @@ export function openLightbox(images, startIndex = 0) {
   return dialog;
 }
 
-/** Powiększenie obrazu notatki; obrazy bez pliku na urządzeniu są pomijane. */
-function openImage(images, index) {
-  const shown = images.filter((image) => image.url);
-  const at = shown.indexOf(images[index]);
+/** Powiększenie obrazu notatki; obrazy bez pliku na urządzeniu są pomijane. captions – podpisy obrazów (od 1.18). */
+function openImage(images, index, captions = []) {
+  const shown = images.map((image, position) => ({ image, caption: captions[position] ?? null })).filter((entry) => entry.image.url);
+  const at = shown.findIndex((entry) => entry.image === images[index]);
   if (at < 0) {
     toast('Pliku tego obrazu nie ma na tym urządzeniu. Przywróć plik obrazów i załączników w Ustawieniach (Kopia zapasowa).', { kind: 'error' });
     return;
   }
-  openLightbox(shown, at);
+  openLightbox(shown.map((entry) => ({ ...entry.image, caption: entry.caption })), at);
 }
 
 /** Fokus na panelu okna zamiast na pierwszym przycisku (bez ramki fokusu po otwarciu). */
@@ -547,12 +569,14 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
         return;
       }
       // Treść jest normalizowana przed wstawieniem – tylko bezpieczne znaczniki notatki.
+      const numbers = figureNumbers(html, stored, note.imagesFirst === true);
       book = noteBook({
         html,
         images: stored,
         imagesFirst: note.imagesFirst === true,
+        numberFigures: note.numberFigures === true,
         language,
-        onOpenImage: (index) => openImage(stored, index),
+        onOpenImage: (index) => openImage(stored, index, stored.map((image, position) => figureCaption(image.caption, numbers[position], note.numberFigures === true))),
         onLayout: setPaged,
         spread: library.getSettings().noteSpread !== false,
         onSpreadChange: (spread) => library.updateSettings({ noteSpread: spread }).catch((error) => console.error(error))
@@ -623,6 +647,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
         language: language ?? 'pl',
         images: stored,
         imagesFirst: note?.imagesFirst === true,
+        numberFigures: note?.numberFigures === true,
         files,
         loadFile,
         urls,
@@ -737,11 +762,14 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
  * files – opisy załączników notatki, loadFile(meta) → bajty zapisanego załącznika.
  * Zwraca { element, draft(), dirty(), busy(), focus(), destroy() }.
  */
-function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFirst = false, files = [], loadFile = null, titleID = 'note' }) {
+function noteEditor({
+  html, htmlEN = '', language = 'pl', images, urls, imagesFirst = false, numberFigures = false, files = [], loadFile = null, titleID = 'note'
+}) {
   const initialTexts = { pl: normalizeNoteHtml(html), en: normalizeNoteHtml(htmlEN) };
   const state = {
     images: withImageLabels(images.map((image) => ({ ...image }))),
     imagesFirst,
+    numberFigures,
     /** Załączniki: zapisane { id, name, type, size, stored: true } albo nowe { name, type, size, bytes }. */
     files: files.map((file) => ({ ...file, stored: true })),
     filesPending: 0,
@@ -751,7 +779,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     pending: 0,
     range: null
   };
-  const imagesKey = () => state.images.map((image) => `${image.id ?? image.url}:${image.label}`).join(',');
+  const imagesKey = () => state.images.map((image) => `${image.id ?? image.url}:${image.label}:${image.caption ?? ''}`).join(',');
   const initialImages = imagesKey();
   let added = 0;
   const filesKey = () => state.files.map((file) => `${file.id ?? file.key}:${file.name}`).join('\n');
@@ -771,7 +799,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
   /** Pole pokazuje wersję w danym języku (podpowiedź, język sprawdzania pisowni, etykieta). */
   const showLanguage = (value) => {
     state.language = value;
-    area.innerHTML = state.texts[value] || '<p><br></p>';
+    area.innerHTML = editorNoteHtml(state.texts[value]) || '<p><br></p>';
     area.lang = value;
     area.dataset.placeholder = value === 'en' ? 'Treść notatki po angielsku…' : 'Wpisz albo wklej treść notatki…';
     area.setAttribute('aria-label', value === 'en' ? 'Treść notatki po angielsku' : 'Treść notatki');
@@ -783,17 +811,63 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
 
   // ---- pasek formatowania
   const buttons = new Map();
-  const colorPanel = h('div', { class: 'note-colors', hidden: true, role: 'group', 'aria-label': 'Kolor tekstu' },
-    [...NOTE_COLORS.map((color) => h('button', {
-      type: 'button', class: 'note-colors__swatch', dataset: { color: color.id }, 'aria-label': color.label, title: color.label,
+  const colorPanel = h('div', { class: 'note-colors', hidden: true, role: 'group', 'aria-label': 'Kolor tekstu', dataset: { testid: 'note-colors' } });
+  /**
+   * Kolory: paleta, do trzech ostatnich własnych (od 1.18 – wspólne z rysunkiem), „+” – siatka,
+   * suwaki RGB i pipetka, „Bez koloru”.
+   */
+  function renderColorPanel() {
+    const choose = (hex) => {
+      colorPanel.hidden = true;
+      run('foreColor', hex);
+    };
+    const custom = readCustomColors();
+    replaceChildren(colorPanel,
+      NOTE_COLORS.map((color) => h('button', {
+        type: 'button', class: 'note-colors__swatch', dataset: { color: color.id, testid: `note-color-${color.id}` }, 'aria-label': color.label, title: color.label,
+        onMousedown: (event) => event.preventDefault(),
+        onClick: () => choose(color.hex)
+      })),
+      custom.map((hex, index) => h('button', {
+        type: 'button', class: 'note-colors__swatch', style: { '--swatch': hex }, 'aria-label': `Własny kolor ${hex.toUpperCase()}`, title: hex.toUpperCase(),
+        dataset: { testid: `note-color-custom-${index}` },
+        onMousedown: (event) => event.preventDefault(),
+        onClick: () => choose(hex)
+      })),
+      h('button', {
+        type: 'button', class: 'note-colors__swatch note-colors__swatch--add', 'aria-label': 'Inny kolor – siatka, suwaki albo pipetka', title: 'Inny kolor',
+        dataset: { testid: 'note-color-other' },
+        onMousedown: (event) => event.preventDefault(),
+        onClick: () => {
+          colorPanel.hidden = true;
+          // Po zamknięciu okna przeglądarka stawia kursor na początku tekstu – kolor trafia tam, gdzie był.
+          const range = state.range?.cloneRange() ?? null;
+          openColorSheet({
+            title: 'Kolor tekstu', initial: custom[0],
+            onPick: (hex) => {
+              state.range = range;
+              run('foreColor', hex);
+            }
+          });
+        }
+      }, icon('plus', { size: 16 })),
+      h('button', {
+        type: 'button', class: 'note-colors__swatch note-colors__swatch--none', 'aria-label': 'Bez koloru', title: 'Bez koloru',
+        dataset: { testid: 'note-color-none' },
+        onMousedown: (event) => event.preventDefault(),
+        onClick: () => choose(NO_COLOR)
+      }, icon('close', { size: 16 })));
+  }
+  /** Wielkość tekstu (od 1.18): mała, średnia (zwykła), duża, bardzo duża. */
+  const sizePanel = h('div', { class: 'note-sizes', hidden: true, role: 'group', 'aria-label': 'Wielkość tekstu', dataset: { testid: 'note-sizes' } },
+    NOTE_SIZES.map((size) => h('button', {
+      type: 'button', class: 'note-sizes__option', style: { fontSize: `${size.em}em` }, dataset: { testid: `note-size-${size.id ?? 'm'}` },
       onMousedown: (event) => event.preventDefault(),
-      onClick: () => { run('foreColor', color.hex); colorPanel.hidden = true; }
-    })), h('button', {
-      type: 'button', class: 'note-colors__swatch note-colors__swatch--none', 'aria-label': 'Bez koloru', title: 'Bez koloru',
-      onMousedown: (event) => event.preventDefault(),
-      onClick: () => { run('foreColor', NO_COLOR); colorPanel.hidden = true; }
-    }, icon('close', { size: 16 }))]
-  );
+      onClick: () => {
+        sizePanel.hidden = true;
+        run('fontSize', size.command);
+      }
+    }, size.label)));
 
   const toolbar = h('div', { class: 'note-toolbar', role: 'toolbar', 'aria-label': 'Formatowanie tekstu' },
     FORMAT_BUTTONS.map((definition) => {
@@ -804,10 +878,24 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
         title: definition.keys ? `${definition.label} (${definition.keys})` : definition.label,
         dataset: { command: definition.command, testid: `note-format-${definition.command}` },
         // Przycisk nie zabiera fokusu – zaznaczenie w tekście zostaje.
-        onMousedown: (event) => event.preventDefault(),
+        onMousedown: (event) => {
+          event.preventDefault();
+          captureSelection();
+        },
         onClick: () => {
           if (definition.command === 'color') {
+            if (colorPanel.hidden) renderColorPanel();
             colorPanel.hidden = !colorPanel.hidden;
+            sizePanel.hidden = true;
+            return;
+          }
+          if (definition.command === 'size') {
+            sizePanel.hidden = !sizePanel.hidden;
+            colorPanel.hidden = true;
+            return;
+          }
+          if (definition.command === 'indent' || definition.command === 'outdent') {
+            indent(definition.command === 'indent');
             return;
           }
           if (definition.command === 'pageBreak') {
@@ -830,11 +918,22 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
           run(definition.command);
         }
       }, icon(definition.icon, { size: 20 }));
-      if (!['color', 'removeFormat', 'pageBreak', 'equation', 'equationHelp'].includes(definition.command)) button.setAttribute('aria-pressed', 'false');
+      if (!ACTION_COMMANDS.includes(definition.command)) button.setAttribute('aria-pressed', 'false');
       buttons.set(definition.command, button);
       return button;
     })
   );
+
+  /**
+   * Bieżące zaznaczenie w tekście – przed poleceniem z klawiatury albo przycisku (zapamiętane przy
+   * „selectionchange” przychodzi z opóźnieniem, a przy szybkim pisaniu wskazywałoby wcześniejsze miejsce).
+   */
+  const captureSelection = () => {
+    const selection = window.getSelection();
+    if (document.activeElement !== area || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (area.contains(range.commonAncestorContainer)) state.range = range.cloneRange();
+  };
 
   const restoreSelection = () => {
     if (document.activeElement !== area) area.focus({ preventScroll: true });
@@ -863,6 +962,25 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     document.execCommand(command, false, value);
     syncEmpty();
     updateToolbar();
+  }
+
+  /**
+   * Wcięcie (od 1.18): akapit i nagłówek – polecenie przeglądarki „indent” (zagnieżdżony
+   * <blockquote>, z cofaniem), punkt listy – lista poziom niżej. Najwyżej cztery stopnie akapitu
+   * i trzy poziomy listy.
+   */
+  function indent(more) {
+    restoreSelection();
+    const selection = window.getSelection();
+    let node = selection.rangeCount ? selection.getRangeAt(0).startContainer : null;
+    let quotes = 0;
+    let lists = 0;
+    for (; node && node !== area; node = node.parentNode) {
+      if (node.nodeName === 'BLOCKQUOTE') quotes += 1;
+      if (node.nodeName === 'UL' || node.nodeName === 'OL') lists += 1;
+    }
+    if (more && (lists > 0 ? lists >= 3 : quotes >= MAX_INDENT)) return;
+    run(more ? 'indent' : 'outdent');
   }
 
   /**
@@ -946,12 +1064,20 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
   });
   area.addEventListener('input', syncEmpty);
   area.addEventListener('keydown', (event) => {
+    // Tab i Shift+Tab (od 1.18) – wcięcie zamiast przejścia do następnego pola.
+    if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      captureSelection();
+      indent(!event.shiftKey);
+      return;
+    }
     // Skróty jak w edytorach tekstu (przeglądarka obsługuje je i tak; tu – spójnie w każdej).
     if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
     const key = event.key.toLowerCase();
-    const command = { b: 'bold', i: 'italic', u: 'underline' }[key];
+    const command = { b: 'bold', i: 'italic', u: 'underline', '.': 'superscript', ',': 'subscript' }[key];
     if (command) {
       event.preventDefault();
+      captureSelection();
       run(command);
     }
   });
@@ -974,7 +1100,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
       // Przeglądarka najpierw porządkuje HTML (np. z Worda), potem zostaje tylko to, co notatka obsługuje.
       const parsed = new window.DOMParser().parseFromString(html, 'text/html');
       const clean = normalizeNoteHtml(parsed.body.innerHTML);
-      if (clean) document.execCommand('insertHTML', false, clean);
+      if (clean) document.execCommand('insertHTML', false, editorNoteHtml(clean));
     } else if (text) {
       document.execCommand('insertText', false, text);
     }
@@ -983,6 +1109,32 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
 
   // ---- obrazy
   const grid = h('div', { class: 'note-images', dataset: { testid: 'note-images' } });
+  // Kolejność przeciąganiem (od 1.18); nieudane albo bez zmiany – siatka wraca do stanu z listy.
+  enableGridDrag(grid, {
+    itemSelector: '.note-images__item:not(.note-images__item--pending)',
+    ignore: '.note-images__remove',
+    onDrop: (order) => {
+      if (order) state.images = order.map((index) => state.images[index]);
+      renderImages();
+    }
+  });
+  /**
+   * Najwyżej dwa rzędy (od 1.18): gdy kafelki się nie mieszczą, siatka przewija się w bok – jak
+   * dziedziny na Starcie; kafelki mają tę samą wielkość co bez przewijania (kawałek następnej
+   * kolumny podpowiada przewijanie).
+   */
+  const TILE_MIN = 96;
+  const TILE_GAP = 10;
+  function layoutGrid() {
+    const width = grid.clientWidth;
+    if (!width) return;
+    const fit = Math.max(2, Math.floor((width + TILE_GAP) / (TILE_MIN + TILE_GAP)));
+    const scroll = grid.children.length > fit * 2;
+    grid.classList.toggle('note-images--scroll', scroll);
+    grid.style.gridAutoColumns = scroll ? `${Math.floor((width - TILE_GAP * fit) / (fit + 0.3))}px` : '';
+  }
+  const gridObserver = new ResizeObserver(() => layoutGrid());
+  gridObserver.observe(grid);
   const status = h('p', { class: 'note-images__status', role: 'status' });
   const fileInput = h('input', {
     type: 'file', accept: 'image/*', multiple: true, hidden: true, dataset: { testid: 'note-image-input' },
@@ -1029,12 +1181,37 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     requestAnimationFrame(() => input.select());
   }
 
+  /**
+   * Podpis pod obrazem (od 1.18): w podglądzie wyśrodkowany pod obrazem, z numeracją „Rys. N.”,
+   * gdy jest włączona. Pusty podpis go usuwa.
+   */
+  function editCaption(image) {
+    let value = image.caption ?? '';
+    const input = textInput({ value, onInput: (text) => { value = text; }, autocapitalize: 'sentences', testID: 'note-image-caption' });
+    input.maxLength = IMAGE_CAPTION_MAX;
+    openFormSheet({
+      title: 'Podpis pod obrazem',
+      build: () => field('Podpis', input, {
+        hint: state.numberFigures
+          ? 'W podglądzie pod obrazem, z numerem: „Rys. 2. Podpis” (numer – kolejność obrazów w notatce). Pusty podpis go usuwa.'
+          : 'W podglądzie wyśrodkowany pod obrazem. Numerację „Rys. 1.”, „Rys. 2.” włączysz pod obrazami. Pusty podpis go usuwa.'
+      }),
+      onSubmit: () => {
+        const caption = cleanImageCaption(value);
+        if (caption) image.caption = caption;
+        else delete image.caption;
+        renderImages();
+      }
+    });
+    requestAnimationFrame(() => input.select());
+  }
+
   // ---- rysunki (od 1.12): obraz z kreskami do późniejszej edycji
   const isDrawing = (image) => Boolean(image.drawing && typeof image.drawing === 'object');
 
   /** Wynik edytora rysunku jako nowy (jeszcze niezapisany) obraz notatki. */
-  const drawnImage = (result, label) => ({
-    ...result.image, name: null, drawing: result.drawing, stored: false, url: urls.add(result.image), label
+  const drawnImage = (result, label, caption = null) => ({
+    ...result.image, name: null, drawing: result.drawing, stored: false, url: urls.add(result.image), label, ...(caption ? { caption } : {})
   });
 
   /**
@@ -1098,12 +1275,15 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     const result = await openDrawingEditor({ ...options, onEmbed: embedder(image).embed });
     const position = state.images.indexOf(image);
     if (!result || position < 0) return;
-    state.images[position] = drawnImage(result, image.label);
+    state.images[position] = drawnImage(result, image.label, image.caption);
     renderImages();
   }
 
   function renderImages() {
-    const tiles = state.images.map((image, index) => h('div', { class: isDrawing(image) ? 'note-images__item note-images__item--drawing' : 'note-images__item' },
+    const tiles = state.images.map((image, index) => h('div', {
+      class: isDrawing(image) ? 'note-images__item note-images__item--drawing' : 'note-images__item',
+      dataset: { index: String(index), testid: 'note-image-tile' }
+    },
       h('button', {
         type: 'button', class: 'note-images__open', 'aria-label': `${image.label} – polecenia`,
         onClick: () => openMenu({
@@ -1112,6 +1292,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
             isDrawing(image) ? { label: 'Edytuj rysunek', icon: 'pen', onSelect: () => redraw(image) } : null,
             { label: 'Wstaw do tekstu', icon: 'note', onSelect: () => insertReference(image) },
             { label: 'Zmień sygnaturę', icon: 'tag', onSelect: () => renameImage(image) },
+            { label: image.caption ? 'Zmień podpis' : 'Dodaj podpis', icon: 'textBox', onSelect: () => editCaption(image) },
             { label: 'Powiększ', icon: 'zoomIn', disabled: !image.url, onSelect: () => openImage(state.images, index) },
             isDrawing(image) || !image.url ? null : { label: 'Rysuj na zdjęciu', icon: 'pen', onSelect: () => redraw(image) },
             { label: 'Przesuń wcześniej', icon: 'arrowLeft', disabled: index === 0, onSelect: () => moveImage(index, -1) },
@@ -1121,7 +1302,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
           ]
         })
       }, image.url
-        ? h('img', { src: image.url, alt: '' })
+        ? h('img', { src: image.url, alt: '', draggable: 'false' })
         : h('span', { class: 'note-images__missing', dataset: { testid: 'note-image-missing' } }, icon('image', { size: 20 }), 'Brak pliku')),
       h('button', {
         type: 'button', class: 'note-images__remove', 'aria-label': `Usuń obraz ${image.label}`, dataset: { testid: 'note-image-remove' },
@@ -1143,7 +1324,9 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
       onClick: () => drawNew()
     }, icon('pen', { size: 22 }), h('span', null, 'Narysuj')));
     replaceChildren(grid, tiles);
+    layoutGrid();
     placement.hidden = state.images.length === 0;
+    numbering.hidden = state.images.length === 0;
     status.textContent = state.pending > 0 ? 'Przygotowanie obrazu…' : (full ? `Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów.` : '');
   }
 
@@ -1178,14 +1361,24 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
       onChange: (value) => { state.imagesFirst = value === 'before'; }
     })
   );
+  // Numeracja podpisów (od 1.18): „Rys. 1.”, „Rys. 2.”… pod obrazami w kolejności podglądu.
+  const numberingToggle = toggle({
+    checked: state.numberFigures,
+    label: 'Numeruj obrazy w podglądzie (Rys. 1., Rys. 2.…)',
+    onChange: (checked) => { state.numberFigures = checked; }
+  });
+  numberingToggle.querySelector('input').dataset.testid = 'note-number-figures';
+  const numbering = h('div', { class: 'note-images__numbering' }, numberingToggle);
 
   const imagesSection = h('section', { class: 'note-editor__images' },
     h('h3', { class: 'form-group__title' }, 'Obrazy'),
     grid,
     status,
     placement,
+    numbering,
     h('p', { class: 'field__hint' },
-      'Dotknij obrazu, żeby wstawić go do tekstu, zmienić sygnaturę, powiększyć, przesunąć albo usunąć – rysunek możesz też poprawić, a na zdjęciu rysować. Linijka ',
+      'Dotknij obrazu, żeby wstawić go do tekstu, zmienić sygnaturę albo podpis, powiększyć, przesunąć albo usunąć – rysunek możesz też poprawić, a na zdjęciu rysować. '
+      + 'Kolejność zmienisz, przeciągając obraz (palcem – po chwili przytrzymania). Linijka ',
       h('code', null, '[[sygnatura]]'),
       ' w tekście to miejsce obrazu w notatce; obrazy bez odwołania są przed tekstem albo po nim. Obraz możesz też wkleić do tekstu – trafi tutaj.'),
     fileInput
@@ -1429,7 +1622,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
           }
         }))
       ),
-      h('div', { class: 'note-editor__toolbar' }, toolbar, colorPanel),
+      h('div', { class: 'note-editor__toolbar' }, toolbar, colorPanel, sizePanel),
       area
     )
   );
@@ -1459,7 +1652,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
   /** Treść pola: linie poziome w edytorze pochodzą tylko z „Nowa strona”, więc to podziały stron. */
   const areaHtml = () => {
     for (const rule of area.querySelectorAll('hr:not([data-page])')) rule.setAttribute('data-page', '');
-    return normalizeNoteHtml(area.innerHTML);
+    return normalizeNoteHtml(area.innerHTML, { editor: true });
   };
 
   /** Treść obu wersji z bieżącym stanem pola. */
@@ -1473,11 +1666,12 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
         html: current.pl,
         htmlEN: current.en,
         imagesFirst: state.imagesFirst,
+        numberFigures: state.numberFigures,
         images: state.images.map((image) => (image.stored
-          ? { id: image.id, label: image.label }
+          ? { id: image.id, label: image.label, caption: image.caption ?? null }
           : {
             bytes: image.bytes, type: image.type, width: image.width, height: image.height, name: image.name ?? null, label: image.label,
-            ...(image.drawing ? { drawing: image.drawing } : {})
+            caption: image.caption ?? null, ...(image.drawing ? { drawing: image.drawing } : {})
           })),
         files: state.files.map((file) => (file.stored
           ? { id: file.id, name: file.name }
@@ -1490,6 +1684,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
         || imagesKey() !== initialImages
         || filesKey() !== initialFiles
         || state.imagesFirst !== imagesFirst
+        || state.numberFigures !== numberFigures
         || state.pending > 0 || state.filesPending > 0 || Boolean(recording);
     },
     busy: () => state.pending > 0 || state.filesPending > 0,
@@ -1509,6 +1704,7 @@ function noteEditor({ html, htmlEN = '', language = 'pl', images, urls, imagesFi
     },
     destroy() {
       document.removeEventListener('selectionchange', onSelectionChange);
+      gridObserver.disconnect();
       // Zamknięte bez zapisu – nagranie przepada, mikrofon zostaje zwolniony.
       recording?.cancel();
       recording = null;

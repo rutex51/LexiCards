@@ -23,12 +23,14 @@ js/ui/shell.js             powłoka: pasek nawigacji, zakładki / panel boczny
 js/ui/actions.js           formularze i przepływy wspólne dla wielu ekranów
 js/ui/dialogs.js           arkusze, pytania, menu (także z wyborem jednej pozycji), komunikaty (element <dialog>)
 js/ui/reorder-drag.js      przeciąganie wierszy w trybie zmiany kolejności (uchwyt, w obrębie grupy, przewijanie przy krawędzi)
+js/ui/grid-drag.js         przeciąganie kafelków w siatce (obrazy w edytorze notatki): mysz i rysik od razu, palec po przytrzymaniu, przewijanie przy krawędzi
+js/ui/color-picker.js      wybór własnego koloru: siatka, suwaki RGB z kodem HEX, pipetka; ostatnie własne kolory wspólne dla rysunku i notatek
 js/ui/router.js            adresy po znaku # i historia przeglądarki
 js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
 js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspólny dla nauki i quizu
 js/ui/charts.js            wykresy SVG (w czasie, pasek udziałów, miernik) z podpowiedzią i tabelą danych
 js/ui/listen-player.js     odtwarzacz słuchania: kolejne kroki czytane syntezatorem mowy, pauza, dalej, powtórz
-js/ui/notes.js             okno notatki lekcji: podgląd, edytor z paskiem formatowania, obrazy, załączniki, powiększanie
+js/ui/notes.js             okno notatki lekcji: podgląd, edytor z paskiem formatowania (wcięcia, indeksy, wielkość, kolory), obrazy (podpisy, numeracja, przeciąganie), załączniki, powiększanie
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
@@ -54,7 +56,7 @@ js/core/exporter.js        zakres eksportu → plik XLSX (z arkuszem notatek) lu
 js/core/note-format.js     treść notatki: bezpieczny HTML ↔ dokument ↔ tekst sformatowany komórki arkusza
 js/core/note-import.js     arkusz notatek: rozpoznanie, wiersze → notatki lekcji z obrazami
 js/core/page-curl.js       zaginana kartka notatki: chwyt, zgięcie, odbicie płata, ograniczenia papieru
-js/core/note-refs.js       sygnatury obrazów notatki i odwołania [[sygnatura]] w treści
+js/core/note-refs.js       sygnatury obrazów notatki i odwołania [[sygnatura]] w treści, podpisy i numery „Rys. N.”
 js/core/images.js          format i wymiary obrazu z nagłówka pliku
 js/core/study.js           fiszki: dobór do sesji, treść stron, ocena, postęp, podsumowanie
 js/core/fsrs.js            algorytm powtórek FSRS-6 (przeniesiony z py-fsrs 6.3.2)
@@ -84,7 +86,7 @@ Wszystkie rekordy mają identyfikator UUID i daty w formacie ISO.
 | `studySessions` | dziennik zakończonych sesji nauki | – |
 | `quizSessions` | historia wyników quizów: rodzaj, kierunek, liczby odpowiedzi, procent, próg, zaliczenie, czas, limit, błędne pojęcia | – |
 | `settings` | jeden rekord `app`: wygląd, wymowa, ustawienia nauki i quizu (od 1.2 okres powtórek lekcji utrwalonych `consolidatedReviewDays` i znacznik `domainColorsGray`), trwająca sesja nauki i trwający quiz | – |
-| `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML (`html` po polsku, od 1.6 `htmlEN` po angielsku), opis obrazów (typ, wymiary, rozmiar, CRC-32, od 1.6 `label` – sygnatura), `imagesFirst` – obrazy bez odwołania w podglądzie przed tekstem (od 1.5) i od 1.8 `files` – opis załączników (nazwa, typ, rozmiar, CRC-32, od 1.10 `duration` – czas nagrania w sekundach) – w pamięci | identyfikator = `lessonID` |
+| `notes` | notatka lekcji (od 1.1): treść w znormalizowanym HTML (`html` po polsku, od 1.6 `htmlEN` po angielsku), opis obrazów (typ, wymiary, rozmiar, CRC-32, od 1.6 `label` – sygnatura, od 1.18 `caption` – podpis), `imagesFirst` – obrazy bez odwołania w podglądzie przed tekstem (od 1.5), od 1.18 `numberFigures` – numeracja „Rys. N.” w podglądzie i od 1.8 `files` – opis załączników (nazwa, typ, rozmiar, CRC-32, od 1.10 `duration` – czas nagrania w sekundach) – w pamięci | identyfikator = `lessonID` |
 | `noteImages` | bajty obrazów notatek (`ArrayBuffer`) – czytane z bazy dopiero przy otwarciu notatki; rysunek (od 1.12) ma też `drawing` – kreski i zdjęcie pod nimi, a opis w notatce `drawing: true` | `lessonID` |
 | `noteFiles` | bajty załączników notatek (od 1.8, `ArrayBuffer`, do 50 MB) – czytane dopiero przy otwarciu pliku | `lessonID` |
 
@@ -322,11 +324,18 @@ w arkuszu i wczytać z powrotem.
   `[[…]]` jest zawsze osobnym akapitem (także po pojedynczym Alt+Enter). Arkusz bez `Note EN` nie
   zmienia wersji angielskiej istniejącej notatki (pole `htmlEN` nie trafia do importu), a eksport
   zapisuje obie wersje i sygnatury – import odtwarza notatkę bez zmian (test).
+- **Od 1.18** kolumna `Image caption` (podpis obrazu; „Podpis obrazu”, „Caption” – sprawdzane przed
+  sygnaturą). Wcięcie akapitu to znaki tabulacji na początku wiersza komórki, wielkość – punkty
+  czcionki (eksport 9, 14, 18 pt; import – `sheetSize` względem zwykłej czcionki komórki: do 0,88 mała,
+  od 1,18 duża, od 1,45 bardzo duża), indeksy –
+  `vertAlign`. Własny kolor eksport zapisuje jako RGB, a import – jak każdy kolor – sprowadza do
+  najbliższego koloru palety (`nearestNoteColor`).
 
 ### Treść notatki
 
 Notatka jest zapisana jako HTML z wąskiego zestawu znaczników (`<p>`, `<h3>`, listy, `<strong>`,
-`<em>`, `<u>`, `<s>`, `<sup>`, `<sub>`, `<span data-color>`, `<a href>` http/https/mailto, `<br>`).
+`<em>`, `<u>`, `<s>`, `<sup>`, `<sub>`, `<span data-color>`, `<a href>` http/https/mailto, `<br>`;
+od 1.18 `<p data-indent="1…4">`, `<span data-size="s|l|xl">` i `<span data-color="#rrggbb">`).
 `normalizeNoteHtml()` przepuszcza przez ten filtr wszystko: wklejony HTML (Word, strony, Google
 Docs, Notatki, tabele z Excela), zawartość edytora przy zapisie, kopię zapasową i podgląd. Własny
 parser HTML w `js/core` pozwala testować to w Node.js; w przeglądarce wklejony HTML najpierw
@@ -334,6 +343,34 @@ porządkuje `DOMParser`. Edytor to `contenteditable` z `document.execCommand` (c
 działa), kolory zapisane są nazwą, więc w ciemnym motywie są jaśniejsze. „Kopiuj notatkę”
 kładzie do schowka HTML z kolorami w stylu i obrazami jako `data:` (przed tekstem albo po nim,
 jak w podglądzie) oraz zwykły tekst.
+
+Od 1.18 **wcięcia, wielkość, własny kolor, indeksy**. W edytorze wcięcie to zagnieżdżone `<blockquote>`
+z polecenia `indent` / `outdent` (cofanie działa; lista – poziom niżej), a wielkość i kolor –
+`<font size>` i `<font color>` z `fontSize` / `foreColor`. Te znaczniki filtr przyjmuje tylko z opcją
+`{ editor: true }` (zawartość edytora; wklejony HTML jej nie ma, więc rozmiary i barwy źródła nie
+wchodzą): liczba `<blockquote>` nad akapitem (najwyżej `MAX_INDENT` = 4) staje się `data-indent`,
+`<font size>` 2 / 5 / 6 – `data-size` s / l / xl (3 – zwykła), kolor spoza palety – `data-color="#hex"`
+(z `style="--note-color: …"`; CSS w ciemnym motywie miesza go z bielą), a `NOTE_NO_COLOR` (`#010101`) usuwa
+kolor. `editorNoteHtml()` zamienia zapis z powrotem na znaczniki edytora. `NOTE_SIZES` to wielkości
+(em, polecenie, punkty w arkuszu). Tab i Shift+Tab w polu tekstu wywołują `indent` (bez przejścia do
+następnego pola). Zaznaczenie zapamiętane przy `selectionchange` przychodzi z opóźnieniem, więc przed
+poleceniem z klawiatury albo przycisku edytor bierze bieżące (`captureSelection`), a przy oknie koloru –
+to sprzed otwarcia. „Kopiuj notatkę” (`portableNoteHtml`) zamienia wcięcie, wielkość i własny kolor
+na style.
+
+Od 1.18 **podpisy i numeracja** (`note-refs.js`): `caption` w opisie obrazu (`cleanImageCaption`, do
+120 znaków; zapis notatki: brak pola – podpis bez zmian, `''` – usunięty). `figureNumbers(html, images,
+imagesFirst)` daje numer każdego obrazu według kolejności w podglądzie (obrazy z odwołaniem w miejscu
+pierwszego odwołania, pozostałe przed tekstem albo po nim), a `figureCaption(caption, n, numbered)` –
+tekst pod obrazem („Rys. 2. Wyniki sprzedaży”, „Rys. 2.” albo sam podpis). Podgląd (`contentUnits`
+w `note-book.js`) mierzy wysokość podpisu przy dzieleniu na strony i kładzie obraz w `<figure>`
+z `<p class="note-page__caption">`; powiększenie i „Kopiuj notatkę” pokazują ten sam tekst.
+**Siatka obrazów** w edytorze: przeciąganie (`enableGridDrag` z `grid-drag.js`) przestawia kafelki
+w DOM na żywo (kafelek przesunięty `transform` pod wskaźnik), a po upuszczeniu zwraca nową kolejność
+numerów – edytor przestawia `state.images` i rysuje siatkę od nowa. Gdy kafelków jest więcej niż dwa
+rzędy (`layoutGrid`, kafelek ≥ 96 px), siatka dostaje klasę `note-images--scroll`: dwa rzędy,
+kolumny w poziomie (`grid-auto-flow: column`) o szerokości liczonej tak, by widać było kawałek
+następnej kolumny; `ResizeObserver` przelicza ją przy zmianie szerokości okna.
 
 Od 1.6 **sygnatury i odwołania** (`js/core/note-refs.js`): każdy obraz ma w notatce `label` –
 brakujący albo powtórzony dostaje kolejną wolną „Obraz N” (`withImageLabels`, przy zapisie, w kopii

@@ -38,6 +38,7 @@ async function loadPlaywright() {
 
 const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true };
 const DESKTOP = { viewport: { width: 1280, height: 800 } };
+const IPAD = { viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true };
 
 const tests = [];
 function test(name, body, options = {}) {
@@ -1506,7 +1507,8 @@ test('eksport lekcji z notatką do XLSX i import do pustej aplikacji odtwarza no
   const book = await openWorkbook(exported.bytes);
   assert.deepEqual(book.sheets.map((item) => item.name), ['Pojęcia', 'Notatki']);
   const notes = await book.readSheet(1, { rich: true });
-  assert.deepEqual(notes.rows[0].cells, ['Domain', 'Module', 'Lesson', 'Note', 'Note EN', 'Image', 'Image label']);
+  // Od 1.18 także Image caption – podpis pod obrazem.
+  assert.deepEqual(notes.rows[0].cells, ['Domain', 'Module', 'Lesson', 'Note', 'Note EN', 'Image', 'Image label', 'Image caption']);
   assert.ok(notes.rows[1].rich[3].some((run) => run.text === 'Aktywa' && run.b));
   assert.ok(notes.rows[1].rich[4].some((run) => run.text === 'Assets' && run.b), 'wersja angielska w kolumnie Note EN');
   assert.equal(notes.rows[1].cells[6], 'Schemat', 'sygnatura obrazu w kolumnie Image label');
@@ -2875,9 +2877,231 @@ test('równania: długi akapit ze wzorami dzieli się na strony między wyrazami
   assert.ok(sources.every((source) => source === formula), 'wzory całe');
 });
 
+// ---------------------------------------------------------------- notatki 1.18
+
+/** Notatka lekcji z `count` obrazami (kolorowe prostokąty „Obraz 1”…), treścią i podpisami (label → podpis). */
+const seedNoteImages = (page, lessonID, count, { html = '<p>Tekst</p>', captions = {} } = {}) => page.evaluate(async ([id, total, text, notes]) => {
+  const images = [];
+  for (let index = 0; index < total; index += 1) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 80;
+    canvas.height = 60;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = `hsl(${index * 37}, 70%, 50%)`;
+    ctx.fillRect(0, 0, 80, 60);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    const label = `Obraz ${index + 1}`;
+    images.push({ bytes: await blob.arrayBuffer(), type: 'image/png', width: 80, height: 60, label, caption: notes[label] ?? null });
+  }
+  await window.lexicards.library.saveNote(id, { html: text, images });
+}, [lessonID, count, html, captions]);
+
+/** Podgląd notatki lekcji (bez załączników – sekcja plików się nie pokazuje). */
+async function openNotePreview(page, lessonID) {
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${lessonID}`);
+  await page.click('[data-testid=lesson-note]');
+  await noteDialog(page).locator('[data-testid=note-book]').waitFor();
+  await waitUntil(() => noteDialog(page).locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'Okno notatki otwarte');
+}
+
+const tileLabels = (dialog) => dialog.locator('[data-testid=note-image-label-text]').allTextContents();
+
+test('notatka 1.18: Tab i Shift+Tab – wcięcie (także przyciskami), indeks górny i dolny (przyciski, Ctrl+, i Ctrl+.), wielkość tekstu, własny kolor (HEX, zapamiętany); zapis, podgląd, ponowna edycja', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.goto(`${page.url().split('#')[0]}#/library/module/${ids.module}`);
+  await page.getByRole('button', { name: 'Więcej poleceń: Financial Statements' }).click();
+  await menuItem(page, 'Dodaj notatkę');
+  const dialog = noteDialog(page);
+  const area = dialog.locator('[data-testid=note-editor]');
+  await area.waitFor();
+  const button = (command) => dialog.locator(`[data-testid=note-format-${command}]`);
+  for (const command of ['superscript', 'subscript', 'size', 'outdent', 'indent']) assert.equal(await button(command).count(), 1, `przycisk ${command}`);
+
+  // Wcięcie: Tab dwa razy, Shift+Tab raz – jeden stopień; następny akapit – Shift+Tab wraca do zera, przycisk „Zwiększ wcięcie”.
+  await area.click();
+  await page.keyboard.type('Akapit wcięty');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Drugi');
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Trzeci');
+  await button('indent').click();
+  await page.keyboard.press('Enter');
+  await button('outdent').click();
+  // Indeksy: Ctrl+, – dolny, przycisk – górny.
+  await page.keyboard.type('H');
+  await page.keyboard.press('Control+,');
+  await page.keyboard.type('2');
+  await page.keyboard.press('Control+,');
+  await page.keyboard.type('O i x');
+  await button('superscript').click();
+  assert.equal(await button('superscript').getAttribute('aria-pressed'), 'true');
+  await page.keyboard.type('2');
+  await page.keyboard.press('Control+.');
+  await page.keyboard.type(' koniec');
+  // Wielkość: duża, potem średnia.
+  await page.keyboard.press('Enter');
+  await button('size').click();
+  assert.deepEqual(await dialog.locator('[data-testid=note-sizes] button').allTextContents(), ['Mała', 'Średnia', 'Duża', 'Bardzo duża']);
+  await dialog.locator('[data-testid=note-size-l]').click();
+  await page.keyboard.type('Duży tekst');
+  await button('size').click();
+  await dialog.locator('[data-testid=note-size-m]').click();
+  await page.keyboard.type(' zwykły');
+  // Własny kolor: „+” – okno z siatką i suwakami, kod HEX.
+  await page.keyboard.press('Enter');
+  await button('color').click();
+  await dialog.locator('[data-testid=note-color-other]').click();
+  await expectText(page.locator('dialog.sheet[open] .sheet__title').last(), 'Kolor tekstu');
+  assert.equal(await page.locator('[data-testid=note-grid-color-0]').count(), 1, 'siatka kolorów');
+  await page.locator('[data-testid=note-color-tab-sliders]').click();
+  await page.locator('[data-testid=note-color-hex]').fill('#12AB34');
+  await expectText(page.locator('[data-testid=note-color-value]'), '#12AB34');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-kolor-wlasny.png') });
+  await sheetSubmit(page).click();
+  await waitUntil(async () => (await page.locator('dialog.sheet').count()) === 1, 'Okno koloru zamknięte');
+  await page.keyboard.type('Zielony');
+  await button('color').click();
+  assert.equal(await dialog.locator('[data-testid=note-color-custom-0]').getAttribute('aria-label'), 'Własny kolor #12AB34', 'zapamiętany własny kolor');
+  await button('color').click();
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-formatowanie-edytor.png') });
+
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const html = await page.evaluate((id) => window.lexicards.library.getNote(id).html, ids.statements);
+  assert.equal(html, '<p data-indent="1">Akapit wcięty</p><p>Drugi</p><p data-indent="1">Trzeci</p>'
+    + '<p>H<sub>2</sub>O i x<sup>2</sup> koniec</p><p><span data-size="l">Duży tekst</span> zwykły</p>'
+    + '<p><span data-color="#12ab34" style="--note-color: #12ab34">Zielony</span></p>');
+  // Podgląd: wcięcie, większy tekst, kolor.
+  const look = await dialog.locator('[data-testid=note-text]').first().evaluate((text) => {
+    const indented = text.querySelector('[data-indent="1"]');
+    const large = text.querySelector('[data-size="l"]');
+    const green = text.querySelector('[data-color="#12ab34"]');
+    return {
+      margin: parseFloat(getComputedStyle(indented).marginLeft),
+      ratio: parseFloat(getComputedStyle(large).fontSize) / parseFloat(getComputedStyle(text).fontSize),
+      color: getComputedStyle(green).color
+    };
+  });
+  assert.ok(look.margin > 20, `wcięcie w podglądzie (${look.margin})`);
+  assert.ok(Math.abs(look.ratio - 1.25) < 0.02, `duży tekst 1,25 × (${look.ratio})`);
+  assert.equal(look.color, 'rgb(18, 171, 52)');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-formatowanie-podglad.png') });
+
+  // Ponowna edycja: wcięty akapit w edytorze – Shift+Tab usuwa wcięcie.
+  await dialog.locator('[data-testid=note-right]').click();
+  await area.waitFor();
+  await area.locator('blockquote p', { hasText: 'Akapit wcięty' }).click();
+  await page.keyboard.press('Shift+Tab');
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  assert.ok((await page.evaluate((id) => window.lexicards.library.getNote(id).html, ids.statements)).startsWith('<p>Akapit wcięty</p><p>Drugi</p><p data-indent="1">Trzeci</p>'));
+}, { device: DESKTOP });
+
+test('notatka 1.18: podpisy obrazów z numeracją „Rys. N.” (podgląd, powiększenie); przeciąganie obrazów myszą i palcem; najwyżej dwa rzędy z przewijaniem w bok (iPad)', async ({ open, context }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await seedNoteImages(page, ids.statements, 12, { html: '<p>Tekst</p><p>[[Obraz 3]]</p><p>Dalej</p>', captions: { 'Obraz 3': 'Wyniki sprzedaży' } });
+  await openNotePreview(page, ids.statements);
+  const dialog = noteDialog(page);
+  // Bez numeracji – sam podpis.
+  await expectText(dialog.locator('[data-testid=note-figure-caption]').first(), 'Wyniki sprzedaży');
+  assert.equal((await dialog.locator('[data-testid=note-figure-caption]').first().textContent()).trim(), 'Wyniki sprzedaży');
+
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-editor]').waitFor();
+  const grid = dialog.locator('[data-testid=note-images]');
+  // 12 obrazów i dwa przyciski – najwyżej dwa rzędy, reszta w bok.
+  const layout = await grid.evaluate((element) => ({
+    scroll: element.classList.contains('note-images--scroll'),
+    rows: new Set([...element.children].map((child) => Math.round(child.getBoundingClientRect().top))).size,
+    wider: element.scrollWidth > element.clientWidth + 10
+  }));
+  assert.deepEqual(layout, { scroll: true, rows: 2, wider: true });
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-obrazy-dwa-rzedy-ipad.png') });
+
+  // Numeracja i podpis pierwszego obrazu.
+  await dialog.locator('.switch', { has: page.locator('[data-testid=note-number-figures]') }).click();
+  assert.equal(await dialog.locator('[data-testid=note-number-figures]').isChecked(), true, 'numeracja włączona');
+  await dialog.getByRole('button', { name: 'Obraz 1 – polecenia' }).click();
+  await menuItem(page, 'Dodaj podpis');
+  await page.locator('[data-testid=note-image-caption]').fill('Pierwszy');
+  await saveSheet(page);
+
+  // Myszą: „Obraz 1” na miejsce „Obraz 3” (kolumny: 1 nad 2, 3 nad 4…); bez otwierania menu.
+  const tile = (label) => dialog.locator('[data-testid=note-image-tile]', { hasText: new RegExp(`^${label}$`) });
+  const center = async (label) => { const box = await tile(label).boundingBox(); return [box.x + box.width / 2, box.y + box.height / 2]; };
+  const from = await center('Obraz 1');
+  const to = await center('Obraz 3');
+  await page.mouse.move(...from);
+  await page.mouse.down();
+  await page.mouse.move(...to, { steps: 10 });
+  await waitUntil(() => tile('Obraz 1').evaluate((element) => element.classList.contains('grid-drag--dragging')), 'Kafelek uniesiony');
+  const lifted = await tile('Obraz 1').boundingBox();
+  assert.ok(Math.abs(lifted.x + lifted.width / 2 - to[0]) < 4 && Math.abs(lifted.y + lifted.height / 2 - to[1]) < 4,
+    `kafelek pod wskaźnikiem (${Math.round(lifted.x + lifted.width / 2)}, ${Math.round(lifted.y + lifted.height / 2)})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-obrazy-przeciaganie-ipad.png') });
+  await page.mouse.up();
+  await waitUntil(async () => (await tileLabels(dialog)).slice(0, 4).join() === 'Obraz 2,Obraz 3,Obraz 1,Obraz 4', 'Obraz 1 na trzecim miejscu');
+  assert.equal(await page.locator('dialog.menu[open]').count(), 0, 'po przeciągnięciu menu się nie otwiera');
+  // Kliknięcie bez ruchu – menu jak dotąd.
+  await tile('Obraz 4').locator('.note-images__open').click();
+  await page.locator('dialog.menu[open]').waitFor();
+  await page.keyboard.press('Escape');
+  await page.locator('dialog.menu[open]').waitFor({ state: 'detached' });
+
+  // Palcem: przytrzymanie, potem ruch – „Obraz 5” na miejsce „Obraz 4”.
+  const [fx, fy] = await center('Obraz 5');
+  const [tx, ty] = await center('Obraz 4');
+  const touch = await touchAt(context, page, fx, fy);
+  await page.waitForTimeout(550);
+  await touch.move(tx, ty, 10);
+  await touch.end();
+  await waitUntil(async () => (await tileLabels(dialog)).slice(0, 5).join() === 'Obraz 2,Obraz 3,Obraz 1,Obraz 5,Obraz 4', 'Obraz 5 przed Obraz 4');
+
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  const note = await page.evaluate((id) => window.lexicards.library.getNote(id), ids.statements);
+  assert.equal(note.numberFigures, true);
+  assert.deepEqual(note.images.slice(0, 5).map((meta) => [meta.label, meta.caption ?? null]),
+    [['Obraz 2', null], ['Obraz 3', 'Wyniki sprzedaży'], ['Obraz 1', 'Pierwszy'], ['Obraz 5', null], ['Obraz 4', null]]);
+  // Podgląd: Obraz 3 z odwołania w tekście – „Rys. 1.”; powiększenie pokazuje podpis.
+  await expectText(dialog.locator('[data-testid=note-figure-caption]').first(), 'Rys. 1. Wyniki sprzedaży');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-podpis-rys-ipad.png') });
+  await dialog.locator('.note-page__figure').first().click();
+  await expectText(page.locator('[data-testid=lightbox-caption]'), 'Rys. 1. Wyniki sprzedaży');
+}, { device: IPAD });
+
+test('notatka 1.18 na telefonie: pasek formatowania z nowymi przyciskami się przewija, obrazy w dwóch rzędach przewijanych w bok, nic nie wystaje', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await seedNoteImages(page, ids.statements, 8);
+  await openNotePreview(page, ids.statements);
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-editor]').waitFor();
+  const grid = dialog.locator('[data-testid=note-images]');
+  await waitUntil(() => grid.evaluate((element) => element.classList.contains('note-images--scroll')), 'Przewijanie w bok');
+  assert.equal(await grid.evaluate((element) => new Set([...element.children].map((child) => Math.round(child.getBoundingClientRect().top))).size), 2);
+  assert.equal(await overflowX(page), 0, 'bez przewijania strony w bok');
+  await grid.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-obrazy-telefon.png') });
+  await dialog.locator('[data-testid=note-format-color]').scrollIntoViewIfNeeded();
+  await dialog.locator('[data-testid=note-format-color]').click();
+  const colors = await dialog.locator('[data-testid=note-colors]').boundingBox();
+  assert.ok(colors.x >= 0 && colors.x + colors.width <= 390, 'kolory w szerokości ekranu');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-edytor-telefon.png') });
+});
+
 // ---------------------------------------------------------------- rysunki (1.12)
 
-const IPAD = { viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true };
 const drawingDialog = (page) => page.locator('dialog[data-testid=drawing-dialog]');
 
 /**
@@ -3315,7 +3539,10 @@ test('rysunek 1.13: pole tekstowe i wzór – wstawienie (wielkość, kolor), je
   await expectText(page.locator('dialog.sheet[open] .sheet__title').last(), 'Nowe pole tekstowe');
   assert.equal(await sheetSubmit(page).isDisabled(), true, 'bez tekstu nie da się wstawić');
   await page.locator('[data-testid=drawing-text-input]').fill('Bilans: aktywa = pasywa\nKapitał własny');
-  await page.locator('dialog.sheet[open]').last().getByRole('radio', { name: 'Duża' }).check();
+  // Od 1.18 cztery wielkości (doszła „Bardzo duża”).
+  assert.deepEqual(await page.locator('dialog.sheet[open]').last().locator('.segmented__input').evaluateAll((inputs) => inputs.map((input) => input.labels[0]?.textContent.trim())),
+    ['Mała', 'Średnia', 'Duża', 'Bardzo duża']);
+  await page.locator('dialog.sheet[open]').last().getByRole('radio', { name: 'Duża', exact: true }).check();
   await page.locator('[data-testid=drawing-element-color-red]').click();
   await sheetSubmit(page).click();
   await expectText(selectionCount, 'Pole tekstowe');
