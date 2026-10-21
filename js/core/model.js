@@ -314,9 +314,10 @@ export function noteFileMeta(record, name = null) {
 
 /**
  * Opis obrazu przechowywany w notatce (bez bajtów); `label` – sygnatura obrazu w notatce (od 1.6),
- * `drawing: true` – obraz jest rysunkiem do edycji (od 1.12; same kreski są w rekordzie obrazu).
+ * `drawing: true` – obraz jest rysunkiem do edycji (od 1.12; same kreski są w rekordzie obrazu),
+ * `hidden: true` – obraz ukryty w notatce (od 1.29, oczko; podgląd go nie pokazuje).
  */
-export function noteImageMeta(record, label = null, caption = null) {
+export function noteImageMeta(record, label = null, caption = null, hidden = false) {
   return {
     id: record.id,
     type: record.type,
@@ -328,6 +329,7 @@ export function noteImageMeta(record, label = null, caption = null) {
     label: label ?? null,
     // Podpis pod obrazem (od 1.18) – tylko gdy jest.
     ...(caption ? { caption } : {}),
+    ...(hidden ? { hidden: true } : {}),
     ...(record.drawing ? { drawing: true } : {})
   };
 }

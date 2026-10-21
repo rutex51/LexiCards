@@ -3726,6 +3726,42 @@ a.row__main:active,
   white-space: nowrap;
 }
 
+/*
+ * Podpowiedzi w oknach (od 1.29, js/ui/hints.js): ⓘ obok tytułu okna i w nagłówku panelu rysunku
+ * chowa opisy we wszystkich oknach. Stan i komunikaty (--live, role status / alert) zostają.
+ * Przycisk widać tylko w oknie (panelu), które ma podpowiedzi.
+ */
+.sheet__heading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hints-toggle {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--text-3);
+}
+
+.hints-toggle[aria-pressed="true"] { color: var(--accent); }
+.hints-toggle:active { background: var(--pressed); }
+@media (hover: hover) {
+  .hints-toggle:hover { background: var(--hover); }
+}
+
+dialog:not(:has(:is(.field__hint, .form-note, .note-paragraph__hint, .note-pdf-sheet__note):not(.field__hint--live, [role="status"], [role="alert"]))) .sheet__heading .hints-toggle,
+.drawing__settings:not(:has(:is(.field__hint, .form-note):not(.field__hint--live, [role="status"], [role="alert"]))) .hints-toggle { display: none; }
+
+:root.hints-hidden dialog :is(.field__hint, .form-note, .note-paragraph__hint, .note-pdf-sheet__note):not(.field__hint--live, [role="status"], [role="alert"]) {
+  display: none !important;
+}
+
 .sheet__body {
   flex: 1;
   min-height: 0;
@@ -5870,20 +5906,108 @@ svg.icon--note { color: var(--note-icon); }
 /* Rysunek w obrazach notatki (od 1.12): cała strona w miniaturze i znaczek pióra. */
 .note-images__item--drawing .note-images__open img { object-fit: contain; }
 
-.note-images__badge {
+/* Od 1.29 ołówek na kafelku (rysunek, zdjęcie, tabela) od razu otwiera edycję. */
+.note-images__edit {
   position: absolute;
   top: 6px;
   left: 6px;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.14);
   color: #3a4049;
-  pointer-events: none;
 }
+.note-images__edit::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+/* Oczko (od 1.29) w pasku sygnatury: obiekt widoczny w notatce albo ukryty (przygaszony). */
+.note-images__label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.note-images__label > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.note-images__eye {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+  margin: -3px -5px -3px 0;
+  border-radius: 6px;
+  color: #ffffff;
+  pointer-events: auto;
+}
+.note-images__eye::before {
+  content: "";
+  position: absolute;
+  inset: -8px -4px -6px -6px;
+}
+.note-images__item--hidden .note-images__open { opacity: 0.35; filter: grayscale(1); }
+.note-images__item--hidden .note-images__label { background: rgba(0, 0, 0, 0.74); }
+.note-images__item--hidden .note-images__eye { color: #ffd60a; }
+
+/*
+ * Okno tekstu notatki (od 1.29): na cały ekran jak edytor rysunku – pasek formatowania i duże pole
+ * tekstu (na komputerze kolumna do 920 px na środku). Obrazy, tabele i załączniki – osobnym oknem
+ * z przycisku przy nazwie lekcji (spinacz z liczbą obiektów).
+ */
+.dialog.sheet.note-dialog.note-edit-dialog {
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  margin: 0;
+}
+.note-dialog.note-edit-dialog .sheet__panel {
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding-top: env(safe-area-inset-top);
+}
+.note-edit__body { display: flex; flex-direction: column; }
+.note-edit__body > * { width: 100%; max-width: 920px; margin-inline: auto; }
+.note-edit-dialog .note-editor--text { flex: 1 0 auto; display: flex; flex-direction: column; gap: 12px; }
+.note-edit-dialog .note-editor__text { flex: 1 0 auto; display: flex; flex-direction: column; }
+.note-edit-dialog .note-editor__area { flex: 1 0 auto; min-height: max(260px, 45vh); }
+
+/* Przycisk okna „Obrazy i załączniki” (od 1.29): spinacz i liczba obiektów notatki. */
+.note-sheet__objects {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  min-width: 40px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: var(--size-foot);
+  font-weight: 600;
+}
+.note-sheet__objects-count:empty { display: none; }
+/* Mikrofon w oknie tekstu (od 1.29) – notatka głosowa w trakcie pisania. */
+.note-sheet__record {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent);
+}
+.note-sheet__record:disabled { color: var(--text-3); }
 
 /* Edytor rysunku (od 1.12): na cały ekran, pasek narzędzi na środku u góry, strona na płótnie. */
 .dialog.drawing-dialog {
@@ -6316,7 +6440,8 @@ svg.icon--note { color: var(--note-icon); }
   background: var(--elevated);
 }
 
-.drawing__settings-head .drawing__settings-title { margin-bottom: 8px; }
+.drawing__settings-head .drawing__settings-title { flex: 1; margin-bottom: 8px; }
+.drawing__settings-head .hints-toggle { margin-bottom: 8px; }
 
 .drawing__settings-close {
   display: inline-grid;

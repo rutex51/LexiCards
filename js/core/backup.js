@@ -273,6 +273,8 @@ function imageMeta(meta, image = null) {
     label: typeof meta.label === 'string' ? meta.label : null,
     // Podpis pod obrazem (od 1.18).
     ...(cleanImageCaption(meta.caption) ? { caption: cleanImageCaption(meta.caption) } : {}),
+    // Obraz ukryty w notatce (od 1.29).
+    ...(meta.hidden === true ? { hidden: true } : {}),
     // Rysunek do edycji (od 1.12) – kreski są w pliku obrazów i załączników.
     ...(meta.drawing === true ? { drawing: true } : {})
   };

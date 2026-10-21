@@ -1,4 +1,4 @@
-# LexiCards 1.28
+# LexiCards 1.29
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -37,8 +37,9 @@ Rysunek: wymiary bez jednostki w mm (albo cm, m, calach) z oznaczeniem „Wymiar
 Jeden wygląd okien (białe, sekcje w cienkich ramkach), „Wstaw obiekt” na pasku notatki, przycisk Σ z oknem równań, tabele – formaty kolumn (liczby, waluta, data), wyrównanie nagłówka i szerokości kolumn (wersja 1.26): [docs/RELEASE-1.26.md](docs/RELEASE-1.26.md).
 Rysunek: rodzaj linii kształtów (przerywana, osiowa, dwupunktowa, kropkowa), prosta przez całą stronę, punkt symetrii, strzałka po łuku z dwoma punktami pośrednimi i zakończeniami (wersja 1.27): [docs/RELEASE-1.27.md](docs/RELEASE-1.27.md).
 Plik PDF notatki tworzony w aplikacji – prawdziwy tekst, strona A4, wybór jakości obrazów, „Udostępnij…” na iPhonie (wersja 1.28): [docs/RELEASE-1.28.md](docs/RELEASE-1.28.md).
+Notatki: osobne okno tekstu na cały ekran i okno „Obrazy i załączniki”, ołówek na miniaturze, oczko (obiekt ukryty w notatce), usunięcie obiektu usuwa jego odwołania, ⓘ chowa podpowiedzi w oknach (wersja 1.29): [docs/RELEASE-1.29.md](docs/RELEASE-1.29.md).
 
-## Co potrafi wersja 1.28
+## Co potrafi wersja 1.29
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -300,9 +301,21 @@ Obrazy w formatach EMF i WMF (Windows) są pomijane z ostrzeżeniem – zapisz j
 Notatkę otworzysz w module (ikona notatki przy lekcji albo „Dodaj notatkę” w menu „…”), na ekranie
 lekcji (wiersz „Notatka” nad listą pojęć, na delikatnie żółtym tle), w szczegółach pojęcia („Notatka lekcji”) i w trakcie nauki
 fiszek (ikona u góry). Okno pokazuje tekst i obrazy; dotknięcie obrazu powiększa go (dwa palce albo
-dwukrotne dotknięcie). **Edytuj** pokazuje u góry sekcję obrazów – **Dodaj obraz** (zdjęcie, plik,
-aparat), dotknięcie obrazu – powiększ, przesuń, usuń – a pod nią tekst z paskiem formatowania. Przy
-obrazach wybierasz, gdzie są w podglądzie: **Przed tekstem** albo **Po tekście** (domyślnie po
+dwukrotne dotknięcie). Od 1.29 edycja ma dwa osobne okna nad podglądem:
+- **Edytuj** – okno tekstu na cały ekran (jak edytor rysunku): pasek formatowania i duże pole tekstu
+  (na komputerze kolumna na środku). Obok nazwy lekcji: **mikrofon** (notatka głosowa nagrywa się
+  w trakcie pisania) i **spinacz z liczbą** obrazów, tabel i załączników – otwiera nad tekstem okno
+  **Obrazy i załączniki** („Gotowe” wraca do tekstu; zapisuje się wszystko razem). Obraz wklejony do
+  tekstu (albo upuszczony na tekst) trafia do obrazów, a w tekście – jego odwołanie.
+- **Spinacz** w podglądzie – samo okno **Obrazy i załączniki** (Anuluj / Zapisz): obrazy, tabele,
+  miejsce w podglądzie, numeracja, załączniki, na dole **Usuń notatkę**.
+
+W oknie obrazów: **Dodaj obraz** (zdjęcie, plik, aparat), dotknięcie miniatury – menu (wstaw do tekstu,
+sygnatura, podpis, powiększ, przesuń, ukryj, usuń); **ołówek** na miniaturze od razu otwiera edycję
+(rysunek – edytor rysunku, zdjęcie – rysowanie na zdjęciu, tabela – okno tabeli); **oczko** chowa obraz
+albo tabelę w notatce – obiekt zostaje w oknie (przygaszony), a podgląd, PDF, druk, „Kopiuj”, słuchanie
+i eksport do arkusza go pomijają razem z odwołaniem. **Usunięcie** obrazu albo tabeli usuwa też jego
+odwołania `[[sygnatura]]` w obu wersjach tekstu. Przy obrazach wybierasz, gdzie są w podglądzie: **Przed tekstem** albo **Po tekście** (domyślnie po
 tekście; wybór jest zapisany w notatce). Duże zdjęcia są zmniejszane do 2048 px dłuższego boku.
 Kolejność obrazów zmieniasz przeciąganiem (od 1.18): myszą albo rysikiem od razu, palcem – po chwili
 przytrzymania; przy krawędzi siatka przewija się sama. Gdy obrazy nie mieszczą się w dwóch rzędach,

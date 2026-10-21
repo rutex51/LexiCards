@@ -116,6 +116,23 @@ export function figureNumbers(html, images, imagesFirst = false) {
   return numbers;
 }
 
+/**
+ * Treść bez odwołań (linijek [[sygnatura]]) do obrazów i tabel o tych sygnaturach – od 1.29 po usunięciu
+ * obiektu i w podglądzie obiektów ukrytych. Nowa strona, która została pierwsza, ostatnia albo druga
+ * z rzędu, też znika. Bez takich odwołań – ta sama treść.
+ */
+export function removeReferences(html, labels) {
+  const keys = new Set((Array.isArray(labels) ? labels : [labels]).map(labelKey).filter(Boolean));
+  const doc = docFromHtml(html ?? '');
+  const blocks = doc.blocks.filter((block) => {
+    if (block.type !== 'p') return true;
+    const label = referenceLabel(block.runs.map((run) => run.text).join(''));
+    return !(label && keys.has(labelKey(label)));
+  });
+  if (blocks.length === doc.blocks.length) return html;
+  return htmlFromDoc({ ...doc, blocks });
+}
+
 /** Treść ze zmienioną sygnaturą w odwołaniach: [[from]] → [[to]]. */
 export function renameReferences(html, from, to) {
   const key = labelKey(from);

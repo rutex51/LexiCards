@@ -16,11 +16,12 @@ import {
 } from '../core/note-format.js';
 import {
   IMAGE_CAPTION_MAX, IMAGE_LABEL_MAX, cleanImageCaption, cleanImageLabel, figureCaption, figureNumbers, findImageByLabel, labelKey,
-  referenceLabel, referenceToken, renameReferences, withImageLabels
+  referenceLabel, referenceToken, removeReferences, renameReferences, withImageLabels
 } from '../core/note-refs.js';
 import { FILE_NAME_MAX, cleanFileName, fileExtension, fileTypeOf, formatDuration, recordingName, renamedFile } from '../core/note-files.js';
 import {
-  NOTE_TABLE_LIMIT, displayCell, findTableByLabel, nextTableLabel, tableCaption, tableHtml, tableNumbers, tableSize, tableText, withTableLabels
+  NOTE_TABLE_LIMIT, displayCell, findTableByLabel, nextTableLabel, tableCaption, tableHtml, tableNumbers, tableSize, tableText, visibleNoteContent,
+  withTableLabels
 } from '../core/tables.js';
 import { formatClock, formatDay, formatDayTime, joinList, pluralAttachments, pluralImages, pluralTables } from '../core/text.js';
 import { attachmentList, fileBadge, fileDescription, openAttachment } from './attachments.js';
@@ -31,6 +32,7 @@ import { field, iconButton, segmented, textInput, toggle } from './components.js
 import { confirmDialog, mountDialog, openFormSheet, openMenu, showError, toast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { openDrawingEditor } from './drawing.js';
+import { hintsToggle } from './hints.js';
 import { icon } from './icons.js';
 import { prepareImage, urlPool } from './images.js';
 import { openMathHelp } from './math.js';
@@ -200,7 +202,8 @@ async function copyNote(note, images, language = 'pl') {
   };
   const placedTables = new Set();
   const inText = new Set();
-  const lines = noteText(source).split('\n').map((line) => {
+  // Odwołania do obrazów (od 1.29) – w zwykłym tekście bez nich (obraz jest tylko w wersji HTML).
+  const lines = noteText(removeReferences(source, labeled.map((image) => image.label))).split('\n').map((line) => {
     const label = referenceLabel(line);
     const index = label === null ? -1 : findTableByLabel(tables, label);
     if (index < 0) return line;
@@ -546,7 +549,6 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
     /** Załączniki notatki: opisy bez bajtów, `missing` – pliku nie ma na urządzeniu. */
     let files = [];
     let mode = null;
-    let editor = null;
     let book = null;
     let reader = null;
     /** Wersja językowa w podglądzie ('pl' | 'en'); null – ostatnio wybrana w aplikacji. */
@@ -594,23 +596,183 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
 
     const close = () => dialog.close('done');
 
-    const requestClose = async () => {
-      if (mode === 'edit' && editor?.dirty()) {
-        const discard = await confirmDialog({
-          title: 'Odrzucić zmiany?',
-          message: 'Zmiany w notatce nie zostaną zapisane.',
-          confirmLabel: 'Odrzuć',
-          cancelLabel: 'Edytuj dalej',
-          destructive: true
+    const confirmDiscard = () => confirmDialog({
+      title: 'Odrzucić zmiany?',
+      message: 'Zmiany w notatce nie zostaną zapisane.',
+      confirmLabel: 'Odrzuć',
+      cancelLabel: 'Edytuj dalej',
+      destructive: true
+    });
+
+    /** Okno edycji nad podglądem (od 1.29): { kind, dialog } albo null. */
+    let session = null;
+
+    /** Przycisk okna „Obrazy i załączniki” z liczbą obrazów, tabel i załączników. */
+    function objectsButton(count, onClick) {
+      const button = h('button', { type: 'button', class: 'note-sheet__objects', dataset: { testid: 'note-objects-open' }, onClick },
+        icon('paperclip', { size: 18 }), h('span', { class: 'note-sheet__objects-count' }));
+      setObjectsCount(button, count);
+      return button;
+    }
+    function setObjectsCount(button, count) {
+      button.querySelector('.note-sheet__objects-count').textContent = count > 0 ? String(count) : '';
+      button.title = 'Obrazy, tabele i załączniki';
+      button.setAttribute('aria-label', count > 0 ? `Obrazy, tabele i załączniki (${count})` : 'Obrazy, tabele i załączniki');
+    }
+
+    /** „Usuń notatkę” – na dole okna obrazów i załączników; zamyka wszystkie okna notatki. */
+    const deleteActions = () => h('div', { class: 'note-sheet__actions' },
+      h('button', {
+        type: 'button', class: 'button button--danger-plain', dataset: { testid: 'note-delete' },
+        onClick: async () => {
+          const confirmed = await confirmDialog({
+            title: 'Usunąć notatkę?',
+            message: 'Tekst, obrazy i załączniki notatki zostaną usunięte. Pojęcia lekcji zostają.',
+            confirmLabel: 'Usuń',
+            destructive: true
+          });
+          if (!confirmed) return;
+          try {
+            await library.deleteNote(lessonID);
+            toast('Usunięto notatkę.');
+            session?.dialog.close('done');
+            close();
+          } catch (error) {
+            await showError(error);
+          }
+        }
+      }, icon('trash', { size: 18 }), h('span', null, 'Usuń notatkę')));
+
+    /**
+     * Edycja w osobnym oknie nad podglądem (od 1.29). 'text' – treść na cały ekran (jak edytor
+     * rysunku): pasek formatowania i duże pole tekstu; obrazy, tabele i załączniki – przyciskiem przy
+     * nazwie lekcji, w oknie nad tekstem („Gotowe” wraca do tekstu, zapis – razem z tekstem).
+     * 'objects' – samo okno obrazów, tabel i załączników (z podglądu). Zapis – podgląd od nowa;
+     * Anuluj nowej notatki zamyka też podgląd.
+     */
+    function openSession(kind) {
+      if (session) return;
+      reader?.stop();
+      const note = library.getNote(lessonID);
+      let nested = null;
+      let countButton = null;
+      const sessionTitleID = `note-title-${++titleCounter}`;
+      const left = h('button', { type: 'button', class: 'button button--plain', dataset: { testid: 'note-left' } }, 'Anuluj');
+      const right = h('button', { type: 'button', class: 'button button--primary sheet__submit', dataset: { testid: 'note-right' } }, 'Zapisz');
+      const sessionBody = h('div', { class: `sheet__body note-sheet__body${kind === 'text' ? ' note-edit__body' : ''}` });
+      const sessionPanel = h('div', { class: 'sheet__panel note-sheet', 'aria-labelledby': sessionTitleID },
+        h('header', { class: 'sheet__header' }, left,
+          h('div', { class: 'sheet__heading' }, h('h2', { class: 'sheet__title', id: sessionTitleID }, kind === 'text' ? 'Notatka' : 'Obrazy i załączniki'), hintsToggle()),
+          right),
+        sessionBody);
+      const sessionEditor = noteEditor({
+        html: note?.html ?? '',
+        htmlEN: note?.htmlEN ?? '',
+        language: language ?? 'pl',
+        images: stored,
+        tables: note?.tables ?? [],
+        imagesFirst: note?.imagesFirst === true,
+        numberFigures: note?.numberFigures === true,
+        files,
+        loadFile,
+        urls,
+        titleID: sessionTitleID,
+        textView: kind === 'text',
+        onObjectsChange: () => { if (countButton) setObjectsCount(countButton, sessionEditor.objectCount()); },
+        beforeInsert: () => nested?.close('done')
+      });
+
+      /** Obrazy, tabele i załączniki nad oknem tekstu – ta sama edycja (bez osobnego zapisu). */
+      function openNested() {
+        if (nested) return;
+        const nestedTitleID = `note-title-${++titleCounter}`;
+        const done = h('button', { type: 'button', class: 'button button--primary sheet__submit', dataset: { testid: 'note-right' } }, 'Gotowe');
+        const nestedPanel = h('div', { class: 'sheet__panel note-sheet', 'aria-labelledby': nestedTitleID },
+          h('header', { class: 'sheet__header' }, h('span', { 'aria-hidden': 'true' }),
+            h('div', { class: 'sheet__heading' }, h('h2', { class: 'sheet__title', id: nestedTitleID }, 'Obrazy i załączniki'), hintsToggle()),
+            done),
+          h('div', { class: 'sheet__body note-sheet__body' }, heading(), sessionEditor.recordingBar, sessionEditor.objects, note ? deleteActions() : null));
+        nested = mountDialog('sheet note-dialog note-objects-dialog', nestedPanel, {
+          onClose: () => {
+            nested = null;
+            sessionEditor.objects.remove();
+            // Pasek nagrywania wraca nad tekst – nagranie trwa dalej.
+            sessionEditor.element.prepend(sessionEditor.recordingBar);
+            sessionEditor.focus();
+          }
         });
-        if (!discard) return;
+        nested.dataset.testid = 'note-objects-dialog';
+        done.addEventListener('click', () => nested.close('done'));
+        focusPanel(nestedPanel);
       }
-      if (mode === 'edit' && library.getNote(lessonID)) {
-        showView();
-        return;
+
+      if (kind === 'text') {
+        countButton = objectsButton(sessionEditor.objectCount(), () => openNested());
+        replaceChildren(sessionBody, heading(h('div', { class: 'note-sheet__tools' }, sessionEditor.recordButton, countButton)), sessionEditor.element);
+      } else {
+        replaceChildren(sessionBody, heading(), sessionEditor.objects, note ? deleteActions() : null);
       }
-      close();
-    };
+
+      let sessionDialog;
+      const finish = () => sessionDialog.close('done');
+      const requestCloseSession = async () => {
+        if (sessionEditor.dirty() && !(await confirmDiscard())) return;
+        finish();
+        // Nowa notatka bez zapisu – podglądu nie ma.
+        if (!library.getNote(lessonID)) close();
+      };
+      const saveSession = async () => {
+        if (right.disabled) return;
+        if (sessionEditor.busy()) {
+          toast('Poczekaj, aż obrazy i załączniki zostaną wczytane.');
+          return;
+        }
+        right.disabled = true;
+        try {
+          // Trwające nagranie kończy się i trafia do załączników razem z zapisem.
+          await sessionEditor.finishRecording();
+          const draft = sessionEditor.draft();
+          const saved = await library.saveNote(lessonID, draft);
+          // Załączniki bywają duże – prosimy przeglądarkę, żeby nie usuwała danych przy braku miejsca.
+          if (draft.files.some((file) => file.bytes)) navigator.storage?.persist?.().catch(() => {});
+          // Po zapisie podgląd w języku, w którym była edytowana treść (jeśli ta wersja nie jest pusta).
+          if (kind === 'text') language = sessionEditor.language();
+          finish();
+          await loadMedia();
+          if (!saved) {
+            toast('Notatka jest pusta – usunięto ją.');
+            close();
+            return;
+          }
+          toast('Zapisano notatkę.');
+          showView();
+        } catch (error) {
+          await showError(error);
+        } finally {
+          right.disabled = false;
+        }
+      };
+      left.addEventListener('click', () => requestCloseSession());
+      right.addEventListener('click', () => saveSession());
+      sessionPanel.addEventListener('keydown', (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+          event.preventDefault();
+          saveSession();
+        }
+      });
+      sessionDialog = mountDialog(`sheet note-dialog ${kind === 'text' ? 'note-edit-dialog' : 'note-objects-dialog'}`, sessionPanel, {
+        onDismiss: () => requestCloseSession(),
+        onClose: () => {
+          nested?.close('done');
+          sessionEditor.destroy();
+          session = null;
+        }
+      });
+      sessionDialog.dataset.testid = kind === 'text' ? 'note-edit-dialog' : 'note-objects-dialog';
+      session = { kind, dialog: sessionDialog };
+      focusPanel(sessionPanel);
+      sessionEditor.focus();
+    }
 
     /**
      * Tryb podglądu w stronach (książka) albo zwykły układ przewijany (edycja, state null).
@@ -622,6 +784,15 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       dialog?.classList.toggle('note-dialog--spread', state === 'measure-spread' || state === 'spread');
     };
 
+    /** Podgląd notatki, której jeszcze nie ma (pod oknem tekstu nowej notatki). */
+    function showEmpty() {
+      mode = 'empty';
+      setPaged(null);
+      leftButton.textContent = 'Zamknij';
+      rightButton.textContent = 'Edytuj';
+      replaceChildren(body, heading(), h('p', { class: 'note-sheet__only-files' }, 'Notatka jest pusta.'));
+    }
+
     function showView() {
       reader?.stop();
       reader = null;
@@ -631,46 +802,52 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
         return;
       }
       mode = 'view';
-      editor?.destroy();
-      editor = null;
       book?.destroy();
       leftButton.textContent = 'Zamknij';
       rightButton.textContent = 'Edytuj';
       rightButton.disabled = false;
       language = pickLanguage(note);
-      const html = language === 'en' ? (note.htmlEN ?? '') : note.html;
       const attachments = files.length > 0 ? attachmentList(files, (meta) => openAttachment(meta, () => loadFile(meta))) : null;
-      const tables = note.tables ?? [];
-      if (isEmptyNoteHtml(html) && stored.length === 0 && tables.length === 0) {
-        // Notatka z samymi załącznikami – bez stron.
+      // Od 1.29 obrazy i tabele ukryte oczkiem (razem z odwołaniami) – poza podglądem, PDF, drukiem i Kopiuj.
+      const visible = visibleNoteContent({ html: language === 'en' ? (note.htmlEN ?? '') : note.html, images: stored, tables: note.tables ?? [] });
+      const { html, tables } = visible;
+      const shown = visible.images;
+      const objectCount = stored.length + (note.tables ?? []).length + files.length;
+      const objectsTool = objectsButton(objectCount, () => openSession('objects'));
+      if (isEmptyNoteHtml(html) && shown.length === 0 && tables.length === 0) {
+        // Notatka z samymi załącznikami (albo z samymi ukrytymi obrazami i tabelami) – bez stron.
         book = null;
         setPaged(null);
-        replaceChildren(body, heading(), attachments, h('p', { class: 'note-sheet__only-files' }, 'Notatka ma tylko załączniki.'));
+        const hiddenOnly = stored.length + (note.tables ?? []).length > 0;
+        replaceChildren(body, heading(h('div', { class: 'note-sheet__tools' }, objectsTool)), attachments,
+          h('p', { class: 'note-sheet__only-files' }, hiddenOnly
+            ? 'Obrazy i tabele notatki są ukryte – pokażesz je oczkiem w oknie „Obrazy i załączniki”.'
+            : 'Notatka ma tylko załączniki.'));
         return;
       }
       // Treść jest normalizowana przed wstawieniem – tylko bezpieczne znaczniki notatki.
-      const numbers = figureNumbers(html, stored, note.imagesFirst === true);
+      const numbers = figureNumbers(html, shown, note.imagesFirst === true);
       book = noteBook({
         html,
-        images: stored,
-        tables: note.tables ?? [],
+        images: shown,
+        tables,
         imagesFirst: note.imagesFirst === true,
         numberFigures: note.numberFigures === true,
         language,
-        onOpenImage: (index) => openImage(stored, index, stored.map((image, position) => figureCaption(image.caption, numbers[position], note.numberFigures === true))),
+        onOpenImage: (index) => openImage(shown, index, shown.map((image, position) => figureCaption(image.caption, numbers[position], note.numberFigures === true))),
         onLayout: setPaged,
         spread: library.getSettings().noteSpread !== false,
         onSpreadChange: (spread) => library.updateSettings({ noteSpread: spread }).catch((error) => console.error(error))
       });
       replaceChildren(body,
-        heading(viewTools(note, html)),
+        heading(viewTools(note, html, objectsTool)),
         attachments,
         book.element,
         h('div', { class: 'note-sheet__footer' },
           !isEmptyNoteHtml(html) || tables.length > 0
             ? h('button', {
                 type: 'button', class: 'button button--secondary note-sheet__copy', dataset: { testid: 'note-copy' },
-                onClick: () => copyNote(note, stored, language)
+                onClick: () => copyNote({ ...note, html, htmlEN: html, tables }, shown, language)
               }, icon('copy', { size: 18 }), h('span', null, 'Kopiuj', h('span', { class: 'note-sheet__copy-more' }, ' notatkę')))
             : null,
           // Zapis PDF (od 1.28 – plik tworzony w aplikacji, z prawdziwym tekstem; druk – z okna PDF).
@@ -682,7 +859,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
                 title: library.getLesson(lessonID)?.name ?? lesson.name,
                 path: path.length > 1 ? path.slice(0, -1).join(' › ') : null,
                 html,
-                images: stored,
+                images: shown,
                 tables,
                 imagesFirst: note.imagesFirst === true,
                 numberFigures: note.numberFigures === true,
@@ -702,8 +879,8 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       book.layout();
     }
 
-    /** Przełącznik PL / EN (gdy notatka ma obie wersje) i czytanie na głos. */
-    function viewTools(note, html) {
+    /** Przełącznik PL / EN (gdy notatka ma obie wersje), czytanie na głos i (od 1.29) obrazy i załączniki. */
+    function viewTools(note, html, objectsTool) {
       const tools = [];
       if (!isEmptyNoteHtml(note.html) && !isEmptyNoteHtml(note.htmlEN ?? '')) {
         tools.push(h('div', { class: 'note-sheet__language', dataset: { testid: 'note-language' } }, segmented({
@@ -731,115 +908,24 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
         });
         tools.push(button);
       }
-      return tools.length > 0 ? h('div', { class: 'note-sheet__tools' }, tools) : null;
+      tools.push(objectsTool);
+      return h('div', { class: 'note-sheet__tools' }, tools);
     }
 
-    function showEdit() {
-      mode = 'edit';
-      reader?.stop();
-      reader = null;
-      book?.destroy();
-      book = null;
-      setPaged(null);
-      const note = library.getNote(lessonID);
-      leftButton.textContent = 'Anuluj';
-      rightButton.textContent = 'Zapisz';
-      editor?.destroy();
-      editor = noteEditor({
-        html: note?.html ?? '',
-        htmlEN: note?.htmlEN ?? '',
-        language: language ?? 'pl',
-        images: stored,
-        tables: note?.tables ?? [],
-        imagesFirst: note?.imagesFirst === true,
-        numberFigures: note?.numberFigures === true,
-        files,
-        loadFile,
-        urls,
-        titleID
-      });
-      replaceChildren(body,
-        heading(),
-        editor.element,
-        note ? h('div', { class: 'note-sheet__actions' },
-          h('button', {
-            type: 'button', class: 'button button--danger-plain', dataset: { testid: 'note-delete' },
-            onClick: async () => {
-              const confirmed = await confirmDialog({
-                title: 'Usunąć notatkę?',
-                message: 'Tekst, obrazy i załączniki notatki zostaną usunięte. Pojęcia lekcji zostają.',
-                confirmLabel: 'Usuń',
-                destructive: true
-              });
-              if (!confirmed) return;
-              try {
-                await library.deleteNote(lessonID);
-                toast('Usunięto notatkę.');
-                close();
-              } catch (error) {
-                await showError(error);
-              }
-            }
-          }, icon('trash', { size: 18 }), h('span', null, 'Usuń notatkę'))
-        ) : null
-      );
-      editor.focus();
-    }
-
-    const save = async () => {
-      if (!editor || rightButton.disabled) return;
-      if (editor.busy()) {
-        toast('Poczekaj, aż obrazy i załączniki zostaną wczytane.');
-        return;
-      }
-      rightButton.disabled = true;
-      try {
-        // Trwające nagranie kończy się i trafia do załączników razem z zapisem.
-        await editor.finishRecording();
-        const draft = editor.draft();
-        const saved = await library.saveNote(lessonID, draft);
-        // Załączniki bywają duże – prosimy przeglądarkę, żeby nie usuwała danych przy braku miejsca.
-        if (draft.files.some((file) => file.bytes)) navigator.storage?.persist?.().catch(() => {});
-        // Po zapisie podgląd w języku, w którym była edytowana treść (jeśli ta wersja nie jest pusta).
-        language = editor.language();
-        await loadMedia();
-        if (!saved) {
-          toast('Notatka jest pusta – usunięto ją.');
-          close();
-          return;
-        }
-        toast('Zapisano notatkę.');
-        showView();
-      } catch (error) {
-        await showError(error);
-      } finally {
-        rightButton.disabled = false;
-      }
-    };
-
-    leftButton.addEventListener('click', () => requestClose());
-    rightButton.addEventListener('click', () => {
-      if (mode === 'view') showEdit();
-      else save();
-    });
+    leftButton.addEventListener('click', () => close());
+    rightButton.addEventListener('click', () => openSession('text'));
     // Kółko myszy w podglądzie przewraca strony notatki (nasłuch nie pasywny – blokuje przewijanie).
     panel.addEventListener('wheel', (event) => {
       if (mode === 'view' && book?.handleWheel(event)) event.preventDefault();
     }, { passive: false });
     panel.addEventListener('keydown', (event) => {
-      if (mode === 'edit' && (event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-        event.preventDefault();
-        save();
-      } else if (mode === 'view' && book?.handleKey(event)) {
-        event.preventDefault();
-      }
+      if (mode === 'view' && book?.handleKey(event)) event.preventDefault();
     });
 
     dialog = mountDialog('sheet note-dialog', panel, {
-      onDismiss: () => requestClose(),
       onClose: () => {
         reader?.stop();
-        editor?.destroy();
+        session?.dialog.close('done');
         book?.destroy();
         urls.release();
         resolve();
@@ -854,8 +940,11 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       .catch((error) => console.error(error))
       .finally(() => {
         if (!dialog.open) return;
-        if (edit || !library.getNote(lessonID)) showEdit();
-        else showView();
+        const exists = Boolean(library.getNote(lessonID));
+        if (exists) showView();
+        else showEmpty();
+        // Nowa notatka (albo „Edytuj” z menu) – od razu okno tekstu nad podglądem.
+        if (edit || !exists) openSession('text');
       });
   });
 }
@@ -865,10 +954,15 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
 /**
  * Edytor notatki: obrazy, załączniki, pasek formatowania i pole tekstu.
  * files – opisy załączników notatki, loadFile(meta) → bajty zapisanego załącznika.
- * Zwraca { element, draft(), dirty(), busy(), focus(), destroy() }.
+ * Od 1.29 dwie części w osobnych oknach: element – tekst (pasek formatowania i pole), objects – obrazy,
+ * tabele i załączniki. textView – okno tekstu jest (bez niego – samo okno obiektów: bez „Wstaw do
+ * tekstu”); onObjectsChange() – zmiana liczby obiektów; beforeInsert() – przed wstawieniem odwołania
+ * z okna obiektów (zamyka je, żeby było widać tekst).
+ * Zwraca { element, objects, recordingBar, recordButton, objectCount(), draft(), dirty(), busy(), focus(), destroy() }.
  */
 function noteEditor({
-  html, htmlEN = '', language = 'pl', images, tables = [], urls, imagesFirst = false, numberFigures = false, files = [], loadFile = null, titleID = 'note'
+  html, htmlEN = '', language = 'pl', images, tables = [], urls, imagesFirst = false, numberFigures = false, files = [], loadFile = null, titleID = 'note',
+  textView = true, onObjectsChange = null, beforeInsert = null
 }) {
   const initialTexts = { pl: normalizeNoteHtml(html), en: normalizeNoteHtml(htmlEN) };
   const labeledImages = withImageLabels(images.map((image) => ({ ...image })));
@@ -893,7 +987,7 @@ function noteEditor({
     pending: 0,
     range: null
   };
-  const imagesKey = () => state.images.map((image) => `${image.id ?? image.url}:${image.label}:${image.caption ?? ''}`).join(',');
+  const imagesKey = () => state.images.map((image) => `${image.id ?? image.url}:${image.label}:${image.caption ?? ''}:${image.hidden ? 1 : 0}`).join(',');
   const initialImages = imagesKey();
   let added = 0;
   const filesKey = () => state.files.map((file) => `${file.id ?? file.key}:${file.name}`).join('\n');
@@ -1043,7 +1137,8 @@ function noteEditor({
         kind === 'Tabela' || !item.url ? icon(kind === 'Tabela' ? 'table' : 'image', { size: 20 }) : h('img', { src: item.url, alt: '', draggable: 'false' })),
       h('span', { class: 'note-objects__text' },
         h('span', { class: 'note-objects__name' }, item.label),
-        h('span', { class: 'note-objects__meta' }, [kind, item.caption, inText.has(labelKey(item.label)) ? 'już w tekście' : null].filter(Boolean).join(' · ')))));
+        h('span', { class: 'note-objects__meta' },
+          [kind, item.caption, inText.has(labelKey(item.label)) ? 'już w tekście' : null, item.hidden ? 'ukryty w notatce' : null].filter(Boolean).join(' · ')))));
     replaceChildren(objectsPanel,
       h('div', { class: 'note-objects__new' },
         h('span', { class: 'note-objects__label' }, 'Nowy'),
@@ -1370,13 +1465,14 @@ function noteEditor({
     const files = [...(data.files ?? [])].filter((file) => file.type.startsWith('image/'));
     const html = data.getData('text/html');
     const text = data.getData('text/plain');
+    // Od 1.29 obrazów nie widać w oknie tekstu – wklejony obraz dostaje też odwołanie w miejscu kursora.
     if (files.length > 0 && !text) {
       event.preventDefault();
-      addFiles(files);
+      addFiles(files, { insert: true });
       return;
     }
     event.preventDefault();
-    if (files.length > 0) addFiles(files);
+    if (files.length > 0) addFiles(files, { insert: true });
     if (html) {
       // Przeglądarka najpierw porządkuje HTML (np. z Worda), potem zostaje tylko to, co notatka obsługuje.
       const parsed = new window.DOMParser().parseFromString(html, 'text/html');
@@ -1393,7 +1489,7 @@ function noteEditor({
   // Kolejność przeciąganiem (od 1.18); nieudane albo bez zmiany – siatka wraca do stanu z listy.
   enableGridDrag(grid, {
     itemSelector: '.note-images__item:not(.note-images__item--pending)',
-    ignore: '.note-images__remove',
+    ignore: '.note-images__remove, .note-images__edit, .note-images__eye',
     onDrop: (order) => {
       if (order) state.images = order.map((index) => state.images[index]);
       renderImages();
@@ -1436,7 +1532,55 @@ function noteEditor({
   };
 
   /** Odwołanie [[sygnatura]] w osobnej linijce w miejscu kursora (bez kursora – na końcu tekstu). */
-  const insertReference = (image) => insertBlock(h('p', null, referenceToken(image.label)));
+  const insertReference = (image) => {
+    beforeInsert?.();
+    insertBlock(h('p', null, referenceToken(image.label)));
+  };
+
+  /**
+   * Usunięcie obrazu albo tabeli (od 1.29) usuwa też odwołania [[sygnatura]] w obu wersjach treści.
+   * Zwraca true, gdy jakieś było.
+   */
+  function removeReferencesTo(label) {
+    const current = texts();
+    const next = { pl: removeReferences(current.pl, label), en: removeReferences(current.en, label) };
+    if (next.pl === current.pl && next.en === current.en) return false;
+    state.texts = next;
+    showLanguage(state.language);
+    syncEmpty();
+    return true;
+  }
+
+  function removeObject(item) {
+    const isTable = state.tables.includes(item);
+    const list = isTable ? state.tables : state.images;
+    const index = list.indexOf(item);
+    if (index < 0) return;
+    list.splice(index, 1);
+    const referenced = removeReferencesTo(item.label);
+    if (isTable) renderTables();
+    else renderImages();
+    if (referenced) toast(`Usunięto ${item.label} i odwołanie ${referenceToken(item.label)} w tekście.`);
+  }
+
+  /** Oczko (od 1.29): obiekt w notatce widoczny albo ukryty – zostaje w obiektach, podgląd go nie pokazuje. */
+  function toggleHidden(item) {
+    if (item.hidden) delete item.hidden;
+    else item.hidden = true;
+    if (state.tables.includes(item)) renderTables();
+    else renderImages();
+  }
+
+  /** Oczko i ołówek na kafelku obrazu i tabeli. */
+  const eyeButton = (item) => h('button', {
+    type: 'button', class: 'note-images__eye', 'aria-pressed': String(!item.hidden), dataset: { testid: 'note-object-eye' },
+    'aria-label': item.hidden ? `${item.label} – pokaż w notatce` : `${item.label} – ukryj w notatce`,
+    title: item.hidden ? 'Ukryty w notatce – dotknij, żeby pokazać' : 'Widoczny w notatce – dotknij, żeby ukryć',
+    onClick: () => toggleHidden(item)
+  }, icon(item.hidden ? 'eyeOff' : 'eye', { size: 15 }));
+  const editButton = (label, onClick) => h('button', {
+    type: 'button', class: 'note-images__edit', 'aria-label': label, title: label, dataset: { testid: 'note-object-edit' }, onClick
+  }, icon('pen', { size: 14 }));
 
   /**
    * Zmiana sygnatury obrazu albo (od 1.21) tabeli; odwołania w obu wersjach treści dostają nową
@@ -1614,7 +1758,7 @@ function noteEditor({
 
   function renderImages() {
     const tiles = state.images.map((image, index) => h('div', {
-      class: isDrawing(image) ? 'note-images__item note-images__item--drawing' : 'note-images__item',
+      class: `note-images__item${isDrawing(image) ? ' note-images__item--drawing' : ''}${image.hidden ? ' note-images__item--hidden' : ''}`,
       dataset: { index: String(index), testid: 'note-image-tile' }
     },
       h('button', {
@@ -1623,7 +1767,8 @@ function noteEditor({
           title: image.label,
           items: [
             isDrawing(image) ? { label: 'Edytuj rysunek', icon: 'pen', onSelect: () => redraw(image) } : null,
-            { label: 'Wstaw do tekstu', icon: 'note', onSelect: () => insertReference(image) },
+            textView ? { label: 'Wstaw do tekstu', icon: 'note', onSelect: () => insertReference(image) } : null,
+            { label: image.hidden ? 'Pokaż w notatce' : 'Ukryj w notatce', icon: image.hidden ? 'eye' : 'eyeOff', onSelect: () => toggleHidden(image) },
             { label: 'Zmień sygnaturę', icon: 'tag', onSelect: () => renameImage(image) },
             { label: image.caption ? 'Zmień podpis' : 'Dodaj podpis', icon: 'textBox', onSelect: () => editCaption(image) },
             { label: 'Powiększ', icon: 'zoomIn', disabled: !image.url, onSelect: () => openImage(state.images, index) },
@@ -1631,7 +1776,7 @@ function noteEditor({
             { label: 'Przesuń wcześniej', icon: 'arrowLeft', disabled: index === 0, onSelect: () => moveImage(index, -1) },
             { label: 'Przesuń dalej', icon: 'arrowRight', disabled: index === state.images.length - 1, onSelect: () => moveImage(index, 1) },
             'separator',
-            { label: 'Usuń obraz', icon: 'trash', destructive: true, onSelect: () => { state.images.splice(index, 1); renderImages(); } }
+            { label: 'Usuń obraz', icon: 'trash', destructive: true, onSelect: () => removeObject(image) }
           ]
         })
       }, image.url
@@ -1639,10 +1784,11 @@ function noteEditor({
         : h('span', { class: 'note-images__missing', dataset: { testid: 'note-image-missing' } }, icon('image', { size: 20 }), 'Brak pliku')),
       h('button', {
         type: 'button', class: 'note-images__remove', 'aria-label': `Usuń obraz ${image.label}`, dataset: { testid: 'note-image-remove' },
-        onClick: () => { state.images.splice(index, 1); renderImages(); }
+        onClick: () => removeObject(image)
       }, icon('close', { size: 14 })),
-      isDrawing(image) ? h('span', { class: 'note-images__badge', title: 'Rysunek', dataset: { testid: 'note-image-drawing' } }, icon('pen', { size: 14 })) : null,
-      h('span', { class: 'note-images__label', dataset: { testid: 'note-image-label-text' } }, image.label)
+      // Od 1.29 ołówek od razu otwiera edycję: rysunek – edytor rysunku, zdjęcie – rysowanie na zdjęciu.
+      isDrawing(image) || image.url ? editButton(isDrawing(image) ? `Edytuj rysunek ${image.label}` : `Rysuj na zdjęciu ${image.label}`, () => redraw(image)) : null,
+      h('span', { class: 'note-images__label' }, h('span', { dataset: { testid: 'note-image-label-text' } }, image.label), eyeButton(image))
     ));
     for (let index = 0; index < state.pending; index += 1) {
       tiles.push(h('div', { class: 'note-images__item note-images__item--pending', 'aria-hidden': 'true' }, h('span', { class: 'note-images__spinner' })));
@@ -1663,6 +1809,7 @@ function noteEditor({
     layoutGrid();
     updatePreviewOptions();
     refreshObjectsPanel();
+    onObjectsChange?.();
     status.textContent = state.pending > 0 ? 'Przygotowanie obrazu…' : (full ? `Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów.` : '');
   }
 
@@ -1713,10 +1860,11 @@ function noteEditor({
     grid,
     status,
     h('p', { class: 'field__hint' },
-      'Dotknij obrazu, żeby wstawić go do tekstu (szybciej – przyciskiem „Wstaw rysunek, zdjęcie albo tabelę” na pasku), zmienić sygnaturę albo podpis, powiększyć, przesunąć albo usunąć – rysunek możesz też poprawić, a na zdjęciu rysować. '
+      'Dotknij obrazu, żeby wstawić go do tekstu (szybciej – przyciskiem „Wstaw rysunek, zdjęcie albo tabelę” na pasku edycji), zmienić sygnaturę albo podpis, powiększyć, przesunąć albo usunąć. '
+      + 'Ołówek od razu otwiera rysunek do poprawki (na zdjęciu – rysowanie), oczko chowa obraz w notatce (zostaje tutaj). '
       + 'Kolejność zmienisz, przeciągając obraz (palcem – po chwili przytrzymania). Linijka ',
       h('code', null, '[[sygnatura]]'),
-      ' w tekście to miejsce obrazu w notatce; obrazy bez odwołania są przed tekstem albo po nim. Obraz możesz też wkleić do tekstu – trafi tutaj.'),
+      ' w tekście to miejsce obrazu w notatce; obrazy bez odwołania są przed tekstem albo po nim. Obraz wklejony do tekstu trafia tutaj, a w tekście – jego odwołanie.'),
     fileInput
   );
 
@@ -1724,7 +1872,7 @@ function noteEditor({
   const tableGrid = h('div', { class: 'note-images note-tables', dataset: { testid: 'note-tables' } });
   enableGridDrag(tableGrid, {
     itemSelector: '.note-tables__item',
-    ignore: '.note-images__remove',
+    ignore: '.note-images__remove, .note-images__edit, .note-images__eye',
     onDrop: (order) => {
       if (order) state.tables = order.map((index) => state.tables[index]);
       renderTables();
@@ -1772,28 +1920,32 @@ function noteEditor({
   };
 
   function renderTables() {
-    const tiles = state.tables.map((table, index) => h('div', { class: 'note-images__item note-tables__item', dataset: { index: String(index), testid: 'note-table-tile' } },
+    const tiles = state.tables.map((table, index) => h('div', {
+      class: `note-images__item note-tables__item${table.hidden ? ' note-images__item--hidden' : ''}`, dataset: { index: String(index), testid: 'note-table-tile' }
+    },
       h('button', {
         type: 'button', class: 'note-images__open', 'aria-label': `${table.label} – polecenia`,
         onClick: () => openMenu({
           title: table.label,
           items: [
             { label: 'Edytuj tabelę', icon: 'table', onSelect: () => editTable(table) },
-            { label: 'Wstaw do tekstu', icon: 'note', onSelect: () => insertReference(table) },
+            textView ? { label: 'Wstaw do tekstu', icon: 'note', onSelect: () => insertReference(table) } : null,
+            { label: table.hidden ? 'Pokaż w notatce' : 'Ukryj w notatce', icon: table.hidden ? 'eye' : 'eyeOff', onSelect: () => toggleHidden(table) },
             { label: 'Zmień sygnaturę', icon: 'tag', onSelect: () => renameImage(table) },
             { label: table.caption ? 'Zmień podpis' : 'Dodaj podpis', icon: 'textBox', onSelect: () => editCaption(table) },
             { label: 'Przesuń wcześniej', icon: 'arrowLeft', disabled: index === 0, onSelect: () => moveTable(index, -1) },
             { label: 'Przesuń dalej', icon: 'arrowRight', disabled: index === state.tables.length - 1, onSelect: () => moveTable(index, 1) },
             'separator',
-            { label: 'Usuń tabelę', icon: 'trash', destructive: true, onSelect: () => { state.tables.splice(index, 1); renderTables(); } }
+            { label: 'Usuń tabelę', icon: 'trash', destructive: true, onSelect: () => removeObject(table) }
           ]
         })
       }, tablePreview(table)),
       h('button', {
         type: 'button', class: 'note-images__remove', 'aria-label': `Usuń tabelę ${table.label}`, dataset: { testid: 'note-table-remove' },
-        onClick: () => { state.tables.splice(index, 1); renderTables(); }
+        onClick: () => removeObject(table)
       }, icon('close', { size: 14 })),
-      h('span', { class: 'note-images__label', dataset: { testid: 'note-table-label-text' } }, table.label)));
+      editButton(`Edytuj tabelę ${table.label}`, () => editTable(table)),
+      h('span', { class: 'note-images__label' }, h('span', { dataset: { testid: 'note-table-label-text' } }, table.label), eyeButton(table))));
     tiles.push(h('button', {
       type: 'button', class: 'note-images__add', disabled: state.tables.length >= NOTE_TABLE_LIMIT, dataset: { testid: 'note-table-add' },
       onClick: () => addTable()
@@ -1801,14 +1953,15 @@ function noteEditor({
     replaceChildren(tableGrid, tiles);
     updatePreviewOptions();
     refreshObjectsPanel();
+    onObjectsChange?.();
   }
 
   const tablesSection = h('section', { class: 'note-editor__tables' },
     h('h3', { class: 'form-group__title' }, 'Tabele'),
     tableGrid,
     h('p', { class: 'field__hint' },
-      'Tabela to osobny obiekt notatki – jak obraz: dotknij jej, żeby edytować, wstawić do tekstu, zmienić sygnaturę albo dodać podpis '
-      + '(nad tabelą, z numeracją „Tab. 1.”). W oknie tabeli możesz wkleić fragment arkusza Excel albo tabelę z Worda. Linijka ',
+      'Tabela to osobny obiekt notatki – jak obraz: dotknij jej, żeby wstawić do tekstu, zmienić sygnaturę albo dodać podpis '
+      + '(nad tabelą, z numeracją „Tab. 1.”); ołówek od razu otwiera okno tabeli, oczko chowa tabelę w notatce. W oknie tabeli możesz wkleić fragment arkusza Excel albo tabelę z Worda. Linijka ',
       h('code', null, '[[Tabela 1]]'),
       ' w tekście to miejsce tabeli; tabele bez odwołania są przed tekstem albo po nim, za obrazami.'),
     // Miejsce obrazów i tabel bez odwołania oraz numeracja „Rys. N.” i „Tab. N.” – wspólne.
@@ -1912,6 +2065,8 @@ function noteEditor({
           }, icon('mic', { size: 20 }), h('span', null, 'Nagraj notatkę głosową'))
         : null));
     replaceChildren(fileList, rows);
+    if (recordButton) recordButton.disabled = full || Boolean(recording);
+    onObjectsChange?.();
     fileStatus.textContent = state.filesPending > 0 ? 'Wczytywanie pliku…' : (full ? `Notatka może mieć najwyżej ${NOTE_FILE_LIMIT} załączników.` : '');
   }
 
@@ -1958,6 +2113,13 @@ function noteEditor({
   }, icon('stop', { size: 16 }), h('span', null, 'Zakończ'));
   const recordingBar = h('div', { class: 'note-recording', hidden: true, role: 'status', dataset: { testid: 'note-recording' } },
     h('span', { class: 'note-recording__dot', 'aria-hidden': 'true' }), recordState, recordTime, pauseButton, stopButton);
+  /** Mikrofon w oknie tekstu (od 1.29): nagranie zaczyna się bez przechodzenia do załączników – piszesz dalej. */
+  const recordButton = textView && recordingSupported()
+    ? h('button', {
+        type: 'button', class: 'note-sheet__record', title: 'Nagraj notatkę głosową', 'aria-label': 'Nagraj notatkę głosową', dataset: { testid: 'note-record' },
+        onClick: () => startVoice()
+      }, icon('mic', { size: 18 }))
+    : null;
 
   const showRecording = () => {
     recordingBar.hidden = !recording;
@@ -2040,13 +2202,16 @@ function noteEditor({
     attachInput
   );
 
-  // Obrazy na górze, pod nimi załączniki, na końcu tekst. Upuszczenie plików na edytor
-  // (komputer) dodaje obrazy albo załączniki.
-  const element = h('div', { class: 'note-editor' },
-    recordingBar,
+  // Od 1.29 dwie części w osobnych oknach: obrazy, tabele i załączniki (objects) oraz tekst (element).
+  // Upuszczenie plików na edytor (komputer) dodaje obrazy albo załączniki.
+  const objects = h('div', { class: 'note-editor note-editor--objects' },
+    textView ? null : recordingBar,
     imagesSection,
     tablesSection,
-    filesSection,
+    filesSection
+  );
+  const element = h('div', { class: 'note-editor note-editor--text' },
+    textView ? recordingBar : null,
     h('section', { class: 'note-editor__text' },
       h('div', { class: 'note-editor__text-head' },
         h('h3', { class: 'form-group__title' }, 'Tekst'),
@@ -2066,24 +2231,27 @@ function noteEditor({
       area
     )
   );
-  element.addEventListener('dragover', (event) => {
-    if ([...(event.dataTransfer?.items ?? [])].some((item) => item.kind === 'file')) {
+  for (const part of [element, objects]) {
+    part.addEventListener('dragover', (event) => {
+      if ([...(event.dataTransfer?.items ?? [])].some((item) => item.kind === 'file')) {
+        event.preventDefault();
+        part.classList.add('note-editor--drop');
+      }
+    });
+    part.addEventListener('dragleave', () => part.classList.remove('note-editor--drop'));
+    // Upuszczone obrazy trafiają do obrazów, pozostałe pliki – do załączników.
+    part.addEventListener('drop', (event) => {
+      const dropped = [...(event.dataTransfer?.files ?? [])];
+      part.classList.remove('note-editor--drop');
+      if (dropped.length === 0) return;
       event.preventDefault();
-      element.classList.add('note-editor--drop');
-    }
-  });
-  element.addEventListener('dragleave', () => element.classList.remove('note-editor--drop'));
-  // Upuszczone obrazy trafiają do obrazów, pozostałe pliki – do załączników.
-  element.addEventListener('drop', (event) => {
-    const dropped = [...(event.dataTransfer?.files ?? [])];
-    element.classList.remove('note-editor--drop');
-    if (dropped.length === 0) return;
-    event.preventDefault();
-    const pictures = dropped.filter((file) => file.type.startsWith('image/'));
-    if (pictures.length > 0) addFiles(pictures);
-    const others = dropped.filter((file) => !file.type.startsWith('image/'));
-    if (others.length > 0) addAttachments(others);
-  });
+      const pictures = dropped.filter((file) => file.type.startsWith('image/'));
+      // Obraz upuszczony na tekst (od 1.29) – też odwołanie w miejscu kursora.
+      if (pictures.length > 0) addFiles(pictures, { insert: part === element });
+      const others = dropped.filter((file) => !file.type.startsWith('image/'));
+      if (others.length > 0) addAttachments(others);
+    });
+  }
 
   renderImages();
   renderTables();
@@ -2101,6 +2269,11 @@ function noteEditor({
 
   return {
     element,
+    objects,
+    recordingBar,
+    recordButton,
+    /** Obrazy, tabele i załączniki – liczba na przycisku okna obiektów. */
+    objectCount: () => state.images.length + state.tables.length + state.files.length,
     draft() {
       const current = texts();
       return {
@@ -2108,16 +2281,17 @@ function noteEditor({
         htmlEN: current.en,
         imagesFirst: state.imagesFirst,
         numberFigures: state.numberFigures,
-        tables: state.tables.map(({ label, caption, rows, header, headerColumn, align, headAlign, formats, colWidths }) => ({
-          label, ...(caption ? { caption } : {}), rows, header, headerColumn, align,
+        tables: state.tables.map(({ label, caption, hidden, rows, header, headerColumn, align, headAlign, formats, colWidths }) => ({
+          label, ...(caption ? { caption } : {}), ...(hidden ? { hidden: true } : {}), rows, header, headerColumn, align,
           // Od 1.26: wyrównanie nagłówka, formaty i szerokości kolumn.
           ...(headAlign ? { headAlign } : {}), ...(formats ? { formats } : {}), ...(colWidths ? { colWidths } : {})
         })),
+        // Od 1.29: hidden – obraz ukryty w notatce (oczko).
         images: state.images.map((image) => (image.stored
-          ? { id: image.id, label: image.label, caption: image.caption ?? null }
+          ? { id: image.id, label: image.label, caption: image.caption ?? null, hidden: image.hidden === true }
           : {
             bytes: image.bytes, type: image.type, width: image.width, height: image.height, name: image.name ?? null, label: image.label,
-            caption: image.caption ?? null, ...(image.drawing ? { drawing: image.drawing } : {})
+            caption: image.caption ?? null, hidden: image.hidden === true, ...(image.drawing ? { drawing: image.drawing } : {})
           })),
         files: state.files.map((file) => (file.stored
           ? { id: file.id, name: file.name }
@@ -2145,8 +2319,8 @@ function noteEditor({
     language: () => state.language,
     focus() {
       requestAnimationFrame(() => {
-        // Na telefonie bez automatycznego fokusu – klawiatura zasłoniłaby obrazy i przyciski.
-        if (window.matchMedia('(pointer: fine)').matches) area.focus({ preventScroll: true });
+        // Na telefonie bez automatycznego fokusu – klawiatura zasłoniłaby pasek i tekst.
+        if (textView && area.isConnected && window.matchMedia('(pointer: fine)').matches) area.focus({ preventScroll: true });
       });
     },
     destroy() {

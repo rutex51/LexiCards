@@ -3,6 +3,7 @@
 // klawisza Esc i blokady tła.
 
 import { h } from './dom.js';
+import { hintsToggle } from './hints.js';
 import { icon } from './icons.js';
 
 let dialogCounter = 0;
@@ -69,7 +70,8 @@ export function openFormSheet({ title, submitLabel = 'Zapisz', cancelLabel = 'An
   const form = h('form', { class: 'sheet__panel', novalidate: true, 'aria-labelledby': titleID },
     h('header', { class: 'sheet__header' },
       cancelButton,
-      h('h2', { class: 'sheet__title', id: titleID }, title),
+      // Od 1.29 obok tytułu ⓘ – chowa i pokazuje podpowiedzi (gdy okno je ma).
+      h('div', { class: 'sheet__heading' }, h('h2', { class: 'sheet__title', id: titleID }, title), hintsToggle()),
       submitButton
     ),
     body

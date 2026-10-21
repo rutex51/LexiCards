@@ -90,6 +90,8 @@ const title = (page) => page.locator('.screen__title');
 /** Opis pod grupą „Kopia zapasowa i przeniesienie” w ustawieniach. */
 const backupFooter = (page) => page.locator('.group__footer').filter({ hasText: 'Przeniesienie to dwa pliki' });
 const sheet = (page) => page.locator('dialog.sheet[open]').last();
+/** Otwarte okna formularzy bez okien notatki (od 1.29 notatka ma okno podglądu, tekstu i obiektów). */
+const formSheets = (page) => page.locator('dialog.sheet[open]:not(.note-dialog)').count();
 const termRows = (page) => page.locator('.terms > .term');
 
 async function tab(page, name) {
@@ -1180,7 +1182,24 @@ test('wyeksportowany plik wczytany do pustej aplikacji odtwarza bibliotekę', as
 // ---------------------------------------------------------------- notatki lekcji
 
 const IMAGE_FILE = path.join(ROOT, 'icons/icon-192.png');
-const noteDialog = (page) => page.locator('dialog.note-dialog[open]');
+// Od 1.29 edycja i obrazy z załącznikami to osobne okna nad podglądem – okno notatki na wierzchu.
+const noteDialog = (page) => page.locator('dialog.note-dialog[open]').last();
+const noteObjectsDialog = (page) => page.locator('dialog[data-testid=note-objects-dialog][open]');
+
+/**
+ * Okno „Obrazy i załączniki” notatki (od 1.29): z podglądu – osobna edycja z „Zapisz”, z okna tekstu –
+ * nad tekstem, z „Gotowe”.
+ */
+async function openNoteObjects(page) {
+  await noteDialog(page).locator('[data-testid=note-objects-open]').click();
+  await noteObjectsDialog(page).waitFor();
+}
+
+/** „Gotowe” w oknie obrazów i załączników nad oknem tekstu – powrót do tekstu. */
+async function closeNoteObjects(page) {
+  await noteObjectsDialog(page).locator('[data-testid=note-right]').click();
+  await noteObjectsDialog(page).waitFor({ state: 'detached' });
+}
 
 /** Identyfikatory lekcji z danych przykładowych. */
 function sampleLessons(page) {
@@ -1284,15 +1303,19 @@ test('notatka lekcji: dodanie z listy lekcji, formatowanie, obraz, podgląd, pow
   await dialog.locator('.note-colors__swatch[data-color=green]').click();
   await page.keyboard.type('własny');
 
-  // Obrazy są na górze edytora, nad tekstem; wybór miejsca w podglądzie widać, gdy jest obraz.
+  // Od 1.29 obrazy, tabele i załączniki – w osobnym oknie (spinacz przy nazwie lekcji), nie w oknie tekstu;
+  // wybór miejsca w podglądzie widać, gdy jest obraz.
   const topOf = (selector) => dialog.locator(selector).evaluate((element) => element.getBoundingClientRect().top);
-  assert.ok(await topOf('.note-editor__images') < await topOf('.note-editor__text'), 'obrazy nad tekstem');
+  assert.equal(await dialog.locator('.note-editor__images').count(), 0, 'w oknie tekstu nie ma obrazów');
+  await openNoteObjects(page);
   assert.equal(await dialog.locator('[data-testid=note-image-placement]').isHidden(), true, 'bez obrazów nie ma wyboru');
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), dialog.locator('[data-testid=note-image-add]').click()]);
   await chooser.setFiles(IMAGE_FILE);
   await dialog.locator('.note-images__item img').waitFor();
   const placement = page.getByRole('radiogroup', { name: 'Obrazy w podglądzie' });
   assert.equal(await placement.getByRole('radio', { name: 'Po tekście' }).isChecked(), true, 'domyślnie obrazy po tekście');
+  await closeNoteObjects(page);
+  await expectText(dialog.locator('[data-testid=note-objects-open]'), '1');
 
   await dialog.locator('[data-testid=note-right]').click();
   await dialog.locator('[data-testid=note-text]').waitFor();
@@ -1308,11 +1331,11 @@ test('notatka lekcji: dodanie z listy lekcji, formatowanie, obraz, podgląd, pow
   assert.deepEqual([note.images[0].type, note.images[0].width, note.images[0].height], ['image/png', 192, 192]);
   assert.ok(await topOf('.note-page__figure') > await topOf('[data-testid=note-text]'), 'w podglądzie obraz po tekście');
 
-  // Obrazy przed tekstem: wybór w edytorze, zapisany w notatce, w podglądzie obraz nad tekstem.
-  await dialog.locator('[data-testid=note-right]').click();
-  await dialog.locator('[data-testid=note-editor]').waitFor();
+  // Obrazy przed tekstem: wybór w oknie obrazów i załączników (z podglądu), zapisany w notatce, w podglądzie obraz nad tekstem.
+  await openNoteObjects(page);
   await placement.locator('.segmented__option', { hasText: 'Przed tekstem' }).click();
   await dialog.locator('[data-testid=note-right]').click();
+  await noteObjectsDialog(page).waitFor({ state: 'detached' });
   await dialog.locator('.note-page__figure img').waitFor();
   assert.equal((await storedNote(page, ids.statements)).imagesFirst, true);
   assert.ok(await topOf('.note-page__figure') < await topOf('[data-testid=note-text]'), 'w podglądzie obraz przed tekstem');
@@ -1350,7 +1373,7 @@ test('notatka lekcji: dodanie z listy lekcji, formatowanie, obraz, podgląd, pow
   await noteDialog(page).locator('[data-testid=note-text]').waitFor();
 
   // Zmiany porzucone po pytaniu: notatka bez zmian.
-  await noteDialog(page).locator('[data-testid=note-right]').click();
+  await openNoteObjects(page);
   await noteDialog(page).locator('[data-testid=note-image-remove]').click();
   await noteDialog(page).locator('[data-testid=note-left]').click();
   await expectText(page.locator('dialog.alert[open] .alert__title'), 'Odrzucić zmiany?');
@@ -1358,8 +1381,8 @@ test('notatka lekcji: dodanie z listy lekcji, formatowanie, obraz, podgląd, pow
   await noteDialog(page).locator('[data-testid=note-text]').waitFor();
   assert.equal((await storedNote(page, ids.statements)).images.length, 1);
 
-  // Usunięcie notatki.
-  await noteDialog(page).locator('[data-testid=note-right]').click();
+  // Usunięcie notatki (od 1.29 – na dole okna „Obrazy i załączniki”).
+  await openNoteObjects(page);
   await noteDialog(page).locator('[data-testid=note-delete]').click();
   await expectText(page.locator('dialog.alert[open] .alert__title'), 'Usunąć notatkę?');
   await confirm(page);
@@ -1398,13 +1421,18 @@ test('notatka: wklejony tekst z Worda i strony zachowuje formatowanie, wklejony 
   });
   await waitUntil(async () => (await editor.innerHTML()).includes('punkt z Worda'), 'Wklejony tekst powinien być w edytorze');
   assert.equal(await page.evaluate(() => window.zle), undefined, 'skrypt z wklejonego HTML się nie wykonał');
+  // Wklejony obraz (od 1.29): w obrazach notatki (spinacz – 1), a w tekście jego odwołanie w miejscu kursora.
   await paste({ image: './icons/icon-192.png' });
-  await dialog.locator('.note-images__item img').waitFor();
+  await expectText(dialog.locator('[data-testid=note-objects-open]'), '1');
+  await waitUntil(async () => (await editor.innerText()).includes('[[Obraz 1]]'), 'odwołanie wklejonego obrazu w tekście');
+  await openNoteObjects(page);
+  await noteObjectsDialog(page).locator('.note-images__item img').waitFor();
+  await closeNoteObjects(page);
 
   await dialog.locator('[data-testid=note-right]').click();
   await dialog.locator('[data-testid=note-text]').waitFor();
   const note = await storedNote(page, ids.statements);
-  assert.equal(note.html, '<p><strong>Ważne:</strong> <em>kursywa</em> i kolor Worda</p><ul><li>punkt z Worda</li></ul>');
+  assert.equal(note.html, '<p><strong>Ważne:</strong> <em>kursywa</em> i kolor Worda</p><ul><li>punkt z Worda</li></ul><p>[[Obraz 1]]</p>');
   assert.equal(note.images.length, 1);
 
   await dialog.locator('[data-testid=note-copy]').click();
@@ -1751,11 +1779,10 @@ test('załączniki w edytorze: dodanie, zmiana nazwy z zachowaniem rozszerzenia,
   const dialog = noteDialog(page);
   await dialog.locator('[data-testid=note-book]').waitFor();
   assert.equal(await dialog.locator('[data-testid=note-files]').count(), 0, 'bez załączników – bez listy');
-  await dialog.locator('[data-testid=note-right]').click();
-
-  // Sekcje edytora: obrazy, (od 1.21) tabele, pod nimi załączniki, na końcu tekst.
-  assert.deepEqual(await dialog.locator('.note-editor > section > .form-group__title, .note-editor > section > .note-editor__text-head > .form-group__title').allTextContents(),
-    ['Obrazy', 'Tabele', 'Załączniki', 'Tekst']);
+  // Od 1.29 załączniki – w oknie „Obrazy i załączniki” (z podglądu – „Zapisz” zapisuje): obrazy, tabele,
+  // załączniki; tekst – osobnym oknem („Edytuj”).
+  await openNoteObjects(page);
+  assert.deepEqual(await dialog.locator('.note-editor > section > .form-group__title').allTextContents(), ['Obrazy', 'Tabele', 'Załączniki']);
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), dialog.locator('[data-testid=note-attachment-add]').click()]);
   await chooser.setFiles([
     { name: 'Instrukcja.pdf', mimeType: 'application/pdf', buffer: Buffer.from(FAKE_PDF) },
@@ -1815,7 +1842,8 @@ test('notatka głosowa: nagrywanie w trakcie pisania, pauza, zakończenie i zapi
   const dialog = noteDialog(page);
   await dialog.locator('[data-testid=note-editor]').waitFor();
 
-  // Start: pasek nagrywania u góry edytora, czas biegnie; w tym czasie piszemy notatkę.
+  // Start (od 1.29 – mikrofonem obok spinacza w oknie tekstu): pasek nagrywania u góry, czas biegnie;
+  // w tym czasie piszemy notatkę.
   await dialog.locator('[data-testid=note-record]').click();
   const bar = dialog.locator('[data-testid=note-recording]');
   await bar.waitFor();
@@ -1842,12 +1870,15 @@ test('notatka głosowa: nagrywanie w trakcie pisania, pauza, zakończenie i zapi
   await expectText(bar, 'Nagrywanie');
   await page.waitForTimeout(900);
 
-  // Zakończ – nagranie w załącznikach, pasek znika.
+  // Zakończ – nagranie w załącznikach (okno „Obrazy i załączniki”, spinacz – 1), pasek znika.
   await bar.locator('[data-testid=note-recording-stop]').click();
   await page.locator('.toast', { hasText: 'Dodano notatkę głosową' }).waitFor();
   assert.equal(await bar.isVisible(), false);
+  await expectText(dialog.locator('[data-testid=note-objects-open]'), '1');
+  await openNoteObjects(page);
   await expectText(dialog.locator('[data-testid=note-attachment-name]'), 'Notatka głosowa');
   await expectText(dialog.locator('.note-attachments__meta'), 'Nagranie, 0:0');
+  await closeNoteObjects(page);
 
   // Drugie nagranie zakończone samym zapisem notatki.
   await dialog.locator('[data-testid=note-record]').click();
@@ -2229,7 +2260,9 @@ test('załączniki na komputerze: PDF w nowej karcie, dokument Word pobierany; u
     data.items.add(new File(['a;b\n1;2'], 'Dane.csv', { type: 'text/csv' }));
     return data;
   });
+  // Od 1.29 upuszczenie na okno tekstu: plik w załącznikach (okno „Obrazy i załączniki”), w tekście bez zmian.
   await dialog.locator('.note-editor').dispatchEvent('drop', { dataTransfer: transfer });
+  await openNoteObjects(page);
   await waitUntil(async () => (await dialog.locator('[data-testid=note-attachment-name]').allTextContents()).includes('Dane.csv'), 'Upuszczony plik na liście załączników');
   await dialog.locator('.note-editor__files').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(OUTPUT, 'zalaczniki-edytor-komputer.png') });
@@ -2979,7 +3012,7 @@ test('notatka 1.18: Tab i Shift+Tab – wcięcie (także przyciskami), indeks g�
   await expectText(page.locator('[data-testid=note-color-value]'), '#12AB34');
   await page.screenshot({ path: path.join(OUTPUT, 'notatka-kolor-wlasny.png') });
   await sheetSubmit(page).click();
-  await waitUntil(async () => (await page.locator('dialog.sheet').count()) === 1, 'Okno koloru zamknięte');
+  await waitUntil(async () => (await page.locator('dialog.sheet:not(.note-dialog)').count()) === 0, 'Okno koloru zamknięte');
   await page.keyboard.type('Zielony');
   await button('color').click();
   assert.equal(await dialog.locator('[data-testid=note-color-custom-0]').getAttribute('aria-label'), 'Własny kolor #12AB34', 'zapamiętany własny kolor');
@@ -3029,8 +3062,8 @@ test('notatka 1.18: podpisy obrazów z numeracją „Rys. N.” (podgląd, powi�
   await expectText(dialog.locator('[data-testid=note-figure-caption]').first(), 'Wyniki sprzedaży');
   assert.equal((await dialog.locator('[data-testid=note-figure-caption]').first().textContent()).trim(), 'Wyniki sprzedaży');
 
-  await dialog.locator('[data-testid=note-right]').click();
-  await dialog.locator('[data-testid=note-editor]').waitFor();
+  // Od 1.29 obrazy – w oknie „Obrazy i załączniki” (z podglądu: „Zapisz” zapisuje).
+  await openNoteObjects(page);
   const grid = dialog.locator('[data-testid=note-images]');
   // 12 obrazów i dwa przyciski – najwyżej dwa rzędy, reszta w bok.
   const layout = await grid.evaluate((element) => ({
@@ -3102,12 +3135,15 @@ test('notatka 1.18 na telefonie: pasek formatowania z nowymi przyciskami się pr
   const dialog = noteDialog(page);
   await dialog.locator('[data-testid=note-right]').click();
   await dialog.locator('[data-testid=note-editor]').waitFor();
+  // Obrazy (od 1.29) – w oknie „Obrazy i załączniki” nad oknem tekstu.
+  await openNoteObjects(page);
   const grid = dialog.locator('[data-testid=note-images]');
   await waitUntil(() => grid.evaluate((element) => element.classList.contains('note-images--scroll')), 'Przewijanie w bok');
   assert.equal(await grid.evaluate((element) => new Set([...element.children].map((child) => Math.round(child.getBoundingClientRect().top))).size), 2);
   assert.equal(await overflowX(page), 0, 'bez przewijania strony w bok');
   await grid.scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(OUTPUT, 'notatka-obrazy-telefon.png') });
+  await closeNoteObjects(page);
   await dialog.locator('[data-testid=note-format-color]').scrollIntoViewIfNeeded();
   await dialog.locator('[data-testid=note-format-color]').click();
   const colors = await dialog.locator('[data-testid=note-colors]').boundingBox();
@@ -3183,8 +3219,8 @@ async function openDrawingEditorFromNote(page, lessonID, html) {
   await page.goto(`${page.url().split('#')[0]}#/library/lesson/${lessonID}`);
   await page.click('[data-testid=lesson-note]');
   const dialog = noteDialog(page);
-  await dialog.locator('[data-testid=note-right]').click();
-  await dialog.locator('[data-testid=note-editor]').waitFor();
+  // Od 1.29 rysunki są w oknie „Obrazy i załączniki” (z podglądu – „Zapisz” zapisuje notatkę).
+  await openNoteObjects(page);
   await dialog.locator('[data-testid=note-image-draw]').click();
   const editor = drawingDialog(page);
   await editor.waitFor();
@@ -3325,8 +3361,13 @@ test('rysunek: „Narysuj” – pióro z naciskiem rysika, mysz, palec przesuwa
   const tile = dialog.locator('.note-images__item--drawing');
   await tile.locator('img').waitFor();
   await expectText(tile.locator('[data-testid=note-image-label-text]'), 'Rysunek 1');
-  assert.equal(await tile.locator('[data-testid=note-image-drawing]').count(), 1);
+  // Od 1.29 ołówek na kafelku rysunku – od razu edycja.
+  assert.equal(await tile.locator('[data-testid=note-object-edit]').getAttribute('aria-label'), 'Edytuj rysunek Rysunek 1');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-w-edytorze-notatki-ipad.png') });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  // Odwołanie w tekście – w oknie tekstu („Edytuj”).
+  await dialog.locator('[data-testid=note-right]').click();
   await dialog.locator('[data-testid=note-editor]').click();
   await page.keyboard.press('Control+End');
   await page.keyboard.press('Enter');
@@ -3352,7 +3393,7 @@ test('rysunek: „Narysuj” – pióro z naciskiem rysika, mysz, palec przesuwa
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-podglad-notatki-ipad.png') });
 
   // „Edytuj rysunek”: kreski wracają do poprawy, „Anuluj” po zmianie pyta.
-  await dialog.locator('[data-testid=note-right]').click();
+  await openNoteObjects(page);
   await dialog.locator('.note-images__item--drawing .note-images__open').click();
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-menu-ipad.png') });
   await menuItem(page, 'Edytuj rysunek');
@@ -3633,7 +3674,7 @@ test('rysunek 1.13: pole tekstowe i wzór – wstawienie (wielkość, kolor), je
   await waitUntil(() => dialog.locator('.note-page__figure img').evaluate((image) => image.complete && image.naturalWidth === 1600), 'Rysunek w podglądzie');
 
   // Ponowna edycja rysunku: pole tekstowe nadal da się zaznaczyć i poprawić.
-  await dialog.locator('[data-testid=note-right]').click();
+  await openNoteObjects(page);
   await dialog.locator('.note-images__item--drawing .note-images__open').click();
   await menuItem(page, 'Edytuj rysunek');
   await editor.waitFor();
@@ -4745,7 +4786,7 @@ test('rysunek 1.19: zakończenia odcinka (panel i „Końce”), wymiar widoczny
   assert.equal(await sheet.locator('[data-testid=drawing-caps-start-circle]').getAttribute('aria-checked'), 'true');
   await sheet.locator('[data-testid=drawing-caps-end-diamond]').click();
   await sheetSubmit(page).click();
-  await waitUntil(async () => (await page.locator('dialog.sheet').count()) === 1, 'Okno zakończeń zamknięte');
+  await waitUntil(async () => (await page.locator('dialog.sheet:not(.note-dialog)').count()) === 0, 'Okno zakończeń zamknięte');
 
   // Prostokąt 5 × 3 cm; oko przy szerokości – po odznaczeniu napis „5 cm” pod dolną linią.
   await editor.locator('[data-testid=drawing-tool-shape]').click();
@@ -4997,9 +5038,12 @@ test('notatka 1.20: „Usuń formatowanie” – wszystko oprócz linków (zazna
   await waitUntil(async () => (await editorHtml(editor)) === original, 'cofnięte pisanie i usunięcie formatowania');
 
   // „Wstaw do tekstu”: odwołanie w osobnej linijce, pisanie pod nim; Ctrl+Z – odwołanie znika, kursor na końcu akapitu.
+  // Od 1.29 kafelki są w oknie „Obrazy i załączniki” nad tekstem – „Wstaw do tekstu” zamyka je i wstawia w miejscu kursora.
   await selectInEditor(editor, 'Ostatni akapit', { caret: 'end' });
-  await dialog.locator('.note-images__open').first().click();
+  await openNoteObjects(page);
+  await noteObjectsDialog(page).locator('.note-images__open').first().click();
   await menuItem(page, 'Wstaw do tekstu');
+  await noteObjectsDialog(page).waitFor({ state: 'detached' });
   assert.ok((await editorHtml(editor)).endsWith('<p>Ostatni akapit</p><p>[[Schemat]]</p><p><br></p>'), await editorHtml(editor));
   await page.keyboard.type('Dalej');
   assert.ok((await editorHtml(editor)).endsWith('<p>[[Schemat]]</p><p>Dalej</p>'), 'pisanie pod odwołaniem');
@@ -5091,7 +5135,7 @@ test('notatka 1.20: wyrównanie i interlinia (zaznaczone akapity, bez zaznaczeni
   await sheet(page).locator('[data-testid=note-link-url]').fill('www.przyklad.pl');
   await page.screenshot({ path: path.join(OUTPUT, 'notatka-120-link.png') });
   await sheetSubmit(page).click();
-  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'okno linku zamknięte');
+  await waitUntil(async () => (await formSheets(page)) === 0, 'okno linku zamknięte');
   assert.equal(await editor.locator('a').getAttribute('href'), 'https://www.przyklad.pl');
   assert.equal(await editor.locator('a').textContent(), 'Pierwszy');
   // Kursor w linku: „Edytuj link” z adresem; e-mail dostaje mailto:.
@@ -5293,7 +5337,8 @@ test('notatka 1.20 na telefonie: pasek w grupach przewijany w bok, panele wyrów
   await expectText(editor, 'Bilans‰');
   await page.screenshot({ path: path.join(OUTPUT, 'notatka-120-telefon-symbole.png') });
 
-  // Rysunek: symbole pod polem tekstowym – znak w miejscu kursora.
+  // Rysunek: symbole pod polem tekstowym – znak w miejscu kursora (od 1.29 „Narysuj” – w oknie „Obrazy i załączniki”).
+  await openNoteObjects(page);
   await dialog.locator('[data-testid=note-image-draw]').click();
   const drawing = drawingDialog(page);
   await drawing.waitFor();
@@ -5401,6 +5446,8 @@ test('notatka 1.21: tabela – okno tabeli (wklejenie z Excela, wiersz i kolumna
   await page.keyboard.type('Koszty miesięczne:');
 
   // Nowa tabela: pusta – komunikat; wklejony fragment arkusza wypełnia komórki od kursora, tabela rośnie.
+  // Od 1.29 tabele – w oknie „Obrazy i załączniki” nad oknem tekstu.
+  await openNoteObjects(page);
   await dialog.locator('[data-testid=note-table-add]').click();
   await tableEditor(page).waitFor();
   await expectText(tableEditor(page).locator('.sheet__title'), 'Nowa tabela');
@@ -5422,7 +5469,7 @@ test('notatka 1.21: tabela – okno tabeli (wklejenie z Excela, wiersz i kolumna
   await expectText(sheet(page).locator('.sheet__title'), 'Kolumna 2');
   await sheet(page).locator('[data-testid=table-column-align] .segmented__option', { hasText: 'Do prawej' }).click();
   await sheetSubmit(page).click();
-  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 2, 'Okno kolumny zamknięte');
+  await waitUntil(async () => (await formSheets(page)) === 1, 'Okno kolumny zamknięte');
   assert.equal(await tableEditor(page).locator('[data-testid=table-cell-1-1]').evaluate((cell) => getComputedStyle(cell).textAlign), 'right');
   assert.equal(await tableEditor(page).locator('[data-testid=table-cell-0-1]').evaluate((cell) => getComputedStyle(cell).textAlign), 'right', 'nagłówek za wartościami');
   await settled(tableEditor(page));
@@ -5433,11 +5480,15 @@ test('notatka 1.21: tabela – okno tabeli (wklejenie z Excela, wiersz i kolumna
   await expectText(dialog.locator('[data-testid=note-table-tile]'), '5 × 3');
 
   // Odwołanie w miejscu kursora, podpis, numeracja.
+  await closeNoteObjects(page);
   await editor.click();
   await page.keyboard.press('Control+End');
+  await openNoteObjects(page);
   await dialog.locator('[data-testid=note-table-tile] .note-images__open').click();
   await menuItem(page, 'Wstaw do tekstu');
+  await noteObjectsDialog(page).waitFor({ state: 'detached' });
   await page.keyboard.type('Razem około 1 600 zł.');
+  await openNoteObjects(page);
   await dialog.locator('[data-testid=note-table-tile] .note-images__open').click();
   await menuItem(page, 'Dodaj podpis');
   await expectText(sheet(page).locator('.sheet__title'), 'Podpis tabeli');
@@ -5446,6 +5497,7 @@ test('notatka 1.21: tabela – okno tabeli (wklejenie z Excela, wiersz i kolumna
   await dialog.locator('.switch', { has: page.locator('[data-testid=note-number-figures]') }).click();
   await dialog.locator('[data-testid=note-tables]').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(OUTPUT, 'notatka-121-tabele-edytor.png') });
+  await closeNoteObjects(page);
   await dialog.locator('[data-testid=note-right]').click();
   await dialog.locator('[data-testid=note-table]').waitFor();
   const saved = await storedNote(page, ids.statements);
@@ -5488,6 +5540,7 @@ test('notatka 1.21: tabela – okno tabeli (wklejenie z Excela, wiersz i kolumna
   // Poprawka tabeli i zmiana sygnatury – odwołanie zmienia się samo.
   await dialog.locator('[data-testid=note-right]').click();
   await editor.waitFor();
+  await openNoteObjects(page);
   await dialog.locator('[data-testid=note-table-tile] .note-images__open').click();
   await menuItem(page, 'Edytuj tabelę');
   await tableEditor(page).locator('[data-testid=table-cell-4-1]').fill('70 zł');
@@ -5498,6 +5551,7 @@ test('notatka 1.21: tabela – okno tabeli (wklejenie z Excela, wiersz i kolumna
   await expectText(sheet(page).locator('.sheet__title'), 'Sygnatura tabeli');
   await sheet(page).locator('[data-testid=note-image-label]').fill('Koszty');
   await saveSheet(page);
+  await closeNoteObjects(page);
   await expectText(editor, '[[Koszty]]');
   await dialog.locator('[data-testid=note-right]').click();
   await dialog.locator('[data-testid=note-table]').waitFor();
@@ -5541,10 +5595,10 @@ test('notatka 1.21 na telefonie: długa tabela dzieli się między strony po wie
   assert.deepEqual(tablePages.map((info) => info.captions), [1, ...tablePages.slice(1).map(() => 0)], 'podpis tylko nad pierwszą częścią');
   assert.deepEqual(tablePages.flatMap((info) => info.rows), Array.from({ length: 30 }, (_, index) => String(index + 1)), 'każdy wiersz raz, po kolei');
 
-  // Okno tabeli na telefonie: siatka przewija się w bok, strona – nie.
-  await dialog.locator('[data-testid=note-right]').click();
-  await dialog.locator('[data-testid=note-table-tile] .note-images__open').click();
-  await menuItem(page, 'Edytuj tabelę');
+  // Okno tabeli na telefonie: siatka przewija się w bok, strona – nie. Od 1.29 ołówek na kafelku tabeli
+  // (okno „Obrazy i załączniki”) od razu otwiera okno tabeli.
+  await openNoteObjects(page);
+  await dialog.locator('[data-testid=note-table-tile] [data-testid=note-object-edit]').click();
   await tableEditor(page).waitFor();
   await settled(tableEditor(page));
   const scroll = await tableEditor(page).locator('.table-editor__scroll').evaluate((element) => ({ scroll: element.scrollWidth, width: element.clientWidth }));
@@ -5639,7 +5693,7 @@ test('rysunek 1.21: okno grubości zakreślacza; tabela (okno tabeli, wielkość
   assert.notDeepEqual(pixels[1], [196, 240, 176], 'karteczki 2 nie ma na obrazie');
 
   // Poprawka: szerokość tabeli narożnikiem (+200), koniec strzałki w nowe miejsce.
-  await dialog.locator('[data-testid=note-right]').click();
+  await openNoteObjects(page);
   await dialog.locator('.note-images__open').first().click();
   await menuItem(page, 'Edytuj rysunek');
   const again = drawingDialog(page);
@@ -5892,8 +5946,7 @@ test('rysunek na zdjęciu: „Rysuj na zdjęciu” – zdjęcie pod kreskami, sy
   const page = await open();
   const { ids } = await openNoteWithImages(page, { html: '<p>Schemat:</p><p>[[Schemat]]</p>', labels: ['Schemat'] });
   const dialog = noteDialog(page);
-  await dialog.locator('[data-testid=note-right]').click();
-  await dialog.locator('[data-testid=note-editor]').waitFor();
+  await openNoteObjects(page);
 
   // „Narysuj” i „Gotowe” bez kreski – nic nie dochodzi.
   await dialog.locator('[data-testid=note-image-draw]').click();
@@ -5922,7 +5975,7 @@ test('rysunek na zdjęciu: „Rysuj na zdjęciu” – zdjęcie pod kreskami, sy
   await editor.waitFor({ state: 'detached' });
   const tile = dialog.locator('.note-images__item').first();
   await expectText(tile.locator('[data-testid=note-image-label-text]'), 'Schemat');
-  assert.equal(await tile.locator('[data-testid=note-image-drawing]').count(), 1, 'zdjęcie stało się rysunkiem w tym samym miejscu');
+  assert.equal(await tile.evaluate((element) => element.classList.contains('note-images__item--drawing')), true, 'zdjęcie stało się rysunkiem w tym samym miejscu');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-w-edytorze-notatki-telefon.png') });
   await dialog.locator('[data-testid=note-right]').click();
   await dialog.locator('[data-testid=note-text]').waitFor();
@@ -5999,7 +6052,6 @@ test('notatka: sygnatury obrazów – obraz w miejscu odwołania, brak obrazu na
   await dialog.locator('[data-testid=note-right]').click();
   const editor = dialog.locator('[data-testid=note-editor]');
   await editor.waitFor();
-  assert.deepEqual(await dialog.locator('[data-testid=note-image-label-text]').allTextContents(), ['Schemat', 'Obraz 1']);
   await editor.evaluate((area) => {
     const text = area.querySelector('p').firstChild;
     const range = document.createRange();
@@ -6010,12 +6062,17 @@ test('notatka: sygnatury obrazów – obraz w miejscu odwołania, brak obrazu na
     window.getSelection().addRange(range);
   });
   await page.waitForTimeout(50);
+  // Od 1.29 miniatury – w oknie „Obrazy i załączniki” nad tekstem.
+  await openNoteObjects(page);
+  assert.deepEqual(await dialog.locator('[data-testid=note-image-label-text]').allTextContents(), ['Schemat', 'Obraz 1']);
   await dialog.locator('.note-images__open').nth(1).click();
   await menuItem(page, 'Wstaw do tekstu');
+  await noteObjectsDialog(page).waitFor({ state: 'detached' });
   assert.deepEqual(await editor.locator(':scope > *').evaluateAll((items) => items.slice(0, 3).map((item) => item.textContent)),
     ['Bilans pokazuje majątek.', '[[Obraz 1]]', ''], 'odwołanie w osobnej linijce za akapitem z kursorem');
 
   // Zmiana sygnatury: odwołania w obu wersjach językowych zmieniają się same; sygnatura musi być jedyna.
+  await openNoteObjects(page);
   await dialog.locator('.note-images__open').first().click();
   await menuItem(page, 'Zmień sygnaturę');
   await sheet(page).locator('[data-testid=note-image-label]').fill('obraz 1');
@@ -6024,6 +6081,7 @@ test('notatka: sygnatury obrazów – obraz w miejscu odwołania, brak obrazu na
   await sheet(page).locator('[data-testid=note-image-label]').fill('Wykres [główny]');
   await saveSheet(page);
   assert.deepEqual(await dialog.locator('[data-testid=note-image-label-text]').allTextContents(), ['Wykres główny', 'Obraz 1']);
+  await closeNoteObjects(page);
   assert.equal(await editor.locator('p', { hasText: '[[Wykres główny]]' }).count(), 1);
   await dialog.getByRole('radiogroup', { name: 'Język treści' }).locator('.segmented__option', { hasText: 'Angielski' }).click();
   await expectText(editor, '[[Wykres główny]]');
@@ -6638,7 +6696,7 @@ test('rysunek 1.22.1: wymiar jak w rysunku technicznym – linia wymiarowa pod k
   await sheet.locator('[data-testid=drawing-dim-fit-H7]').click();
   await expectText(sheet.locator('[data-testid=drawing-dim-tol-preview]'), 'Na rysunku: ⌀50 H7');
   await sheetSubmit(page).click();
-  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno zamknięte');
+  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
   await editor.locator('[data-testid=drawing-dim-marks-height]').click();
   await sheet.locator('.segmented__option', { hasText: 'Odchyłki' }).click();
   await sheet.locator('[data-testid=drawing-dim-tol-upper]').fill('-0,1');
@@ -6649,7 +6707,7 @@ test('rysunek 1.22.1: wymiar jak w rysunku technicznym – linia wymiarowa pod k
   await sheet.locator('[data-testid=drawing-dim-tol-lower]').fill('-0,05');
   await expectText(sheet.locator('[data-testid=drawing-dim-tol-preview]'), 'Na rysunku: 20 +0,1 / −0,05');
   await sheetSubmit(page).click();
-  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno zamknięte');
+  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
   await waitUntil(async () => (await editor.locator('[data-testid=drawing-dim-marks-height]').getAttribute('aria-pressed')) === 'true', 'Oznaczenie przy wysokości');
   await deselect();
   await nextFrames(page);
@@ -6690,7 +6748,7 @@ test('rysunek 1.22.1: ramka tolerancji (pozycja, ⌀, Ⓜ, bazy A i B; płaskoś
     await panel.locator(`[data-testid=drawing-symbol-${kind}]`).click();
     await sheet.waitFor();
   };
-  const closed = () => waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno zamknięte');
+  const closed = () => waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
 
   // Prostokąt 600–900 × 400–600.
   await editor.locator('[data-testid=drawing-tool-shape]').click();
@@ -6792,7 +6850,7 @@ test('rysunek 1.22.1: ramka tolerancji (pozycja, ⌀, Ⓜ, bazy A i B; płaskoś
   assert.deepEqual([rough.text, rough.kind, rough.attach.tip.id], ['Ra 3,2', 'removal', rect.id]);
 
   // Edycja: ponownie edytor rysunku, dotknięcie ramki dwa razy – okno, nowa wartość.
-  await dialog.locator('[data-testid=note-right]').click();
+  await openNoteObjects(page);
   await dialog.locator('.note-images__open').first().click();
   await menuItem(page, 'Edytuj rysunek');
   await editor.waitFor();
@@ -6833,7 +6891,7 @@ test('rysunek 1.22.1 na telefonie: okno ramki tolerancji i okno tolerancji wymia
   await settled(sheet);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-ramka-tolerancji-telefon.png') });
   await sheet.locator('.sheet__header .button--plain').click();
-  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno zamknięte');
+  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
   await editor.locator('[data-testid=drawing-tool-shape]').click();
   await panel.locator('[data-testid=drawing-shape-rect]').click();
   await drawStroke(page, segment([0.3, 0.45], [0.7, 0.6], 10), { type: 'touch', id: 7 });
@@ -7297,7 +7355,7 @@ test('rysunek 1.25 na telefonie: panel z przyciskiem zamknięcia; tolerancja wym
   const { at } = await pageFrame(page);
   const panel = editor.locator('[data-testid=drawing-shape-panel]');
   const sheet = page.locator('dialog.sheet[open]').last();
-  const sheets = () => page.locator('dialog.sheet[open]').count();
+  const sheets = () => formSheets(page);
   const unitOfWidth = editor.locator('[data-testid=drawing-dim-box-width] .drawing__dim-unit');
   // Panel kształtów zakrywa stronę – zamyka go przycisk ✕ w nagłówku.
   await editor.locator('[data-testid=drawing-tool-shape]').click();
@@ -7314,7 +7372,7 @@ test('rysunek 1.25 na telefonie: panel z przyciskiem zamknięcia; tolerancja wym
   await sheet.locator('.segmented__option', { hasText: 'Odchyłki' }).click();
   await expectText(sheet.locator('.drawing__dim-tol-pair .drawing__dim-tol-row span').first(), 'mm');
   await sheet.locator('.sheet__header .button--plain').click();
-  await waitUntil(async () => (await sheets()) === 1, 'Okno zamknięte');
+  await waitUntil(async () => (await sheets()) === 0, 'Okno zamknięte');
   await expectText(unitOfWidth, 'cm');
 
   await editor.locator('[data-testid=drawing-dim-marks-width]').click();
@@ -7343,7 +7401,7 @@ test('rysunek 1.25 na telefonie: panel z przyciskiem zamknięcia; tolerancja wym
   await settled(sheet);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-odchylki-znak-telefon.png') });
   await sheetSubmit(page).click();
-  await waitUntil(async () => (await sheets()) === 1, 'Okno zamknięte');
+  await waitUntil(async () => (await sheets()) === 0, 'Okno zamknięte');
   await expectText(editor.locator('[data-testid=drawing-notice]'), 'Wymiary w mm');
   await expectText(unitOfWidth, 'mm');
 
@@ -7358,10 +7416,10 @@ test('rysunek 1.25 na telefonie: panel z przyciskiem zamknięcia; tolerancja wym
   await settled(table);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-tabela-pasowan-telefon.png') });
   await table.locator('[data-testid=fit-table-H7-k6]').click();
-  await waitUntil(async () => (await sheets()) === 2, 'Tabela zamknięta');
+  await waitUntil(async () => (await sheets()) === 1, 'Tabela zamknięta');
   await expectValue(sheet.locator('[data-testid=drawing-dim-tol-fit]'), 'H7/k6');
   await sheetSubmit(page).click();
-  await waitUntil(async () => (await sheets()) === 1, 'Okno zamknięte');
+  await waitUntil(async () => (await sheets()) === 0, 'Okno zamknięte');
   // Ponownie: H7/k6 pierwsze wśród ostatnich; z tabeli – dowolne pasowanie K7/js6 (otwór K, wałek js).
   await editor.locator('[data-testid=drawing-dim-marks-height]').click();
   await expectText(sheet.locator('[data-testid=drawing-dim-fit-recent] .drawing__chip').first(), 'H7/k6');
@@ -7372,10 +7430,10 @@ test('rysunek 1.25 na telefonie: panel z przyciskiem zamknięcia; tolerancja wym
   await table.locator('[data-testid=fit-table-shaft-grade-5]').click();
   await expectText(table.locator('[data-testid=fit-table-preview]'), 'Wybrane: K7/js5');
   await sheetSubmit(page).click();
-  await waitUntil(async () => (await sheets()) === 2, 'Tabela zamknięta');
+  await waitUntil(async () => (await sheets()) === 1, 'Tabela zamknięta');
   await expectValue(sheet.locator('[data-testid=drawing-dim-tol-fit]'), 'K7/js5');
   await sheet.locator('.sheet__header .button--plain').click();
-  await waitUntil(async () => (await sheets()) === 1, 'Okno zamknięte');
+  await waitUntil(async () => (await sheets()) === 0, 'Okno zamknięte');
 
   await editor.locator('[data-testid=drawing-done]').click();
   await editor.waitFor({ state: 'detached' });
@@ -7420,7 +7478,7 @@ test('rysunek 1.25: ramka tolerancji z odchyłkami (znak z przycisku), po wstawi
   await settled(sheet);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-ramka-odchylki.png') });
   await sheetSubmit(page).click();
-  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno zamknięte');
+  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
   // Wstawianie zaczyna się po zamknięciu okna (komunikat) – dopiero wtedy dotknięcie krawędzi.
   await expectText(editor.locator('[data-testid=drawing-notice]'), 'Dotknij krawędzi albo narożnika');
   await page.mouse.click(...frame.screen(824, 480));
@@ -7533,7 +7591,7 @@ test('notatka 1.26 na telefonie: Wstaw obiekt – nowa tabela w miejscu kursora 
     await expectText(sheet(page).locator('.sheet__title'), `Kolumna ${index + 1}`);
     await apply(sheet(page));
     await sheetSubmit(page).click();
-    await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 2, 'Okno kolumny zamknięte');
+    await waitUntil(async () => (await formSheets(page)) === 1, 'Okno kolumny zamknięte');
   };
   // Cena – złote (wartości same do prawej), nagłówek idzie za nimi; Ilość – liczba całkowita, nagłówek do środka; Data.
   await column(2, (columnSheet) => columnSheet.locator('[data-testid=table-column-format]').selectOption('pln'));
@@ -7615,7 +7673,7 @@ test('rysunek 1.26: tabela – uchwyt granicy kolumn na rysunku zmienia szeroko�
   await sheet(page).locator('[data-testid=table-column-format]').selectOption('number');
   await sheetSubmit(page).click();
   // Otwarte zostają okno notatki i okno tabeli.
-  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 2, 'Okno kolumny zamknięte');
+  await waitUntil(async () => (await formSheets(page)) === 1, 'Okno kolumny zamknięte');
   await sheetSubmit(page).click();
   await tableEditor(page).waitFor({ state: 'detached' });
   await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Tabela');
@@ -7626,7 +7684,7 @@ test('rysunek 1.26: tabela – uchwyt granicy kolumn na rysunku zmienia szeroko�
   const table = (await savedStrokes(page, ids.statements)).find((stroke) => stroke.tool === 'table');
   assert.deepEqual([table.formats, table.colWidths], [['text', 'number', 'text'], [0.3333, 0.3333, 0.3333]]);
   // Ponownie: zaznaczenie tabeli, uchwyt granicy 1. i 2. kolumny na górnej krawędzi – o 40 w prawo.
-  await dialog.locator('[data-testid=note-right]').click();
+  await openNoteObjects(page);
   await dialog.locator('.note-images__item--drawing .note-images__open').click();
   await menuItem(page, 'Edytuj rysunek');
   await editor.waitFor();
@@ -7731,7 +7789,7 @@ test('rysunek 1.27: linia osiowa i przerywana, prosta przez całą stronę, punk
   await settled(sheet(page));
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-127-styl-luku.png') });
   await sheetSubmit(page).click();
-  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno stylu zamknięte');
+  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno stylu zamknięte');
   // Prostokąt i rodzaj linii z okna „Styl” nad zaznaczeniem.
   await openPanel();
   await panel.locator('[data-testid=drawing-shape-rect]').click();
@@ -7741,7 +7799,7 @@ test('rysunek 1.27: linia osiowa i przerywana, prosta przez całą stronę, punk
   await sheet(page).locator('[data-testid=drawing-dash-dashed]').click();
   await expectText(sheet(page).locator('.drawing__style-group .drawing__settings-label').first(), 'Rodzaj linii – przerywana');
   await sheetSubmit(page).click();
-  await waitUntil(async () => (await page.locator('dialog.sheet[open]').count()) === 1, 'Okno stylu zamknięte');
+  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno stylu zamknięte');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-127-ksztalty.png') });
 
   await editor.locator('[data-testid=drawing-done]').click();
@@ -7962,6 +8020,181 @@ test('notatka 1.28 na telefonie: PDF – „Udostępnij…” (arkusz systemu) p
   await pdfSheet.locator('.sheet__submit').click();
   await pdfSheet.waitFor({ state: 'detached' });
 });
+
+/** Notatka z dwoma obrazami i tabelą (1.29): Schemat i Zdjęcie, tabela Koszty – odwołania w obu wersjach. */
+async function seedObjectsNote(page) {
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate(async (id) => {
+    const bytes = async (file) => (await fetch(file)).arrayBuffer();
+    await window.lexicards.library.saveNote(id, {
+      html: '<p>Wstęp</p><p>[[Schemat]]</p><p>Środek</p><p>[[Koszty]]</p><p>[[Zdjęcie]]</p><p>Koniec</p>',
+      htmlEN: '<p>Intro</p><p>[[Koszty]]</p><p>[[Zdjęcie]]</p>',
+      images: [
+        { bytes: await bytes('./icons/icon-512.png'), type: 'image/png', width: 512, height: 512, label: 'Schemat' },
+        { bytes: await bytes('./icons/icon-192.png'), type: 'image/png', width: 192, height: 192, label: 'Zdjęcie' }
+      ],
+      tables: [{ label: 'Koszty', rows: [['Pozycja', 'Kwota'], ['Czynsz', '1200']], align: ['left', 'right'], header: true }]
+    });
+  }, ids.statements);
+  await openNotePreview(page, ids.statements);
+  return ids;
+}
+
+test('notatka 1.29 na telefonie: „Edytuj” – osobne okno tekstu na cały ekran; „Obrazy i załączniki” z podglądu; ołówek od razu edytuje; oczko chowa obraz i tabelę w podglądzie; usunięcie obrazu usuwa jego odwołania; ⓘ chowa podpowiedzi (zapamiętane)', async ({ open }) => {
+  const page = await open();
+  const ids = await seedObjectsNote(page);
+  const dialog = noteDialog(page);
+  assert.equal(await dialog.locator('[data-testid=note-page-figure], .note-page__figure').count() >= 1, true);
+  await expectText(dialog.locator('[data-testid=note-objects-open]'), '3');
+  assert.equal(await dialog.locator('[data-testid=note-objects-open]').getAttribute('aria-label'), 'Obrazy, tabele i załączniki (3)');
+
+  // Edytuj: okno tekstu na cały ekran, duże pole, bez obrazów i tabel (te – pod spinaczem).
+  await dialog.locator('[data-testid=note-right]').click();
+  const edit = page.locator('dialog[data-testid=note-edit-dialog][open]');
+  await edit.waitFor();
+  const box = await edit.boundingBox();
+  assert.deepEqual([box.x, box.y, box.width, box.height], [0, 0, 390, 844], 'okno na cały ekran');
+  const area = await edit.locator('[data-testid=note-editor]').boundingBox();
+  assert.ok(area.height > 844 * 0.45, `duże pole tekstu (${Math.round(area.height)} px)`);
+  assert.equal(await edit.locator('.note-editor__images, [data-testid=note-image-tile]').count(), 0, 'bez obrazów w oknie tekstu');
+  assert.equal(await edit.locator('[data-testid=note-record]').count(), 1, 'mikrofon obok spinacza');
+  await expectText(edit.locator('[data-testid=note-objects-open]'), '3');
+  assert.equal(await overflowX(page), 0);
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-129-okno-tekstu-telefon.png') });
+  await edit.locator('[data-testid=note-left]').click();
+  await edit.waitFor({ state: 'detached' });
+
+  // Z podglądu: okno „Obrazy i załączniki” (Anuluj / Zapisz), bez tekstu.
+  await openNoteObjects(page);
+  const objects = noteObjectsDialog(page);
+  await expectText(objects.locator('.sheet__title'), 'Obrazy i załączniki');
+  await expectText(objects.locator('[data-testid=note-right]'), 'Zapisz');
+  assert.equal(await objects.locator('[data-testid=note-editor]').count(), 0);
+  const tile = (label) => noteObjectsDialog(page).locator('.note-images__item', {
+    has: page.locator('[data-testid=note-image-label-text], [data-testid=note-table-label-text]', { hasText: new RegExp(`^${label}$`) })
+  });
+  // Ołówek: zdjęcie – od razu rysowanie na zdjęciu (bez menu).
+  await tile('Zdjęcie').locator('[data-testid=note-object-edit]').click();
+  const drawing = drawingDialog(page);
+  await drawing.waitFor();
+  await expectText(drawing.locator('.sheet__title'), 'Zdjęcie');
+  assert.equal(await page.locator('dialog.menu[open]').count(), 0, 'bez menu');
+  await drawing.locator('[data-testid=drawing-cancel]').click();
+  await drawing.waitFor({ state: 'detached' });
+  // Miniatura bez ołówka – menu (z „Ukryj w notatce”).
+  await tile('Schemat').locator('.note-images__open').click();
+  await page.locator('dialog.menu[open]').getByRole('menuitem', { name: 'Ukryj w notatce' }).waitFor();
+  assert.equal(await page.locator('dialog.menu[open]').getByRole('menuitem', { name: 'Wstaw do tekstu' }).count(), 0, 'bez okna tekstu – bez „Wstaw do tekstu”');
+  await page.keyboard.press('Escape');
+  await page.locator('dialog.menu[open]').waitFor({ state: 'detached' });
+  // Oczko: obraz Schemat i tabela Koszty ukryte; usunięcie zdjęcia – jego odwołania znikają.
+  await tile('Schemat').locator('[data-testid=note-object-eye]').click();
+  await tile('Koszty').locator('[data-testid=note-object-eye]').click();
+  assert.deepEqual(await objects.locator('.note-images__item--hidden [data-testid=note-image-label-text], .note-images__item--hidden [data-testid=note-table-label-text]').allTextContents(), ['Schemat', 'Koszty']);
+  assert.equal(await tile('Schemat').locator('[data-testid=note-object-eye]').getAttribute('aria-pressed'), 'false');
+  await tile('Zdjęcie').locator('[data-testid=note-image-remove]').click();
+  await page.locator('.toast', { hasText: 'Usunięto Zdjęcie i odwołanie [[Zdjęcie]] w tekście.' }).waitFor();
+  await waitUntil(() => objects.locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'okno wysunięte');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-129-obrazy-i-zalaczniki-telefon.png') });
+
+  // ⓘ: podpowiedzi schowane we wszystkich oknach i zapamiętane (także po ponownym otwarciu aplikacji).
+  const hint = objects.locator('.note-editor__images .field__hint').first();
+  assert.equal(await hint.isVisible(), true);
+  await objects.locator('.sheet__heading [data-testid=hints-toggle]').click();
+  assert.equal(await hint.isVisible(), false, 'podpowiedź schowana');
+  assert.equal(await objects.locator('.sheet__heading [data-testid=hints-toggle]').getAttribute('aria-pressed'), 'false');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-129-bez-podpowiedzi-telefon.png') });
+
+  await objects.locator('[data-testid=note-right]').click();
+  await objects.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  // Podgląd: bez ukrytego obrazu i tabeli i bez odwołań do nich; liczba obiektów – 2 (ukryte się liczą).
+  const text = await dialog.locator('[data-testid=note-book]').innerText();
+  assert.ok(text.includes('Wstęp') && text.includes('Środek') && text.includes('Koniec'), text);
+  assert.ok(!text.includes('[['), `bez odwołań: ${text}`);
+  assert.equal(await dialog.locator('.note-page__figure').count(), 0);
+  assert.equal(await dialog.locator('[data-testid=note-table]').count(), 0);
+  await expectText(dialog.locator('[data-testid=note-objects-open]'), '2');
+  const note = await storedNote(page, ids.statements);
+  assert.equal(note.html, '<p>Wstęp</p><p>[[Schemat]]</p><p>Środek</p><p>[[Koszty]]</p><p>Koniec</p>', 'odwołania do ukrytych zostają, do usuniętego – znikają');
+  assert.equal(note.htmlEN, '<p>Intro</p><p>[[Koszty]]</p>');
+  assert.deepEqual(note.images.map((image) => [image.label, image.hidden ?? false]), [['Schemat', true]]);
+  assert.equal(note.tables[0].hidden, true);
+
+  // Oczko z powrotem – obraz wraca na swoje miejsce.
+  await openNoteObjects(page);
+  await tile('Schemat').locator('[data-testid=note-object-eye]').click();
+  await noteObjectsDialog(page).locator('[data-testid=note-right]').click();
+  await dialog.locator('.note-page__figure').waitFor();
+  assert.equal((await storedNote(page, ids.statements)).images[0].hidden, undefined);
+
+  // Podpowiedzi schowane także po ponownym otwarciu aplikacji.
+  await page.reload();
+  await page.waitForSelector('#app[data-ready="true"]');
+  assert.equal(await page.evaluate(() => document.documentElement.classList.contains('hints-hidden')), true);
+  await page.evaluate(() => { localStorage.removeItem('lexicards-hints'); });
+});
+
+test('notatka 1.29: okno tekstu na komputerze (kolumna na środku); obrazy i załączniki nad tekstem – usunięcie tabeli usuwa odwołania w obu wersjach, „Gotowe” wraca do tekstu, zapis razem; ⓘ w oknie formularza i w panelu rysunku', async ({ open }) => {
+  const page = await open();
+  const ids = await seedObjectsNote(page);
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-right]').click();
+  const edit = page.locator('dialog[data-testid=note-edit-dialog][open]');
+  await edit.waitFor();
+  const box = await edit.boundingBox();
+  assert.deepEqual([box.width, box.height], [1280, 800], 'cały ekran');
+  const area = await edit.locator('[data-testid=note-editor]').boundingBox();
+  assert.ok(area.width <= 920 && Math.abs(area.x + area.width / 2 - 640) < 2, `kolumna na środku (${Math.round(area.x)}, ${Math.round(area.width)})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-129-okno-tekstu-komputer.png') });
+
+  // Nad oknem tekstu: Gotowe (bez Anuluj); usunięcie tabeli – odwołania [[Koszty]] znikają w obu wersjach.
+  await openNoteObjects(page);
+  const objects = noteObjectsDialog(page);
+  await expectText(objects.locator('[data-testid=note-right]'), 'Gotowe');
+  assert.equal(await objects.locator('[data-testid=note-left]').count(), 0);
+  await objects.locator('[data-testid=note-table-tile] .note-images__open').click();
+  await menuItem(page, 'Usuń tabelę');
+  await page.locator('.toast', { hasText: 'Usunięto Koszty i odwołanie [[Koszty]] w tekście.' }).waitFor();
+  // ⓘ w oknie formularza (sygnatura ma podpowiedź) – widać go; drugi raz – podpowiedzi wracają.
+  await objects.locator('[data-testid=note-image-tile] .note-images__open').first().click();
+  await menuItem(page, 'Zmień sygnaturę');
+  const toggleInSheet = sheet(page).locator('.sheet__heading [data-testid=hints-toggle]');
+  assert.equal(await toggleInSheet.isVisible(), true);
+  await toggleInSheet.click();
+  assert.equal(await sheet(page).locator('.field__hint').isVisible(), false);
+  await toggleInSheet.click();
+  assert.equal(await sheet(page).locator('.field__hint').isVisible(), true);
+  await sheet(page).locator('[data-testid=note-left], .button--plain').first().click();
+  await closeNoteObjects(page);
+  await expectText(edit.locator('[data-testid=note-objects-open]'), '2');
+  const editor = edit.locator('[data-testid=note-editor]');
+  assert.ok(!(await editor.innerText()).includes('[[Koszty]]'));
+  await edit.getByRole('radiogroup', { name: 'Język treści' }).locator('.segmented__option', { hasText: 'Angielski' }).click();
+  await expectText(editor, 'Intro');
+  assert.ok(!(await editor.innerText()).includes('[[Koszty]]'), 'wersja angielska też bez odwołania');
+  await edit.locator('[data-testid=note-right]').click();
+  await edit.waitFor({ state: 'detached' });
+  const note = await storedNote(page, ids.statements);
+  assert.equal(note.tables.length, 0);
+  assert.equal(note.html, '<p>Wstęp</p><p>[[Schemat]]</p><p>Środek</p><p>[[Zdjęcie]]</p><p>Koniec</p>');
+  assert.equal(note.htmlEN, '<p>Intro</p><p>[[Zdjęcie]]</p>');
+
+  // Panel rysunku z podpowiedziami (pióro) – ⓘ w nagłówku panelu.
+  await openNoteObjects(page);
+  await noteObjectsDialog(page).locator('[data-testid=note-image-draw]').click();
+  const drawing = drawingDialog(page);
+  await drawing.waitFor();
+  // Pióro jest wybrane – dotknięcie otwiera jego ustawienia.
+  await drawing.locator('[data-testid=drawing-tool-pen]').click();
+  const settings = drawing.locator('[data-testid=drawing-settings]');
+  await settings.waitFor();
+  await settings.locator('[data-testid=hints-toggle]').click();
+  assert.equal(await settings.locator('.field__hint').first().isVisible(), false, 'podpowiedzi panelu schowane');
+  await settings.locator('[data-testid=hints-toggle]').click();
+  assert.equal(await settings.locator('.field__hint').first().isVisible(), true);
+}, { device: DESKTOP });
 
 // ---------------------------------------------------------------- nauka z fiszkami
 

@@ -31,11 +31,12 @@ js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
 js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspólny dla nauki i quizu
 js/ui/charts.js            wykresy SVG (w czasie, pasek udziałów, miernik) z podpowiedzią i tabelą danych
 js/ui/listen-player.js     odtwarzacz słuchania: kolejne kroki czytane syntezatorem mowy, pauza, dalej, powtórz
-js/ui/notes.js             okno notatki lekcji: podgląd (Kopiuj, PDF), edytor z paskiem formatowania w grupach (wcięcia, indeksy, wielkość, kolory, wyrównanie i interlinia, link, symbole, data), obrazy (podpisy, numeracja, przeciąganie), tabele, załączniki, powiększanie
+js/ui/notes.js             okno notatki lekcji: podgląd (Kopiuj, PDF), od 1.29 nad nim okno tekstu (cały ekran) i okno „Obrazy i załączniki”; edytor z paskiem formatowania w grupach (wcięcia, indeksy, wielkość, kolory, wyrównanie i interlinia, link, symbole, data), obrazy (podpisy, numeracja, przeciąganie), tabele, załączniki, powiększanie
 js/ui/date-picker.js       wybór daty i godziny (od 1.21.1): kalendarz (dni, miesiące i lata, okres), bębny godzin i minut, okna „Data i godzina” i „Wybrany okres”
 js/ui/table-editor.js      okno tabeli (od 1.21, wspólne dla notatki i rysunku): siatka pól, wiersze i kolumny przy kursorze, nagłówki, wyrównanie, wklejanie z Excela i Worda
 js/ui/note-editing.js      zmiany treści edytora notatki z cofaniem: kopia treści ze znacznikami zaznaczenia, podmiana jednym insertHTML (wartownik), klucze miejsca kursora; wyrównanie i interlinia, „Usuń formatowanie”, wstawienie bloku
 js/ui/note-print.js        druk notatki: cała notatka w układzie A4 (ścieżka, tytuł, treść), okno drukowania przeglądarki
+js/ui/hints.js             podpowiedzi w oknach (od 1.29): przycisk ⓘ obok tytułu okna i w panelu rysunku – chowa opisy we wszystkich oknach, wybór zapamiętany
 js/ui/note-pdf.js          plik PDF notatki (od 1.28): układ notatki w niewidocznym elemencie, odczyt położenia wyrazów, ramek, obrazów i wzorów, strony; okno „PDF notatki” (nazwa, jakość, postęp, Udostępnij / Pobierz)
 js/ui/symbols.js           panel symboli z ostatnio użytymi (notatka) i symbole pod polem tekstu (rysunek)
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
@@ -423,6 +424,28 @@ podziały stron), element `.note-print` trafia na koniec `<body>`, a `@media pri
 strony (strona A4, jasne kolory, obraz najwyżej 225 mm, podział `break-after: page`); po `afterprint`
 element znika. „Kopiuj notatkę” daje obrazowi `width` / `height` najwyżej 605 × 860 px (16 cm szerokości
 tekstu strony A4 przy 96 dpi).
+
+Od 1.29 **osobne okna edycji**: podgląd (`openLessonNote`) zostaje pod spodem, a `openSession(kind)`
+otwiera nad nim okno z jednym `noteEditor` (wspólny stan). `noteEditor` ma dwie części: `element` –
+tekst (pasek formatowania, pole, mikrofon w nagłówku) i `objects` – obrazy, tabele, miejsce i numeracja,
+załączniki. 'text' – okno `note-edit-dialog` na cały ekran (kolumna do 920 px), spinacz z liczbą obiektów
+otwiera nad nim okno `note-objects-dialog` z tą samą częścią `objects` („Gotowe”; pasek nagrywania
+przenoszony nad obiekty i z powrotem); 'objects' – samo okno obiektów z podglądu (`textView: false` – bez
+„Wstaw do tekstu”, z „Usuń notatkę”). „Wstaw do tekstu” z okna nad tekstem najpierw je zamyka
+(`beforeInsert`), potem wstawia w zapamiętanym miejscu kursora. Wklejony albo upuszczony na tekst obraz
+dostaje odwołanie. **Usunięcie obiektu** (`removeObject`): `removeReferences(html, label)`
+(core/note-refs.js) w obu wersjach – linijki z samym odwołaniem znikają, nowa strona nie zostaje na brzegu.
+**Oczko**: `hidden: true` przy opisie obrazu (`noteImageMeta`, zapis – bez pola zostaje, `false` zdejmuje;
+kopia zapasowa) i przy tabeli (`cleanNoteTables`). `visibleNoteContent({ html, images, tables })`
+(core/tables.js) – treść do pokazania: sygnatury nadane przed pominięciem (domyślne „Obraz N” się nie
+przesuwają), ukryte obiekty pominięte razem z odwołaniami; używają jej podgląd (strony, powiększenie),
+PDF, druk, „Kopiuj” (w zwykłym tekście od 1.29 bez linijek odwołań do obrazów), eksport do arkusza;
+słuchanie (`noteSteps`) pomija ukryte tabele. Ołówek na miniaturze (`note-images__edit`) – `redraw`
+albo `editTable` bez menu. **Podpowiedzi** (`hints.js`): klasa `hints-hidden` na `<html>` (ustawiana
+też w `theme-boot.js`, zanim pojawi się okno; `localStorage` 'lexicards-hints'); CSS chowa w oknach
+`.field__hint`, `.form-note` i podobne poza `.field__hint--live`, `role=status|alert`; przycisk ⓘ
+(`hintsToggle`) w nagłówku formularza (`.sheet__heading`), okien notatki i panelu rysunku – widoczny tylko,
+gdy okno (panel) ma podpowiedzi (`:has`).
 
 Od 1.28 **plik PDF tworzony w aplikacji** (`note-pdf.js`, `core/pdf.js`, `core/pdf-pages.js`) – w aplikacji
 z ekranu początkowego iPhone'a `window.print()` nic nie robi.

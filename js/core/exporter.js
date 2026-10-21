@@ -10,7 +10,7 @@ import { IMPORT_FIELDS } from './importer.js';
 import { docFromHtml, richTextFromDoc } from './note-format.js';
 import { NOTE_HEADER } from './note-import.js';
 import { withImageLabels } from './note-refs.js';
-import { htmlWithTables } from './tables.js';
+import { htmlWithTables, visibleNoteContent } from './tables.js';
 import { TEMPLATE_IMAGE, TEMPLATE_IMAGE_BASE64 } from './template-image.js';
 import { formatTags, normalizeKey } from './text.js';
 import { createWorkbook } from './xlsx.js';
@@ -158,11 +158,14 @@ export async function buildExportFile(library, scope, format, date = new Date(),
   const entries = [];
   if (format === 'xlsx' && withNotes) {
     for (const { domain, module, lesson, note } of collectExportNotes(library, scope)) {
-      const images = await library.noteImages(lesson.id);
+      // Od 1.29 obrazy i tabele ukryte w notatce (oczko) – razem z odwołaniami – poza arkuszem.
+      const stored = await library.noteImages(lesson.id);
+      const visible = visibleNoteContent({ html: note.html, images: stored, tables: note.tables ?? [] });
+      const images = visible.images;
       // Tabele (od 1.21) trafiają do komórki jako tekst: podpis i wiersze „a | b | c”.
-      const tables = note.tables ?? [];
-      const html = htmlWithTables(note.html, tables);
-      const htmlEN = (note.htmlEN ?? '') === '' ? '' : htmlWithTables(note.htmlEN, tables);
+      const html = htmlWithTables(visible.html, visible.tables);
+      const htmlEN = (note.htmlEN ?? '') === '' ? ''
+        : htmlWithTables(visibleNoteContent({ html: note.htmlEN, images: stored, tables: note.tables ?? [] }).html, visible.tables);
       // Notatka z samymi obrazami, których plików nie ma na urządzeniu, nie ma czego pokazać w arkuszu.
       if (html === '' && htmlEN === '' && images.length === 0) continue;
       entries.push({ domain: domain.name, module: module.name, lesson: lesson.name, html, htmlEN, images });

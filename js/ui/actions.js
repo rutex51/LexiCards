@@ -729,7 +729,7 @@ export function openExportSheet(ctx, scope) {
           h('div', { class: 'field', dataset: { testid: 'export-scope' } },
             h('span', { class: 'field__label' }, EXPORT_SCOPE_LABELS[scope.kind](name)),
             h('span', null, pluralTerms(count)),
-            notes.length > 0 ? h('span', { class: 'field__hint' }, `Notatki do lekcji: ${notes.length}`) : null
+            notes.length > 0 ? h('span', { class: 'field__hint field__hint--live' }, `Notatki do lekcji: ${notes.length}`) : null
           )
         ),
         h('section', { class: 'group' },

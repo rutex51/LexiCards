@@ -72,6 +72,7 @@ import { TOOLS_KEY, colorTabBody } from './color-picker.js';
 import { field, segmented, textArea, toggle } from './components.js';
 import { confirmDialog, mountDialog, openFormSheet, openMenu, showError } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
+import { hintsToggle } from './hints.js';
 import { icon } from './icons.js';
 import {
   DATUM_LETTER_RE, DATUM_RE, GDT_DATUMS_MAX, GDT_SYMBOLS, ROUGHNESS_KINDS, ROUGHNESS_KIND_LABELS, ROUGHNESS_TEXT_MAX, SYMBOL_TEXT_SIZES, cleanGdtValue,
@@ -2607,7 +2608,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           refresh();
         }
       }, units('si', 'Jednostki SI'), units('imperial', 'Jednostki imperialne'));
-      const screenText = h('p', { class: 'field__hint', dataset: { testid: 'drawing-scale-screen' } });
+      const screenText = h('p', { class: 'field__hint field__hint--live', dataset: { testid: 'drawing-scale-screen' } });
       const snapToggle = toggle({
         checked: tools.rulerSnap, label: 'Przyciąganie zera do przecięć i linii',
         onChange: (checked) => {
@@ -3278,6 +3279,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     function panelTitle(text) {
       return h('div', { class: 'drawing__settings-head' },
         h('h3', { class: 'drawing__settings-title' }, text),
+        // Od 1.29: ⓘ chowa i pokazuje podpowiedzi (gdy panel je ma).
+        hintsToggle(),
         h('button', {
           type: 'button', class: 'drawing__settings-close', 'aria-label': 'Zamknij panel', title: 'Zamknij', dataset: { testid: 'drawing-panel-close' },
           onClick: () => {

@@ -17,7 +17,7 @@
 // Bez zależności od przeglądarki.
 
 import { docFromHtml, htmlFromDoc, noteText } from './note-format.js';
-import { cleanImageCaption, cleanImageLabel, labelKey, referenceLabel, referencedLabels } from './note-refs.js';
+import { cleanImageCaption, cleanImageLabel, labelKey, referenceLabel, referencedLabels, removeReferences, withImageLabels } from './note-refs.js';
 
 export const TABLE_MAX_ROWS = 100;
 export const TABLE_MAX_COLUMNS = 12;
@@ -328,9 +328,26 @@ export function cleanNoteTables(list, taken = []) {
     const table = cleanTable(raw);
     if (!table) continue;
     const caption = cleanImageCaption(raw.caption);
-    tables.push({ label: raw.label ?? null, ...(caption ? { caption } : {}), ...table });
+    // Od 1.29: tabela ukryta w notatce (oczko) – zostaje w obiektach, podgląd jej nie pokazuje.
+    tables.push({ label: raw.label ?? null, ...(caption ? { caption } : {}), ...(raw.hidden === true ? { hidden: true } : {}), ...table });
   }
   return withTableLabels(tables, taken);
+}
+
+/**
+ * Treść notatki do pokazania (od 1.29 – podgląd, PDF, druk, Kopiuj, słuchanie): obrazy i tabele
+ * ukryte oczkiem są pominięte razem z odwołaniami do nich. Sygnatury nadane przed pominięciem
+ * (domyślne „Obraz N” się nie przesuwają). Zwraca { html, images, tables } – obrazy i tabele z `label`.
+ */
+export function visibleNoteContent({ html = '', images = [], tables = [] }) {
+  const labeledImages = withImageLabels(images);
+  const labeledTables = withTableLabels(tables, labeledImages.map((image) => image.label));
+  const hidden = [...labeledImages, ...labeledTables].filter((item) => item.hidden === true).map((item) => item.label);
+  return {
+    html: hidden.length > 0 ? removeReferences(html, hidden) : html,
+    images: labeledImages.filter((image) => image.hidden !== true),
+    tables: labeledTables.filter((table) => table.hidden !== true)
+  };
 }
 
 /** Numer tabeli (od 0) o tej sygnaturze albo -1. */

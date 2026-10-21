@@ -123,7 +123,8 @@ export function noteSteps(note, lessonName, mode) {
   const versions = noteVersions(note, mode);
   if (versions.length === 0) return [];
   const steps = [{ kind: 'noteTitle', text: `Notatka do lekcji ${lessonName}.`, lang: 'pl' }];
-  const tables = note.tables ?? [];
+  // Tabela ukryta w notatce (od 1.29, oczko) – bez czytania; odwołanie do niej – jak do obrazu.
+  const tables = (note.tables ?? []).filter((table) => table.hidden !== true);
   const spoken = new Set();
   const tableLines = (indexes) => indexes.filter((index) => !spoken.has(index)).flatMap((index) => {
     spoken.add(index);

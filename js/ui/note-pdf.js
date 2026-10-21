@@ -649,7 +649,7 @@ export function openNotePdf({ title, path = null, quality = 'standard', onQualit
         h('span', { class: 'note-pdf-sheet__file-icon', 'aria-hidden': 'true' }, icon('file', { size: 22 })),
         h('span', { class: 'note-pdf-sheet__file-text' },
           h('strong', { dataset: { testid: 'note-pdf-file-name' } }, file.name),
-          h('span', { class: 'field__hint', dataset: { testid: 'note-pdf-file-info' } }, `${pluralPages(pages)} · ${formatSize(file.size)} · A4`))),
+          h('span', { class: 'field__hint field__hint--live', dataset: { testid: 'note-pdf-file-info' } }, `${pluralPages(pages)} · ${formatSize(file.size)} · A4`))),
       ...(shareFirst ? [...shareButton, ...downloadButton] : [...downloadButton, ...shareButton])
     ];
   }
@@ -668,7 +668,7 @@ export function openNotePdf({ title, path = null, quality = 'standard', onQualit
       const submit = view.closest('form').querySelector('.sheet__submit');
       const name = pdfFileName(state.name);
       const bar = h('span', { class: 'note-pdf-sheet__bar' });
-      const status = h('p', { class: 'field__hint', dataset: { testid: 'note-pdf-status' } }, 'Składam strony…');
+      const status = h('p', { class: 'field__hint field__hint--live', dataset: { testid: 'note-pdf-status' } }, 'Składam strony…');
       state.stage = 'progress';
       api.setCanSubmit(false);
       replaceChildren(view, h('div', { class: 'field', dataset: { testid: 'note-pdf-progress' } },

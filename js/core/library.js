@@ -1117,7 +1117,7 @@ export class Library {
    * height, name, label?, drawing? } dodaje nowy (drawing – kreski rysunku, od 1.12), pominięte
    * istniejące obrazy są usuwane; label – sygnatura
    * (brakująca dostaje „Obraz N”), caption – podpis pod obrazem (od 1.18; pominięty przy
-   * istniejącym obrazie – zostaje dotychczasowy). files – załączniki tak samo: { id, name? } zostawia (name –
+   * istniejącym obrazie – zostaje dotychczasowy), hidden – obraz ukryty w notatce (od 1.29, tak samo). files – załączniki tak samo: { id, name? } zostawia (name –
    * nowa nazwa), { bytes, name, type } dodaje. htmlEN – treść po angielsku, imagesFirst – obrazy
    * w podglądzie przed tekstem, numberFigures – numeracja podpisów „Rys. N.” (od 1.18; od 1.21 też
    * „Tab. N.”), tables – tabele notatki (od 1.21, core/tables.js); bez pól htmlEN, imagesFirst,
@@ -1147,14 +1147,16 @@ export class Library {
       if (imageBytes(image)) {
         const record = newNoteImage(lessonID, image);
         unit.append('noteImages', record);
-        metas.push(noteImageMeta(record, image.label, cleanImageCaption(image.caption) || null));
+        metas.push(noteImageMeta(record, image.label, cleanImageCaption(image.caption) || null, image.hidden === true));
       } else {
         const meta = existing?.images.find((item) => item.id === image.id);
         if (meta && !kept.has(meta.id)) {
           kept.add(meta.id);
-          const { caption: previous, ...rest } = meta;
+          const { caption: previous, hidden: wasHidden, ...rest } = meta;
           const caption = image.caption === undefined ? cleanImageCaption(previous) : cleanImageCaption(image.caption);
-          metas.push({ ...rest, label: image.label ?? meta.label ?? null, ...(caption ? { caption } : {}) });
+          // Od 1.29 obraz ukryty w notatce (oczko); bez pola – zostaje jak był.
+          const hidden = image.hidden === undefined ? wasHidden === true : image.hidden === true;
+          metas.push({ ...rest, label: image.label ?? meta.label ?? null, ...(caption ? { caption } : {}), ...(hidden ? { hidden: true } : {}) });
         }
       }
     }

@@ -162,7 +162,7 @@ export function openMathHelp({
   let sheet = null;
   let pending = null;
   const preview = h('div', { class: 'math-try__preview', 'aria-live': 'polite', dataset: { testid: 'math-preview' } });
-  const message = h('p', { class: 'field__hint', dataset: { testid: 'math-message' } });
+  const message = h('p', { class: 'field__hint field__hint--live', dataset: { testid: 'math-message' } });
   const input = textInput({
     value, placeholder: 'np. \\frac{a}{b} + x^2', autocapitalize: 'off', testID: 'math-try',
     onInput: (text) => {
