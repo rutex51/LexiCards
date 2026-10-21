@@ -5,7 +5,7 @@
 // Każda zmiana dowolnego pliku zmienia wersję, więc przeglądarka pobiera nowy komplet
 // i nigdy nie miesza plików z dwóch wydań.
 
-const VERSION = '2cca75b0';
+const VERSION = '9d40d92b';
 const CACHE = `lexicards-${VERSION}`;
 const ASSETS = [
   "css/app.css",
@@ -120,7 +120,8 @@ const ASSETS = [
   "js/ui/symbols.js",
   "js/ui/table-editor.js",
   "js/version.js",
-  "manifest.webmanifest"
+  "manifest.webmanifest",
+  "sounds/kartka.wav"
 ];
 
 self.addEventListener('install', (event) => {

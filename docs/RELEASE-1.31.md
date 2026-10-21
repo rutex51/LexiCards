@@ -41,3 +41,23 @@ z głośnością multimediów. **Ustawienia → Dźwięki → „Dźwięki fisze
 - Pierwszy dźwięk po otwarciu aplikacji: próbka liczy się przy pierwszym użyciu (w Node.js ok. 40 ms
   przy 24 kHz) – na starszym iPhonie pierwsza kartka może ruszyć z małym opóźnieniem.
 - Opóźnienie dźwięku względem obrazu na Bluetooth (słuchawki, samochód) – zależy od urządzenia.
+
+## 1.31.1 – kartka z nagrania, bez dudnienia
+
+Wersja 1.31.1, 21 października 2026. Dźwięk przewracanej kartki to teraz **Twoje nagranie** zamiast
+syntezy (w syntezie dudniło klapnięcie). Nagranie przycięte do samej kartki (1,14 s – bez ciszy na
+początku i szmerów na końcu), **niskie tony poniżej ok. 170 Hz wycięte** (dudnienie i stuki telefonu),
+głośność wyrównana, zapisane jako zwykły plik dźwięku bez opisów nagrania (daty, nazwy). Plik jest
+w aplikacji i w pamięci do pracy offline.
+
+Czas jak dotąd według animacji: klapnięcie kartki z nagrania wypada w chwili, gdy kartka kładzie się
+na drugą stronę – w notatce nagranie zaczyna się 45 ms „w głąb”, w oknie rysowania (wolniejsza
+animacja) – 135 ms później; wysokość dźwięku się nie zmienia. Kartka puszczona palcem – końcówka
+nagrania; kierunek (z prawej na lewą, wstecz odwrotnie) – jak dotąd. Fiszka bez zmian.
+
+Testy: logika – 385 zaliczone (nagranie: format, brak opisów, klapnięcie po 0,765 s, udział tonów
+poniżej 100 Hz, wyczucie czasu; synteza kartki usunięta razem z jej testami); przeglądarka (Chromium,
+ekran telefonu) – 180 zaliczone w dwóch pełnych przebiegach (nagranie gra od 45 ms przy przycisku,
+od środka po puszczeniu kartki, 135 ms później w rysunku; plik w pamięci offline; test aktualizacji wydania kopiuje teraz także katalog `sounds` – bez niego
+nowy service worker nie mógł się zainstalować i test stał); lint bez błędów.
+Nie sprawdzono w Safari na iPhonie ani nie słuchano na urządzeniu.

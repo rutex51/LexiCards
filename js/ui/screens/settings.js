@@ -206,7 +206,7 @@ export class SettingsScreen {
     return group({
       title: 'Dźwięki',
       footer: 'Szum odlatującej fiszki i szelest przewracanej kartki (notatka, rysunek) – trwa tyle, co przewracanie. '
-        + 'Dźwięki powstają w aplikacji, bez plików i internetu; grają z głośnością multimediów.'
+        + 'Dźwięki są w aplikacji – działają bez internetu; grają z głośnością multimediów.'
     },
       checkRow({
         checked: library.getSettings().sounds !== false,

@@ -8513,7 +8513,7 @@ test('dźwięki 1.31: fiszka odlatuje z szumem w stronę lotu („Umiem” – w
   assert.deepEqual(played.starts, [], 'cisza');
 });
 
-test('dźwięki 1.31: kartka notatki – dźwięk do końca przewracania (przycisk – 720 ms, puszczona w połowie – końcówka, wraca – cisza); kartka rysunku – 900 ms', async ({ open, context }) => {
+test('dźwięki 1.31.1: nagranie kartki – klapnięcie z końcem przewracania (notatka – przycisk 720 ms: od 45 ms nagrania, puszczona w połowie – końcówka, wraca – cisza; rysunek 900 ms – 135 ms później); plik w pamięci offline', async ({ open, context }) => {
   const page = await open();
   await trackSounds(page);
   const { book } = await openLongNote(page);
@@ -8522,21 +8522,26 @@ test('dźwięki 1.31: kartka notatki – dźwięk do końca przewracania (przyci
   await notePageShown(page, 2);
   await dialog.locator('[data-testid=note-page-previous]').click();
   await notePageShown(page, 1);
+  await waitUntil(async () => (await soundsPlayed(page)).starts.length === 2, 'Nagranie kartki zagrało dwa razy');
   let played = await soundsPlayed(page);
-  assert.deepEqual(played.log.map(({ sound, land, offset, direction }) => [sound, land, offset, direction]),
-    [['page', 720, 0, 1], ['page', 720, 0, -1]], 'dalej i wstecz – klapnięcie po 720 ms');
-  assert.deepEqual(played.starts.map((entry) => entry.duration), [950, 950]);
+  assert.deepEqual(played.log.map(({ sound, land, offset, delay, direction }) => [sound, land, offset, delay, direction]),
+    [['page', 720, 45, 0, 1], ['page', 720, 45, 0, -1]], 'dalej i wstecz – klapnięcie nagrania (0,765 s) po 720 ms');
+  assert.deepEqual(played.starts.map((entry) => entry.duration), [1140, 1140], 'nagranie 1,14 s');
+  assert.ok(played.starts.every((entry) => Math.abs(entry.offset - 45) <= 15), JSON.stringify(played.starts));
+  // Nagranie jest w pamięci podręcznej aplikacji (praca offline).
+  await waitUntil(() => page.evaluate(async () => Boolean(await caches.match(new URL('sounds/kartka.wav', document.baseURI).href))), 'kartka.wav w pamięci offline');
   // Palec puszcza kartkę w połowie – gra końcówka dźwięku, klapnięcie razem z końcem animacji.
   const box = await book.boundingBox();
   const touch = await touchAt(context, page, box.x + box.width - 12, box.y + box.height - 16);
   await touch.move(box.x + box.width / 2, box.y + box.height - 40);
   await touch.end();
   await notePageShown(page, 2);
+  await waitUntil(async () => (await soundsPlayed(page)).starts.length === 3, 'Nagranie po puszczeniu kartki');
   played = await soundsPlayed(page);
   const dragged = played.log.at(-1);
   assert.equal(dragged.sound, 'page');
-  assert.ok(dragged.offset > 100 && dragged.offset < 720, `dźwięk od środka: ${JSON.stringify(dragged)}`);
-  assert.equal(played.starts.at(-1).offset, dragged.offset);
+  assert.ok(dragged.offset > 150 && dragged.offset < 765, `nagranie od środka: ${JSON.stringify(dragged)}`);
+  assert.ok(Math.abs(played.starts.at(-1).offset - dragged.offset) <= 15);
   // Kartka wraca na miejsce (puszczona za wcześnie) – bez dźwięku.
   const count = played.log.length;
   const back = await touchAt(context, page, box.x + box.width - 12, box.y + box.height - 16);
@@ -8560,9 +8565,10 @@ test('dźwięki 1.31: kartka notatki – dźwięk do końca przewracania (przyci
   await expectText(pages, 'Kartka 1 z 2');
   played = await soundsPlayed(page);
   const turns = played.log.filter((entry) => entry.sound === 'page');
-  assert.ok(turns.length >= 1 && turns.every((entry) => entry.land === 900), `rysunek: ${JSON.stringify(played.log)}`);
+  assert.ok(turns.length >= 1 && turns.every((entry) => entry.land === 900 && entry.delay === 135 && entry.offset === 0), `rysunek: ${JSON.stringify(played.log)}`);
   assert.equal(turns.at(-1).direction, -1);
-  assert.equal(played.starts.at(-1).duration, 1175);
+  await waitUntil(async () => (await soundsPlayed(page)).starts.length === turns.length, 'Nagranie kartki rysunku');
+  assert.equal((await soundsPlayed(page)).starts.at(-1).duration, 1140);
 });
 
 // ---------------------------------------------------------------- nauka z fiszkami
@@ -12144,7 +12150,7 @@ test('bez internetu: aplikacja otwiera się z pamięci przeglądarki, dane są n
 test('aktualizacja: po zmianie plików przeglądarka pobiera nowe wydanie', async ({ open, browser, track }) => {
   // Osobna kopia aplikacji, którą można zmienić w trakcie testu.
   const copy = await mkdtemp(path.join(tmpdir(), 'lexicards-update-'));
-  for (const name of ['index.html', 'manifest.webmanifest', 'sw.js', 'package.json', 'css', 'js', 'icons', 'tools']) {
+  for (const name of ['index.html', 'manifest.webmanifest', 'sw.js', 'package.json', 'css', 'js', 'icons', 'sounds', 'tools']) {
     await cp(path.join(ROOT, name), path.join(copy, name), { recursive: true });
   }
   const server = await startServer({ port: 0, base: '/LexiCards/', root: copy });

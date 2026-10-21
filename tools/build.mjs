@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-const ASSET_ROOTS = ['index.html', 'manifest.webmanifest', 'css', 'js', 'icons'];
+const ASSET_ROOTS = ['index.html', 'manifest.webmanifest', 'css', 'js', 'icons', 'sounds'];
 const GENERATED = new Set(['js/version.js', 'sw.js']);
 
 async function walk(relative) {

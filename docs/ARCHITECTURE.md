@@ -28,7 +28,7 @@ js/ui/color-picker.js      wybór własnego koloru: siatka, suwaki RGB z kodem H
 js/ui/router.js            adresy po znaku # i historia przeglądarki (od 1.23 Nauka z kilkoma lekcjami: #/study/lessons/id1+id2)
 js/ui/study-calendar.js    plan nauki w kalendarzu (od 1.23): okno (dzień, godzina, czas, powtarzanie, przypomnienie, prywatność), plik .ics
 js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
-js/ui/sounds.js            dźwięki (od 1.31): kontekst Web Audio po pierwszym geście, pogłos pokoju (ConvolverNode), odmiany próbek, odtwarzanie od środka, dziennik `soundLog`
+js/ui/sounds.js            dźwięki (od 1.31): kontekst Web Audio po pierwszym geście, pogłos pokoju (ConvolverNode), nagranie kartki (wczytanie, kierunek, przesunięcie), dziennik `soundLog`
 js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspólny dla nauki i quizu
 js/ui/charts.js            wykresy SVG (w czasie, pasek udziałów, miernik) z podpowiedzią i tabelą danych
 js/ui/listen-player.js     odtwarzacz słuchania: kolejne kroki czytane syntezatorem mowy, pauza, dalej, powtórz
@@ -56,7 +56,8 @@ js/core/storage-memory.js  adapter w pamięci (testy, praca bez bazy przeglądar
 js/core/storage-idb.js     adapter IndexedDB (domyślny)
 js/core/storage-snapshot.js magazyn w jednym pliku (od 1.30.2): całość w pamięci, po każdej zmianie zapis migawki przez `sink` (przyszły plik danych w OneDrive)
 js/core/model.js           kształt rekordów, wartości domyślne, stałe
-js/core/sounds.js          synteza dźwięków (od 1.31): fiszka odlatująca, kartka „album – gruby papier” o zadanej długości, odpowiedź impulsowa pokoju
+js/core/sounds.js          dźwięki (od 1.31): synteza fiszki odlatującej, opis nagrania kartki i wyczucie czasu (od 1.31.1), odpowiedź impulsowa pokoju
+sounds/kartka.wav          nagranie przewracanej kartki (od 1.31.1)
 js/core/backup.js          kopia zapasowa: plik danych i plik obrazów i załączników – tworzenie, walidacja, przywracanie
 js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (PDF, Word, Excel, PowerPoint…)
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
@@ -1392,32 +1393,36 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
 
 ## Dźwięki (od 1.31)
 
-Próbki liczy `js/core/sounds.js` – bez plików i bez przeglądarki (testy w Node.js): szum, filtry
-dwubiegunowe (RBJ) i obwiednie, z ziarnem losowania (`seed` – ta sama próbka przy tym samym ziarnie).
+`js/core/sounds.js` – bez przeglądarki (testy w Node.js):
 
-- `cardSound({ rate, direction })` – fiszka odlatuje (0,26 s): świst z pasmem 700 → 3000 Hz, trzask
-  krawędzi po 40%, stuknięcie 170 Hz po 72%; stereo w stronę lotu (`direction` −1 – „Umiem”, w lewo).
-- `pageSound({ rate, land, direction })` – kartka „album – gruby papier”: tarcie palcem, trzaski włókien
-  (w pierwszych dwóch trzecich, rozkład potęgowy głośności), podmuch z drganiem 12–25 Hz, pyknięcie nad
-  grzbietem, klapnięcie (rezonanse stosu ok. 200 i 490 Hz). Fazy są ułamkami czasu kartki
-  `time = land / PAGE_LAND` (`PAGE_LAND = 0.8`), więc **klapnięcie wypada po `land` sekundach** – długość
-  animacji; dłuższa animacja rozciąga cały dźwięk (gęstość trzasków na sekundę zostaje). Stereo
-  z prawej na lewą (wstecz – odwrotnie).
+- `cardSound({ rate, direction })` – fiszka odlatuje (0,26 s), synteza: szum przez filtry dwubiegunowe
+  (RBJ) – świst z pasmem 700 → 3000 Hz, trzask krawędzi po 40%, stuknięcie 170 Hz po 72%; stereo w stronę
+  lotu (`direction` −1 – „Umiem”, w lewo); `seed` – ta sama próbka przy tym samym ziarnie.
+- Kartka (od 1.31.1) – **nagranie** `sounds/kartka.wav` (`PAGE_FILE`): prawdziwa kartka przycięta do
+  1,14 s, filtr górnoprzepustowy 170 Hz (dwa razy po 12 dB/okt. – bez dudnienia), szczyt −3 dBFS, mono
+  PCM 16 bit 32 kHz (73 kB), bez metadanych nagrania. Klapnięcie (najgłośniejsze 10 ms) po
+  `PAGE_FILE_LAND = 0.765` s. `pageTiming(land)` → `{ delay, offset }`: klapnięcie po `land` s bez
+  zmiany wysokości – krótsza animacja zaczyna nagranie od `offset`, dłuższa czeka `delay`. Synteza
+  kartki z 1.31.0 („album – gruby papier”) usunięta – jej klapnięcie (rezonanse 200 i 490 Hz) dudniło.
 - `roomImpulse()` – odpowiedź impulsowa małego pokoju (wczesne odbicia + zanikający szum, 0,22 s).
 
 `js/ui/sounds.js` tworzy `AudioContext` przy pierwszym `pointerdown` / `keydown` (Safari gra dopiero po
-geście), z pogłosem przez `ConvolverNode` (dwa kanały odpowiedzi, udział 0,16) i głośnością 0,45.
-Próbki liczone są z częstotliwością 24 kHz przy pierwszym użyciu i zapamiętane (do 25 buforów), trzy
-odmiany na zmianę; następna odmiana liczy się po końcu animacji. Bez `<audio>` i bez
-`navigator.audioSession`, żeby nie zmieniać dźwięku słuchania (`audio-keepalive.js`). Ustawienie
+geście) i od razu wczytuje nagranie kartki (`fetch` – z pamięci podręcznej service workera, plik jest
+na liście `ASSET_ROOTS` w `tools/build.mjs`; `decodeAudioData` w wersji z wywołaniem zwrotnym dla
+starszego Safari). Fiszka: pogłos przez `ConvolverNode` (dwa kanały odpowiedzi, udział 0,16), głośność
+0,45, próbki liczone z częstotliwością 24 kHz przy pierwszym użyciu, trzy odmiany na zmianę. Kartka:
+bez pogłosu (nagranie ma swój pokój), głośność 0,6, `StereoPannerNode` z prawej na lewą (wstecz
+odwrotnie) do chwili klapnięcia, odmiany – prędkość ±1,5%; gdy nagranie wczytuje się dopiero przy
+kartce, czas liczy się od wywołania (klapnięcie nadal z końcem animacji, po nim – cisza). Bez `<audio>`
+i bez `navigator.audioSession`, żeby nie zmieniać dźwięku słuchania (`audio-keepalive.js`). Ustawienie
 `sounds` (domyślnie `true`) sprawdzane przy każdym dźwięku; `window.lexicards.sounds` – dziennik
 (testy).
 
 Podpięcie: `study-session.js` `#flyOut` (220 ms animacji, po sprawdzeniu ograniczenia ruchu);
-`note-book.js` `turn()` – `playPage({ land: TURN_DURATION })` (720 ms), a kartka puszczona po
-przeciągnięciu (tylko przewrócona) – `remaining: duration`: gra końcówka dźwięku kartki 720 ms od
-`offset = 720 − duration` (wejście 15 ms), więc klapnięcie wypada z końcem animacji; edytor rysunku
-`flipTo` – `land: FLIP_MS` (900 ms). Bez animacji (ograniczenie ruchu) – bez dźwięku.
+`note-book.js` `turn()` – `playPage({ land: TURN_DURATION })` (720 ms: nagranie od 45 ms), a kartka
+puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: nagranie od `0,765 − duration`
+(wejście 15 ms), więc klapnięcie wypada z końcem animacji; edytor rysunku `flipTo` – `land: FLIP_MS`
+(900 ms: nagranie 135 ms później). Bez animacji (ograniczenie ruchu) – bez dźwięku.
 
 ## Testy
 
