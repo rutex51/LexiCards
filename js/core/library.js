@@ -18,7 +18,7 @@ import { NOTE_HTML_LIMIT, normalizeNoteHtml } from './note-format.js';
 import { cleanImageCaption, labelKey, withImageLabels } from './note-refs.js';
 import { NOTE_TABLE_LIMIT, cleanNoteTables, withTableLabels } from './tables.js';
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
-import { emptyChanges } from './storage.js';
+import { assertAdapter, emptyChanges } from './storage.js';
 import { crc32 } from './zip.js';
 import { createScheduler } from './fsrs.js';
 import { quizResult } from './quiz.js';
@@ -285,7 +285,8 @@ export class Library {
   #sorted = new Map();
 
   constructor(adapter) {
-    this.adapter = adapter;
+    // Magazyn danych – dowolny adapter z interfejsem z storage.js (od 1.30.2 sprawdzany od razu).
+    this.adapter = assertAdapter(adapter);
     this.maps = Object.fromEntries(MEMORY_STORES.map((name) => [name, new Map()]));
     this.revision = 0;
     /** Rośnie przy każdej zmianie dzienników nauki (statystyki czytają je wtedy na nowo). */

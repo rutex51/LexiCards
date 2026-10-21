@@ -155,7 +155,8 @@ async function boot() {
 
   const ctx = {
     library,
-    env: { storageKind: adapter.kind, appVersion: APP_VERSION, buildID: BUILD_ID },
+    // Od 1.30.2 ekrany znają miejsce zapisu i jego możliwości (magazyn danych – js/core/storage.js).
+    env: { storage: { label: adapter.label, ...adapter.capabilities }, appVersion: APP_VERSION, buildID: BUILD_ID },
     refresh() {
       if (refreshQueued) return;
       refreshQueued = true;
@@ -207,7 +208,7 @@ async function boot() {
   }
 
   // Zmiany w innej karcie przeglądarki: wczytujemy dane ponownie, żeby obie karty pokazywały to samo.
-  const channel = adapter.kind === 'indexeddb' && 'BroadcastChannel' in window ? new BroadcastChannel('lexicards') : null;
+  const channel = adapter.capabilities.sharedTabs && 'BroadcastChannel' in window ? new BroadcastChannel('lexicards') : null;
   let applyingRemote = false;
   let persistenceRequested = false;
 
@@ -220,7 +221,7 @@ async function boot() {
     if (!applyingRemote) channel?.postMessage('changed');
     ctx.refresh();
     // Pierwsze dane: prosimy przeglądarkę, żeby nie usuwała bazy przy porządkach.
-    if (!persistenceRequested && adapter.kind === 'indexeddb' && !library.isEmpty()) {
+    if (!persistenceRequested && adapter.capabilities.requestPersistence && !library.isEmpty()) {
       persistenceRequested = true;
       navigator.storage?.persist?.().catch(() => {});
     }
@@ -243,7 +244,7 @@ async function boot() {
   wide.addEventListener('change', () => ctx.refresh());
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => ctx.applyAppearance());
 
-  if (adapter.kind !== 'indexeddb') {
+  if (!adapter.capabilities.persistent) {
     shell.showBanner('Przeglądarka nie pozwala zapisywać danych (na przykład w trybie prywatnym). Zmiany znikną po zamknięciu karty.');
   }
 

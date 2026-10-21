@@ -69,3 +69,24 @@ i podpowiedzią w środku. Na miniaturze tabeli komórki są pod ołówkiem i �
 
 Testy: logika – 378 zaliczone; przeglądarka (Chromium) – 177 zaliczone w dwóch pełnych przebiegach
 (test załączników sprawdza też ramkę sekcji); lint bez błędów. Nie sprawdzono w Safari na iPhonie.
+
+## 1.30.2 – wydzielony magazyn danych
+
+Wersja 1.30.2, 21 października 2026. Zmiana w budowie aplikacji, bez zmian w tym, co widać i jak działa:
+przygotowanie pod zapis danych w pliku (np. w folderze OneDrive) zamiast w przeglądarce.
+
+- Biblioteka i ekrany korzystają tylko z interfejsu **magazynu danych** (`js/core/storage.js`); każdy
+  magazyn ma opis – miejsce zapisu pokazywane w Ustawieniach i to, co potrafi (trwały zapis, wspólna
+  baza kart przeglądarki, prośba o ochronę danych). Dotąd ekrany sprawdzały wprost, czy to IndexedDB.
+- Magazyny w osobnych plikach: pamięć, IndexedDB (jak dotąd – domyślny) i **nowy magazyn w jednym
+  pliku**: cała zawartość w jednym pliku danych, zapisywanym po każdej zmianie; nieudany zapis cofa
+  zmianę. Nie jest jeszcze włączony – potrzebuje miejsca zapisu (plik w OneDrive na Windows, aplikacja
+  na iPhone'a), które dojdzie osobno.
+- Wspólny zestaw sprawdzeń (umowa magazynu) dla każdego magazynu.
+
+Dane w przeglądarce zostają bez zmian (ta sama baza, ten sam format) – nic nie trzeba przenosić.
+
+Testy: logika – 382 zaliczone (4 nowe: umowa dla pamięci i jednego pliku, zapis i odczyt pliku
+z bajtami obrazów, nieudany zapis, biblioteka po ponownym otwarciu pliku); przeglądarka (Chromium) –
+178 zaliczone w dwóch pełnych przebiegach (1 nowy: umowa dla IndexedDB na osobnej bazie,
+„Miejsce zapisu: Ta przeglądarka” w Ustawieniach); lint bez błędów. Nie sprawdzono w Safari na iPhonie.

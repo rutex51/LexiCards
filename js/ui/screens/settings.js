@@ -546,12 +546,13 @@ export class SettingsScreen {
 
   #storageGroup() {
     const { ctx } = this;
-    const inMemory = ctx.env.storageKind !== 'indexeddb';
-    const rows = [valueRow('Miejsce zapisu', inMemory ? 'Tylko pamięć (do zamknięcia karty)' : 'Ta przeglądarka')];
-    if (!inMemory && this.persisted !== null) {
+    const { storage } = ctx.env;
+    const inMemory = !storage.persistent;
+    const rows = [valueRow('Miejsce zapisu', storage.label)];
+    if (storage.requestPersistence && this.persisted !== null) {
       rows.push(valueRow('Ochrona przed usunięciem', this.persisted ? 'Włączona' : 'Wyłączona'));
     }
-    if (!inMemory && this.persisted === false) {
+    if (storage.requestPersistence && this.persisted === false) {
       rows.push(actionRow({ label: 'Włącz ochronę danych', iconName: 'check', onClick: () => this.#requestPersistence(), testID: 'request-persistence' }));
     }
     const footer = inMemory

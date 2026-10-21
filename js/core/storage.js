@@ -1,7 +1,24 @@
-// Warstwa zapisu. Biblioteka trzyma dane w pamięci, a każdą zmianę utrwala jedną
-// niepodzielną transakcją przez adapter. Dwa adaptery mają ten sam interfejs:
-//   MemoryAdapter – testy i awaryjna praca bez bazy przeglądarki,
-//   IdbAdapter    – IndexedDB w przeglądarce.
+// Magazyn danych (od 1.30.2 wydzielony). Biblioteka (library.js) trzyma dane w pamięci, a każdą
+// zmianę utrwala jedną niepodzielną transakcją przez adapter – zna tylko interfejs poniżej, więc
+// miejsce zapisu można zmienić bez zmian w bibliotece i ekranach. Adaptery:
+//   MemoryAdapter   (storage-memory.js)   – testy i awaryjna praca bez bazy przeglądarki,
+//   IdbAdapter      (storage-idb.js)      – IndexedDB w przeglądarce (domyślny),
+//   SnapshotAdapter (storage-snapshot.js) – całość w jednym pliku przez `sink` (przyszły plik
+//                                           danych w OneDrive: Windows, aplikacja na iPhone'a).
+//
+// Interfejs adaptera (wszystkie metody asynchroniczne, rekordy – kopie, nie obiekty adaptera):
+//   open()                       – przygotowanie (otwarcie bazy, wczytanie pliku),
+//   loadAll()                    – { magazyn: [rekordy] } magazynów trzymanych w pamięci (MEMORY_STORES),
+//   commit(changes)              – zmiany w całości albo wcale (postać – niżej),
+//   readStore(name)              – wszystkie rekordy magazynu,
+//   getMany(name, ids)           – rekordy o podanych identyfikatorach (brakujące – null), w tej kolejności,
+//   readByTerm(name, termID)     – wpisy dziennika jednego pojęcia (TERM_HISTORY_STORES),
+//   count(name), readKeys(name)  – liczba i identyfikatory rekordów,
+//   replaceAll(data, { keep })   – cała zawartość od nowa (kopia zapasowa); keep – zostające obrazy
+//                                  i załączniki (przywrócenie samych danych).
+// Pola: kind (nazwa), label (miejsce zapisu dla użytkownika), capabilities { persistent – dane
+// zostają po zamknięciu, sharedTabs – inne karty widzą ten sam magazyn, requestPersistence –
+// przeglądarkę można poprosić o ochronę danych }.
 //
 // Postać zmian przekazywanych do commit():
 //   puts:         { magazyn: [rekordy] }  – zapis lub nadpisanie
@@ -9,267 +26,28 @@
 //   purgeTermIDs: [id pojęć]              – usunięcie dzienników nauki tych pojęć
 //   clear:        [magazyny]              – wyczyszczenie całych magazynów
 
-import { ALL_STORES, MEDIA_STORES, MEMORY_STORES, TERM_HISTORY_STORES } from './model.js';
+import { IdbAdapter } from './storage-idb.js';
+import { MemoryAdapter } from './storage-memory.js';
 
-export const DB_NAME = 'lexicards';
-/**
- * 2 – notatki lekcji i ich obrazy (wersja 1.1), 3 – załączniki notatek (wersja 1.8).
- * Brakujące magazyny powstają przy otwarciu.
- */
-export const DB_VERSION = 3;
+export { DB_NAME, DB_VERSION, IdbAdapter } from './storage-idb.js';
+export { MemoryAdapter } from './storage-memory.js';
+export { SNAPSHOT_FORMAT, SNAPSHOT_VERSION, SnapshotAdapter, decodeSnapshot, encodeSnapshot } from './storage-snapshot.js';
+
+export const ADAPTER_METHODS = Object.freeze(['open', 'loadAll', 'commit', 'readStore', 'getMany', 'readByTerm', 'count', 'readKeys', 'replaceAll']);
 
 export function emptyChanges() {
   return { puts: {}, deletes: {}, purgeTermIDs: [], clear: [] };
 }
 
-function clone(value) {
-  return structuredClone(value);
-}
-
-/** Identyfikatory, które zostają w magazynie obrazów lub załączników: wskazane i zapisywane. */
-function keptIDs(keep, records = []) {
-  return new Set([...keep, ...records.map((record) => record.id)]);
-}
-
-// ---------------------------------------------------------------- pamięć
-
-export class MemoryAdapter {
-  constructor() {
-    this.kind = 'memory';
-    this.stores = new Map(ALL_STORES.map((name) => [name, new Map()]));
-    /** Testy: ustaw, aby najbliższy zapis zakończył się błędem. */
-    this.failNextCommit = null;
+/** Sprawdza, czy obiekt ma interfejs adaptera (nowy adapter – błąd od razu, nie przy pierwszym zapisie). */
+export function assertAdapter(adapter) {
+  const missing = ADAPTER_METHODS.filter((name) => typeof adapter?.[name] !== 'function');
+  if (missing.length > 0) throw new Error(`Magazyn danych bez metod: ${missing.join(', ')}.`);
+  const capabilities = adapter.capabilities;
+  if (!capabilities || typeof capabilities.persistent !== 'boolean' || typeof adapter.label !== 'string') {
+    throw new Error('Magazyn danych bez opisu (label, capabilities).');
   }
-
-  async open() {}
-
-  async loadAll() {
-    const result = {};
-    for (const name of MEMORY_STORES) {
-      result[name] = [...this.stores.get(name).values()].map(clone);
-    }
-    return result;
-  }
-
-  async commit(changes) {
-    if (this.failNextCommit) {
-      const error = this.failNextCommit;
-      this.failNextCommit = null;
-      throw error;
-    }
-    for (const name of changes.clear ?? []) {
-      this.stores.get(name).clear();
-    }
-    for (const [name, records] of Object.entries(changes.puts ?? {})) {
-      const store = this.stores.get(name);
-      for (const record of records) store.set(record.id, clone(record));
-    }
-    for (const [name, ids] of Object.entries(changes.deletes ?? {})) {
-      const store = this.stores.get(name);
-      for (const id of ids) store.delete(id);
-    }
-    const purge = new Set(changes.purgeTermIDs ?? []);
-    if (purge.size > 0) {
-      for (const name of TERM_HISTORY_STORES) {
-        const store = this.stores.get(name);
-        for (const [id, record] of store) {
-          if (purge.has(record.termID)) store.delete(id);
-        }
-      }
-    }
-  }
-
-  async readStore(name) {
-    return [...this.stores.get(name).values()].map(clone);
-  }
-
-  /** Rekordy o podanych identyfikatorach (brakujące jako null), w kolejności identyfikatorów. */
-  async getMany(name, ids) {
-    const store = this.stores.get(name);
-    return ids.map((id) => (store.has(id) ? clone(store.get(id)) : null));
-  }
-
-  /** Wpisy dziennika dotyczące jednego pojęcia. */
-  async readByTerm(name, termID) {
-    return [...this.stores.get(name).values()].filter((record) => record.termID === termID).map(clone);
-  }
-
-  async count(name) {
-    return this.stores.get(name).size;
-  }
-
-  /** Identyfikatory wszystkich rekordów magazynu (bez czytania ich treści). */
-  async readKeys(name) {
-    return [...this.stores.get(name).keys()];
-  }
-
-  /** Zastępuje całą zawartość; `keep` – identyfikatory obrazów i załączników, które zostają. */
-  async replaceAll(data, { keep = null } = {}) {
-    for (const name of ALL_STORES) {
-      const store = this.stores.get(name);
-      if (keep && MEDIA_STORES.includes(name)) {
-        const kept = keptIDs(keep, data[name]);
-        for (const id of [...store.keys()]) if (!kept.has(id)) store.delete(id);
-      } else {
-        store.clear();
-      }
-      for (const record of data[name] ?? []) store.set(record.id, clone(record));
-    }
-  }
-}
-
-// ---------------------------------------------------------------- IndexedDB
-
-function requestToPromise(request) {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-function transactionDone(transaction) {
-  return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-    transaction.onabort = () => reject(transaction.error ?? new Error('Transakcja została przerwana.'));
-  });
-}
-
-export class IdbAdapter {
-  constructor(name = DB_NAME) {
-    this.kind = 'indexeddb';
-    this.name = name;
-    this.db = null;
-  }
-
-  async open() {
-    const request = indexedDB.open(this.name, DB_VERSION);
-    // Starsza wersja aplikacji otwarta w innej karcie zamyka połączenie (onversionchange);
-    // gdyby tego nie zrobiła, otwarcie czeka – wtedy podpowiadamy, co zrobić.
-    request.onblocked = () => console.warn('Baza danych czeka na zamknięcie starszej wersji aplikacji w innej karcie.');
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      for (const name of ALL_STORES) {
-        if (db.objectStoreNames.contains(name)) continue;
-        const store = db.createObjectStore(name, { keyPath: 'id' });
-        if (TERM_HISTORY_STORES.includes(name)) {
-          store.createIndex('termID', 'termID', { unique: false });
-        }
-      }
-    };
-    this.db = await requestToPromise(request);
-    // Inna karta otworzyła nowszą wersję bazy – zwalniamy połączenie, żeby jej nie blokować.
-    this.db.onversionchange = () => this.db.close();
-  }
-
-  async loadAll() {
-    const transaction = this.db.transaction(MEMORY_STORES, 'readonly');
-    const requests = MEMORY_STORES.map((name) => requestToPromise(transaction.objectStore(name).getAll()));
-    const lists = await Promise.all(requests);
-    const result = {};
-    MEMORY_STORES.forEach((name, index) => {
-      result[name] = lists[index];
-    });
-    return result;
-  }
-
-  async commit(changes) {
-    const names = new Set([
-      ...Object.keys(changes.puts ?? {}),
-      ...Object.keys(changes.deletes ?? {}),
-      ...(changes.clear ?? [])
-    ]);
-    const purge = changes.purgeTermIDs ?? [];
-    if (purge.length > 0) {
-      for (const name of TERM_HISTORY_STORES) names.add(name);
-    }
-    if (names.size === 0) return;
-
-    const transaction = this.db.transaction([...names], 'readwrite');
-    const done = transactionDone(transaction);
-
-    // Wszystkie żądania zlecamy synchronicznie; transakcja zatwierdza się sama po ich
-    // wykonaniu albo w całości wycofuje przy pierwszym błędzie.
-    for (const name of changes.clear ?? []) {
-      transaction.objectStore(name).clear();
-    }
-    for (const [name, records] of Object.entries(changes.puts ?? {})) {
-      const store = transaction.objectStore(name);
-      for (const record of records) store.put(record);
-    }
-    for (const [name, ids] of Object.entries(changes.deletes ?? {})) {
-      const store = transaction.objectStore(name);
-      for (const id of ids) store.delete(id);
-    }
-    if (purge.length > 0) {
-      for (const name of TERM_HISTORY_STORES) {
-        const store = transaction.objectStore(name);
-        const index = store.index('termID');
-        for (const termID of purge) {
-          const keysRequest = index.getAllKeys(IDBKeyRange.only(termID));
-          keysRequest.onsuccess = () => {
-            for (const key of keysRequest.result) store.delete(key);
-          };
-        }
-      }
-    }
-    await done;
-  }
-
-  async readStore(name) {
-    const transaction = this.db.transaction([name], 'readonly');
-    return requestToPromise(transaction.objectStore(name).getAll());
-  }
-
-  /** Rekordy o podanych identyfikatorach (brakujące jako null), w kolejności identyfikatorów. */
-  async getMany(name, ids) {
-    if (ids.length === 0) return [];
-    const transaction = this.db.transaction([name], 'readonly');
-    const store = transaction.objectStore(name);
-    const records = await Promise.all(ids.map((id) => requestToPromise(store.get(id))));
-    return records.map((record) => record ?? null);
-  }
-
-  /** Wpisy dziennika dotyczące jednego pojęcia (przez indeks, bez czytania całego magazynu). */
-  async readByTerm(name, termID) {
-    const transaction = this.db.transaction([name], 'readonly');
-    return requestToPromise(transaction.objectStore(name).index('termID').getAll(IDBKeyRange.only(termID)));
-  }
-
-  async count(name) {
-    const transaction = this.db.transaction([name], 'readonly');
-    return requestToPromise(transaction.objectStore(name).count());
-  }
-
-  /** Identyfikatory wszystkich rekordów magazynu (bez czytania ich treści). */
-  async readKeys(name) {
-    const transaction = this.db.transaction([name], 'readonly');
-    return requestToPromise(transaction.objectStore(name).getAllKeys());
-  }
-
-  /**
-   * Zastępuje całą zawartość bazy (przywracanie kopii zapasowej). `keep` – identyfikatory
-   * obrazów i załączników, które zostają w bazie (przywrócenie samych danych); pozostałe znikają.
-   */
-  async replaceAll(data, { keep = null } = {}) {
-    const transaction = this.db.transaction(ALL_STORES, 'readwrite');
-    const done = transactionDone(transaction);
-    for (const name of ALL_STORES) {
-      const store = transaction.objectStore(name);
-      if (keep && MEDIA_STORES.includes(name)) {
-        // Usunięcia przychodzą po zapisach poniżej – zapisywane rekordy też są na liście zostających.
-        const kept = keptIDs(keep, data[name]);
-        const keysRequest = store.getAllKeys();
-        keysRequest.onsuccess = () => {
-          for (const key of keysRequest.result) if (!kept.has(key)) store.delete(key);
-        };
-      } else {
-        store.clear();
-      }
-      for (const record of data[name] ?? []) store.put(record);
-    }
-    await done;
-  }
+  return adapter;
 }
 
 /**

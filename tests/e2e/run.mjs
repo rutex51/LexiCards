@@ -8442,6 +8442,32 @@ test('rysunek 1.30: Shift – kilka elementów kliknięciami (też tuż obok sie
   }
 }, { device: DESKTOP });
 
+// ---------------------------------------------------------------- magazyn danych (1.30.2)
+
+test('magazyn danych 1.30.2: umowa adaptera dla IndexedDB w przeglądarce (osobna baza testowa); Ustawienia – miejsce zapisu z opisu magazynu', async ({ open }) => {
+  const page = await open();
+  const result = await page.evaluate(async () => {
+    const base = new URL('.', location.href);
+    const { IdbAdapter } = await import(new URL('js/core/storage.js', base).href);
+    const { runStorageContract } = await import(new URL('tests/unit/storage-contract.js', base).href);
+    const name = `lexicards-umowa-${Date.now()}`;
+    try {
+      const cases = await runStorageContract(() => new IdbAdapter(name));
+      return { cases };
+    } catch (error) {
+      return { error: error.message };
+    } finally {
+      indexedDB.deleteDatabase(name);
+    }
+  });
+  assert.equal(result.error, undefined, result.error);
+  assert.ok(result.cases >= 6, `sprawdzone przypadki: ${result.cases}`);
+  assert.equal(await page.evaluate(() => window.lexicards.storage), 'indexeddb');
+  await page.goto(`${page.url().split('#')[0]}#/settings`);
+  await page.getByText('Miejsce zapisu').waitFor();
+  await expectText(page.locator('.row', { hasText: 'Miejsce zapisu' }).first(), 'Ta przeglądarka');
+});
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

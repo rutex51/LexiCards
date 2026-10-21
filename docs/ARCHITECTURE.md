@@ -50,7 +50,10 @@ js/ui/drawing-gdt.js       wymiary techniczne i symbole metrologiczne na płótn
 js/ui/canvas-text.js       tekst na płótnie rysunku: czcionka, wysokość wiersza, pomiar i łamanie wierszy (pola tekstowe, tekst kształtu, tabele, karteczki)
 js/ui/images.js            obrazy w przeglądarce: odczyt, zmniejszanie dużych zdjęć, adresy do wyświetlenia
 js/core/library.js         model w pamięci + wszystkie operacje na danych
-js/core/storage.js         adaptery zapisu: IndexedDB i pamięć
+js/core/storage.js         magazyn danych (od 1.30.2 wydzielony): interfejs adaptera, opis możliwości, sprawdzenie, wybór domyślnego
+js/core/storage-memory.js  adapter w pamięci (testy, praca bez bazy przeglądarki, podstawa magazynu w jednym pliku)
+js/core/storage-idb.js     adapter IndexedDB (domyślny)
+js/core/storage-snapshot.js magazyn w jednym pliku (od 1.30.2): całość w pamięci, po każdej zmianie zapis migawki przez `sink` (przyszły plik danych w OneDrive)
 js/core/model.js           kształt rekordów, wartości domyślne, stałe
 js/core/backup.js          kopia zapasowa: plik danych i plik obrazów i załączników – tworzenie, walidacja, przywracanie
 js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (PDF, Word, Excel, PowerPoint…)
@@ -183,6 +186,20 @@ Czyta je tylko kopia zapasowa, a usunięcie pojęcia czyści je po indeksie `ter
 
 Gdy IndexedDB jest niedostępne (np. tryb prywatny w niektórych przeglądarkach), aplikacja
 działa na adapterze pamięciowym i wyświetla ostrzeżenie, że dane znikną po zamknięciu karty.
+
+Od 1.30.2 **magazyn danych jest wydzielony** (`js/core/storage.js`): biblioteka i ekrany znają tylko
+interfejs adaptera – `open`, `loadAll`, `commit`, `readStore`, `getMany`, `readByTerm`, `count`,
+`readKeys`, `replaceAll` – oraz jego opis: `label` (miejsce zapisu w Ustawieniach) i `capabilities`
+{ `persistent`, `sharedTabs` (inne karty widzą ten sam magazyn – BroadcastChannel), `requestPersistence`
+(prośba o ochronę danych) }. `Library` sprawdza adapter przy utworzeniu (`assertAdapter`); `main.js`
+i Ustawienia korzystają z `capabilities`, a nie z nazwy adaptera. `SnapshotAdapter` trzyma całość
+w `MemoryAdapter` i po każdej zmianie zapisuje migawkę przez `sink` { read, write } – zapisy po kolei,
+nieudany zapis przywraca dane z pliku (błąd idzie do biblioteki jak nieudana transakcja). Migawka
+(`encodeSnapshot` / `decodeSnapshot`): { format: 'lexicards-store', version: 1, savedAt, stores } – bajty
+obrazów i załączników jako `{ $bytes: base64 }`. Nie jest jeszcze podłączony: plik w OneDrive dostanie
+własny `sink` (Windows – plik wskazany raz w przeglądarce, iPhone – aplikacja natywna). Ta sama umowa
+(`tests/unit/storage-contract.js`) sprawdza każdy adapter: pamięć i jeden plik w Node.js, IndexedDB –
+w przeglądarce (test e2e na osobnej bazie).
 
 ## Interfejs
 
