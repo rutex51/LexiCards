@@ -7087,3 +7087,99 @@ button.drawing__pill .icon { color: var(--text-2); }
   .note-print .note-page__table-scroll { overflow: visible; }
   .note-print .note-page__table-caption { font-size: 9.5pt; color: var(--text-2); }
 }
+
+/* ------------------------------------------------------------------ plik PDF notatki (od 1.28) */
+/* Niewidoczny układ notatki, z którego js/ui/note-pdf.js tworzy plik PDF: szerokość treści strony A4,
+   1 pt strony = var(--pt) pikseli, krój Helvetica (Arial), zawsze jasne kolory, bez podcinania
+   i ligatur (szerokości wyrazów jak w pliku PDF). */
+.note-pdf {
+  --text: #1d1d1f;
+  --text-2: #555555;
+  --accent: #0040dd;
+  --danger: #c9000f;
+  --fill: #f2f2f2;
+  --note-red: #d70015;
+  --note-orange: #c45500;
+  --note-green: #248a3d;
+  --note-blue: #0040dd;
+  --note-purple: #8944ab;
+  position: fixed;
+  top: 0;
+  left: -100000px;
+  z-index: -1;
+  pointer-events: none;
+  color: var(--text);
+  background: #ffffff;
+  font-family: Helvetica, Arial, "Liberation Sans", "Nimbus Sans", sans-serif;
+  font-size: calc(var(--pt) * 11);
+  line-height: 1.55;
+  font-kerning: none;
+  font-variant-ligatures: none;
+  font-feature-settings: "kern" 0, "liga" 0;
+  hyphens: manual;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  overflow-wrap: break-word;
+}
+.note-pdf__path { margin: 0 0 calc(var(--pt) * 4.25); font-size: calc(var(--pt) * 9.5); line-height: 1.4; color: var(--text-2); }
+.note-pdf__title { margin: 0 0 calc(var(--pt) * 17); font-size: calc(var(--pt) * 18); font-weight: 700; line-height: 1.25; }
+.note-pdf .note-text { font-size: calc(var(--pt) * 11); line-height: 1.55; hyphens: manual; }
+.note-pdf .note-text h3 { font-size: calc(var(--pt) * 13); }
+.note-pdf .note-text [data-color^="#"] { color: var(--note-color) !important; }
+.note-pdf .note-flow > * + * { margin-top: 0.85em; }
+.note-pdf .note-flow__break { height: 0; margin: 0 !important; }
+.note-pdf .note-flow__break + * { margin-top: 0 !important; }
+.note-pdf .note-flow__figure { margin: 0; text-align: center; }
+.note-pdf .note-flow__figure img { display: block; max-width: 100%; max-height: calc(var(--pt) * 640); margin: 0 auto; }
+.note-pdf .note-flow__caption { margin-top: calc(var(--pt) * 5.7); font-size: calc(var(--pt) * 9.5); line-height: 1.4; color: var(--text-2); }
+.note-pdf .note-flow__missing { padding: calc(var(--pt) * 17); border: calc(var(--pt) * 0.75) dashed #999999; color: var(--text-2); }
+.note-pdf .note-page__table-scroll { overflow: visible; }
+.note-pdf .note-page__table-caption { font-size: calc(var(--pt) * 9.5); color: var(--text-2); }
+.note-pdf .note-table th,
+.note-pdf .note-table td { border: calc(var(--pt) * 0.75) solid #8e8e93; }
+.note-pdf .note-table thead th { background: var(--fill); }
+.note-pdf .note-pdf__table--wrap :is(th, td) { overflow-wrap: anywhere; }
+/* Znaczniki list jako elementy (::marker nie ma położenia do odczytu). */
+.note-pdf .note-text :is(ul, ol) { list-style: none; }
+.note-pdf .note-text li { position: relative; }
+.note-pdf__marker {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  margin-right: 0.45em;
+  color: var(--text-2);
+  font-style: normal;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.note-pdf__bullet { display: inline-block; width: 0.34em; height: 0.34em; vertical-align: 0.1em; }
+.note-pdf__math { display: inline-block; }
+.note-pdf__math--display { display: block; margin: 0.45em auto; }
+
+/* Okno „PDF notatki”: opcje, postęp, gotowy plik. */
+.note-pdf-sheet { display: flex; flex-direction: column; gap: 14px; }
+.note-pdf-sheet__note { margin: -6px 0 0; padding: 0 4px; font-size: var(--size-foot); color: var(--text-2); }
+.note-pdf-sheet__print { align-self: flex-start; gap: 6px; }
+.note-pdf-sheet__progress {
+  display: block;
+  height: 8px;
+  margin: 10px 0 6px;
+  border-radius: 4px;
+  background: var(--fill);
+  overflow: hidden;
+}
+.note-pdf-sheet__bar { display: block; width: 0; height: 100%; background: var(--accent-fill); transition: width 0.2s ease; }
+.dialog.sheet .note-pdf-sheet__file { display: flex; align-items: center; gap: 12px; }
+.note-pdf-sheet__file-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 52px;
+  border-radius: 8px;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.note-pdf-sheet__file-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.note-pdf-sheet__file-text .field__hint { margin: 0; }
+.note-pdf-sheet__action { width: 100%; }

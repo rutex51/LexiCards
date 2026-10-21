@@ -35,7 +35,8 @@ js/ui/notes.js             okno notatki lekcji: podgląd (Kopiuj, PDF), edytor z
 js/ui/date-picker.js       wybór daty i godziny (od 1.21.1): kalendarz (dni, miesiące i lata, okres), bębny godzin i minut, okna „Data i godzina” i „Wybrany okres”
 js/ui/table-editor.js      okno tabeli (od 1.21, wspólne dla notatki i rysunku): siatka pól, wiersze i kolumny przy kursorze, nagłówki, wyrównanie, wklejanie z Excela i Worda
 js/ui/note-editing.js      zmiany treści edytora notatki z cofaniem: kopia treści ze znacznikami zaznaczenia, podmiana jednym insertHTML (wartownik), klucze miejsca kursora; wyrównanie i interlinia, „Usuń formatowanie”, wstawienie bloku
-js/ui/note-print.js        druk i PDF notatki: cała notatka w układzie A4 (ścieżka, tytuł, treść), okno drukowania przeglądarki
+js/ui/note-print.js        druk notatki: cała notatka w układzie A4 (ścieżka, tytuł, treść), okno drukowania przeglądarki
+js/ui/note-pdf.js          plik PDF notatki (od 1.28): układ notatki w niewidocznym elemencie, odczyt położenia wyrazów, ramek, obrazów i wzorów, strony; okno „PDF notatki” (nazwa, jakość, postęp, Udostępnij / Pobierz)
 js/ui/symbols.js           panel symboli z ostatnio użytymi (notatka) i symbole pod polem tekstu (rysunek)
 js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podglądzie, otwieranie (arkusz udostępniania / karta / pobranie), odtwarzacz nagrań
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
@@ -55,6 +56,8 @@ js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
 js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, skala, przyciąganie linijki, obszar zaznaczania, tabele i karteczki (prostokąt, strzałka), sprawdzanie danych rysunku
 js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
+js/core/pdf.js             zapis pliku PDF (od 1.28): strony A4, tekst wbudowanymi krojami (Helvetica, Times, Symbol) z polskimi literami i ToUnicode, ścieżki, obrazy, linki, kompresja; rysowanie przez obiekt płótna (wzory)
+js/core/pdf-pages.js       podział złożonej notatki na strony PDF (od 1.28): cięcia między wierszami, „Nowa strona”, nagłówki, samotne wiersze, nagłówek tabeli
 js/core/shapes.js          kształty geometryczne (punkty, obrys, punkty konstrukcyjne, Shift, wymiary z klawiatury i na stałe, wypełnienie, tekst, zakończenia odcinka, od 1.24 łamana i wielokąt z wierzchołkami, sprawdzanie) i liniuszek (najbliższa linia; od 1.22 najbliższy okrąg i promień, okręgi na stronie, kierunki promieni)
 js/core/recognize.js       figury z odręcznych kształtów (od 1.24): rogi kreski (ShortStraw), boki i wierzchołki, odcinek, strzałka, łamana, trójkąt, czworokąty, wielokąt, okrąg i elipsa
 js/core/fits.js            pasowania ISO 286 (od 1.25): litery otworów i wałków, klasy IT, pasowania zalecane, ostatnio użyte
@@ -420,6 +423,46 @@ podziały stron), element `.note-print` trafia na koniec `<body>`, a `@media pri
 strony (strona A4, jasne kolory, obraz najwyżej 225 mm, podział `break-after: page`); po `afterprint`
 element znika. „Kopiuj notatkę” daje obrazowi `width` / `height` najwyżej 605 × 860 px (16 cm szerokości
 tekstu strony A4 przy 96 dpi).
+
+Od 1.28 **plik PDF tworzony w aplikacji** (`note-pdf.js`, `core/pdf.js`, `core/pdf-pages.js`) – w aplikacji
+z ekranu początkowego iPhone'a `window.print()` nic nie robi.
+Przycisk PDF otwiera okno „PDF notatki” (nazwa pliku, jakość obrazów – `settings.pdfQuality`:
+`standard` 150 dpi / JPEG 0,8, `high` 300 dpi / JPEG 0,92; obraz nie jest powiększany ponad oryginał);
+druk zostaje pod „Drukuj…” (`printNote`, bez niego przy `navigator.standalone`). Budowa pliku:
+1. **Układ**: `noteFlow()` w elemencie `.note-pdf` (`position: fixed` poza ekranem) szerokości treści
+   strony A4 (595,28 − 2 × 45,35 pt; marginesy 16 mm z boków i 18 mm u góry i u dołu), 1 pt = `--pt` =
+   3 px (dokładniejszy pomiar). Krój `Helvetica, Arial, "Liberation Sans"` (te same szerokości znaków),
+   `font-kerning: none` i bez ligatur – szerokość wyrazu w układzie równa sumie szerokości znaków w PDF.
+   Zawsze jasne kolory (zmienne jak przy druku). Znaczniki list (`::marker` nie ma położenia) – elementy
+   `.note-pdf__marker` (numer albo kropka, kółko, kwadrat); wzór (`<math>`) – pudełko `.note-pdf__math`
+   wielkości wzoru złożonego przez `layoutMath()` krojami PDF (Times, Symbol), bo MathML przeglądarki ma
+   inne wymiary; tabela szersza niż strona – mniejszy tekst do 7 pt, potem łamanie długich słów i do 5 pt.
+2. **Odczyt**: każdy wyraz (`Range.getClientRects`, wyraz przełamany – znak po znaku) z krojem (zwykły,
+   pogrubiony od 600, pochylony), wielkością, kolorem i linią bazową (`fontBoundingBoxAscent` z płótna
+   tym samym krojem); podkreślenie (`u`, link) i przekreślenie – linia na wiersz; link – obszar
+   `/Annots` (tylko http, https, mailto); tła i ramki elementów (kolor z przezroczystością zmieszany
+   z bielą; komórki w `border-collapse` – kreska na krawędzi komórki); obrazy; wzory.
+3. **Strony** (`paginate`): fragmenty, których nie dzielimy – wiersze tekstu, obrazy z podpisem, wiersze
+   tabel, wzory – łączone, gdy na siebie zachodzą; cięcie tylko w odstępie, najniżej jak się da, z
+   wyjątkiem miejsca za nagłówkiem, podpisem tabeli i wierszem nagłówka tabeli (`keep`) i cięć
+   zostawiających pierwszy albo ostatni wiersz akapitu samotnie; „Nowa strona” zawsze tnie; strona
+   zaczynająca się od wiersza tabeli dostaje jej nagłówek; fragment wyższy niż strona – cięcie między
+   wierszami tekstu w jego środku. Strona PDF to pas układu przesunięty pod górny margines i przycięty
+   (`re W n`) do połowy odstępów do sąsiadów (1–2 pt); numer strony „N / M” na dole.
+4. **Zapis** (`createPdf`): wbudowane kroje Type 1 bez osadzania (plik mały) – Helvetica (4 odmiany)
+   dla tekstu, Times dla wzorów, Symbol dla liter greckich i znaków matematycznych (też minus). Kodowanie
+   WinAnsi z `/Differences`: polskie litery w miejscach 0x81–0x9C, wyparte z nich znaki (›, Š, œ, †…)
+   w kodach 1–8 i 14–17; `/Widths` z pomiaru w przeglądarce (`measureText` przy 1000 px), więc wyraz
+   w PDF ma szerokość z układu; `/ToUnicode` – zaznaczanie, kopiowanie, wyszukiwanie. Znaki spoza krojów:
+   litera bez znaku diakrytycznego (č → c), inne – „?”. Każdy wyraz osobnym `Tj` w miejscu z układu
+   (wyjustowanie bez `Tw`), krój i kolor tylko przy zmianie. Wzory wektorowo: `pdfCanvas()` przyjmuje
+   wywołania płótna z `layoutMath().draw()` (ścieżki, łuki jako krzywe Béziera, `fillText` krojem Times
+   z `ctx.font`); wzór ze znakiem spoza krojów (np. ∘, ⌊) – obraz JPEG 300 / 600 dpi. Obrazy – JPEG
+   (`DCTDecode`) z płótna na białym tle, płótno zwalniane po zapisie (pamięć Safari). Strumienie
+   kompresowane `CompressionStream('deflate')` (`FlateDecode`), gdy przeglądarka go ma; tytuł dokumentu
+   (UTF-16) – nazwa lekcji.
+Gotowy plik: `navigator.share({ files })` w obsłudze dotknięcia „Udostępnij…” (pierwsze na ekranie
+dotykowym z arkuszem udostępniania) albo pobranie (`downloadFile`).
 
 Od 1.18 **podpisy i numeracja** (`note-refs.js`): `caption` w opisie obrazu (`cleanImageCaption`, do
 120 znaków; zapis notatki: brak pola – podpis bez zmian, `''` – usunięty). `figureNumbers(html, images,

@@ -1,4 +1,4 @@
-# LexiCards 1.27
+# LexiCards 1.28
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -36,8 +36,9 @@ Rysunek: figury z odręcznych kształtów (przytrzymane pióro), łamana i wielo
 Rysunek: wymiary bez jednostki w mm (albo cm, m, calach) z oznaczeniem „Wymiary w mm”, odchyłki w ramce tolerancji, znak +/− przy odchyłkach, tabela pasowań ISO 286 z ostatnio użytymi, zamykanie paneli (wersja 1.25); kartka przewracana nad spiralą (1.25.1): [docs/RELEASE-1.25.md](docs/RELEASE-1.25.md).
 Jeden wygląd okien (białe, sekcje w cienkich ramkach), „Wstaw obiekt” na pasku notatki, przycisk Σ z oknem równań, tabele – formaty kolumn (liczby, waluta, data), wyrównanie nagłówka i szerokości kolumn (wersja 1.26): [docs/RELEASE-1.26.md](docs/RELEASE-1.26.md).
 Rysunek: rodzaj linii kształtów (przerywana, osiowa, dwupunktowa, kropkowa), prosta przez całą stronę, punkt symetrii, strzałka po łuku z dwoma punktami pośrednimi i zakończeniami (wersja 1.27): [docs/RELEASE-1.27.md](docs/RELEASE-1.27.md).
+Plik PDF notatki tworzony w aplikacji – prawdziwy tekst, strona A4, wybór jakości obrazów, „Udostępnij…” na iPhonie (wersja 1.28): [docs/RELEASE-1.28.md](docs/RELEASE-1.28.md).
 
-## Co potrafi wersja 1.27
+## Co potrafi wersja 1.28
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -78,7 +79,7 @@ Rysunek: rodzaj linii kształtów (przerywana, osiowa, dwupunktowa, kropkowa), p
   w wielkości mieszczącej się na stronie A4). Od 1.20: wyrównanie akapitów (do lewej, do środka,
   do prawej, wyjustowane) i interlinia (1,0 · 1,15 · 1,5 · 2,0), linki do stron i adresów e-mail
   (Ctrl+K), symbole (%, ‰, °, §, ⌀…; także w polach tekstowych rysunku), data i godzina jednym
-  dotknięciem (od 1.21.1 inna data – w kalendarzu, godzina – na bębnach), **PDF** – notatka w układzie A4 w oknie drukowania; „Usuń formatowanie” czyści wszystko
+  dotknięciem (od 1.21.1 inna data – w kalendarzu, godzina – na bębnach), **PDF** – od 1.28 plik tworzony w aplikacji (prawdziwy tekst, strona A4, jakość obrazów do wyboru; na iPhonie „Udostępnij…” → „Zachowaj w Plikach”), druk – „Drukuj…” w tym samym oknie; „Usuń formatowanie” czyści wszystko
   oprócz linków, a Ctrl+Z cofa też wstawienie odwołania do obrazu i nowej strony. Od 1.21 **tabele** –
   osobne obiekty notatki jak obrazy („Tabela 1”, `[[Tabela 1]]` w tekście, podpis „Tab. 1.” nad
   tabelą), wypełniane w oknie tabeli także wklejeniem fragmentu arkusza Excel albo tabeli z Worda;
@@ -202,7 +203,8 @@ Raporty z etapów, razem z wynikami testów: [etap 1](docs/STAGE-1.md), [etap 2]
 [wersja 1.24 – figury z odręcznych kształtów, łamana, przewracanie kartek od rogu; 1.24.1 – spirala na grzbiecie kartki; 1.24.2 – powiększanie dwoma palcami](docs/RELEASE-1.24.md),
 [wersja 1.25 – jednostki wymiarów, odchyłki w ramce tolerancji, tabela pasowań; 1.25.1 – kartka nad spiralą](docs/RELEASE-1.25.md),
 [wersja 1.26 – jeden wygląd okien, „Wstaw obiekt”, okno równań, formaty i szerokości kolumn tabel](docs/RELEASE-1.26.md),
-[wersja 1.27 – rodzaj linii, prosta, punkt symetrii, strzałka po łuku](docs/RELEASE-1.27.md).
+[wersja 1.27 – rodzaj linii, prosta, punkt symetrii, strzałka po łuku](docs/RELEASE-1.27.md),
+[wersja 1.28 – plik PDF notatki tworzony w aplikacji](docs/RELEASE-1.28.md).
 
 ## Jak korzystać
 
@@ -412,12 +414,16 @@ wersja ma osobną treść, obrazy są wspólne. W podglądzie notatki z obiema w
 **Kopiuj i PDF** (pod stroną notatki; na telefonie „Kopiuj”): **Kopiuj notatkę** kładzie notatkę do
 schowka z formatowaniem i obrazami – od 1.20 obraz ma wymiary wpisane wprost, najwyżej 16 cm
 szerokości (tekst strony A4 przy marginesach 2,5 cm) i 22,7 cm wysokości, więc w Wordzie i OneNote
-mieści się na kartce (plik obrazu ma pełną rozdzielczość). **PDF** (od 1.20) otwiera zwykłe okno
-drukowania z całą notatką w układzie A4: ścieżka i nazwa lekcji, tekst z formatowaniem, wzory, obrazy
-na szerokość strony z podpisami, „Nowa strona” – nowa strona wydruku; w jasnych kolorach także przy
-ciemnym motywie. Na Windows wybierz **Zapisz jako PDF** (Edge, Chrome) albo **Microsoft Print to PDF**;
-na iPhonie i iPadzie w oknie drukowania – **Udostępnij** → **Zachowaj w Plikach**. Nazwa pliku to nazwa
-lekcji.
+mieści się na kartce (plik obrazu ma pełną rozdzielczość). **PDF** (od 1.28) otwiera okno **PDF notatki**:
+**Nazwa pliku** (nazwa lekcji, „.pdf” dochodzi sama) i **Jakość obrazów** – **Standardowa** (150 dpi,
+mniejszy plik) albo **Wysoka** (300 dpi, ostrzejsze przy powiększeniu i w druku; wybór jest zapamiętany).
+**Utwórz** – aplikacja sama składa plik (pasek postępu), bez okna drukowania i bez internetu: cała notatka
+na stronach A4 – ścieżka i nazwa lekcji, tekst z formatowaniem, listy, wzory, tabele (nagłówek tabeli
+powtarza się na każdej stronie), obrazy z podpisami, „Nowa strona”, numery stron; zawsze w jasnych
+kolorach. Tekst w pliku jest prawdziwym tekstem – da się go zaznaczyć, skopiować i wyszukać, a linki
+działają. Gotowy plik: na iPhonie **Udostępnij…** → **Zachowaj w Plikach** (albo Drukuj, Poczta, AirDrop),
+na komputerze **Pobierz plik** (folder Pobrane). **Drukuj…** w tym oknie (nie w aplikacji otwieranej
+z ekranu początkowego iPhone'a – tam druk nie działa) otwiera dawne okno drukowania z notatką w układzie A4.
 
 **Czytanie na głos:** przycisk z głośnikiem obok nazwy lekcji czyta widoczną wersję notatki głosem
 z Ustawień (synteza mowy urządzenia, bez internetu), zdanie po zdaniu, od widocznej strony: czytany

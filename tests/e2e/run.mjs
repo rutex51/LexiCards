@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { inflateSync } from 'node:zlib';
 import { decodeText, parseCsv } from '../../js/core/csv.js';
 import { openWorkbook } from '../../js/core/xlsx.js';
 import { readZipDirectory } from '../../js/core/zip.js';
@@ -5203,7 +5204,9 @@ test('notatka 1.20: PDF – okno drukowania z całą notatką na stronach A4 (ś
     window.printed = [];
     window.print = () => window.printed.push({ title: document.title, images: [...document.querySelectorAll('.note-print img')].map((image) => image.complete && image.naturalWidth) });
   });
+  // Od 1.28 przycisk PDF otwiera okno „PDF notatki”; druk – „Drukuj…” w tym oknie.
   await dialog.locator('[data-testid=note-pdf]').click();
+  await page.locator('dialog[data-testid=note-pdf-sheet] [data-testid=note-pdf-print]').click();
   await waitUntil(() => page.evaluate(() => window.printed.length === 1), 'okno drukowania');
   assert.deepEqual(await page.evaluate(() => window.printed[0]), { title: parts[parts.length - 1], images: [2000] }, 'nazwa pliku PDF – nazwa lekcji; obraz wczytany');
   const printed = page.locator('[data-testid=note-print]');
@@ -5477,6 +5480,7 @@ test('notatka 1.21: tabela – okno tabeli (wklejenie z Excela, wiersz i kolumna
   // PDF: tabela z nagłówkiem (powtarzanym na stronach wydruku) i podpisem.
   await page.evaluate(() => { window.print = () => { window.printedTables = document.querySelectorAll('.note-print [data-testid=note-table] thead').length; }; });
   await dialog.locator('[data-testid=note-pdf]').click();
+  await page.locator('dialog[data-testid=note-pdf-sheet] [data-testid=note-pdf-print]').click();
   await waitUntil(() => page.evaluate(() => window.printedTables === 1), 'tabela w wydruku');
   await expectText(page.locator('.note-print [data-testid=note-table-caption]'), 'Tab. 1. Koszty stałe');
   await page.evaluate(() => window.dispatchEvent(new window.Event('afterprint')));
@@ -7767,6 +7771,197 @@ test('rysunek 1.27: linia osiowa i przerywana, prosta przez całą stronę, punk
   // Prostokąt przerywany: na górnej krawędzi kilka kresek.
   assert.ok((await imageRuns(page, ids.statements, 600, 1110, 1390)).length >= 6, 'przerywany bok prostokąta');
 }, { device: DESKTOP });
+
+/**
+ * Odczyt pliku PDF z aplikacji (1.28): strony (tekst odczytany mapami ToUnicode z pliku), obrazy,
+ * linki, tytuł i polecenia rysowania każdej strony.
+ */
+function readNotePdf(bytes) {
+  const buffer = Buffer.from(bytes);
+  const text = buffer.toString('latin1');
+  const objects = new Map();
+  for (const match of text.matchAll(/(\d+) 0 obj\n/g)) {
+    const start = match.index + match[0].length;
+    const streamAt = text.indexOf('\nstream\n', start);
+    const endAt = text.indexOf('\nendobj', start);
+    if (streamAt >= 0 && streamAt < endAt) {
+      const dict = text.slice(start, streamAt);
+      let data = buffer.subarray(streamAt + 8, streamAt + 8 + Number(/\/Length (\d+)/.exec(dict)[1]));
+      if (dict.includes('/FlateDecode')) data = inflateSync(data);
+      objects.set(Number(match[1]), { dict, data });
+    } else objects.set(Number(match[1]), { dict: text.slice(start, endAt) });
+  }
+  const unicode = (fontID) => {
+    const cmap = objects.get(Number(/\/ToUnicode (\d+)/.exec(objects.get(fontID).dict)[1])).data.toString('latin1');
+    return new Map([...cmap.matchAll(/<([0-9a-f]{2})> <([0-9a-f]+)>/g)]
+      .map((match) => [parseInt(match[1], 16), String.fromCodePoint(...match[2].match(/.{4}/g).map((unit) => parseInt(unit, 16)))]));
+  };
+  const kids = /\/Kids \[([^\]]*)\]/.exec(text)[1].match(/\d+(?= 0 R)/g).map(Number);
+  const pages = kids.map((id) => {
+    const dict = objects.get(id).dict;
+    const fonts = Object.fromEntries([...dict.matchAll(/\/(F\d) (\d+) 0 R/g)].map((match) => [match[1], unicode(Number(match[2]))]));
+    const ops = objects.get(Number(/\/Contents (\d+)/.exec(dict)[1])).data.toString('latin1');
+    let font = null;
+    let content = '';
+    for (const match of ops.matchAll(/\/(F\d) [\d.]+ Tf|<([0-9a-f]*)> Tj/g)) {
+      if (match[1]) font = match[1];
+      else content += match[2].match(/.{2}/g).map((code) => fonts[font].get(parseInt(code, 16)) ?? '?').join('');
+    }
+    const links = [...dict.matchAll(/\d+(?= 0 R)/g)].map((ref) => objects.get(Number(ref[0]))?.dict ?? '')
+      .map((annot) => /\/URI \(([^)]*)\)/.exec(annot)?.[1]).filter(Boolean);
+    return { text: content, ops, links, images: [...ops.matchAll(/\/(Im\d+) Do/g)].map((match) => match[1]) };
+  });
+  const images = [...text.matchAll(/\/Subtype \/Image \/Width (\d+) \/Height (\d+)[^>]*\/Filter \/(\w+)/g)].map((match) => ({ width: Number(match[1]), height: Number(match[2]), filter: match[3] }));
+  const title = /\/Title <FEFF([0-9A-F]*)>/.exec(text)[1].match(/.{4}/g).map((unit) => String.fromCharCode(parseInt(unit, 16))).join('');
+  return { header: text.slice(0, 9), pages, images, title, fonts: [...text.matchAll(/\/BaseFont \/([\w-]+)/g)].map((match) => match[1]) };
+}
+
+test('notatka 1.28: PDF w aplikacji – okno (nazwa pliku, jakość obrazów, bez wyboru formatu), plik z prawdziwym tekstem: polskie litery, wzór, tabela na dwóch stronach z powtórzonym nagłówkiem, obraz w wybranej jakości, link, „Nowa strona”; ciemny motyw bez wpływu; Drukuj… z okna', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate(async (id) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1600;
+    canvas.height = 800;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#2f8f6f';
+    ctx.fillRect(0, 0, 1600, 800);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    const rows = [['Pozycja', 'Kwota']];
+    for (let index = 1; index <= 40; index += 1) rows.push([`Wiersz ${index}`, String(index * 100)]);
+    await window.lexicards.library.saveNote(id, {
+      html: '<h3>Bilans – zażółć gęślą jaźń</h3>'
+        + '<p>Zobacz <a href="https://example.com/bilans">opis bilansu</a> i wzór $\\sigma^2 = \\frac{1}{n}\\sum x_i$ – <strong>pogrubione</strong>.</p>'
+        + '<ul><li>Aktywa</li><li>Pasywa</li></ul><p>[[Schemat]]</p><p>[[Tabela 1]]</p><hr data-page=""><p>Druga część notatki.</p>',
+      images: [{ bytes: await blob.arrayBuffer(), type: 'image/png', width: 1600, height: 800, label: 'Schemat', caption: 'Bilans w skrócie' }],
+      tables: [{ label: 'Tabela 1', caption: 'Koszty', rows, align: ['left', 'right'], header: true }],
+      numberFigures: true
+    });
+  }, ids.statements);
+  const [lessonPath] = await page.evaluate((id) => [window.lexicards.library.lessonPath(id)], ids.statements);
+  const parts = lessonPath.split(' › ');
+  await openNotePreview(page, ids.statements);
+  const dialog = noteDialog(page);
+  // Ciemny motyw aplikacji – plik i tak w jasnych kolorach.
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
+
+  await dialog.locator('[data-testid=note-pdf]').click();
+  const pdfSheet = page.locator('dialog[data-testid=note-pdf-sheet]');
+  await expectText(pdfSheet.locator('.sheet__title'), 'PDF notatki');
+  await expectValue(pdfSheet.locator('[data-testid=note-pdf-name]'), parts.at(-1));
+  assert.equal(await pdfSheet.locator('[data-testid=note-pdf-quality] input:checked').evaluate((input) => input.value), 'standard');
+  await expectText(pdfSheet.locator('[data-testid=note-pdf-quality-hint]'), '150 dpi');
+  assert.equal((await pdfSheet.textContent()).includes('Letter'), false, 'bez wyboru formatu – zawsze A4');
+  await expectText(pdfSheet, 'Strona A4');
+  await pdfSheet.locator('[data-testid=note-pdf-quality] label', { hasText: 'Wysoka' }).click();
+  await expectText(pdfSheet.locator('[data-testid=note-pdf-quality-hint]'), '300 dpi');
+  await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().pdfQuality === 'high'), 'wybór jakości zapamiętany');
+  await pdfSheet.locator('[data-testid=note-pdf-name]').fill('Bilans: notatka');
+  await waitUntil(() => pdfSheet.locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'okno PDF wysunięte');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-128-pdf-okno.png') });
+  await pdfSheet.locator('.sheet__submit').click();
+  await pdfSheet.locator('[data-testid=note-pdf-file]').waitFor({ timeout: 30000 });
+  await expectText(pdfSheet.locator('[data-testid=note-pdf-file-name]'), 'Bilans notatka.pdf');
+  const info = await pdfSheet.locator('[data-testid=note-pdf-file-info]').textContent();
+  assert.match(info, /^\d+ stron[y]? · [\d,]+ (kB|MB) · A4$/, info);
+  assert.equal(await pdfSheet.locator('.sheet__submit').textContent(), 'Gotowe');
+  assert.equal(await pdfSheet.locator('[data-testid=note-pdf-share]').count(), 0, 'Chromium na komputerze – bez arkusza udostępniania');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-128-pdf-gotowe.png') });
+  const [download] = await Promise.all([page.waitForEvent('download'), pdfSheet.locator('[data-testid=note-pdf-download]').click()]);
+  assert.equal(download.suggestedFilename(), 'Bilans notatka.pdf');
+  const high = readNotePdf(await readFile(await download.path()));
+  await writeFile(path.join(OUTPUT, 'notatka-128.pdf'), await readFile(await download.path()));
+
+  assert.equal(high.header, '%PDF-1.4\n');
+  assert.equal(high.title, parts.at(-1));
+  assert.equal(`${high.pages.length} ${high.pages.length < 5 ? 'strony' : 'stron'}`, info.split(' · ')[0], 'liczba stron jak w oknie');
+  assert.ok(high.pages.length >= 3, `stron: ${high.pages.length}`);
+  const first = high.pages[0].text;
+  assert.ok(first.startsWith(`${parts.slice(0, -1).join(' › ')}${parts.at(-1)}Bilans – zażółć gęślą jaźń`), first.slice(0, 120));
+  assert.ok(first.includes('opis bilansu') && first.includes('pogrubione'), 'tekst akapitu');
+  assert.ok(first.includes('σ') && first.includes('∑'), 'wzór – znaki kroju Symbol');
+  assert.ok(first.includes('AktywaPasywa'), 'lista');
+  assert.deepEqual(high.pages[0].links, ['https://example.com/bilans']);
+  assert.ok(['Helvetica', 'Helvetica-Bold', 'Times-Italic', 'Symbol'].every((font) => high.fonts.includes(font)), high.fonts.join(', '));
+  // Tabela na kilku stronach: nagłówek „PozycjaKwota” na każdej z nich, wszystkie wiersze, podpis raz.
+  const tablePages = high.pages.filter((entry) => entry.text.includes('Wiersz '));
+  assert.ok(tablePages.length >= 2, 'tabela na co najmniej dwóch stronach');
+  assert.ok(tablePages.every((entry) => entry.text.includes('PozycjaKwota')), 'nagłówek tabeli powtórzony');
+  const allText = high.pages.map((entry) => entry.text).join('');
+  for (const index of [1, 20, 40]) assert.ok(allText.includes(`Wiersz ${index}${index * 100}`), `wiersz ${index}`);
+  assert.equal(allText.split('Tab. 1. Koszty').length, 2);
+  assert.ok(allText.includes('Rys. 1. Bilans w skrócie'));
+  // „Nowa strona”: ostatnia strona zaczyna się od tekstu po podziale, numer strony na dole.
+  assert.ok(high.pages.at(-1).text.startsWith('Druga część notatki.'), high.pages.at(-1).text);
+  assert.ok(high.pages.at(-1).text.endsWith(`${high.pages.length} / ${high.pages.length}`));
+  // Obraz: wysoka jakość – 300 dpi, ale nie więcej niż oryginał (1600 px).
+  assert.deepEqual(high.images, [{ width: 1600, height: 800, filter: 'DCTDecode' }]);
+  // Kolory tekstu jasnego motywu mimo ciemnego motywu aplikacji.
+  assert.ok(high.pages[0].ops.includes('0.11 0.11 0.12 rg'), 'tekst #1d1d1f');
+  assert.equal(/(^|\s)1 1 1 rg/.test(high.pages[0].ops), false, 'bez białego tekstu');
+
+  // Standardowa jakość: obraz 150 dpi (1051 px), plik mniejszy; wybór zapamiętany przy następnym otwarciu.
+  await pdfSheet.locator('.sheet__submit').click();
+  await pdfSheet.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-pdf]').click();
+  assert.equal(await pdfSheet.locator('[data-testid=note-pdf-quality] input:checked').evaluate((input) => input.value), 'high');
+  await pdfSheet.locator('[data-testid=note-pdf-quality] label', { hasText: 'Standardowa' }).click();
+  await pdfSheet.locator('.sheet__submit').click();
+  await pdfSheet.locator('[data-testid=note-pdf-file]').waitFor({ timeout: 30000 });
+  const [second] = await Promise.all([page.waitForEvent('download'), pdfSheet.locator('[data-testid=note-pdf-download]').click()]);
+  const standard = readNotePdf(await readFile(await second.path()));
+  assert.equal(standard.images[0].width, 1051);
+  assert.equal(standard.pages.length, high.pages.length);
+  assert.ok((await readFile(await second.path())).length < (await readFile(await download.path())).length, 'plik standardowy mniejszy');
+  await pdfSheet.locator('.sheet__submit').click();
+  await pdfSheet.waitFor({ state: 'detached' });
+
+  // Druk (komputer): z okna PDF – „Drukuj…” otwiera okno drukowania przeglądarki z notatką.
+  await page.evaluate(() => { window.print = () => { window.printedTitle = document.title; }; });
+  await dialog.locator('[data-testid=note-pdf]').click();
+  await pdfSheet.locator('[data-testid=note-pdf-print]').click();
+  await waitUntil(() => page.evaluate(() => window.printedTitle), 'okno drukowania');
+  assert.equal(await page.evaluate(() => window.printedTitle), parts.at(-1));
+  await pdfSheet.waitFor({ state: 'detached' });
+  await page.evaluate(() => window.dispatchEvent(new window.Event('afterprint')));
+}, { device: DESKTOP });
+
+test('notatka 1.28 na telefonie: PDF – „Udostępnij…” (arkusz systemu) pierwsze, „Pobierz plik” drugie; w aplikacji z ekranu początkowego bez „Drukuj…”', async ({ open, context }) => {
+  // Chromium nie ma arkusza udostępniania ani trybu aplikacji z ekranu początkowego – podstawiamy je.
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'standalone', { value: true });
+    navigator.canShare = (data) => Array.isArray(data?.files) && data.files.length === 1;
+    navigator.share = async (data) => {
+      const file = data.files[0];
+      window.sharedFile = { name: file.name, type: file.type, head: new TextDecoder().decode((await file.arrayBuffer()).slice(0, 8)) };
+    };
+  });
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate((id) => window.lexicards.library.saveNote(id, { html: '<p>Krótka notatka – zażółć gęślą jaźń.</p>' }), ids.statements);
+  await openNotePreview(page, ids.statements);
+  await noteDialog(page).locator('[data-testid=note-pdf]').click();
+  const pdfSheet = page.locator('dialog[data-testid=note-pdf-sheet]');
+  await expectText(pdfSheet.locator('[data-testid=note-pdf-quality-hint]'), 'Notatka nie ma obrazów');
+  assert.equal(await pdfSheet.locator('[data-testid=note-pdf-print]').count(), 0, 'bez „Drukuj…” w aplikacji z ekranu początkowego');
+  await waitUntil(() => pdfSheet.locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'okno PDF wysunięte');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-128-pdf-telefon-okno.png') });
+  await pdfSheet.locator('.sheet__submit').click();
+  await pdfSheet.locator('[data-testid=note-pdf-file]').waitFor({ timeout: 30000 });
+  await expectText(pdfSheet.locator('[data-testid=note-pdf-file-info]'), '1 strona · ');
+  const actions = pdfSheet.locator('.note-pdf-sheet__action');
+  assert.deepEqual(await actions.evaluateAll((buttons) => buttons.map((button) => [button.dataset.testid, button.classList.contains('button--primary')])),
+    [['note-pdf-share', true], ['note-pdf-download', false]]);
+  assert.equal(await overflowX(page), 0);
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-128-pdf-telefon-gotowe.png') });
+  await pdfSheet.locator('[data-testid=note-pdf-share]').click();
+  const shared = await waitUntil(() => page.evaluate(() => window.sharedFile), 'plik w arkuszu udostępniania');
+  assert.deepEqual(shared, { name: `${(await page.evaluate((id) => window.lexicards.library.getLesson(id).name, ids.statements))}.pdf`, type: 'application/pdf', head: '%PDF-1.4' });
+  await pdfSheet.locator('.sheet__submit').click();
+  await pdfSheet.waitFor({ state: 'detached' });
+});
 
 // ---------------------------------------------------------------- nauka z fiszkami
 

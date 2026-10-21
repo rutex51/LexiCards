@@ -138,6 +138,7 @@ export function defaultSettings() {
     consolidatedLast: true,        // utrwalone lekcje i moduły na końcu list (od 1.9 do wyboru)
     listSort: { domain: 'manual', module: 'manual', lesson: 'manual' }, // kolejność list biblioteki (od 1.16, core/sorting.js)
     noteLanguage: 'pl',            // wersja notatki w podglądzie: pl | en (gdy notatka ma obie)
+    pdfQuality: 'standard',        // plik PDF notatki: jakość obrazów standard | high (od 1.28)
     domainColorsGray: true,        // wersja 1.2: tło ikon istniejących dziedzin zmienione jednorazowo na szare
     studySelection: null,          // ostatnio wybrany materiał: { domainID, moduleID, lessonIDs }
     calendarPlan: null,            // ostatni plan nauki w kalendarzu (od 1.23, core/ics.js – cleanPlan)

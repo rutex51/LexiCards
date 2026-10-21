@@ -35,6 +35,7 @@ import { icon } from './icons.js';
 import { prepareImage, urlPool } from './images.js';
 import { openMathHelp } from './math.js';
 import { clearFormatting, contentEditing, insertBlockAt, paragraphAt, setParagraph } from './note-editing.js';
+import { openNotePdf } from './note-pdf.js';
 import { printNote } from './note-print.js';
 import { recordingSupported, startRecording } from './recorder.js';
 import { noteBook } from './note-book.js';
@@ -672,12 +673,12 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
                 onClick: () => copyNote(note, stored, language)
               }, icon('copy', { size: 18 }), h('span', null, 'Kopiuj', h('span', { class: 'note-sheet__copy-more' }, ' notatkę')))
             : null,
-          // Zapis PDF i druk (od 1.20): okno drukowania przeglądarki z notatką w układzie A4.
+          // Zapis PDF (od 1.28 – plik tworzony w aplikacji, z prawdziwym tekstem; druk – z okna PDF).
           h('button', {
-            type: 'button', class: 'button button--secondary note-sheet__copy', title: 'Zapisz jako PDF albo wydrukuj', dataset: { testid: 'note-pdf' },
+            type: 'button', class: 'button button--secondary note-sheet__copy', title: 'Zapisz notatkę jako plik PDF', dataset: { testid: 'note-pdf' },
             onClick: () => {
               const path = library.lessonPath(lessonID).split(' › ');
-              printNote({
+              const content = {
                 title: library.getLesson(lessonID)?.name ?? lesson.name,
                 path: path.length > 1 ? path.slice(0, -1).join(' › ') : null,
                 html,
@@ -686,6 +687,12 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
                 imagesFirst: note.imagesFirst === true,
                 numberFigures: note.numberFigures === true,
                 language
+              };
+              openNotePdf({
+                ...content,
+                quality: library.getSettings().pdfQuality,
+                onQuality: (quality) => library.updateSettings({ pdfQuality: quality }).catch((error) => console.error(error)),
+                onPrint: () => printNote(content)
               });
             }
           }, icon('print', { size: 18 }), h('span', null, 'PDF')),
