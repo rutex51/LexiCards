@@ -385,7 +385,9 @@ export function defaultToolSettings() {
     // Od 1.24: kreska pióra przytrzymana na końcu zamienia się w figurę.
     recognize: true,
     // Od 1.25: ostatnio użyte pasowania (okno tolerancji wymiaru pokazuje tylko je).
-    recentFits: [...DEFAULT_RECENT_FITS]
+    recentFits: [...DEFAULT_RECENT_FITS],
+    // Od 1.30: palec rysuje także wtedy, gdy aplikacja zna rysik (dwa palce przesuwają i powiększają).
+    fingerDraws: false
   };
 }
 
@@ -481,7 +483,8 @@ export function cleanToolSettings(raw) {
     edgeSnap: typeof raw.edgeSnap === 'boolean' ? raw.edgeSnap : base.edgeSnap,
     dimOffset: finite(raw.dimOffset) ? clamp(Math.round(raw.dimOffset), DIM_OFFSET_LIMITS.min, DIM_OFFSET_LIMITS.max) : base.dimOffset,
     recognize: typeof raw.recognize === 'boolean' ? raw.recognize : base.recognize,
-    recentFits: cleanRecentFits(raw.recentFits, (fit) => FIT_RE.test(fit))
+    recentFits: cleanRecentFits(raw.recentFits, (fit) => FIT_RE.test(fit)),
+    fingerDraws: typeof raw.fingerDraws === 'boolean' ? raw.fingerDraws : base.fingerDraws
   };
 }
 

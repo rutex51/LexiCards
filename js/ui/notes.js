@@ -1653,32 +1653,58 @@ function noteEditor({
   // ---- rysunki (od 1.12): obraz z kreskami do późniejszej edycji
   const isDrawing = (image) => Boolean(image.drawing && typeof image.drawing === 'object');
 
-  /** Wynik edytora rysunku jako nowy (jeszcze niezapisany) obraz notatki. */
-  const drawnImage = (result, label, caption = null) => ({
-    ...result.image, name: null, drawing: result.drawing, stored: false, url: urls.add(result.image), label, ...(caption ? { caption } : {})
+  /** Wynik edytora rysunku jako nowy (jeszcze niezapisany) obraz notatki; od 1.30 z ukryciem poprzedniego (oczko). */
+  const drawnImage = (result, label, caption = null, hidden = false) => ({
+    ...result.image, name: null, drawing: result.drawing, stored: false, url: urls.add(result.image), label, ...(caption ? { caption } : {}),
+    ...(hidden ? { hidden: true } : {})
   });
 
   /**
-   * „Osadź” w edytorze rysunku (od 1.17): fragment rysunku albo wycinek jako nowy obraz notatki
-   * („Obraz N”) – zaraz za rysunkiem `anchor` (kolejne – za poprzednimi); przy nowym rysunku
-   * (anchor null) – na końcu, a rysunek trafi przed nie. Inne obrazy zostają tymi samymi obiektami.
+   * Kartki edytora rysunku (od 1.30): rysunek otwiera wszystkie rysunki notatki, zdjęcie i rysunek na
+   * zdjęciu – wszystkie zdjęcia (obrazy z plikiem) i rysunki na zdjęciach; w edytorze przewraca się je jak kartki.
    */
-  function embedder(anchor) {
+  const onPhoto = (image) => !isDrawing(image) || Boolean(image.drawing.photo);
+  const sheetImages = (photo) => state.images.filter((image) => (photo ? onPhoto(image) && (isDrawing(image) || image.url) : isDrawing(image) && !onPhoto(image)));
+  /** Zdjęcie do rysowania – wymiary z obrazu, jak go widać (po obrocie zdjęcia z aparatu). */
+  async function photoOf(image) {
+    const picture = new Image();
+    picture.src = image.url;
+    await picture.decode();
+    return { photo: { bytes: image.bytes, type: image.type, width: picture.naturalWidth, height: picture.naturalHeight } };
+  }
+  const sheetOf = (image) => (isDrawing(image) ? { title: image.label, drawing: image.drawing } : { title: image.label, load: () => photoOf(image) });
+  /** Sygnatury kolejnych dodanych kartek: „Rysunek N” – wolne w notatce (i po nowym rysunku `taken`). */
+  function pageLabels(taken = []) {
+    const labels = [];
+    return (count) => {
+      while (labels.length < count) labels.push(nextDrawingLabel([...state.images.map((image) => image.label), ...taken, ...labels]));
+      return labels[count - 1];
+    };
+  }
+
+  /**
+   * „Osadź” w edytorze rysunku (od 1.17): fragment rysunku albo wycinek jako nowy obraz notatki
+   * („Obraz N”) – zaraz za rysunkiem kartki, z której pochodzi (kolejne – za poprzednimi); z nowego
+   * rysunku i dodanej kartki (bez obrazu w notatce) – na końcu, a rysunek trafi przed nie. Od 1.30
+   * `anchors` – obrazy notatki kartek edytora (nowe – null). Inne obrazy zostają tymi samymi obiektami.
+   */
+  function embedder(anchors) {
     const embedded = [];
-    const embed = async ({ blob }) => {
+    const embed = async ({ blob, sheet = 0 }) => {
+      const anchor = anchors[sheet] ?? null;
       // Nowy rysunek też potrzebuje miejsca na liście obrazów.
       if (state.images.length + state.pending + (anchor ? 0 : 1) >= NOTE_IMAGE_LIMIT) {
         throw new Error(`Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów.`);
       }
       const prepared = await prepareImage(blob, { name: null });
       const entry = { ...prepared, stored: false, url: urls.add(prepared), label: null };
-      const last = [anchor, ...embedded].findLast((image) => image && state.images.includes(image));
+      const last = [anchor, ...embedded.filter((item) => item.sheet === sheet).map((item) => item.image)].findLast((image) => image && state.images.includes(image));
       const index = last ? state.images.indexOf(last) + 1 : state.images.length;
       const next = [...state.images];
       next.splice(index, 0, entry);
       entry.label = withImageLabels(next)[index].label;
       state.images = next;
-      embedded.push(entry);
+      embedded.push({ image: entry, sheet });
       renderImages();
       return entry.label;
     };
@@ -1686,74 +1712,96 @@ function noteEditor({
   }
 
   /**
-   * Kolejne kartki z edytora rysunku (od 1.19) – nowe rysunki („Rysunek N”) za obrazem `after`
-   * (i za obrazami osadzonymi z edytora), w kolejności kartek; ponad limit obrazów – pominięte.
+   * Wynik edytora rysunku (od 1.30): zmienione kartki zastępują swoje obrazy (ta sama sygnatura, podpis
+   * i oczko), nowy rysunek (kartka bez obrazu) trafia przed obrazy z niego osadzone (albo na koniec),
+   * a dodane kartki (od 1.19) – za ostatnią kartką okna (i obrazami z niej osadzonymi), w kolejności
+   * kartek; ponad limit obrazów – pominięte. Zwraca nowy rysunek albo null.
    */
-  function addPages(pages, after, embedded) {
-    if (!pages?.length) return;
-    const next = [...state.images];
-    const last = [after, ...embedded].findLast((image) => image && next.includes(image));
-    let index = last ? next.indexOf(last) + 1 : next.length;
-    let skipped = 0;
-    for (const page of pages) {
-      if (next.length + state.pending >= NOTE_IMAGE_LIMIT) {
-        skipped += 1;
+  function applyDrawings(result, anchors, embedded, freshLabel = null) {
+    const placed = [...anchors];
+    let fresh = null;
+    for (const { index, drawing, image } of result.sheets) {
+      const original = anchors[index];
+      if (!original) {
+        const first = embedded.find((item) => item.sheet === index && state.images.includes(item.image));
+        const next = [...state.images];
+        fresh = drawnImage({ drawing, image }, freshLabel);
+        next.splice(first ? next.indexOf(first.image) : next.length, 0, fresh);
+        state.images = withImageLabels(next);
+        placed[index] = fresh;
         continue;
       }
-      next.splice(index, 0, drawnImage(page, nextDrawingLabel(next.map((image) => image.label))));
-      index += 1;
+      const position = state.images.indexOf(original);
+      if (position < 0) continue;
+      placed[index] = drawnImage({ drawing, image }, original.label, original.caption, original.hidden);
+      state.images[position] = placed[index];
     }
-    state.images = withImageLabels(next);
-    if (skipped > 0) toast(`Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów – pominięte kartki: ${skipped}.`, { kind: 'error' });
+    if (result.pages.length > 0) {
+      const lastSheet = placed.length - 1;
+      const after = [placed[lastSheet], ...embedded.filter((item) => item.sheet === lastSheet).map((item) => item.image)].filter((image) => image && state.images.includes(image));
+      const next = [...state.images];
+      let index = after.length > 0 ? Math.max(...after.map((image) => next.indexOf(image))) + 1 : next.length;
+      let skipped = 0;
+      for (const page of result.pages) {
+        if (next.length + state.pending >= NOTE_IMAGE_LIMIT) {
+          skipped += 1;
+          continue;
+        }
+        const labels = next.map((image) => image.label);
+        const free = page.title && !labels.some((label) => labelKey(label) === labelKey(page.title));
+        next.splice(index, 0, drawnImage(page, free ? page.title : nextDrawingLabel(labels)));
+        index += 1;
+      }
+      state.images = withImageLabels(next);
+      if (skipped > 0) toast(`Notatka może mieć najwyżej ${NOTE_IMAGE_LIMIT} obrazów – pominięte kartki: ${skipped}.`, { kind: 'error' });
+    }
+    renderImages();
+    return fresh;
   }
 
-  /** Nowy rysunek; zwraca obraz rysunku (do wstawienia odwołania) albo null. */
+  /** Miejsce w notatce na dodane kartki (`reserved` – nowy rysunek). */
+  const pageRoom = (reserved = 0) => Math.max(0, NOTE_IMAGE_LIMIT - state.images.length - state.pending - reserved);
+
+  /** Nowy rysunek – w edytorze za rysunkami notatki (od 1.30 – przewracane jak kartki); zwraca obraz rysunku (do wstawienia odwołania) albo null. */
   async function drawNew() {
     if (state.images.length + state.pending >= NOTE_IMAGE_LIMIT) return null;
     const label = nextDrawingLabel(state.images.map((image) => image.label));
-    const { embed, embedded } = embedder(null);
-    const result = await openDrawingEditor({ title: label, onEmbed: embed });
+    const drawings = sheetImages(false);
+    const anchors = [...drawings, null];
+    const { embed, embedded } = embedder(anchors);
+    const result = await openDrawingEditor({
+      title: label, sheets: [...drawings.map(sheetOf), { title: label }], start: drawings.length,
+      onEmbed: embed, pageRoom: pageRoom(1), pageTitle: pageLabels([label])
+    });
     if (!result) return null;
-    let main = null;
-    if (result.drawing) {
-      // Rysunek przed osadzonymi z niego obrazami.
-      const first = embedded.find((image) => state.images.includes(image));
-      const next = [...state.images];
-      main = drawnImage(result, label);
-      next.splice(first ? next.indexOf(first) : next.length, 0, main);
-      state.images = withImageLabels(next);
-    }
-    addPages(result.pages, main, embedded);
-    renderImages();
-    return main;
+    return applyDrawings(result, anchors, embedded, label);
   }
 
-  /** Poprawka rysunku albo rysowanie na zdjęciu – obraz zostaje na swoim miejscu, z tą samą sygnaturą. */
+  /**
+   * Poprawka rysunku albo rysowanie na zdjęciu – obraz zostaje na swoim miejscu, z tą samą sygnaturą.
+   * Od 1.30 w edytorze także pozostałe rysunki (przy zdjęciu – zdjęcia) notatki, przewracane jak kartki;
+   * przy zdjęciach bez „Nowej kartki”.
+   */
   async function redraw(image) {
-    let options;
-    if (isDrawing(image)) {
-      options = { drawing: image.drawing, title: image.label };
-    } else {
-      // Wymiary z obrazu, jak go widać (po obrocie zdjęcia z aparatu).
-      const picture = new Image();
-      picture.src = image.url;
+    const photo = onPhoto(image);
+    const anchors = sheetImages(photo);
+    const start = anchors.indexOf(image);
+    if (start < 0) return;
+    const sheets = anchors.map(sheetOf);
+    if (!isDrawing(image)) {
       try {
-        await picture.decode();
+        sheets[start] = { title: image.label, ...(await photoOf(image)) };
       } catch {
         toast('Nie udało się otworzyć tego obrazu do rysowania.', { kind: 'error' });
         return;
       }
-      options = { photo: { bytes: image.bytes, type: image.type, width: picture.naturalWidth, height: picture.naturalHeight }, title: image.label };
     }
-    const { embed, embedded } = embedder(image);
-    const result = await openDrawingEditor({ ...options, onEmbed: embed });
-    const position = state.images.indexOf(image);
-    if (!result || position < 0) return;
-    // Pierwsza kartka bez zmian (od 1.19 – dodane tylko kolejne kartki) – obraz zostaje ten sam.
-    const main = result.drawing ? drawnImage(result, image.label, image.caption) : image;
-    state.images[position] = main;
-    addPages(result.pages, main, embedded);
-    renderImages();
+    const { embed, embedded } = embedder(anchors);
+    const result = await openDrawingEditor({
+      title: image.label, sheets, start, onEmbed: embed, newPages: !photo, pageRoom: pageRoom(), pageTitle: pageLabels()
+    });
+    if (!result) return;
+    applyDrawings(result, anchors, embedded);
   }
 
   function renderImages() {

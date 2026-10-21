@@ -4887,7 +4887,7 @@ test('rysunek 1.19: kilka kartek – nowa kartka, PageUp i PageDown, usunięcie 
   await pages.click();
   await page.locator('[data-testid=drawing-page-new]').click();
   await expectText(pages, 'Kartka 2 z 2');
-  await expectText(editor.locator('[data-testid=drawing-title]'), 'Rysunek 1 · kartka 2');
+  await expectText(editor.locator('[data-testid=drawing-title]'), 'Rysunek 2');
   await waitUntil(async () => (await darkest(page, ...at(450, 400), 12)) > 150, 'Nowa kartka pusta');
   await drawStroke(page, segment(at(900, 700), at(1300, 700), 10));
 
@@ -6435,9 +6435,12 @@ test('rysunek 1.22: koniec strzałki i odcinka przyciągany do narożnika i kraw
   await page.keyboard.down('Alt');
   await drag([300, 700], [606, 594]);
   await page.keyboard.up('Alt');
-  // Odcinek do prawej krawędzi (daleko od narożników) – koniec na krawędzi.
+  // Odcinek do prawej krawędzi (daleko od narożników) – koniec na krawędzi. Drugi Esc zdejmuje zaznaczenie
+  // strzałki – od 1.30 (przycisk „Odbij”) jej polecenia sięgają początku odcinka.
   await shape('line');
   await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia strzałki');
   await drag([1200, 500], [906, 502]);
   await expectText(selectionCount, 'Odcinek');
   assert.equal(await magnet.isVisible(), true, 'magnes przy zaznaczonym odcinku');
@@ -8061,6 +8064,7 @@ test('notatka 1.29 na telefonie: „Edytuj” – osobne okno tekstu na cały ek
   assert.equal(await edit.locator('[data-testid=note-record]').count(), 1, 'mikrofon obok spinacza');
   await expectText(edit.locator('[data-testid=note-objects-open]'), '3');
   assert.equal(await overflowX(page), 0);
+  await settled(edit);
   await page.screenshot({ path: path.join(OUTPUT, 'notatka-129-okno-tekstu-telefon.png') });
   await edit.locator('[data-testid=note-left]').click();
   await edit.waitFor({ state: 'detached' });
@@ -8194,6 +8198,246 @@ test('notatka 1.29: okno tekstu na komputerze (kolumna na środku); obrazy i za�
   assert.equal(await settings.locator('.field__hint').first().isVisible(), false, 'podpowiedzi panelu schowane');
   await settings.locator('[data-testid=hints-toggle]').click();
   assert.equal(await settings.locator('.field__hint').first().isVisible(), true);
+}, { device: DESKTOP });
+
+// ---------------------------------------------------------------- rysunki (1.30)
+
+test('rysunek 1.30: rysunki notatki to kartki jednego okna – nowy za poprzednimi, przewracanie, kilka rysunków poprawionych naraz, „Nowa kartka”; palec też rysuje (przełącznik), dwa palce powiększają (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Kartki notatki</p>');
+  const { at } = await pageFrame(page);
+  const pages = editor.locator('[data-testid=drawing-pages]');
+  const title = editor.locator('[data-testid=drawing-title]');
+  const pill = editor.locator('[data-testid=drawing-pen-only]');
+  await expectText(pages, 'Kartka 1 z 1');
+  await drawStroke(page, segment(at(300, 400), at(600, 400), 10));
+  await expectText(pill, 'Rysuje tylko rysik · palec przesuwa');
+  // Palec przy rysiku przesuwa stronę; po przełączeniu – rysuje, a dwa palce powiększają.
+  await drawStroke(page, segment(at(300, 600), at(600, 600), 10), { type: 'touch', id: 12 });
+  await nextFrames(page);
+  assert.ok((await darkest(page, ...at(450, 600), 12)) > 150, 'palec nie rysuje');
+  await pill.click();
+  await expectText(pill, 'Palec też rysuje · dwa palce przesuwają');
+  assert.equal(await pill.getAttribute('aria-pressed'), 'true');
+  await drawStroke(page, segment(at(300, 700), at(600, 700), 10), { type: 'touch', id: 13 });
+  await waitUntil(async () => (await darkest(page, ...at(450, 700), 12)) < 110, 'Kreska palcem');
+  await page.locator('[data-testid=drawing-canvas]').evaluate((canvas) => {
+    const box = canvas.getBoundingClientRect();
+    const fire = (kind, pointerId, x) => canvas.dispatchEvent(new window.PointerEvent(kind, {
+      bubbles: true, cancelable: true, pointerId, pointerType: 'touch', clientX: box.left + box.width * x, clientY: box.top + box.height * 0.5,
+      buttons: kind === 'pointerup' ? 0 : 1, button: kind === 'pointermove' ? -1 : 0
+    }));
+    fire('pointerdown', 21, 0.45);
+    fire('pointerdown', 22, 0.55);
+    fire('pointermove', 21, 0.4);
+    fire('pointermove', 22, 0.6);
+    fire('pointerup', 21, 0.4);
+    fire('pointerup', 22, 0.6);
+  });
+  await expectText(editor.locator('[data-testid=drawing-zoom]'), '200%');
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-130-palec-rysuje-ipad.png') });
+  await editor.locator('[data-testid=drawing-zoom]').click();
+  await expectText(editor.locator('[data-testid=drawing-zoom]'), '100%');
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+
+  // Nowy rysunek – w oknie za pierwszym: kartka 2 z 2, poprzednia kartka to „Rysunek 1”.
+  await dialog.locator('[data-testid=note-image-draw]').click();
+  await editor.waitFor();
+  await waitUntil(() => editor.locator('[data-testid=drawing-canvas]').evaluate((canvas) => canvas.width > 0), 'Płótno gotowe');
+  await expectText(pages, 'Kartka 2 z 2');
+  await expectText(title, 'Rysunek 2');
+  await expectText(pill, 'Palec też rysuje · dwa palce przesuwają');
+  await drawStroke(page, segment(at(900, 700), at(1300, 700), 10));
+  await editor.locator('[data-testid=drawing-page-prev]').click();
+  await expectText(pages, 'Kartka 1 z 2');
+  await expectText(title, 'Rysunek 1');
+  await waitUntil(async () => (await darkest(page, ...at(450, 400), 12)) < 110, 'Kreska rysunku 1');
+  await drawStroke(page, segment(at(300, 900), at(600, 900), 10));
+  // Menu kartek: sygnatury rysunków; nowa kartka – kolejna wolna sygnatura.
+  await pages.click();
+  await expectText(page.locator('[data-testid=drawing-page-2]'), 'Kartka 2 – Rysunek 2');
+  await settled(page.locator('dialog.menu[open]'));
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-130-kartki-menu-ipad.png') });
+  await page.locator('[data-testid=drawing-page-new]').click();
+  await expectText(pages, 'Kartka 3 z 3');
+  await expectText(title, 'Rysunek 3');
+  await drawStroke(page, segment(at(500, 500), at(900, 500), 10));
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await waitUntil(async () => (await tileLabels(dialog)).join() === 'Rysunek 1,Rysunek 2,Rysunek 3', 'Trzy rysunki');
+
+  // Ołówek drugiego rysunku – okno na kartce 2 z 3.
+  await dialog.locator('[data-testid=note-image-tile]').nth(1).locator('[data-testid=note-object-edit]').click();
+  await editor.waitFor();
+  await expectText(pages, 'Kartka 2 z 3');
+  await expectText(title, 'Rysunek 2');
+  await editor.locator('[data-testid=drawing-cancel]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await noteDialog(page).locator('[data-testid=note-book]').waitFor();
+  const saved = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id)).map((image) => [image.label, image.drawing.strokes.length]), ids.statements);
+  assert.deepEqual(saved, [['Rysunek 1', 3], ['Rysunek 2', 1], ['Rysunek 3', 1]]);
+}, { device: IPAD });
+
+test('rysunek 1.30: rysowanie na zdjęciu – zdjęcia notatki to kartki (bez „Nowej kartki”), następne zdjęcie wczytuje się przy przewróceniu; ukryte zostaje ukryte (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await seedNoteImages(page, ids.statements, 3);
+  await page.evaluate(async (id) => {
+    const { library } = window.lexicards;
+    const note = library.getNote(id);
+    await library.saveNote(id, { html: note.html, images: note.images.map((image, index) => ({ id: image.id, hidden: index === 2 })) });
+  }, ids.statements);
+  await openNotePreview(page, ids.statements);
+  const dialog = noteDialog(page);
+  await openNoteObjects(page);
+  await dialog.locator('[data-testid=note-image-tile]').nth(0).locator('[data-testid=note-object-edit]').click();
+  const editor = drawingDialog(page);
+  await editor.waitFor();
+  await waitUntil(() => editor.locator('[data-testid=drawing-canvas]').evaluate((canvas) => canvas.width > 0), 'Płótno gotowe');
+  const pages = editor.locator('[data-testid=drawing-pages]');
+  const title = editor.locator('[data-testid=drawing-title]');
+  await expectText(pages, 'Kartka 1 z 3');
+  await expectText(title, 'Obraz 1');
+  await pages.click();
+  await expectText(page.locator('[data-testid=drawing-page-3]'), 'Kartka 3 – Obraz 3');
+  assert.equal(await page.locator('[data-testid=drawing-page-new]').count(), 0, 'przy zdjęciach – bez nowej kartki');
+  await page.keyboard.press('Escape');
+  await page.locator('dialog.menu[open]').waitFor({ state: 'detached' });
+  // Zdjęcie 2 (inny kolor) – po przewróceniu kartki; kreska na nim.
+  const photoAt = async () => {
+    const [r, g, b] = await pixelAt(page, 0.5, 0.62);
+    return [r, g, b];
+  };
+  const first = await photoAt();
+  assert.ok(Math.max(...first) - Math.min(...first) > 60, `zdjęcie 1 pod kreskami (${first})`);
+  await editor.locator('[data-testid=drawing-page-next]').click();
+  await expectText(title, 'Obraz 2');
+  await expectText(pages, 'Kartka 2 z 3');
+  await waitUntil(async () => {
+    const next = await photoAt();
+    return Math.max(...next) - Math.min(...next) > 60 && next.some((value, index) => Math.abs(value - first[index]) > 40);
+  }, 'Zdjęcie 2');
+  await drawStroke(page, segment([0.4, 0.5], [0.6, 0.5], 10));
+  await editor.locator('[data-testid=drawing-page-next]').click();
+  await expectText(title, 'Obraz 3');
+  await waitUntil(() => editor.locator('.drawing__flip').isHidden(), 'Kartka przewrócona');
+  await drawStroke(page, segment([0.4, 0.45], [0.6, 0.45], 10));
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-130-zdjecia-ipad.png') });
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await waitUntil(async () => (await tileLabels(dialog)).join() === 'Obraz 1,Obraz 2,Obraz 3', 'Te same sygnatury');
+  await dialog.locator('[data-testid=note-right]').click();
+  await noteDialog(page).locator('[data-testid=note-book]').waitFor();
+  const saved = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id)).map((image) => [
+    image.label, image.drawing ? image.drawing.strokes.length : null, Boolean(image.drawing?.photo), image.hidden ?? false
+  ]), ids.statements);
+  assert.deepEqual(saved, [['Obraz 1', null, false, false], ['Obraz 2', 1, true, false], ['Obraz 3', 1, true, true]]);
+}, { device: IPAD });
+
+test('rysunek 1.30: Shift – kilka elementów kliknięciami (też tuż obok siebie, drugie kliknięcie zdejmuje), odbicie w poziomie i w pionie, obrót zaznaczenia uchwytem (z Shift co 15°); zapis (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Obrót</p>');
+  const frame = await pageFrame(page);
+  const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
+  const panel = editor.locator('[data-testid=drawing-shape-panel]');
+  const drag = async (from, to, steps = 8) => {
+    await page.mouse.move(...frame.screen(...from));
+    await page.mouse.down();
+    await page.mouse.move(...frame.screen(...to), { steps });
+    await page.mouse.up();
+  };
+  const shape = async (name) => {
+    await editor.locator('[data-testid=drawing-tool-shape]').click();
+    await panel.locator(`[data-testid=drawing-shape-${name}]`).click();
+    // Wybrany już kształt zamyka panel; inny – panel zostaje (Esc go zamyka).
+    if (await panel.isVisible()) await page.keyboard.press('Escape');
+    await panel.waitFor({ state: 'hidden' });
+  };
+  const shiftClick = async (point) => {
+    await page.keyboard.down('Shift');
+    await page.mouse.click(...frame.screen(...point));
+    await page.keyboard.up('Shift');
+  };
+  // Kreska pióra, dwa prostokąty 30 jednostek od siebie i strzałka w prawo.
+  await drag([300, 300], [600, 300], 12);
+  await shape('rect');
+  await drag([800, 300], [900, 400]);
+  await expectText(selectionCount, 'Prostokąt');
+  await page.keyboard.press('Escape');
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  await drag([930, 300], [1030, 400]);
+  await page.keyboard.press('Escape');
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  await shape('arrow');
+  await drag([300, 600], [500, 600]);
+  await expectText(selectionCount, 'Strzałka');
+
+  // Odbicie samej strzałki w poziomie – grot w lewo (początek zostaje początkiem).
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await editor.locator('[data-testid=drawing-selection-mirror]').click();
+  await page.locator('[data-testid=drawing-mirror-horizontal]').click();
+  await expectText(selectionCount, 'Strzałka');
+  // Shift + kliknięcie kreski – dwa elementy; odbicie w pionie: kreska na dole, strzałka na górze.
+  await shiftClick([450, 300]);
+  await expectText(selectionCount, '2 elementy');
+  await editor.locator('[data-testid=drawing-selection-mirror]').click();
+  await page.locator('[data-testid=drawing-mirror-vertical]').click();
+  await expectText(selectionCount, '2 elementy');
+
+  // Prostokąty tuż obok siebie: Shift + kliknięcie krawędzi – po jednym; drugie kliknięcie zdejmuje.
+  await page.mouse.click(...frame.screen(80, 1060));
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  await shiftClick([800, 350]);
+  await expectText(selectionCount, 'Prostokąt');
+  // Dolna krawędź drugiego (przy prawej leżą pola wymiarów zaznaczonego prostokąta).
+  await shiftClick([950, 400]);
+  await expectText(selectionCount, '2 elementy');
+  await shiftClick([830, 400]);
+  await expectText(selectionCount, 'Prostokąt');
+  // Dolna krawędź – przy lewej krawędzi leży pole kąta pochylenia zaznaczonego drugiego prostokąta.
+  await shiftClick([830, 400]);
+  await expectText(selectionCount, '2 elementy');
+  // Uchwyt obrotu nad środkiem ramki: z Shift do punktu na prawo od środka – 90° w prawo (−90° jak na linijce).
+  const top = frame.screen(915, 300 - 1.5);
+  const grip = [top[0], top[1] - 8 - 30];
+  await page.mouse.move(...grip);
+  await page.keyboard.down('Shift');
+  await page.mouse.down();
+  const center = frame.screen(915, 350);
+  for (let step = 1; step <= 10; step += 1) {
+    const angle = -Math.PI / 2 + (step / 10) * (Math.PI / 2);
+    await page.mouse.move(center[0] + Math.cos(angle) * 160, center[1] + Math.sin(angle) * 160);
+  }
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-130-obrot-komputer.png') });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  await expectText(selectionCount, '2 elementy');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-130-po-obrocie-komputer.png') });
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await noteDialog(page).locator('[data-testid=note-book]').waitFor();
+  const [pen, left, right, arrow] = await savedStrokes(page, ids.statements);
+  const ys = pen.points.filter((_, index) => index % 3 === 1);
+  assert.ok(Math.min(...ys) > 550, `kreska odbita w pionie na dół (${Math.min(...ys)})`);
+  assert.ok(arrow.y < 350 && Math.abs(Math.abs(arrow.angle) - Math.PI) < 1e-6, `strzałka na górze, grot w lewo (${arrow.y}, ${arrow.angle})`);
+  assert.equal(arrow.endCap ?? 'arrow', 'arrow');
+  // Obrót o 90° wokół (915, 350): prostokąty jeden nad drugim, obrócone.
+  for (const [rect, y] of [[left, 285], [right, 415]]) {
+    assert.ok(Math.abs(rect.x - 915) < 3 && Math.abs(rect.y - y) < 3, `prostokąt w (${rect.x}, ${rect.y}) – oczekiwano (915, ${y})`);
+    assert.ok(Math.abs(rect.angle - Math.PI / 2) < 1e-6, `kąt ${rect.angle}`);
+  }
 }, { device: DESKTOP });
 
 // ---------------------------------------------------------------- nauka z fiszkami

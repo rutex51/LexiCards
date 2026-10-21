@@ -1,4 +1,4 @@
-# LexiCards 1.29
+# LexiCards 1.30
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -38,8 +38,9 @@ Jeden wygląd okien (białe, sekcje w cienkich ramkach), „Wstaw obiekt” na p
 Rysunek: rodzaj linii kształtów (przerywana, osiowa, dwupunktowa, kropkowa), prosta przez całą stronę, punkt symetrii, strzałka po łuku z dwoma punktami pośrednimi i zakończeniami (wersja 1.27): [docs/RELEASE-1.27.md](docs/RELEASE-1.27.md).
 Plik PDF notatki tworzony w aplikacji – prawdziwy tekst, strona A4, wybór jakości obrazów, „Udostępnij…” na iPhonie (wersja 1.28): [docs/RELEASE-1.28.md](docs/RELEASE-1.28.md).
 Notatki: osobne okno tekstu na cały ekran i okno „Obrazy i załączniki”, ołówek na miniaturze, oczko (obiekt ukryty w notatce), usunięcie obiektu usuwa jego odwołania, ⓘ chowa podpowiedzi w oknach (wersja 1.29): [docs/RELEASE-1.29.md](docs/RELEASE-1.29.md).
+Rysunek: rysunki notatki (i jej zdjęcia) przewracane jak kartki w jednym oknie, palec też rysuje (przełącznik), obrót zaznaczenia uchwytem, odbicie lustrzane, Shift – kilka elementów kliknięciami (wersja 1.30): [docs/RELEASE-1.30.md](docs/RELEASE-1.30.md).
 
-## Co potrafi wersja 1.29
+## Co potrafi wersja 1.30
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -511,7 +512,17 @@ wielkościach; pod myszą i zawieszonym rysikiem widać kółko gumki. Gumka nie
 kreskami. **Zaznaczanie:** prostokąt zaznacza kreski leżące w nim w całości, dotknięcie kreski –
 tę jedną, **Zaznacz wszystko** (albo Ctrl+A) – wszystkie; nad ramką zaznaczenia są **Powiel**
 i **Usuń** (też klawisz Delete), a przeciągnięcie wewnątrz ramki przesuwa kreski (palcem także, gdy
-jest rysik). Esc zdejmuje zaznaczenie. **Linijka** (przycisk na pasku) pokazuje na środku kąt, także
+jest rysik). Esc zdejmuje zaznaczenie. Od 1.30 z wciśniętym **Shift** zaznaczenie zostaje: kliknięcie
+elementu dokłada go albo zdejmuje (także w ramce zaznaczenia – tak wybierzesz elementy leżące tuż obok
+siebie), a prostokąt albo lasso dokłada całe elementy. **Obrót** (od 1.30): nad ramką zaznaczenia jest
+okrągły **uchwyt obrotu** – przeciągnięcie obraca zaznaczenie wokół środka ramki (kąt widać przy uchwycie,
+przyciąga do pełnych 15°, z Shift – dokładnie co 15°); jeden kształt obraca się jak dotąd swoim uchwytem.
+Kreski, kształty i szyki obracają się w całości; pola tekstowe, wzory, tabele, karteczki i symbole
+metrologiczne zostają proste (czytelne) – zmienia się ich miejsce, a strzałka karteczki i symbolu idzie
+razem z resztą. **Odbij** (od 1.30, obok **Powiel**): **W poziomie** (lewa strona z prawą) albo **W pionie**
+(góra z dołem), względem środka zaznaczenia – kształt zostaje tym samym kształtem (trójkąt, łamana,
+pochylenie odbite), grot strzałki na tym samym końcu, tekst się nie odwraca. Przyklejone końce między
+obracanymi albo odbijanymi elementami zostają przyklejone; obrót i odbicie to jeden krok cofania. **Linijka** (przycisk na pasku) pokazuje na środku kąt, także
 w pigułce w rogu: przesuwasz ją palcem albo myszą, obracasz dwoma palcami albo uchwytem obrotu
 (okrągłe przyciski na linijce); przy 0°, 45°, 90° i 135° lekko przyskakuje. Kreska zaczęta na
 linijce albo przy niej biegnie prosto wzdłuż jej krawędzi.
@@ -682,7 +693,13 @@ obracanie obiektów). Szyk to jeden element: przeciągnięcie przesuwa wszystkie
 przeciągniesz na rysunku. Najwyżej 400 kopii.
 **Kartki** (od 1.19): przycisk **Kartka 1 z 1** na dole – **Nowa kartka**, przejście do innej, usunięcie
 dodanej (albo PageUp i PageDown). Po **Gotowe** każda kartka z treścią to osobny rysunek w notatce
-(„Rysunek 2”…), zaraz za otwartym rysunkiem. Od 1.22 przy kilku kartkach obok przycisku są strzałki
+(„Rysunek 2”…). Od 1.30 **kartki okna to rysunki notatki**: każdy rysunek jest w notatce osobno, ale
+edytor otwiera je wszystkie – na kartce rysunku, który edytujesz (nowy rysunek – na kartce za ostatnim),
+a sąsiednie przewracasz jak w zeszycie; menu kartek pokazuje ich sygnatury, a po **Gotowe** zapisują się
+wszystkie zmienione. **Nowa kartka** dokłada nowy rysunek za ostatnim („Rysunek 3”…); usunąć można tylko
+dodaną kartkę. Przy **rysowaniu na zdjęciu** kartki to **zdjęcia notatki** (i rysunki na zdjęciach) –
+bez **Nowej kartki**; następne zdjęcie wczytuje się przy przewróceniu (dalsze zwalniają pamięć), zdjęcie
+bez kresek zostaje zwykłym zdjęciem. Od 1.22 przy kilku kartkach obok przycisku są strzałki
 **‹ ›** (nieczynne na pierwszej i ostatniej kartce), a na komputerze **kółko myszy** przy całej stronie
 przewraca kartki: jeden ruch kółka – jedna kartka (w dół – następna, w górę – poprzednia; małe ruchy
 gładzika się sumują, rozpęd po przewróceniu nie przewraca dalej). Powiększoną stronę kółko najpierw
@@ -715,7 +732,10 @@ kolor, kształty, liniuszek, tło, linijka) ma w nagłówku przycisk **✕** –
 gdy panel zakrywa stronę (dotąd trzeba było trafić w odsłonięty skrawek strony). Grubość zależy od nacisku tylko przy rysiku –
 palcem i myszą kreska ma stałą grubość. Gdy aplikacja raz zobaczy rysik, rysuje tylko rysik, a palec
 przesuwa stronę (pigułka „Rysuje tylko rysik · palec przesuwa” w rogu) – dłoń oparta o ekran nie
-zostawia śladów; na iPhonie bez rysika rysuje palec. Dwa palce powiększają i przesuwają (od 1.24.2
+zostawia śladów; na iPhonie bez rysika rysuje palec. Od 1.30 pigułka to przełącznik: dotknięcie –
+**„Palec też rysuje · dwa palce przesuwają”** (na tablecie i laptopie z ekranem dotykowym rysujesz
+palcem, dwa palce przesuwają i powiększają; dłoń oparta o ekran wtedy rysuje), ponowne – z powrotem;
+wybór jest zapamiętany na urządzeniu. Dwa palce powiększają i przesuwają (od 1.24.2
 powiększenie w miejscu rozsuwanych palców – to, co było pod palcami, zostaje pod nimi), pigułka
 z procentami wraca do całej strony; na komputerze kółko przesuwa (od 1.22 przy kilku kartkach
 i całej stronie – przewraca kartkę), Ctrl + kółko powiększa. Gumka

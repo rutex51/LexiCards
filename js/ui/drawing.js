@@ -21,9 +21,12 @@
 // zakreślacza. Od 1.22: liniuszek promieniowy (okręgi i promienie ze środka, obrót), przewracanie
 // kartek kółkiem myszy i przyciskami ‹ › z animacją oraz końce odcinka, strzałki i strzałki karteczki
 // przyciągane do krawędzi i narożników innych elementów i przyklejane do nich (core/attach.js).
+// Od 1.30: kartki okna to rysunki notatki (przy zdjęciu – jej zdjęcia), obrót zaznaczenia uchwytem,
+// odbicie lustrzane (core/transform.js), Shift – kilka elementów kliknięciami i przełącznik palca.
 //
 // Rysik i palec: gdy aplikacja raz zobaczy rysik (pointerType 'pen'), rysuje tylko rysik, a palec
 // przesuwa stronę (dłoń oparta o ekran nie zostawia śladów); bez rysika (iPhone) rysuje palec.
+// Od 1.30 pigułka „Rysuje tylko rysik” przełącza: palec też rysuje (zapamiętane na urządzeniu).
 // Dwa palce zawsze powiększają i przesuwają. Myszą rysuje się jak piórem; kółko przewija (od 1.22
 // przy kilku kartkach i całej stronie – przewraca kartkę), Ctrl + kółko powiększa. Gumka na końcu pióra (Windows) ściera bez zmiany narzędzia.
 // Linijkę przesuwa palec albo mysz, obracają ją dwa palce albo uchwyt; kreska zaczęta przy
@@ -53,6 +56,7 @@ import { layoutMath } from '../core/math-layout.js';
 import { constrainCorner, cornerOf, cornerPath, foldGeometry } from '../core/page-curl.js';
 import { recognizeStroke } from '../core/recognize.js';
 import { rememberFit } from '../core/fits.js';
+import { MIRROR_AXES, MIRROR_LABELS, canTurn, mirrorStroke, rotateStroke, snapTurn, transformStrokes, turnDegrees } from '../core/transform.js';
 import { cleanColumnWidths, moveColumnBorder } from '../core/tables.js';
 import { openFitTable } from './fit-table.js';
 import {
@@ -619,33 +623,49 @@ function copyImage(png) {
   }
 }
 
+/** Rysunek z notatki do edycji: pola tekstowe i wzory mierzone od nowa – czcionki tego urządzenia mogą być trochę inne. */
+const editableDrawing = (source) => ({
+  ...source, scale: cleanScale(source.scale), paperLevel: source.paperLevel ?? DEFAULT_PAPER_LEVEL, strokes: source.strokes.map(remeasure)
+});
+/** Rysunek kartki: istniejący (drawing), na zdjęciu (photo) albo nowy pusty. */
+const sheetDrawing = (sheet) => (sheet.drawing ? editableDrawing(sheet.drawing) : emptyDrawing({ photo: sheet.photo ?? null }));
+
 /**
  * Otwiera edytor rysunku. drawing – istniejący rysunek (edycja) albo null; photo – zdjęcie pod
- * kreskami dla nowego rysunku ({ bytes, type, width, height }); title – sygnatura w nagłówku;
- * onEmbed (od 1.17) – „Osadź”: async ({ blob, width, height }) → sygnatura nowego obrazu notatki
- * (błąd – komunikat w edytorze); bez niej przycisku „Osadź” nie ma.
- * Zwraca obietnicę: po „Gotowe” { drawing, image, pages } – drawing i image to pierwsza kartka (null,
- * gdy się nie zmieniła), pages (od 1.19) – kolejne kartki z treścią: [{ drawing, image }]; null po
- * „Anuluj” i po „Gotowe” bez żadnej zmiany (nowy pusty rysunek nie trafia do notatki).
+ * kreskami dla nowego rysunku ({ bytes, type, width, height }); title – sygnatura w nagłówku.
+ * Od 1.30 sheets – kilka rysunków notatki w jednym oknie, przewracanych jak kartki: [{ title,
+ * drawing } – rysunek, { title, photo } – zdjęcie do rysowania, { title, load } – load() daje obietnicę
+ * { drawing } albo { photo } (zdjęcie wczytane dopiero przy przejściu na nie), { title } – nowy
+ * rysunek (bez zmian nie trafia do notatki)]; start – kartka otwarta na początku (bez load).
+ * newPages – „Nowa kartka” (przy zdjęciach – bez niej); pageRoom – ile kartek można dodać (miejsce
+ * w notatce); pageTitle(n) – sygnatura n-tej dodanej kartki.
+ * onEmbed (od 1.17) – „Osadź”: async ({ blob, width, height, sheet }) → sygnatura nowego obrazu notatki
+ * (sheet – numer kartki; błąd – komunikat w edytorze); bez niej przycisku „Osadź” nie ma.
+ * Zwraca obietnicę: po „Gotowe” { sheets, pages } – sheets: zmienione kartki [{ index, drawing, image }]
+ * (index – numer w sheets), pages (od 1.19) – dodane kartki z treścią [{ drawing, image, title }];
+ * null po „Anuluj” i po „Gotowe” bez żadnej zmiany.
  */
-export function openDrawingEditor({ drawing: source = null, photo = null, title = 'Rysunek', onEmbed = null } = {}) {
+export function openDrawingEditor({
+  drawing: source = null, photo = null, title = 'Rysunek', onEmbed = null, sheets = null, start = 0, newPages = true, pageRoom = 20, pageTitle: addedTitle = null
+} = {}) {
   return new Promise((resolve) => {
-    // Pola tekstowe i wzory mierzone od nowa – czcionki tego urządzenia mogą być trochę inne.
-    const first = source
-      ? { ...source, scale: cleanScale(source.scale), paperLevel: source.paperLevel ?? DEFAULT_PAPER_LEVEL, strokes: source.strokes.map(remeasure) }
-      : emptyDrawing({ photo });
+    const sheetList = sheets?.length ? sheets : [{ title, drawing: source, photo }];
+    const startIndex = Math.min(Math.max(0, Math.round(start) || 0), sheetList.length - 1);
     /**
-     * Kartki (od 1.19): pierwsza – rysunek z notatki (albo nowy), kolejne – nowe rysunki. Każda ma
-     * swoją historię cofania, obrazy (zdjęcie, szablon) i znacznik zmiany; edytor pracuje na bieżącej.
+     * Kartki (od 1.19; od 1.30 – rysunki notatki i dodane kartki). Każda ma swój rysunek (kartka ze
+     * zdjęciem do wczytania – na razie bez), historię cofania, obrazy (zdjęcie, szablon) i znacznik
+     * zmiany; edytor pracuje na bieżącej.
      */
     const pages = [];
-    let pageIndex = 0;
-    let drawing = first;
+    let pageIndex = startIndex;
+    let drawing = sheetDrawing(sheetList[startIndex]);
     let history = new DrawingHistory(drawing.strokes);
     const tools = loadTools();
     /** Narzędzie: 'pen', 'highlighter', 'eraser' albo 'select' (zaznaczanie prostokątem albo lassem). */
     let tool = 'pen';
     let penSeen = penSeenBefore();
+    /** Palec przesuwa stronę: aplikacja zna rysik, a (od 1.30) palec nie ma rysować. */
+    const fingerPans = () => penSeen && !tools.fingerDraws;
     let changed = false;
     let dialog;
     let result = null;
@@ -726,10 +746,13 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     const explodeButton = selectionButton('drawing-selection-explode', 'explode', 'Rozdziel', 'Rozdziel szyk – każda kopia osobno', () => explodeArray());
     const copyButton = selectionButton('drawing-selection-copy', 'copy', 'Kopiuj', 'Kopiuj (Ctrl+C) – wklejasz przyciskiem „Wklej” albo Ctrl+V, także w innym rysunku', () => copySelection());
     const duplicateButton = selectionButton('drawing-selection-duplicate', 'duplicate', 'Powiel', 'Powiel – kopia obok', () => duplicateSelection());
+    // Od 1.30: odbicie lustrzane zaznaczenia – w poziomie albo w pionie (menu), obok „Powiel”.
+    const mirrorButton = selectionButton('drawing-selection-mirror', 'mirror', 'Odbij', 'Odbicie lustrzane – w poziomie albo w pionie', () => openMirrorMenu());
+    mirrorButton.setAttribute('aria-haspopup', 'menu');
     const embedButton = selectionButton('drawing-selection-embed', 'embed', 'Osadź', 'Osadź w notatce jako obraz', () => embedSelection());
     const deleteButton = selectionButton('drawing-selection-delete', 'trash', 'Usuń', 'Usuń (Delete)', () => deleteSelection(), true);
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
-      selectionCount, editButton, collapseButton, shapeTextButton, styleButton, magnetButton, copyButton, duplicateButton, arrayButton, explodeButton, embedButton, deleteButton);
+      selectionCount, editButton, collapseButton, shapeTextButton, styleButton, magnetButton, copyButton, duplicateButton, mirrorButton, arrayButton, explodeButton, embedButton, deleteButton);
     // Pola wymiarów zaznaczonego kształtu (od 1.17): na liniach ramki konstrukcyjnej, wpisywane z klawiatury.
     const dims = h('div', { class: 'drawing__dims', hidden: true, dataset: { testid: 'drawing-dims' } });
     // Od 1.22: animacja przewracania kartki (zdjęcia stron nad płótnem, tylko w trakcie).
@@ -799,7 +822,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       clipPage(ctx);
       // Przesuwane zaznaczenie, poprawiany kształt i (od 1.19) przesuwany środek szyku rysuje warstwa bieżąca.
       plainShape = editedShape();
-      const moving = ['move', 'shape-edit', 'array-center', 'box-edit'].includes(active?.kind) ? selection : null;
+      const moving = ['move', 'shape-edit', 'array-center', 'box-edit', 'turn'].includes(active?.kind) ? selection : null;
       // Przyklejone końce (od 1.22) idą za przesuwanym kształtem – rysuje je warstwa bieżąca.
       const followers = activeFollowers();
       paintDrawing(ctx, drawing, media, followers ? new Set([...(moving ?? []), ...followers.keys()]) : moving, plainShape, { editor: true });
@@ -1158,6 +1181,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
      */
     const selectModeOf = (gesture) => {
       if (gesture.snip) return 'snip';
+      // Shift (od 1.30) dokłada całe elementy – bez względu na kierunek obrysu i tryb.
+      if (gesture.add) return 'whole';
       if (selectMode() !== 'auto') return selectMode();
       if (gesture.kind === 'lasso') return isClockwise(gesture.polygon) ? 'region' : 'whole';
       return gesture.rect.x1 < gesture.rect.x0 ? 'region' : 'whole';
@@ -1202,6 +1227,88 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       return isShape(only) ? only : null;
     }
     const rotateHandle = (shape) => shapeHandles(shape, ROTATE_GAP / view.scale).find((handle) => handle.id === 'rotate') ?? shapePoint(shape, 0, -0.5);
+
+    // ---- obrót zaznaczenia (od 1.30): uchwyt nad środkiem ramki – kilka elementów, kreski, szyki; jeden kształt
+    // obraca się swoim uchwytem (punkty konstrukcyjne), a pole tekstowe, wzór, tabela i karteczka stoją prosto
+    const spinPoint = (point, center, angle) => {
+      const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
+      return { x: center.x + (point.x - center.x) * cos - (point.y - center.y) * sin, y: center.y + (point.x - center.x) * sin + (point.y - center.y) * cos };
+    };
+    /** Uchwyt obrotu zaznaczenia { x, y, center, bounds } (jednostki strony) albo null; w trakcie obrotu – obrócony. */
+    function turnKnob() {
+      if (active?.kind === 'turn') return { ...spinPoint(active.knob, active.center, active.angle), center: active.center, bounds: active.bounds };
+      if (tool !== 'select' || active || snip || placing || selection.size === 0 || editedShape()) return null;
+      const items = [...selection];
+      if (!canTurn(items)) return null;
+      const bounds = selectionBounds(items);
+      const center = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+      return { x: center.x, y: bounds.minY - (SELECTION_PAD + ROTATE_GAP) / view.scale, center, bounds };
+    }
+    const turnKnobHit = (point) => {
+      const knob = turnKnob();
+      return Boolean(knob) && Math.hypot(knob.x - point.x, knob.y - point.y) * view.scale <= HANDLE_HIT;
+    };
+    function startTurn(event) {
+      const knob = turnKnob();
+      const point = toDrawing(event);
+      const items = orderedSelection();
+      active = {
+        kind: 'turn', id: event.pointerId, touch: event.pointerType === 'touch', start: point, client: local(event), items, preview: items,
+        bounds: knob.bounds, center: knob.center, knob: { x: knob.x, y: knob.y }, grab: Math.atan2(point.y - knob.center.y, point.x - knob.center.x), angle: 0, moved: false
+      };
+      requestRender();
+    }
+    /** Uchwyt obrotu z ramieniem; w trakcie obrotu – obrócona ramka i kąt. */
+    function paintTurnKnob(ctx, knob) {
+      const { bounds, center } = knob;
+      const angle = active?.kind === 'turn' ? active.angle : 0;
+      const pad = SELECTION_PAD / view.scale;
+      const top = toScreen(spinPoint({ x: center.x, y: bounds.minY - pad }, center, angle));
+      const point = toScreen(knob);
+      ctx.save();
+      ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+      ctx.strokeStyle = SELECT_COLORS.whole;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      if (active?.kind === 'turn') {
+        [[bounds.minX - pad, bounds.minY - pad], [bounds.maxX + pad, bounds.minY - pad], [bounds.maxX + pad, bounds.maxY + pad], [bounds.minX - pad, bounds.maxY + pad]]
+          .map(([x, y]) => toScreen(spinPoint({ x, y }, center, angle)))
+          .forEach((corner, index) => (index === 0 ? ctx.moveTo(corner.x, corner.y) : ctx.lineTo(corner.x, corner.y)));
+        ctx.closePath();
+      }
+      ctx.moveTo(top.x, top.y);
+      ctx.lineTo(point.x, point.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 9, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 4, -Math.PI * 0.9, Math.PI * 0.4);
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+      if (active?.kind === 'turn' && active.moved) {
+        // Kąt jak na linijce: dodatni – przeciwnie do ruchu wskazówek zegara.
+        const text = `${turnDegrees(active.angle)}°`.replace('-', '−');
+        ctx.font = '600 13px -apple-system, system-ui, sans-serif';
+        const width = ctx.measureText(text).width + 18;
+        const [x, y] = [point.x, point.y - 30];
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(x - width / 2, y - 12, width, 24, 12);
+        else ctx.rect(x - width / 2, y - 12, width, 24);
+        ctx.fillStyle = 'rgba(29, 29, 31, 0.86)';
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, x, y + 0.5);
+      }
+      ctx.restore();
+    }
     /** Punkt konstrukcyjny zaznaczonego kształtu pod punktem strony (najbliższy) albo null. */
     function shapeHandleAt(point) {
       const shape = editedShape();
@@ -1828,6 +1935,11 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         ctx.restore();
         if (kept) paintStroke(ctx, movedSticky(kept, active.dx, active.dy), { editor: true, number: stickyNumber(drawing, kept) });
       }
+      if (active?.kind === 'turn') {
+        active.preview.forEach((stroke, index) => paintStroke(ctx, stroke, {
+          scale: drawing.scale, dimFormat: dimFormat(drawing), editor: true, number: stroke.tool === 'sticky' ? stickyNumber(drawing, active.items[index]) : null
+        }));
+      }
       if (active?.kind === 'box-edit') paintStroke(ctx, active.preview, { editor: true, number: stickyNumber(drawing, active.original) });
       // Przyklejone końce idące za przesuwanym albo zmienianym kształtem (od 1.22).
       for (const [original, preview] of activeFollowers() ?? []) {
@@ -1858,7 +1970,8 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       // Środek szyku kołowego (od 1.19) – do przeciągnięcia.
       const polar = active?.kind === 'array-center' ? active.preview : selectedPolar();
       if (polar) paintArrayCenter(ctx, polar);
-      if (bounds && !handled) {
+      const knob = turnKnob();
+      if (bounds && !handled && active?.kind !== 'turn') {
         const pad = SELECTION_PAD / view.scale;
         const [dx, dy] = active?.kind === 'move' ? [active.dx, active.dy] : [0, 0];
         ctx.save();
@@ -1870,6 +1983,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         ctx.strokeRect(bounds.minX - pad + dx, bounds.minY - pad + dy, bounds.maxX - bounds.minX + pad * 2, bounds.maxY - bounds.minY + pad * 2);
         ctx.restore();
       }
+      if (knob) paintTurnKnob(ctx, knob);
       // Tabela i karteczka (od 1.21): narożnik do zmiany wielkości i koniec strzałki karteczki.
       const box = editedBox();
       if (box) paintBoxHandles(ctx, box);
@@ -1937,7 +2051,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       // Pola wymiarów najpierw – polecenia zaznaczenia ich nie zasłaniają (np. po obrocie kształtu pole jest nad nim).
       placeDims(handled);
       // Treść zwiniętej karteczki – polecenia nad nią albo pod nią, nie na niej.
-      const barBounds = popover && bounds ? { ...bounds, minY: Math.min(bounds.minY, popover.y), maxY: Math.max(bounds.maxY, popover.y + popover.height) } : bounds;
+      let barBounds = popover && bounds ? { ...bounds, minY: Math.min(bounds.minY, popover.y), maxY: Math.max(bounds.maxY, popover.y + popover.height) } : bounds;
+      // Uchwyt obrotu (od 1.30) – polecenia nad nim, nie na nim.
+      if (knob && barBounds) barBounds = { ...barBounds, minY: Math.min(barBounds.minY, knob.y - 14 / view.scale) };
       placeSelectionBar(snip ? snip.bounds : handled ? { ...bounds, minY: Math.min(bounds.minY, rotateHandle(handled).y - 14 / view.scale) } : barBounds, dimsExtent());
       updateSelectHint();
     };
@@ -1950,7 +2066,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     }
     /** Polecenia zaznaczenia nad ramką (albo pod nią, gdy u góry brakuje miejsca); `extra` – pola wymiarów do ominięcia. */
     function placeSelectionBar(bounds, extra = null) {
-      const show = Boolean(bounds) && !['move', 'marquee', 'lasso', 'pick', 'shape-new', 'shape-edit', 'template-move', 'template-scale', 'array-center', 'box-edit']
+      const show = Boolean(bounds) && !['move', 'marquee', 'lasso', 'pick', 'shape-new', 'shape-edit', 'template-move', 'template-scale', 'array-center', 'box-edit', 'turn']
         .includes(active?.kind) && !placing;
       selectionBar.hidden = !show;
       if (!show) return;
@@ -1989,6 +2105,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       arrayButton.setAttribute('aria-label', isArray(only) ? 'Szyk – parametry' : 'Szyk');
       explodeButton.hidden = Boolean(snip) || !isArray(only);
       duplicateButton.hidden = Boolean(snip);
+      mirrorButton.hidden = Boolean(snip) || !canTurn(items);
       deleteButton.hidden = Boolean(snip);
       embedButton.hidden = !onEmbed;
       copyButton.title = snip ? 'Kopiuj wycinek jako obraz (Ctrl+C) – wkleisz go w notatce albo w innej aplikacji'
@@ -2196,8 +2313,24 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       type: 'button', class: 'drawing__pill', title: 'Cała strona', dataset: { testid: 'drawing-zoom' },
       onClick: () => { view.zoom = 1; view.width = 0; resize(); zoomButton.textContent = '100%'; }
     }, '100%');
-    const penPill = h('span', { class: 'drawing__pill drawing__pill--info', hidden: !penSeen, dataset: { testid: 'drawing-pen-only' } },
-      icon('pen', { size: 14 }), 'Rysuje tylko rysik · palec przesuwa');
+    // Rysik i palec (od 1.30 przełącznik): palec przesuwa stronę (dłoń nie zostawia śladów) albo też rysuje –
+    // wtedy przesuwają i powiększają dwa palce.
+    const penPill = h('button', {
+      type: 'button', class: 'drawing__pill', hidden: !penSeen, dataset: { testid: 'drawing-pen-only' }, onClick: () => toggleFingerDraws()
+    });
+    function updatePenPill() {
+      const finger = tools.fingerDraws;
+      replaceChildren(penPill, icon(finger ? 'finger' : 'pen', { size: 14 }), finger ? 'Palec też rysuje · dwa palce przesuwają' : 'Rysuje tylko rysik · palec przesuwa');
+      penPill.setAttribute('aria-pressed', String(finger));
+      penPill.title = finger ? 'Dotknij: rysuje tylko rysik, palec przesuwa stronę' : 'Dotknij: palec też rysuje, dwa palce przesuwają i powiększają';
+    }
+    updatePenPill();
+    function toggleFingerDraws() {
+      tools.fingerDraws = !tools.fingerDraws;
+      saveTools(tools);
+      updatePenPill();
+      flash(tools.fingerDraws ? 'Palec też rysuje – dwa palce przesuwają i powiększają stronę.' : 'Rysuje tylko rysik – palec przesuwa stronę, dłoń oparta o ekran nie zostawia śladów.');
+    }
     const selectHint = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, dataset: { testid: 'drawing-select-hint' } });
     const notice = h('span', { class: 'drawing__pill drawing__pill--info drawing__pill--notice', hidden: true, role: 'status', dataset: { testid: 'drawing-notice' } });
     const lengthPill = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, dataset: { testid: 'drawing-ruler-length' } });
@@ -3306,22 +3439,69 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       else updateToolbar();
     }
 
-    // ---- kartki (od 1.19): kilka rysunków w jednym oknie – po „Gotowe” każda kartka to osobny rysunek notatki
-    /** Najwięcej kartek w jednym oknie (notatka ma najwyżej 30 obrazów). */
-    const PAGE_LIMIT = 20;
-    /** Kartka: rysunek, jego historia, wczytane obrazy (zdjęcie, szablon) i obietnica ich wczytania. */
-    function makePage(pageDrawing, pageHistory = new DrawingHistory(pageDrawing.strokes)) {
-      const page = { drawing: pageDrawing, history: pageHistory, media: { photo: null, template: null }, changed: false };
-      const loaded = (key) => (image) => {
-        page.media[key] = image;
-        if (page === pages[pageIndex]) requestRender();
-      };
-      page.ready = Promise.all([loadPicture(pageDrawing.photo).then(loaded('photo')), loadPicture(pageDrawing.template).then(loaded('template'))]);
+    // ---- kartki (od 1.19): kilka rysunków w jednym oknie – po „Gotowe” każda kartka to osobny rysunek notatki;
+    // od 1.30 kartki to rysunki notatki (albo jej zdjęcia), przewracane jak w zeszycie
+    /**
+     * Kartka: { title, sheet, added, drawing, history, media, changed, ready, loaded } – sheet: kartka
+     * z sheets (dodana – null), drawing – null, dopóki zdjęcie się nie wczyta; ready – obietnica
+     * wczytania obrazów (zdjęcie, szablon), loaded – już wczytane.
+     */
+    function makePage(pageDrawing, { history: pageHistory = null, title: name, sheet = null, added = false }) {
+      const page = { title: name, sheet, added, drawing: null, history: null, media: { photo: null, template: null }, changed: false, ready: null, loaded: false };
+      if (pageDrawing) fillPage(page, pageDrawing, pageHistory);
       return page;
     }
-    const pageTitle = () => (pageIndex === 0 ? title : `${title} · kartka ${pageIndex + 1}`);
+    function fillPage(page, pageDrawing, pageHistory = null) {
+      page.drawing = pageDrawing;
+      page.history = pageHistory ?? new DrawingHistory(pageDrawing.strokes);
+      loadMedia(page);
+    }
+    /** Wczytuje zdjęcie i szablon kartki (po zwolnieniu – od nowa); zwraca obietnicę. */
+    function loadMedia(page) {
+      const media = page.media;
+      const loaded = (key) => (image) => {
+        media[key] = image;
+        if (page === pages[pageIndex] && page.media === media) requestRender();
+      };
+      const ready = Promise.all([loadPicture(page.drawing.photo).then(loaded('photo')), loadPicture(page.drawing.template).then(loaded('template'))]);
+      page.ready = ready;
+      ready.then(() => {
+        if (page.ready === ready) page.loaded = true;
+      });
+      return ready;
+    }
+    /** Kartka gotowa do pokazania (od 1.30): rysunek (zdjęcie – wczytane dopiero teraz) i jego obrazy. */
+    function preparePage(page) {
+      if (page.drawing) return page.ready ?? loadMedia(page);
+      page.preparing ??= (async () => {
+        const loaded = await page.sheet.load();
+        if (!page.drawing) fillPage(page, sheetDrawing(loaded));
+        await page.ready;
+      })().finally(() => {
+        page.preparing = null;
+      });
+      return page.preparing;
+    }
+    /**
+     * Zdjęcia kartek dalej niż sąsiednie zwalniają pamięć (od 1.30 – na iPhonie notatka może mieć
+     * wiele zdjęć); sąsiednie wczytują się zawczasu, żeby kartka przewracała się od razu.
+     */
+    function settlePages() {
+      pages.forEach((page, index) => {
+        const near = Math.abs(index - pageIndex) <= 1;
+        if (near && page.sheet?.load && !page.drawing) preparePage(page).catch(() => {});
+        if (!near && page.drawing && (page.drawing.photo || page.drawing.template) && page.ready) {
+          page.media = { photo: null, template: null };
+          page.ready = null;
+          page.loaded = false;
+        }
+      });
+    }
+    const pageTitle = () => pages[pageIndex]?.title ?? title;
     function updatePagePill() {
       pageText.textContent = `Kartka ${pageIndex + 1} z ${pages.length}`;
+      // Przy zdjęciach (od 1.30) bez „Nowej kartki” – menu kartek tylko przy kilku.
+      pagePill.hidden = !newPages && pages.length < 2;
       pagePrev.hidden = pages.length < 2;
       pageNext.hidden = pages.length < 2;
       pagePrev.disabled = pageIndex === 0;
@@ -3337,6 +3517,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       pages[pageIndex].changed = changed;
       pageIndex = index;
       ({ drawing, history, media, changed } = pages[index]);
+      settlePages();
       measured = null;
       pasteCount = 0;
       paperButton.hidden = Boolean(drawing.photo);
@@ -3358,8 +3539,24 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
      */
     const FLIP_MS = 900;
     let flipping = null;
+    /** Kartka, na którą edytor przejdzie po jej wczytaniu (od 1.30 – zdjęcie albo szablon jeszcze się wczytuje). */
+    let flipWanted = null;
     function flipTo(index) {
       if (index === pageIndex || index < 0 || index >= pages.length || active) return;
+      const target = pages[index];
+      if (!target.drawing || !target.loaded) {
+        flipWanted = index;
+        preparePage(target).then(() => {
+          if (flipWanted !== index) return;
+          flipWanted = null;
+          flipTo(index);
+        }, () => {
+          if (flipWanted === index) flipWanted = null;
+          flash(`Nie udało się otworzyć: ${target.title}.`);
+        });
+        return;
+      }
+      flipWanted = null;
       // Kolejne dotknięcie w trakcie animacji – poprzednia kończy się od razu.
       if (flipping) {
         flipping = null;
@@ -3544,10 +3741,15 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       ctx.restore();
     }
 
-    /** Nowa kartka za ostatnią: to samo tło (zdjęcie – kratka), jasność linii i skala, bez szablonu. */
+    /**
+     * Nowa kartka za ostatnią: to samo tło (zdjęcie – kratka), jasność linii i skala, bez szablonu. Od 1.30
+     * tylko przy rysunkach (przy zdjęciach kartki to zdjęcia notatki) i dopóki notatka ma miejsce na obraz.
+     */
     function addPage() {
-      if (pages.length >= PAGE_LIMIT) {
-        flash(`W jednym oknie najwyżej ${PAGE_LIMIT} kartek.`);
+      if (!newPages) return;
+      const added = pages.filter((page) => page.added).length;
+      if (added >= pageRoom) {
+        flash('Notatka nie ma już miejsca na kolejny rysunek (najwyżej 30 obrazów).');
         return;
       }
       const next = {
@@ -3555,33 +3757,37 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         ...(drawing.dimStyle ? { dimStyle: drawing.dimStyle } : {}),
         ...(drawing.dimUnit ? { dimUnit: drawing.dimUnit } : {})
       };
-      pages.push(makePage(next));
+      pages.push(makePage(next, { title: addedTitle?.(added + 1) ?? `Kartka ${pages.length + 1}`, added: true }));
       showPage(pages.length - 1);
-      flash(`Kartka ${pages.length} – po „Gotowe” trafi do notatki jako osobny rysunek.`);
+      flash(`${pageTitle()} – po „Gotowe” trafi do notatki jako osobny rysunek.`);
     }
-    /** Usuwa dodaną kartkę (pierwsza to rysunek z notatki – zostaje); kartka z kreskami – po potwierdzeniu. */
+    /** Usuwa dodaną kartkę (rysunki notatki zostają); kartka z kreskami – po potwierdzeniu. */
     async function deletePage() {
       const index = pageIndex;
-      if (index === 0) return;
+      if (!pages[index].added) return;
       if (hasContent(drawing) && !(await confirmDialog({
         title: `Usunąć kartkę ${index + 1}?`, message: 'Kreski z tej kartki przepadną.', confirmLabel: 'Usuń', cancelLabel: 'Zostaw', destructive: true
       }))) return;
-      showPage(index - 1);
+      // Na sąsiednią kartkę (wczytaną – sąsiednie wczytują się zawczasu); poprzednia zostaje na swoim miejscu.
+      const neighbour = pages[index - 1]?.drawing ? index - 1 : index + 1;
+      showPage(neighbour);
       pages.splice(index, 1);
+      if (neighbour > index) pageIndex -= 1;
       updatePagePill();
     }
     function openPageMenu() {
+      const added = pages[pageIndex].added;
       openMenu({
         title: 'Kartki',
         items: [
-          { label: 'Nowa kartka', icon: 'plus', testID: 'drawing-page-new', onSelect: () => addPage() },
-          pages.length > 1 ? 'separator' : null,
-          ...(pages.length > 1 ? pages.map((_, index) => ({
-            label: index === 0 ? `Kartka 1 – ${title}` : `Kartka ${index + 1}`, checked: index === pageIndex, testID: `drawing-page-${index + 1}`,
+          newPages ? { label: 'Nowa kartka', icon: 'plus', testID: 'drawing-page-new', onSelect: () => addPage() } : null,
+          newPages && pages.length > 1 ? 'separator' : null,
+          ...(pages.length > 1 ? pages.map((page, index) => ({
+            label: `Kartka ${index + 1} – ${page.title}`, checked: index === pageIndex, testID: `drawing-page-${index + 1}`,
             onSelect: () => flipTo(index)
           })) : []),
-          pageIndex > 0 ? 'separator' : null,
-          pageIndex > 0 ? { label: 'Usuń tę kartkę', icon: 'trash', destructive: true, testID: 'drawing-page-delete', onSelect: () => deletePage() } : null
+          added ? 'separator' : null,
+          added ? { label: 'Usuń tę kartkę', icon: 'trash', destructive: true, testID: 'drawing-page-delete', onSelect: () => deletePage() } : null
         ]
       });
     }
@@ -3744,6 +3950,36 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       updateToolbar();
       requestRender();
     }
+    /** Zaznaczone elementy zastąpione przekształconymi (te same miejsca w rysunku) – jeden krok cofania, zostają zaznaczone. */
+    function replaceSelection(items, next) {
+      const map = new Map(items.map((stroke, index) => [stroke, next[index]]));
+      history.begin();
+      drawing.strokes.forEach((stroke, index) => {
+        if (map.has(stroke)) drawing.strokes[index] = map.get(stroke);
+      });
+      // Zaznaczenie przed krokiem – przyklejone końce poprawione w tym kroku zostają zaznaczone.
+      selection = new Set(next);
+      commitStep();
+      updateToolbar();
+      requestRender();
+    }
+    /** Odbicie lustrzane (od 1.30) względem środka zaznaczenia: 'horizontal' – lewa strona z prawą, 'vertical' – góra z dołem. */
+    function mirrorSelection(axis) {
+      const items = orderedSelection();
+      if (snip || !canTurn(items)) return;
+      const bounds = selectionBounds(items);
+      const at = axis === 'horizontal' ? (bounds.minX + bounds.maxX) / 2 : (bounds.minY + bounds.maxY) / 2;
+      replaceSelection(items, transformStrokes(items, (stroke) => mirrorStroke(stroke, axis, at), elementBox));
+    }
+    function openMirrorMenu() {
+      openMenu({
+        title: 'Odbicie lustrzane',
+        items: MIRROR_AXES.map((axis) => ({
+          label: MIRROR_LABELS[axis], icon: axis === 'horizontal' ? 'mirror' : 'mirrorVertical', testID: `drawing-mirror-${axis}`,
+          onSelect: () => mirrorSelection(axis)
+        }))
+      });
+    }
     function deleteSelection() {
       if (selection.size === 0) return;
       history.begin();
@@ -3778,7 +4014,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       return true;
     }
     /** Zdjęcie i szablon z pliku wczytane – dopiero wtedy obraz wycinka jest pełny. */
-    const mediaReady = () => pages[pageIndex].ready;
+    const mediaReady = () => preparePage(pages[pageIndex]);
     /** Obraz wycinka: wszystko, co widać na stronie w obszarze (tło, kratka, zdjęcie, szablon, kreski), poza nim – przezroczyście. */
     function snipCanvas(area) {
       const { polygon } = area;
@@ -3821,7 +4057,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         await mediaReady();
         const canvas = area ? snipCanvas(area) : strokesCanvas(items, drawing.scale);
         const blob = await canvasBlob(canvas, area && drawing.photo && area.kind === 'rect' ? 'image/jpeg' : 'image/png');
-        const label = await onEmbed({ blob, width: canvas.width, height: canvas.height });
+        const label = await onEmbed({ blob, width: canvas.width, height: canvas.height, sheet: pageIndex });
         flash(`Osadzono w notatce jako „${label}”.`);
       } catch (error) {
         flash(error?.message || 'Nie udało się osadzić obrazu w notatce.');
@@ -3989,7 +4225,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           }
           const units = (value) => fromScaleLength(value, drawing.scale);
           const params = kind === 'linear'
-            ? { kind, columns: values.columns, rows: values.rows, dx: units(values.dx), dy: units(values.dy) }
+            ? { kind, columns: values.columns, rows: values.rows, dx: units(values.dx), dy: units(values.dy), angle: start.linear.angle }
             : { ...start.polar, kind, count: values.count, sweep: values.sweep, rings: values.rings, ringStep: units(values.ringStep), rotate };
           let array = makeArray(items, cleanArrayParams(params, limit), limit);
           if (array && kind === 'polar') array = withPolarRadius(array, Math.max(0, units(values.radius)));
@@ -4052,7 +4288,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     /** Zaznaczony szyk kołowy (jedyny) – jego środek można przeciągnąć. */
     function selectedPolar() {
       const [only] = selection;
-      return selection.size === 1 && !snip && isArray(only) && only.kind === 'polar' && !['move', 'marquee', 'lasso'].includes(active?.kind) ? only : null;
+      return selection.size === 1 && !snip && isArray(only) && only.kind === 'polar' && !['move', 'marquee', 'lasso', 'turn'].includes(active?.kind) ? only : null;
     }
     const arrayCenterHit = (point) => {
       const array = selectedPolar();
@@ -4976,16 +5212,21 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         requestLive();
       }
     }
-    /** Zaznaczanie: przeciągnięcie zaznaczenia – przesuwanie; poza nim – obrys. `snipping` – prawy przycisk (wycinek, od 1.17). */
+    /**
+     * Zaznaczanie: przeciągnięcie zaznaczenia – przesuwanie; poza nim – obrys. `snipping` – prawy przycisk (wycinek, od 1.17).
+     * Z Shift (od 1.30) zaznaczenie zostaje: dotknięcie dokłada element albo go zdejmuje (też w ramce zaznaczenia –
+     * blisko leżące elementy), obrys dokłada całe elementy.
+     */
     function startSelect(event, snipping = false) {
       const point = toDrawing(event);
-      if (!snipping && selectionHit(point)) {
+      const adding = !snipping && (Boolean(event.shiftKey) || shiftDown) && !snip && selectionKind === 'whole';
+      if (!snipping && !adding && selectionHit(point)) {
         active = { kind: 'move', id: event.pointerId, touch: event.pointerType === 'touch', start: point, dx: 0, dy: 0, client: local(event) };
         requestRender();
         return;
       }
-      clearSelection();
-      const common = { id: event.pointerId, touch: event.pointerType === 'touch', start: point, client: local(event), snip: snipping };
+      if (!adding) clearSelection();
+      const common = { id: event.pointerId, touch: event.pointerType === 'touch', start: point, client: local(event), snip: snipping, add: adding };
       active = tools.selectShape === 'lasso'
         ? { kind: 'lasso', ...common, polygon: [point.x, point.y] }
         : { kind: 'marquee', ...common, rect: { x0: point.x, y0: point.y, x1: point.x, y1: point.y } };
@@ -5142,6 +5383,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     function activeFollowers() {
       let previews = null;
       if (active?.kind === 'move') previews = new Map([...selection].filter((stroke) => stroke.id).map((stroke) => [stroke, translateStroke(stroke, active.dx, active.dy)]));
+      else if (active?.kind === 'turn') previews = new Map(active.items.map((stroke, index) => [stroke, active.preview[index]]).filter(([stroke]) => stroke.id));
       else if ((active?.kind === 'shape-edit' || active?.kind === 'box-edit') && active.original.id) previews = new Map([[active.original, active.preview ?? active.original]]);
       if (!previews || previews.size === 0) return null;
       const followers = followersOf(drawing.strokes, previews, elementBox);
@@ -5205,6 +5447,16 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           active.dy = point.y - active.start.y;
           requestLive();
           break;
+        case 'turn': {
+          if (!active.moved && Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale < TAP_SLOP) break;
+          active.moved = true;
+          const { center } = active;
+          // Co 15° z Shift (albo „Proporcje”), bez niego – przyciągany do pełnych 15°.
+          active.angle = snapTurn(Math.atan2(point.y - center.y, point.x - center.x) - active.grab, locked(event));
+          active.preview = active.items.map((stroke) => rotateStroke(stroke, center.x, center.y, active.angle));
+          requestLive();
+          break;
+        }
         case 'ruler-move':
           setRuler({ x: active.ruler.x + point.x - active.start.x, y: active.ruler.y + point.y - active.start.y, angle: active.ruler.angle });
           break;
@@ -5316,7 +5568,16 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         // Dotknięcie pustego środka kształtu też go zaznacza (najwyższego).
         const inside = drawing.strokes.findLastIndex((stroke) => isShape(stroke) && shapeContains(stroke, done.start.x, done.start.y));
         const index = top ?? (inside >= 0 ? inside : undefined);
-        selection = new Set(index === undefined ? [] : [drawing.strokes[index]]);
+        const target = index === undefined ? null : drawing.strokes[index];
+        if (done.add) {
+          // Shift (od 1.30): element dokładany do zaznaczenia albo z niego zdejmowany.
+          const next = new Set(selection);
+          if (target && next.has(target)) next.delete(target);
+          else if (target) next.add(target);
+          selection = next;
+        } else {
+          selection = new Set(target ? [target] : []);
+        }
         selectionKind = 'whole';
         return;
       }
@@ -5330,7 +5591,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         return;
       }
       const found = done.kind === 'lasso' ? strokesInPolygon(drawing.strokes, polygon) : strokesInRect(drawing.strokes, done.rect);
-      selection = new Set(found.map((index) => drawing.strokes[index]));
+      selection = new Set([...(done.add ? selection : []), ...found.map((index) => drawing.strokes[index])]);
       selectionKind = 'whole';
     }
     function finishActive(cancelled = false) {
@@ -5392,6 +5653,9 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         stage.classList.remove('drawing__stage--panning');
       } else if (done.kind === 'array-center' && !cancelled && done.moved) {
         replaceArray(done.original, done.preview);
+      } else if (done.kind === 'turn' && !cancelled && done.moved && done.angle !== 0) {
+        const { center, angle } = done;
+        replaceSelection(done.items, transformStrokes(done.items, (stroke) => rotateStroke(stroke, center.x, center.y, angle), elementBox));
       } else if (done.kind === 'box-edit' && !cancelled && done.moved) {
         if (done.handle === 'target') replaceLinked(done.original, done.preview, [[done.original.tool === 'roughness' ? 'tip' : 'leader', done.snap]]);
         else replaceShape(done.original, done.preview);
@@ -5511,7 +5775,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const point = toDrawing(event);
       // Wstawianie symbolu metrologicznego (od 1.22.1): dotknięcie – miejsce strzałki, trójkąta albo wierzchołka.
       // Gdy aplikacja zna już rysik, palec (i dłoń) przesuwa stronę – symbol wstawia rysik albo mysz.
-      if (symbolPlacing && !active && !gesture && touches.size === 0 && !(penSeen && event.pointerType === 'touch')) {
+      if (symbolPlacing && !active && !gesture && touches.size === 0 && !(fingerPans() && event.pointerType === 'touch')) {
         placeSymbol(point, event);
         return;
       }
@@ -5546,7 +5810,7 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
           return;
         }
         // Palec przy rysiku: punkty kształtu, kółko liniuszka i zaznaczenie – tak; poza nimi przesuwa stronę.
-        if (!hit && penSeen && !onSelection(point) && !shapeHandleAt(point) && !boxHandleAt(point) && !guideKnobHit(point) && !arrayCenterHit(point)) {
+        if (!hit && fingerPans() && !onSelection(point) && !shapeHandleAt(point) && !boxHandleAt(point) && !guideKnobHit(point) && !arrayCenterHit(point) && !turnKnobHit(point)) {
           touches.set(event.pointerId, local(event));
           startGesture('page');
           return;
@@ -5566,11 +5830,14 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
       const boxHandle = snipping || handle ? null : boxHandleAt(point);
       // Środek zaznaczonego szyku kołowego (od 1.19) – przed linijką i zaznaczeniem.
       const centerHit = !snipping && !handle && !boxHandle && arrayCenterHit(point);
-      const hit = handle || boxHandle || centerHit || snipping ? null : rulerHit(point);
+      // Uchwyt obrotu zaznaczenia (od 1.30).
+      const turnHit = !snipping && !handle && !boxHandle && !centerHit && turnKnobHit(point);
+      const hit = handle || boxHandle || centerHit || turnHit || snipping ? null : rulerHit(point);
       if (snipping) startSelect(event, true);
       else if (handle) startShapeEdit(event, handle);
       else if (boxHandle) startBoxEdit(event, boxHandle);
       else if (centerHit) startArrayCenter(event);
+      else if (turnHit) startTurn(event);
       else if (hit === 'handle') startRuler(event, 'ruler-rotate');
       // Zaznaczenie przed kółkiem liniuszka (od 1.24): przeciągnięcie zaznaczonego pola albo kształtu,
       // który leży na kółku, przesuwa je, a nie liniuszek.
@@ -5688,16 +5955,19 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
         saving = true;
         doneButton.disabled = true;
         try {
-          // Zdjęcie pod kreskami musi być wczytane, zanim powstanie obraz rysunku.
-          await Promise.all(pages.map((page) => page.ready));
-          const [main, ...rest] = pages;
-          // Kolejne kartki (od 1.19) – tylko z treścią (pusta nowa kartka nie trafia do notatki).
+          // Zdjęcie pod kreskami musi być wczytane, zanim powstanie obraz rysunku (zwolnione – od nowa).
+          const saved = pages.filter((page) => page.changed && page.drawing);
+          await Promise.all(saved.map((page) => page.ready ?? loadMedia(page)));
+          // Dodane kartki (od 1.19) – tylko z treścią (pusta nowa kartka nie trafia do notatki).
+          const changedSheets = [];
           const extra = [];
-          for (const page of rest.filter((item) => item.changed && hasContent(item.drawing))) {
-            extra.push({ drawing: page.drawing, image: await renderDrawingImage(page.drawing, page.media) });
+          for (const page of saved) {
+            if (page.added && !hasContent(page.drawing)) continue;
+            const image = await renderDrawingImage(page.drawing, page.media);
+            if (page.added) extra.push({ drawing: page.drawing, image, title: page.title });
+            else changedSheets.push({ index: pages.indexOf(page), drawing: page.drawing, image });
           }
-          const image = main.changed ? await renderDrawingImage(main.drawing, main.media) : null;
-          result = image || extra.length > 0 ? { drawing: image ? main.drawing : null, image, pages: extra } : null;
+          result = changedSheets.length > 0 || extra.length > 0 ? { sheets: changedSheets, pages: extra } : null;
         } catch (error) {
           saving = false;
           doneButton.disabled = false;
@@ -5830,8 +6100,13 @@ export function openDrawingEditor({ drawing: source = null, photo = null, title 
     window.addEventListener('blur', onBlur);
     updateToolbar();
     observer.observe(stage);
-    pages.push(makePage(drawing, history));
-    ({ media } = pages[0]);
+    for (const [index, sheet] of sheetList.entries()) {
+      const current = index === startIndex;
+      pages.push(makePage(current ? drawing : sheet.load ? null : sheetDrawing(sheet), { history: current ? history : null, title: sheet.title ?? title, sheet }));
+    }
+    ({ media } = pages[pageIndex]);
+    paperButton.hidden = Boolean(drawing.photo);
+    settlePages();
     updatePagePill();
   });
 }

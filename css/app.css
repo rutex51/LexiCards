@@ -6663,6 +6663,9 @@ button.drawing__pill .icon { color: var(--text-2); }
 @media (max-width: 599px) {
   .drawing__selection-label { display: none; }
   .drawing__selection-button { padding: 0 9px; }
+  /* Od 1.30 (przycisk „Odbij”) polecenia, które nie mieszczą się w jednym wierszu, przechodzą do drugiego;
+     szerokość nie zależy od miejsca paska (ustawianego po zmierzeniu). */
+  .drawing__selection { flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100% - 16px); }
   .drawing__wide-label { display: none; }
   .drawing__narrow-label { display: inline; }
 }

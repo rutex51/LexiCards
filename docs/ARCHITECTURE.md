@@ -43,7 +43,7 @@ js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podg
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
 js/ui/fit-table.js         okno „Tabela pasowań” (od 1.25): pasowania zalecane, dowolna klasa albo pasowanie z litery i klasy IT
-js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek (równoległy, od 1.22 promieniowy), kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka, od 1.22 przyciąganie końców i magnes, od 1.24 punkty w wierzchołkach łamanej), figury z odręcznych kształtów (od 1.24 – przytrzymane pióro), spirala na grzbiecie (od 1.24.1), Shift i Ctrl, środkowy przycisk, szyk, kartki (od 1.22 kółko, ‹ › i animacja przewracania, od 1.24 zagięcie od rogu), obraz PNG / JPEG
+js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek (równoległy, od 1.22 promieniowy), kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka, od 1.22 przyciąganie końców i magnes, od 1.24 punkty w wierzchołkach łamanej), figury z odręcznych kształtów (od 1.24 – przytrzymane pióro), spirala na grzbiecie (od 1.24.1), Shift i Ctrl, środkowy przycisk, szyk, kartki (od 1.22 kółko, ‹ › i animacja przewracania, od 1.24 zagięcie od rogu, od 1.30 – rysunki i zdjęcia notatki), od 1.30 obrót i odbicie zaznaczenia, Shift – kilka elementów, przełącznik palca, obraz PNG / JPEG
 js/ui/drawing-paint.js     rysunek na płótnie: kształty geometryczne (z zakończeniami odcinka), szablon (boisko liniami, obraz mnożony z tłem)
 js/ui/drawing-boxes.js     tabele i karteczki na rysunku (od 1.21): układ i pomiar (szerokości kolumn, łamanie, wysokość z treści), rysowanie, strzałka, ikona zwiniętej, treść obok ikony
 js/ui/drawing-gdt.js       wymiary techniczne i symbole metrologiczne na płótnie (od 1.22.1): linie pomocnicze, linia wymiarowa, łuk, liczba z tolerancją, ramka tolerancji, znak bazy, chropowatość; znaki ⌀ □ Ⓜ Ⓛ i 14 symboli ISO 1101 rysowane kreską
@@ -64,7 +64,8 @@ js/core/recognize.js       figury z odręcznych kształtów (od 1.24): rogi kres
 js/core/fits.js            pasowania ISO 286 (od 1.25): litery otworów i wałków, klasy IT, pasowania zalecane, ostatnio użyte
 js/core/attach.js          przyciąganie i przyklejanie końców (od 1.22): narożniki i boki elementów, najbliższy punkt, identyfikatory, końce za elementem, odklejanie, kopie, sprawdzanie przyklejeń; od 1.22.1 kierunek na zewnątrz krawędzi
 js/core/gdt.js             symbole metrologiczne (od 1.22.1): lista ISO 1101, układ ramki tolerancji, znaku bazy i chropowatości (ISO 1302), początek strzałki, trójkąt bazy, kolejna litera bazy, sprawdzanie
-js/core/arrays.js          szyk liniowy i kołowy: kopie elementów, przesunięcie, obrót wokół środka, parametry, sprawdzanie
+js/core/arrays.js          szyk liniowy i kołowy: kopie elementów, przesunięcie, obrót wokół środka, parametry, sprawdzanie; od 1.30 obrót rzędów szyku liniowego
+js/core/transform.js       obrót i odbicie lustrzane zaznaczenia (od 1.30): kreski, kształty, szyki – w całości, pola i ramki – stoją prosto; przyklejone końce po przekształceniu, kąt przyciągany co 15°
 js/core/templates.js       tło rysunku: poziomy jasności, szablon – boisko (105 × 68 m), dopasowanie, środek, wielkość (też w % i narożnikiem), sprawdzanie
 js/core/zip.js             odczyt i zapis archiwów ZIP (także kawałkami przez Blob – duże pliki)
 js/core/xlsx.js            odczyt i zapis skoroszytów XLSX
@@ -745,8 +746,18 @@ zakończeniu trwającej czynności. **Środkowy przycisk** – czynność `pan` 
 **Szablon**: narożniki w trakcie ustawiania – `resizeTemplateCorner` (rzut wskaźnika na przekątną od
 przeciwnego narożnika), pole z procentami – `setTemplatePercent` względem `fitTemplate`.
 **Kartki**: edytor ma listę `pages` ({ drawing, history, media, changed, ready }) i bieżące `drawing`,
-`history`, `media`; wynik `{ drawing, image, pages }` – pierwsza kartka (null, gdy bez zmian) i kolejne
-z treścią; edytor notatki wstawia je jako nowe rysunki (`addPages`) za otwartym rysunkiem.
+`history`, `media`. Do 1.29 wynik `{ drawing, image, pages }` – pierwsza kartka i kolejne z treścią.
+Od 1.30 `openDrawingEditor({ sheets, start, newPages, pageRoom, pageTitle })`: kartki okna to rysunki
+notatki – `sheets` [{ title, drawing } | { title, photo } | { title, load } | { title }] (load – zdjęcie
+wczytywane przy pierwszym przejściu, `{ title }` – nowy rysunek), strona kartki `{ title, sheet, added,
+drawing, history, media, changed, ready, loaded }` (`makePage`, `fillPage`, `loadMedia`, `preparePage`);
+`flipTo` czeka na wczytanie kartki (`flipWanted`), `settlePages` po każdym przejściu wczytuje sąsiednie
+i zwalnia zdjęcia i szablony dalszych (przy zapisie – wczytane od nowa). Wynik `{ sheets: [{ index, drawing,
+image }], pages: [{ drawing, image, title }] }` – zmienione kartki i dodane z treścią; „Osadź” podaje
+`sheet` (numer kartki). Edytor notatki (`sheetImages`, `sheetOf`, `photoOf`, `embedder(anchors)`,
+`applyDrawings`): rysunek otwiera wszystkie rysunki bez zdjęcia (nowy – kartka za nimi), zdjęcie i rysunek
+na zdjęciu – zdjęcia notatki i rysunki na zdjęciach, bez „Nowej kartki”; zmienione kartki zastępują swoje
+obrazy (sygnatura, podpis, oczko), dodane – za ostatnią kartką okna, osadzone – za obrazem swojej kartki.
 Od 1.21 (format rysunku 6): **tabela** `{ tool: 'table', x, y, width, height, size, color, rows, header,
 headerColumn, align }` (dane tabeli jak w notatce, `cleanTable`) i **karteczka** `{ tool: 'sticky', x, y,
 width, height, size, color, text, created: 'rrrr-mm-dd', collapsed?, hidden?, leader?: { x, y } }`
@@ -925,6 +936,32 @@ przejście w trakcie animacji kończy ją od razu; `prefers-reduced-motion: redu
 `wheelTurn { sum, last, locked }` – nowy ruch po 220 ms przerwy, próg 50 (cała strona) albo 150
 (powiększona, gdy widok już się nie przesuwa), jedno przewrócenie na ruch. Przyciski `drawing-page-prev`
 i `drawing-page-next` przy pigułce kartek – od dwóch kartek.
+
+Od 1.30 **obrót i odbicie zaznaczenia** (`js/core/transform.js`). `rotateStroke(stroke, cx, cy, angle)`
+i `mirrorStroke(stroke, axis, at)` (axis `horizontal` – oś x = at, `vertical` – oś y = at): kreska –
+punkty; kształt – środek i kąt, odbicie w układzie kształtu u → −u (kąt −a albo π − a, pochylenie
+i wierzchołek trójkąta odbite, wierzchołki łamanej i łuku u → −u), odcinek, strzałka i prosta – tylko kąt
+(π − a albo −a), więc początek zostaje początkiem; szyk liniowy – źródło i kąt rzędów (`angle`, od 1.30
+w `cleanArrayParams` i `placements`, odbicie – też znak `dx` albo `dy`), kołowy – źródło i środek, a na
+łuku (`sweep` < 360) odbite źródło przechodzi na drugi koniec łuku (kopie w tych samych miejscach);
+elementy stojące prosto (`isUpright`: pole, wzór, tabela, karteczka, symbol) – przesunięte tak, żeby
+środek ramki (chropowatość – wierzchołek) trafił w obraz punktu, koniec strzałki – osobno.
+`transformStrokes(items, transform, boxOf)` odkleja końce od elementów spoza listy (`keepLinksTo`),
+a końce przyklejone między elementami listy przykleja tam, gdzie trafiły (`findSnap` w promieniu 1 na
+przekształconym elemencie; gdy koniec nie leży na elemencie – np. obrócona strzałka do tabeli – odnośnik
+bez zmian). Edytor: `replaceSelection` (jeden krok cofania, zaznaczenie przed `commitStep`), przycisk
+**Odbij** (menu `drawing-mirror-horizontal` / `-vertical`) obok **Powiel**, **uchwyt obrotu** `turnKnob()`
+nad środkiem ramki – przy zaznaczaniu, gdy `canTurn` (kilka elementów albo jeden, który się obraca)
+i nie jest to jeden kształt (ten ma swój uchwyt); czynność `turn` (podgląd obróconych elementów i ramki,
+kąt przy uchwycie `turnDegrees`, `snapTurn` – co 15° z Shift, inaczej przyciągany do 15° ± 2°; warstwa
+zapisanych kresek pomija obracane, `activeFollowers` – przyklejone idą za nimi). Na telefonie (do 599 px)
+polecenia zaznaczenia przechodzą do drugiego wiersza (`flex-wrap`, `width: max-content`).
+**Shift przy zaznaczaniu** (od 1.30): `startSelect` z `shiftKey` albo `shiftDown` (i bez fragmentów
+i wycinka) zostawia zaznaczenie i zaczyna obrys z `add: true` (`selectModeOf` – zawsze całe elementy);
+dotknięcie (`finishOutline`) dokłada najwyższy element w miejscu albo go zdejmuje, obrys – dokłada
+znalezione. **Palec** (od 1.30): `tools.fingerDraws` (`cleanToolSettings`) i `fingerPans()` = znany rysik
+i palec nie rysuje – zamiast samego `penSeen` przy dotknięciu palcem i wstawianiu symbolu; pigułka
+`drawing-pen-only` to przycisk (`aria-pressed`), dwa palce przerywają kreskę palcem i powiększają.
 
 Od 1.6 **wersja angielska**: `htmlEN` obok `html`; w edytorze przełącznik Polski / Angielski zamienia
 treść jednego pola `contenteditable` (stan drugiej wersji jest w pamięci edytora; zmiana języka

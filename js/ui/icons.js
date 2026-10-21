@@ -169,6 +169,14 @@ const ICONS = {
     p('M9.5 9h9a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 8 19.5v-9A1.5 1.5 0 0 1 9.5 9z'),
     p('M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5'), p('M14 12.3v5.4'), p('M11.3 15h5.4')
   ],
+  // Od 1.30: odbicie lustrzane (w poziomie, w pionie), obrót zaznaczenia i palec (palec też rysuje).
+  mirror: [{ d: 'M12 3v18', 'stroke-dasharray': '2 2' }, p('M9.5 6.5L3.5 17.5h6z'), filled('M14.5 6.5l6 11h-6z')],
+  mirrorVertical: [{ d: 'M3 12h18', 'stroke-dasharray': '2 2' }, p('M17.5 9.5L6.5 3.5v6z'), filled('M17.5 14.5l-11 6v-6z')],
+  rotate: [p('M19 12.5a7 7 0 1 1-2.2-5.1'), p('M17.6 3.4v4.2h-4.2'), dot(12, 12.5, 1.4)],
+  finger: [
+    p('M9 14.2V5.3a1.6 1.6 0 0 1 3.2 0V11'), p('M12.2 10.4a1.6 1.6 0 0 1 3.2 0v.9'),
+    p('M15.4 11.1a1.6 1.6 0 0 1 3.2 0V15a6 6 0 0 1-6 6H12a5.4 5.4 0 0 1-4.3-2.2l-3-4.1a1.5 1.5 0 0 1 2.4-1.8L9 14.6')
+  ],
   ruler: [p('M3.5 15.8L15.8 3.5l4.7 4.7L8.2 20.5z'), p('M7.3 12l1.9 1.9'), p('M10 9.3l1.3 1.3'), p('M12.7 6.6l1.9 1.9')],
   // Sygnatura obrazu (etykieta) – od 1.12, odróżnia się od ołówka „Edytuj rysunek”.
   tag: [p('M3.5 12.5V4h8.5l8.5 8.5-8.5 8.5z'), { tag: 'circle', cx: 8, cy: 8.5, r: 1.4 }],

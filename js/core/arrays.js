@@ -6,7 +6,8 @@
 // Szyk { tool: 'array', kind: 'linear' | 'polar', items, … }:
 //   items – elementy źródła (kreski pióra i zakreślacza, pola tekstowe, wzory, kształty; bez szyków);
 //   liniowy: columns – obiektów w rzędzie, rows – rzędów, dx – przesunięcie kolejnego obiektu w rzędzie,
-//   dy – kolejnego rzędu (jednostki strony, mogą być ujemne);
+//   dy – kolejnego rzędu (jednostki strony, mogą być ujemne); od 1.30 angle – obrót rzędów (radiany,
+//   jak kąt kształtu; brak – rzędy poziomo) – szyk obrócony razem z zaznaczeniem;
 //   kołowy: count – obiektów w pierścieniu, sweep – kąt wypełnienia w stopniach (360 – pełne koło, inaczej
 //   pierwszy i ostatni obiekt na końcach łuku; dodatni – przeciwnie do ruchu wskazówek zegara, jak na
 //   linijce), rings – pierścieni, ringStep – odstęp pierścieni (od środka na zewnątrz), (cx, cy) – środek,
@@ -111,8 +112,12 @@ export function polarStep(array) {
 function placements(array) {
   const list = [];
   if (array.kind === 'linear') {
+    const [cos, sin] = [Math.cos(array.angle ?? 0), Math.sin(array.angle ?? 0)];
     for (let row = 0; row < array.rows; row += 1) {
-      for (let column = 0; column < array.columns; column += 1) list.push({ dx: column * array.dx, dy: row * array.dy });
+      for (let column = 0; column < array.columns; column += 1) {
+        const [x, y] = [column * array.dx, row * array.dy];
+        list.push({ dx: x * cos - y * sin, dy: x * sin + y * cos });
+      }
     }
     return list;
   }
@@ -201,7 +206,11 @@ export function cleanArrayParams(raw, limit) {
   if (raw.kind === 'linear') {
     const columns = count(raw.columns, 3, ARRAY_MAX);
     const rows = count(raw.rows, 1, Math.max(1, Math.floor(ARRAY_MAX / columns)));
-    return { kind: 'linear', columns, rows, dx: distance(raw.dx, 0), dy: distance(raw.dy, 0) };
+    const params = { kind: 'linear', columns, rows, dx: distance(raw.dx, 0), dy: distance(raw.dy, 0) };
+    // Obrót (od 1.30) – tylko różny od zera.
+    const angle = finite(raw.angle) ? Math.atan2(Math.sin(raw.angle), Math.cos(raw.angle)) : 0;
+    if (Math.abs(angle) > 1e-9) params.angle = angle <= -Math.PI + 1e-12 ? Math.PI : angle;
+    return params;
   }
   const total = count(raw.count, 6, ARRAY_MAX);
   const rings = count(raw.rings, 1, Math.max(1, Math.floor(ARRAY_MAX / total)));
