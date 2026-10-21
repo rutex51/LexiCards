@@ -58,3 +58,14 @@ podglądu – teraz zostaje ukryty.
   zostają proste, zmienia się ich miejsce.
 - Starsza wersja aplikacji nie zna kąta szyku liniowego – pokaże obrócony szyk z rzędami poziomo (obraz
   w notatce jest dobry); zaktualizuj aplikację na wszystkich urządzeniach.
+
+## 1.30.1 – okno „Obrazy i załączniki” w ustalonym układzie
+
+Wersja 1.30.1, 21 października 2026. Okno „Obrazy i załączniki” (z podglądu i nad oknem tekstu) ma wygląd
+pozostałych okien od 1.26: białe tło, każda sekcja – **Obrazy**, **Tabele**, **Podgląd notatki** (miejsce
+obrazów i tabel bez odwołania oraz numeracja „Rys. N.”, „Tab. N.” – dotąd pod tabelami, teraz osobna
+sekcja, widoczna przy obrazach albo tabelach) i **Załączniki** – w cienkiej zaokrąglonej ramce, z nazwą
+i podpowiedzią w środku. Na miniaturze tabeli komórki są pod ołówkiem i ✕ (dotąd przyciski je zasłaniały).
+
+Testy: logika – 378 zaliczone; przeglądarka (Chromium) – 177 zaliczone w dwóch pełnych przebiegach
+(test załączników sprawdza też ramkę sekcji); lint bez błędów. Nie sprawdzono w Safari na iPhonie.

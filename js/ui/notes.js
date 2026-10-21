@@ -1885,7 +1885,7 @@ function noteEditor({
   // Gdzie obrazy (od 1.21 i tabele) bez odwołania są w podglądzie notatki: przed tekstem albo po nim
   // (widać, gdy są obrazy albo tabele).
   const placement = h('div', { class: 'note-images__placement', dataset: { testid: 'note-image-placement' } },
-    h('span', { class: 'note-images__placement-label' }, 'W podglądzie'),
+    h('span', { class: 'note-images__placement-label' }, 'Obrazy i tabele bez odwołania'),
     segmented({
       name: 'note-image-placement',
       label: 'Obrazy w podglądzie',
@@ -2011,8 +2011,11 @@ function noteEditor({
       'Tabela to osobny obiekt notatki – jak obraz: dotknij jej, żeby wstawić do tekstu, zmienić sygnaturę albo dodać podpis '
       + '(nad tabelą, z numeracją „Tab. 1.”); ołówek od razu otwiera okno tabeli, oczko chowa tabelę w notatce. W oknie tabeli możesz wkleić fragment arkusza Excel albo tabelę z Worda. Linijka ',
       h('code', null, '[[Tabela 1]]'),
-      ' w tekście to miejsce tabeli; tabele bez odwołania są przed tekstem albo po nim, za obrazami.'),
-    // Miejsce obrazów i tabel bez odwołania oraz numeracja „Rys. N.” i „Tab. N.” – wspólne.
+      ' w tekście to miejsce tabeli; tabele bez odwołania są przed tekstem albo po nim, za obrazami.')
+  );
+  // Miejsce obrazów i tabel bez odwołania oraz numeracja „Rys. N.” i „Tab. N.” – wspólne (od 1.30.1 osobna sekcja).
+  const previewSection = h('section', { class: 'note-editor__preview' },
+    h('h3', { class: 'form-group__title' }, 'Podgląd notatki'),
     placement,
     numbering
   );
@@ -2020,8 +2023,7 @@ function noteEditor({
   /** Wybór miejsca i numeracji – gdy notatka ma obrazy albo tabele. */
   function updatePreviewOptions() {
     const hidden = state.images.length === 0 && state.tables.length === 0;
-    placement.hidden = hidden;
-    numbering.hidden = hidden;
+    previewSection.hidden = hidden;
   }
 
   // ---- załączniki
@@ -2256,6 +2258,7 @@ function noteEditor({
     textView ? null : recordingBar,
     imagesSection,
     tablesSection,
+    previewSection,
     filesSection
   );
   const element = h('div', { class: 'note-editor note-editor--text' },

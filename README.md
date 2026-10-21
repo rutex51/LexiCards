@@ -38,7 +38,7 @@ Jeden wygląd okien (białe, sekcje w cienkich ramkach), „Wstaw obiekt” na p
 Rysunek: rodzaj linii kształtów (przerywana, osiowa, dwupunktowa, kropkowa), prosta przez całą stronę, punkt symetrii, strzałka po łuku z dwoma punktami pośrednimi i zakończeniami (wersja 1.27): [docs/RELEASE-1.27.md](docs/RELEASE-1.27.md).
 Plik PDF notatki tworzony w aplikacji – prawdziwy tekst, strona A4, wybór jakości obrazów, „Udostępnij…” na iPhonie (wersja 1.28): [docs/RELEASE-1.28.md](docs/RELEASE-1.28.md).
 Notatki: osobne okno tekstu na cały ekran i okno „Obrazy i załączniki”, ołówek na miniaturze, oczko (obiekt ukryty w notatce), usunięcie obiektu usuwa jego odwołania, ⓘ chowa podpowiedzi w oknach (wersja 1.29): [docs/RELEASE-1.29.md](docs/RELEASE-1.29.md).
-Rysunek: rysunki notatki (i jej zdjęcia) przewracane jak kartki w jednym oknie, palec też rysuje (przełącznik), obrót zaznaczenia uchwytem, odbicie lustrzane, Shift – kilka elementów kliknięciami (wersja 1.30): [docs/RELEASE-1.30.md](docs/RELEASE-1.30.md).
+Rysunek: rysunki notatki (i jej zdjęcia) przewracane jak kartki w jednym oknie, palec też rysuje (przełącznik), obrót zaznaczenia uchwytem, odbicie lustrzane, Shift – kilka elementów kliknięciami (wersja 1.30); okno „Obrazy i załączniki” w układzie okien – białe, sekcje w ramkach (1.30.1): [docs/RELEASE-1.30.md](docs/RELEASE-1.30.md).
 
 ## Co potrafi wersja 1.30
 

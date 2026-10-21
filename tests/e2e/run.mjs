@@ -1782,7 +1782,9 @@ test('załączniki w edytorze: dodanie, zmiana nazwy z zachowaniem rozszerzenia,
   // Od 1.29 załączniki – w oknie „Obrazy i załączniki” (z podglądu – „Zapisz” zapisuje): obrazy, tabele,
   // załączniki; tekst – osobnym oknem („Edytuj”).
   await openNoteObjects(page);
-  assert.deepEqual(await dialog.locator('.note-editor > section > .form-group__title').allTextContents(), ['Obrazy', 'Tabele', 'Załączniki']);
+  // Od 1.30.1 każda sekcja w ramce; „Podgląd notatki” (miejsce i numeracja) – tylko przy obrazach albo tabelach.
+  assert.deepEqual(await dialog.locator('.note-editor > section:not([hidden]) > .form-group__title').allTextContents(), ['Obrazy', 'Tabele', 'Załączniki']);
+  assert.equal(await dialog.locator('.note-editor > section').first().evaluate((element) => getComputedStyle(element).borderTopStyle), 'solid', 'sekcja w ramce');
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), dialog.locator('[data-testid=note-attachment-add]').click()]);
   await chooser.setFiles([
     { name: 'Instrukcja.pdf', mimeType: 'application/pdf', buffer: Buffer.from(FAKE_PDF) },

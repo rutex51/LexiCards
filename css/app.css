@@ -4694,6 +4694,25 @@ dialog:not(:has(:is(.field__hint, .form-note, .note-paragraph__hint, .note-pdf-s
 
 .note-editor__text,
 .note-editor__images { min-width: 0; }
+.note-editor__preview[hidden] { display: none; }
+
+/*
+ * Okno „Obrazy i załączniki” (od 1.30.1) w układzie okien z 1.26: białe tło, każda sekcja (obrazy,
+ * tabele, podgląd, załączniki) w cienkiej zaokrąglonej ramce, nazwa i podpowiedź w środku ramki.
+ */
+.note-objects-dialog .sheet__panel { --surface: var(--elevated); background: var(--elevated); }
+.note-objects-dialog .note-editor { gap: 14px; }
+.note-objects-dialog .note-editor > section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px 14px 12px;
+  border: 1px solid var(--outline);
+  border-radius: 14px;
+}
+.note-objects-dialog .note-editor > section > .form-group__title { padding: 0; }
+.note-objects-dialog .note-editor > section > .field__hint { margin: 0; padding: 0; }
+.note-objects-dialog .note-images__numbering .switch { padding: 0; border: 0; }
 
 .note-editor__toolbar {
   position: sticky;
@@ -5318,7 +5337,8 @@ dialog:not(:has(:is(.field__hint, .form-note, .note-paragraph__hint, .note-pdf-s
   align-content: start;
   gap: 4px;
   height: 100%;
-  padding: 8px 6px 24px;
+  /* Od 1.30.1 komórki pod ołówkiem i ✕ (nie pod nimi). */
+  padding: 35px 6px 26px;
   color: #1d1d1f;
   text-align: left;
 }
@@ -5398,7 +5418,6 @@ dialog:not(:has(:is(.field__hint, .form-note, .note-paragraph__hint, .note-pdf-s
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
-  margin-top: 12px;
 }
 
 .note-images__placement[hidden] { display: none; }
