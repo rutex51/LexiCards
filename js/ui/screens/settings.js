@@ -200,6 +200,29 @@ export class SettingsScreen {
     );
   }
 
+  /** Dźwięki (od 1.31): fiszka odlatująca po decyzji i przewracana kartka notatki i rysunku. */
+  #soundGroup() {
+    const { library } = this.ctx;
+    return group({
+      title: 'Dźwięki',
+      footer: 'Szum odlatującej fiszki i szelest przewracanej kartki (notatka, rysunek) – trwa tyle, co przewracanie. '
+        + 'Dźwięki powstają w aplikacji, bez plików i internetu; grają z głośnością multimediów.'
+    },
+      checkRow({
+        checked: library.getSettings().sounds !== false,
+        title: 'Dźwięki fiszek i kartek',
+        testID: 'sounds',
+        onChange: async (value) => {
+          try {
+            await library.updateSettings({ sounds: value });
+          } catch (error) {
+            await showError(error);
+          }
+        }
+      })
+    );
+  }
+
   /** Powtórki FSRS: docelowa skuteczność, czyli jak często fiszki wracają. */
   #reviewGroup() {
     const { library } = this.ctx;
@@ -622,6 +645,7 @@ export class SettingsScreen {
         ),
         this.#reviewGroup(),
         this.#studyGroup(),
+        this.#soundGroup(),
         this.#libraryGroup(),
         this.#speechGroup(),
         this.#storageGroup(),

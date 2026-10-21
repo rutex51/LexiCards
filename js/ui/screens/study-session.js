@@ -15,6 +15,7 @@ import { showError, toast } from '../dialogs.js';
 import { h, onTap, replaceChildren } from '../dom.js';
 import { icon } from '../icons.js';
 import { routes } from '../router.js';
+import { playCard } from '../sounds.js';
 import { speak, speechAvailable, stopSpeaking } from '../speech.js';
 
 const TILE_ICONS = { term: 'translate', description: 'book', example: 'chat' };
@@ -224,6 +225,7 @@ export class StudySessionScreen {
     const from = this.drag?.offset ?? 0;
     const duration = 220;
     this.#raiseStack(duration);
+    playCard(direction);
     try {
       await card.animate(
         [

@@ -8468,6 +8468,103 @@ test('magazyn danych 1.30.2: umowa adaptera dla IndexedDB w przeglądarce (osobn
   await expectText(page.locator('.row', { hasText: 'Miejsce zapisu' }).first(), 'Ta przeglądarka');
 });
 
+// ---------------------------------------------------------------- 1.31: dźwięki
+
+/** Śledzi odtwarzanie Web Audio: każde start() źródła – długość próbki i miejsce, od którego gra. */
+async function trackSounds(page) {
+  await page.evaluate(() => {
+    window.__sounds = [];
+    const { prototype } = window.AudioBufferSourceNode;
+    const start = prototype.start;
+    prototype.start = function (when, offset = 0) {
+      window.__sounds.push({ duration: Math.round(this.buffer.duration * 1000), offset: Math.round(offset * 1000) });
+      return start.call(this, when, offset);
+    };
+  });
+}
+const soundsPlayed = (page) => page.evaluate(() => ({ log: window.lexicards.sounds.map((entry) => ({ ...entry })), starts: window.__sounds }));
+
+test('dźwięki 1.31: fiszka odlatuje z szumem w stronę lotu („Umiem” – w lewo, „Powtórz” – w prawo); wyłączone w Ustawieniach – cisza', async ({ open }) => {
+  const page = await open();
+  await trackSounds(page);
+  await seedStudy(page);
+  await openStudySetup(page);
+  await startStudy(page);
+  await assess(page, 'all', 'know');
+  await assess(page, [], 'repeat');
+  let played = await soundsPlayed(page);
+  assert.deepEqual(played.log.map(({ sound, direction, played: on }) => [sound, direction, on]), [['card', -1, true], ['card', 1, true]]);
+  assert.deepEqual(played.starts, [{ duration: 260, offset: 0 }, { duration: 260, offset: 0 }], 'Web Audio gra próbki fiszki');
+
+  await page.goto(`${page.url().split('#')[0]}#/settings`);
+  const toggle = page.locator('[data-testid=sounds]');
+  await toggle.waitFor({ state: 'attached' });
+  assert.equal(await toggle.isChecked(), true, 'domyślnie włączone');
+  await page.locator('.row', { has: toggle }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUTPUT, 'dzwieki-ustawienia.png') });
+  await page.locator('.row', { has: toggle }).locator('label').click();
+  await waitUntil(() => page.evaluate(() => window.lexicards.library.getSettings().sounds === false), 'Dźwięki wyłączone');
+  await page.evaluate(() => { window.lexicards.sounds.length = 0; window.__sounds.length = 0; });
+  await openStudySetup(page);
+  await startStudy(page);
+  await assess(page, 'all', 'know');
+  played = await soundsPlayed(page);
+  assert.deepEqual(played.log.map((entry) => entry.played), [false]);
+  assert.deepEqual(played.starts, [], 'cisza');
+});
+
+test('dźwięki 1.31: kartka notatki – dźwięk do końca przewracania (przycisk – 720 ms, puszczona w połowie – końcówka, wraca – cisza); kartka rysunku – 900 ms', async ({ open, context }) => {
+  const page = await open();
+  await trackSounds(page);
+  const { book } = await openLongNote(page);
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-page-next]').click();
+  await notePageShown(page, 2);
+  await dialog.locator('[data-testid=note-page-previous]').click();
+  await notePageShown(page, 1);
+  let played = await soundsPlayed(page);
+  assert.deepEqual(played.log.map(({ sound, land, offset, direction }) => [sound, land, offset, direction]),
+    [['page', 720, 0, 1], ['page', 720, 0, -1]], 'dalej i wstecz – klapnięcie po 720 ms');
+  assert.deepEqual(played.starts.map((entry) => entry.duration), [950, 950]);
+  // Palec puszcza kartkę w połowie – gra końcówka dźwięku, klapnięcie razem z końcem animacji.
+  const box = await book.boundingBox();
+  const touch = await touchAt(context, page, box.x + box.width - 12, box.y + box.height - 16);
+  await touch.move(box.x + box.width / 2, box.y + box.height - 40);
+  await touch.end();
+  await notePageShown(page, 2);
+  played = await soundsPlayed(page);
+  const dragged = played.log.at(-1);
+  assert.equal(dragged.sound, 'page');
+  assert.ok(dragged.offset > 100 && dragged.offset < 720, `dźwięk od środka: ${JSON.stringify(dragged)}`);
+  assert.equal(played.starts.at(-1).offset, dragged.offset);
+  // Kartka wraca na miejsce (puszczona za wcześnie) – bez dźwięku.
+  const count = played.log.length;
+  const back = await touchAt(context, page, box.x + box.width - 12, box.y + box.height - 16);
+  await back.move(box.x + box.width - 40, box.y + box.height - 24);
+  await back.end();
+  await page.waitForTimeout(400);
+  await notePageShown(page, 2);
+  assert.equal((await soundsPlayed(page)).log.length, count, 'niedokończone przewrócenie – cisza');
+  await dialog.locator('[data-testid=note-left]').click();
+  await noteDialog(page).waitFor({ state: 'detached' });
+
+  // Rysunek: kartki przewracają się 900 ms – dźwięk do końca przewracania.
+  await page.evaluate(() => { window.lexicards.sounds.length = 0; window.__sounds.length = 0; });
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Dźwięk</p>');
+  const pages = editor.locator('[data-testid=drawing-pages]');
+  await pages.click();
+  await page.locator('[data-testid=drawing-page-new]').click();
+  await expectText(pages, 'Kartka 2 z 2');
+  await editor.locator('[data-testid=drawing-page-prev]').click();
+  await expectText(pages, 'Kartka 1 z 2');
+  played = await soundsPlayed(page);
+  const turns = played.log.filter((entry) => entry.sound === 'page');
+  assert.ok(turns.length >= 1 && turns.every((entry) => entry.land === 900), `rysunek: ${JSON.stringify(played.log)}`);
+  assert.equal(turns.at(-1).direction, -1);
+  assert.equal(played.starts.at(-1).duration, 1175);
+});
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

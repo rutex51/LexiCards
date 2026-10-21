@@ -30,6 +30,7 @@ import {
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
 import { renderMath } from './math.js';
+import { playPage } from './sounds.js';
 
 /** Akapit dzielimy między stronami, gdy na dole zostało co najmniej tyle wierszy. */
 const MIN_LINES_TO_SPLIT = 2.2;
@@ -722,7 +723,7 @@ export function noteBook({
         under: elements[direction > 0 ? index + 1 : index]
       };
     }
-    Object.assign(sheet, { width, height, target: index + direction * shown() });
+    Object.assign(sheet, { width, height, direction, target: index + direction * shown() });
     sheet.cast = h('div', { class: 'note-curl__layer', 'aria-hidden': 'true' }, h('span', { class: 'note-curl__band note-curl__band--cast' }));
     sheet.fold = h('div', { class: 'note-curl__layer', 'aria-hidden': 'true' }, h('span', { class: 'note-curl__band note-curl__band--fold' }));
     sheet.light = h('span', { class: 'note-curl__band note-curl__band--light', 'aria-hidden': 'true' });
@@ -823,6 +824,7 @@ export function noteBook({
     const step = prepareTurn(direction);
     grip(step, cornerOf('bottom', step.width, step.height));
     const { corner, width, height } = step;
+    playPage({ land: TURN_DURATION, direction });
     await animate(step, (t) => constrained(step, cornerPath(corner, width, height, step.fromRest ? t : 1 - t)), TURN_DURATION, easeInOut);
     finishTurn(step, true);
     busy = false;
@@ -925,6 +927,8 @@ export function noteBook({
     const goal = completed === step.fromRest ? turnedCorner(step.corner) : step.corner;
     const distance = Math.hypot(goal.x - from.x, goal.y - from.y);
     const duration = Math.max(140, (TURN_DURATION * 0.8 * distance) / (2 * step.width));
+    // Puszczona kartka: końcówka dźwięku – klapnięcie razem z końcem animacji.
+    if (completed) playPage({ land: TURN_DURATION, direction: step.direction, remaining: duration });
     await animate(step, (t) => constrained(step, { x: from.x + (goal.x - from.x) * t, y: from.y + (goal.y - from.y) * t }), duration, easeOut);
     finishTurn(step, completed);
     busy = false;

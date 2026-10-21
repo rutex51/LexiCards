@@ -118,6 +118,7 @@ export function defaultSettings() {
     listenRepeatAnswer: false,     // powtórzyć odpowiedź drugi raz
     listenDetailLanguage: 'en',    // język definicji i przykładu: en | pl
     listenBackground: null,        // wynik sprawdzenia czytania przy zablokowanym ekranie: { result, testedAt }
+    sounds: true,                  // dźwięki fiszki i kartek (od 1.31, ui/sounds.js)
     listenKeepAudio: true,         // cichy dźwięk w tle podczas słuchania (Bluetooth, CarPlay) i przyciski systemu
     listenNote: 'off',             // notatki lekcji przed pojęciami: off | pl | en | both
     dailyLearningGoal: 20,

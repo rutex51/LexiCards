@@ -28,6 +28,7 @@ js/ui/color-picker.js      wybór własnego koloru: siatka, suwaki RGB z kodem H
 js/ui/router.js            adresy po znaku # i historia przeglądarki (od 1.23 Nauka z kilkoma lekcjami: #/study/lessons/id1+id2)
 js/ui/study-calendar.js    plan nauki w kalendarzu (od 1.23): okno (dzień, godzina, czas, powtarzanie, przypomnienie, prywatność), plik .ics
 js/ui/speech.js            wymowa przez syntezator mowy przeglądarki
+js/ui/sounds.js            dźwięki (od 1.31): kontekst Web Audio po pierwszym geście, pogłos pokoju (ConvolverNode), odmiany próbek, odtwarzanie od środka, dziennik `soundLog`
 js/ui/material.js          wybór materiału (dziedzina, moduł, lekcje) wspólny dla nauki i quizu
 js/ui/charts.js            wykresy SVG (w czasie, pasek udziałów, miernik) z podpowiedzią i tabelą danych
 js/ui/listen-player.js     odtwarzacz słuchania: kolejne kroki czytane syntezatorem mowy, pauza, dalej, powtórz
@@ -55,6 +56,7 @@ js/core/storage-memory.js  adapter w pamięci (testy, praca bez bazy przeglądar
 js/core/storage-idb.js     adapter IndexedDB (domyślny)
 js/core/storage-snapshot.js magazyn w jednym pliku (od 1.30.2): całość w pamięci, po każdej zmianie zapis migawki przez `sink` (przyszły plik danych w OneDrive)
 js/core/model.js           kształt rekordów, wartości domyślne, stałe
+js/core/sounds.js          synteza dźwięków (od 1.31): fiszka odlatująca, kartka „album – gruby papier” o zadanej długości, odpowiedź impulsowa pokoju
 js/core/backup.js          kopia zapasowa: plik danych i plik obrazów i załączników – tworzenie, walidacja, przywracanie
 js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (PDF, Word, Excel, PowerPoint…)
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
@@ -1387,6 +1389,35 @@ dostają szare tło tak samo jak przy aktualizacji.
 Kopie w formacie 2 (wersje 1.1–1.7, obrazy w Base64 w tym samym pliku) nadal się przywracają:
 obrazy z pliku trafiają do bazy, a opis obrazu bez bajtów w takiej kopii jest pomijany. W formacie 3
 opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
+
+## Dźwięki (od 1.31)
+
+Próbki liczy `js/core/sounds.js` – bez plików i bez przeglądarki (testy w Node.js): szum, filtry
+dwubiegunowe (RBJ) i obwiednie, z ziarnem losowania (`seed` – ta sama próbka przy tym samym ziarnie).
+
+- `cardSound({ rate, direction })` – fiszka odlatuje (0,26 s): świst z pasmem 700 → 3000 Hz, trzask
+  krawędzi po 40%, stuknięcie 170 Hz po 72%; stereo w stronę lotu (`direction` −1 – „Umiem”, w lewo).
+- `pageSound({ rate, land, direction })` – kartka „album – gruby papier”: tarcie palcem, trzaski włókien
+  (w pierwszych dwóch trzecich, rozkład potęgowy głośności), podmuch z drganiem 12–25 Hz, pyknięcie nad
+  grzbietem, klapnięcie (rezonanse stosu ok. 200 i 490 Hz). Fazy są ułamkami czasu kartki
+  `time = land / PAGE_LAND` (`PAGE_LAND = 0.8`), więc **klapnięcie wypada po `land` sekundach** – długość
+  animacji; dłuższa animacja rozciąga cały dźwięk (gęstość trzasków na sekundę zostaje). Stereo
+  z prawej na lewą (wstecz – odwrotnie).
+- `roomImpulse()` – odpowiedź impulsowa małego pokoju (wczesne odbicia + zanikający szum, 0,22 s).
+
+`js/ui/sounds.js` tworzy `AudioContext` przy pierwszym `pointerdown` / `keydown` (Safari gra dopiero po
+geście), z pogłosem przez `ConvolverNode` (dwa kanały odpowiedzi, udział 0,16) i głośnością 0,45.
+Próbki liczone są z częstotliwością 24 kHz przy pierwszym użyciu i zapamiętane (do 25 buforów), trzy
+odmiany na zmianę; następna odmiana liczy się po końcu animacji. Bez `<audio>` i bez
+`navigator.audioSession`, żeby nie zmieniać dźwięku słuchania (`audio-keepalive.js`). Ustawienie
+`sounds` (domyślnie `true`) sprawdzane przy każdym dźwięku; `window.lexicards.sounds` – dziennik
+(testy).
+
+Podpięcie: `study-session.js` `#flyOut` (220 ms animacji, po sprawdzeniu ograniczenia ruchu);
+`note-book.js` `turn()` – `playPage({ land: TURN_DURATION })` (720 ms), a kartka puszczona po
+przeciągnięciu (tylko przewrócona) – `remaining: duration`: gra końcówka dźwięku kartki 720 ms od
+`offset = 720 − duration` (wejście 15 ms), więc klapnięcie wypada z końcem animacji; edytor rysunku
+`flipTo` – `land: FLIP_MS` (900 ms). Bez animacji (ograniczenie ruchu) – bez dźwięku.
 
 ## Testy
 

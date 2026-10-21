@@ -92,6 +92,7 @@ import { symbolField } from './symbols.js';
 import { TEXT_FONT, TEXT_LINE, measureText, textFont, textLines } from './canvas-text.js';
 import { measureSticky, measureTable, naturalTableWidth, paintSticky, paintStickyPopover, paintTable, stickyDate, stickyPopoverBox, tableColumnWidths } from './drawing-boxes.js';
 import { openTableEditor } from './table-editor.js';
+import { playPage } from './sounds.js';
 
 const PEN_KEY = 'lexicards-pen-seen';
 /** Zakres powiększenia względem „cała strona na ekranie”. */
@@ -3581,6 +3582,7 @@ export function openDrawingEditor({
       if (!motion) return;
       renderBase();
       flipping = { forward, before, after: snapshotPage(), start: performance.now() };
+      playPage({ land: FLIP_MS, direction: forward ? 1 : -1 });
       flipCanvas.width = base.width;
       flipCanvas.height = base.height;
       flipCanvas.hidden = false;

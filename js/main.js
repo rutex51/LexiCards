@@ -21,6 +21,7 @@ import { StudySessionScreen } from './ui/screens/study-session.js';
 import { StudySetupScreen } from './ui/screens/study-setup.js';
 import { LessonScreen } from './ui/screens/terms.js';
 import { Shell } from './ui/shell.js';
+import { configureSounds, soundLog } from './ui/sounds.js';
 import { APP_VERSION, BUILD_ID } from './version.js';
 
 const SCREENS = {
@@ -141,6 +142,7 @@ async function boot() {
   const library = new Library(adapter);
   await library.load();
   applyAppearance(library.getSettings());
+  configureSounds({ enabled: () => library.getSettings().sounds !== false });
 
   const wide = window.matchMedia(WIDE_QUERY);
   /** Bieżący ekran: { key, screen }. Obiekt ekranu żyje, dopóki adres się nie zmieni. */
@@ -253,7 +255,7 @@ async function boot() {
   registerServiceWorker();
 
   // Uchwyt dla testów automatycznych i diagnostyki w konsoli.
-  window.lexicards = { library, version: APP_VERSION, build: BUILD_ID, storage: adapter.kind };
+  window.lexicards = { library, version: APP_VERSION, build: BUILD_ID, storage: adapter.kind, sounds: soundLog };
   root.dataset.ready = 'true';
 }
 

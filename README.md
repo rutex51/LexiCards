@@ -1,4 +1,4 @@
-# LexiCards 1.30
+# LexiCards 1.31
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -39,8 +39,9 @@ Rysunek: rodzaj linii kształtów (przerywana, osiowa, dwupunktowa, kropkowa), p
 Plik PDF notatki tworzony w aplikacji – prawdziwy tekst, strona A4, wybór jakości obrazów, „Udostępnij…” na iPhonie (wersja 1.28): [docs/RELEASE-1.28.md](docs/RELEASE-1.28.md).
 Notatki: osobne okno tekstu na cały ekran i okno „Obrazy i załączniki”, ołówek na miniaturze, oczko (obiekt ukryty w notatce), usunięcie obiektu usuwa jego odwołania, ⓘ chowa podpowiedzi w oknach (wersja 1.29): [docs/RELEASE-1.29.md](docs/RELEASE-1.29.md).
 Rysunek: rysunki notatki (i jej zdjęcia) przewracane jak kartki w jednym oknie, palec też rysuje (przełącznik), obrót zaznaczenia uchwytem, odbicie lustrzane, Shift – kilka elementów kliknięciami (wersja 1.30); okno „Obrazy i załączniki” w układzie okien – białe, sekcje w ramkach (1.30.1); wydzielony magazyn danych – przygotowanie pod plik danych w OneDrive (1.30.2): [docs/RELEASE-1.30.md](docs/RELEASE-1.30.md).
+Dźwięki: szum odlatującej fiszki i szelest przewracanej kartki notatki i rysunku, tak długi jak przewracanie (wersja 1.31): [docs/RELEASE-1.31.md](docs/RELEASE-1.31.md).
 
-## Co potrafi wersja 1.30
+## Co potrafi wersja 1.31
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -175,6 +176,9 @@ Rysunek: rysunki notatki (i jej zdjęcia) przewracane jak kartki w jednym oknie,
   szare tło, a inny kolor można wybrać w edycji dziedziny. Od 1.26 wszystkie okna (formularze, okna
   rysunku, tabeli, kalendarza, równań) wyglądają tak samo: białe tło jak panele edytora rysunku, każde
   pole i przełącznik w cienkiej zaokrąglonej ramce, aktywne pole – ramka w kolorze aplikacji.
+- Dźwięki (od 1.31, do wyłączenia w Ustawieniach → Dźwięki): fiszka odlatująca po decyzji – krótki
+  szum w stronę lotu; przewracana kartka notatki i rysunku – szelest grubego papieru z klapnięciem
+  w chwili, gdy kartka kładzie się na drugą stronę. Dźwięki powstają w aplikacji (bez plików i internetu).
 - Praca bez internetu po pierwszym otwarciu.
 - 40 przykładowych pojęć (Business English, Metrology) do wczytania jednym przyciskiem.
 
