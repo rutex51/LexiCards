@@ -5,7 +5,7 @@
 // Każda zmiana dowolnego pliku zmienia wersję, więc przeglądarka pobiera nowy komplet
 // i nigdy nie miesza plików z dwóch wydań.
 
-const VERSION = 'f730199f';
+const VERSION = 'bbad2c8c';
 const CACHE = `lexicards-${VERSION}`;
 const ASSETS = [
   "css/app.css",
@@ -61,6 +61,7 @@ const ASSETS = [
   "js/core/template-image.js",
   "js/core/templates.js",
   "js/core/text.js",
+  "js/core/tool-ring.js",
   "js/core/transform.js",
   "js/core/xlsx.js",
   "js/core/zip.js",
@@ -79,6 +80,7 @@ const ASSETS = [
   "js/ui/drawing-boxes.js",
   "js/ui/drawing-gdt.js",
   "js/ui/drawing-paint.js",
+  "js/ui/drawing-ring.js",
   "js/ui/drawing.js",
   "js/ui/files.js",
   "js/ui/fit-table.js",

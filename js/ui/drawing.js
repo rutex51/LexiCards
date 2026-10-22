@@ -59,6 +59,8 @@ import { rememberFit } from '../core/fits.js';
 import { MIRROR_AXES, MIRROR_LABELS, canTurn, mirrorStroke, rotateStroke, snapTurn, transformStrokes, turnDegrees } from '../core/transform.js';
 import { cleanColumnWidths, moveColumnBorder } from '../core/tables.js';
 import { openFitTable } from './fit-table.js';
+import { RING_SIDES, TOOL_GROUPS, USER_GROUPS, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPartHidden } from '../core/tool-ring.js';
+import { createRing } from './drawing-ring.js';
 import {
   DIM_PREFIXES, FIT_RE, LABEL_TEXT_MAX, POINT_MARKS, POINT_MARK_LABELS, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_DASHES, SHAPE_DASH_LABELS,
   SHAPE_FILLS, SHAPE_FILL_LABELS, SHAPE_LABELS, SKEW_DEGREES_LIMIT, canDash, hasCaps, isPointShape, pointMark, shapeDash, withDash,
@@ -664,6 +666,8 @@ export function openDrawingEditor({
     const tools = loadTools();
     /** Narzędzie: 'pen', 'highlighter', 'eraser' albo 'select' (zaznaczanie prostokątem albo lassem). */
     let tool = 'pen';
+    /** Ostatnie narzędzie inne niż zaznaczanie – lewy Alt i przycisk zaznaczania wracają do niego (od 1.32). */
+    let lastTool = 'pen';
     let penSeen = penSeenBefore();
     /** Palec przesuwa stronę: aplikacja zna rysik, a (od 1.30) palec nie ma rysować. */
     const fingerPans = () => penSeen && !tools.fingerDraws;
@@ -711,7 +715,7 @@ export function openDrawingEditor({
 
     // Widok: skala (px ekranu na jednostkę rysunku) i przesunięcie strony; zoom – względem „cała strona”;
     // top – miejsce u góry płótna zajęte przez pasek narzędzi (pasek leży nad płótnem).
-    const view = { zoom: 1, scale: 1, x: 0, y: 0, width: 0, height: 0, top: STAGE_MARGIN, dpr: 1 };
+    const view = { zoom: 1, scale: 1, x: 0, y: 0, width: 0, height: 0, top: STAGE_MARGIN, bottom: STAGE_MARGIN, dpr: 1 };
     const stage = h('div', { class: 'drawing__stage', dataset: { testid: 'drawing-stage' } });
     const base = h('canvas', { class: 'drawing__canvas', 'aria-hidden': 'true' });
     const live = h('canvas', { class: 'drawing__canvas drawing__canvas--live', role: 'img', 'aria-label': `Płótno rysunku: ${title}`, dataset: { testid: 'drawing-canvas' } });
@@ -763,17 +767,17 @@ export function openDrawingEditor({
     /** Spirala przy lewej krawędzi (od 1.24.1) – kartki bez zdjęcia; miejsce na nią po obu stronach (strona na środku). */
     const hasSpiral = () => !drawing.photo;
     const spiralRoom = () => (hasSpiral() ? SPIRAL_OUT : 0);
-    const fitScale = () => Math.min((view.width - STAGE_MARGIN * 2) / (drawing.width + spiralRoom() * 2), (view.height - view.top - STAGE_MARGIN) / drawing.height);
+    const fitScale = () => Math.min((view.width - STAGE_MARGIN * 2) / (drawing.width + spiralRoom() * 2), (view.height - view.top - view.bottom) / drawing.height);
     /** Strona mniejsza niż ekran – na środku (pod paskiem narzędzi); większa – nie ucieka poza krawędź (spirala – w zasięgu). */
     const clampView = () => {
       const pageWidth = drawing.width * view.scale;
       const pageHeight = drawing.height * view.scale;
-      const room = view.height - view.top - STAGE_MARGIN;
+      const room = view.height - view.top - view.bottom;
       const spiral = spiralRoom() * view.scale;
       view.x = pageWidth + spiral * 2 <= view.width - STAGE_MARGIN * 2 + 0.5 ? (view.width - pageWidth) / 2
         : Math.min(STAGE_MARGIN + spiral, Math.max(view.width - STAGE_MARGIN - pageWidth, view.x));
       view.y = pageHeight <= room ? view.top + (room - pageHeight) / 2
-        : Math.min(view.top, Math.max(view.height - STAGE_MARGIN - pageHeight, view.y));
+        : Math.min(view.top, Math.max(view.height - view.bottom - pageHeight, view.y));
     };
     const setZoom = (zoom, anchorX = view.width / 2, anchorY = view.height / 2) => {
       const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
@@ -2164,7 +2168,13 @@ export function openDrawingEditor({
       view.height = box.height;
       // Miejsce pod paskiem narzędzi – mierzone przy otwarciu, obrocie ekranu i „100%”; zmiana
       // narzędzia (pasek o inny wiersz wyższy na telefonie) nie przesuwa strony.
-      view.top = Math.max(STAGE_MARGIN, topBar.getBoundingClientRect().bottom - box.top + 8);
+      // Od 1.32 pod górnym menu (bez uchwytu); dolny pasek leży nad marginesem strony – da się go schować.
+      view.top = Math.max(STAGE_MARGIN, toolbar.getBoundingClientRect().bottom - box.top + 8);
+      view.bottom = STAGE_MARGIN;
+      // Kółka narzędzi: na szerokim ekranie obok górnego menu, na węższym – pod nim.
+      const ringTop = box.width >= 1100 ? 10 : Math.max(10, Math.round(toolbar.getBoundingClientRect().bottom - box.top + 14));
+      body.style.setProperty('--drawing-ring-top', `${ringTop}px`);
+      applyUi();
       view.dpr = Math.min(window.devicePixelRatio || 1, 3);
       for (const canvas of [base, live]) {
         canvas.width = Math.round(box.width * view.dpr);
@@ -2183,30 +2193,22 @@ export function openDrawingEditor({
     };
     const observer = new ResizeObserver(resize);
 
-    // ---- pasek narzędzi
-    const toolButton = (id, label, iconName) => h('button', {
-      type: 'button', class: 'drawing__tool', 'aria-label': label, title: label, 'aria-pressed': 'false',
-      dataset: { tool: id, testid: `drawing-tool-${id}` },
-      onClick: () => {
-        // Narzędzie wybrane przy przytrzymanym Ctrl (od 1.19) – zostaje po puszczeniu klawisza.
-        ctrlHold = null;
-        // Drugie dotknięcie aktywnego pióra albo zakreślacza – ustawienia; kształty – wybór kształtu.
-        if (tool === id && (id === 'pen' || id === 'highlighter')) {
-          toggleSettings();
-          return;
-        }
-        if (id === 'shape') {
-          const open = tool !== 'shape' || shapePanel.hidden;
-          if (tool !== 'shape') setTool('shape');
-          closeSettings();
-          if (open) toggleShapePanel();
-          return;
-        }
-        setTool(id);
-      }
-    }, icon(iconName, { size: 24 }));
+    // ---- pasek narzędzi (od 1.32: górne menu – narzędzia grupy z kółka, kolor i grubość, wybór; dolny pasek – narzędzia ogólne)
+    /** Przycisk narzędzia albo polecenia w górnym menu – ikona i krótki napis (na telefonie sama ikona). */
+    const menuButton = (item, label, iconName, testID, short = label) => h('button', {
+      type: 'button', class: 'drawing__tool drawing__tool--labeled', 'aria-label': label, title: label,
+      dataset: { item, testid: testID }, onClick: () => activateItem(item)
+    }, icon(iconName, { size: 24 }), h('span', { class: 'drawing__tool-label', 'aria-hidden': 'true' }, short));
+    const toolButton = (id, label, iconName) => {
+      const button = menuButton(id, label, iconName, `drawing-tool-${id}`);
+      button.dataset.tool = id;
+      button.setAttribute('aria-pressed', 'false');
+      return button;
+    };
     function setTool(id) {
       if (id !== 'select') clearSelection();
+      // Lewy Alt (od 1.32) wraca do ostatniego narzędzia sprzed zaznaczania.
+      if (id !== 'select') lastTool = id;
       tool = id;
       hover = null;
       closeSettings();
@@ -2216,28 +2218,40 @@ export function openDrawingEditor({
     const penButton = toolButton('pen', 'Pióro', 'pen');
     const highlighterButton = toolButton('highlighter', 'Zakreślacz', 'highlighter');
     const eraserButton = toolButton('eraser', 'Gumka', 'eraser');
-    const selectButton = toolButton('select', 'Zaznaczanie – prostokąt', 'marquee');
-    selectButton.dataset.shape = 'rect';
-    // Kształty (od 1.15): ikona – wybrany kształt.
-    const shapeButton = toolButton('shape', 'Kształty', 'shapeRect');
-    shapeButton.dataset.kind = 'rect';
-    const textButton = h('button', {
-      type: 'button', class: 'drawing__tool', 'aria-label': 'Pole tekstowe', title: 'Pole tekstowe', dataset: { testid: 'drawing-insert-text' },
-      onClick: () => editElement('text')
-    }, icon('textBox', { size: 24 }));
-    const mathButton = h('button', {
-      type: 'button', class: 'drawing__tool', 'aria-label': 'Wzór', title: 'Wzór (zapis jak w notatce)', dataset: { testid: 'drawing-insert-math' },
-      onClick: () => editElement('math')
-    }, icon('sigma', { size: 24 }));
+    // Zaznaczanie – na dolnym pasku (narzędzie ogólne); ikona – wybrany kształt obszaru.
+    const selectButton = h('button', {
+      type: 'button', class: 'drawing__tool', 'aria-label': 'Zaznaczanie – prostokąt', title: 'Zaznaczanie – prostokąt (lewy Alt, prawy przycisk myszy)',
+      'aria-pressed': 'false', dataset: { tool: 'select', shape: 'rect', testid: 'drawing-tool-select' },
+      onClick: () => {
+        ctrlHold = null;
+        setTool('select');
+      }
+    }, icon('marquee', { size: 24 }));
+    /** Krótkie napisy rodzajów kształtów w górnym menu. */
+    const SHAPE_SHORT = { curve: 'Po łuku' };
+    const kindButtons = new Map(SHAPES.map((kind) => {
+      const button = menuButton(`shape:${kind}`, SHAPE_LABELS[kind], SHAPE_ICONS[kind], `drawing-shape-${kind}`, SHAPE_SHORT[kind] ?? SHAPE_LABELS[kind]);
+      button.setAttribute('aria-pressed', 'false');
+      return [kind, button];
+    }));
+    const textButton = menuButton('text', 'Pole tekstowe', 'textBox', 'drawing-insert-text', 'Tekst');
+    const mathButton = menuButton('math', 'Wzór', 'sigma', 'drawing-insert-math');
+    mathButton.title = 'Wzór (zapis jak w notatce)';
     // Od 1.21: tabela (to samo okno tabeli co w notatce) i karteczka.
-    const tableButton = h('button', {
-      type: 'button', class: 'drawing__tool', 'aria-label': 'Tabela', title: 'Tabela', dataset: { testid: 'drawing-insert-table' },
-      onClick: () => editTable()
-    }, icon('table', { size: 24 }));
-    const stickyButton = h('button', {
-      type: 'button', class: 'drawing__tool', 'aria-label': 'Karteczka', title: 'Karteczka – notatka na rysunku', dataset: { testid: 'drawing-insert-sticky' },
-      onClick: () => editSticky()
-    }, icon('sticky', { size: 24 }));
+    const tableButton = menuButton('table', 'Tabela', 'table', 'drawing-insert-table');
+    const stickyButton = menuButton('sticky', 'Karteczka', 'sticky', 'drawing-insert-sticky');
+    stickyButton.title = 'Karteczka – notatka na rysunku';
+    // Od 1.22.1 symbole metrologiczne (od 1.32 – grupa na kółku): okno, potem dotknięcie krawędzi albo narożnika.
+    const gdtButton = menuButton('gdt', 'Ramka tolerancji', 'gdtFrame', 'drawing-symbol-gdt', 'Tolerancja');
+    const datumButton = menuButton('datum', 'Baza', 'datumMark', 'drawing-symbol-datum');
+    const roughnessButton = menuButton('roughness', 'Chropowatość', 'roughness', 'drawing-symbol-roughness');
+    /** Pozycja grupy → przycisk (ten sam przycisk w kilku grupach – pokazywana jest jedna grupa naraz). */
+    const itemButtons = new Map([
+      ['pen', penButton], ['highlighter', highlighterButton], ['eraser', eraserButton],
+      ...[...kindButtons].map(([kind, button]) => [`shape:${kind}`, button]),
+      ['text', textButton], ['math', mathButton], ['table', tableButton], ['sticky', stickyButton],
+      ['gdt', gdtButton], ['datum', datumButton], ['roughness', roughnessButton]
+    ]);
     const rulerButton = h('button', {
       type: 'button', class: 'drawing__tool', 'aria-label': 'Linijka', title: 'Linijka', 'aria-pressed': 'false', dataset: { testid: 'drawing-ruler' },
       onClick: () => toggleRuler()
@@ -2263,7 +2277,7 @@ export function openDrawingEditor({
         onClick: () => { tools.selectShape = shape; saveTools(tools); updateToolbar(); requestLive(); }
       }, icon(shape === 'lasso' ? 'lasso' : 'marquee', { size: 24 }))));
     const selectModes = h('div', { class: 'drawing__group drawing__modes', role: 'radiogroup', 'aria-label': 'Co zaznaczać' },
-      // Od 1.17 cztery tryby (z wycinkiem) – na telefonie „Fragm.”, żeby pasek miał najwyżej trzy wiersze.
+      // Od 1.17 cztery tryby (z wycinkiem) – na telefonie „Fragm.”.
       SELECT_MODES.map((mode) => h('button', {
         type: 'button', class: 'drawing__mode', role: 'radio', title: SELECT_MODE_TITLES[mode], 'aria-label': SELECT_MODE_LABELS[mode],
         dataset: { mode, testid: `drawing-select-mode-${mode}` },
@@ -2281,7 +2295,6 @@ export function openDrawingEditor({
       type: 'button', class: 'drawing__chip', hidden: true, title: 'Wklej (Ctrl+V)', dataset: { testid: 'drawing-paste' }, onClick: () => paste()
     }, 'Wklej');
     // Zaznacz wszystko – na iPadzie bez klawiatury nie ma Ctrl+A.
-    // Na telefonie krócej („Wszystko”) – pasek zaznaczania mieści się w trzech wierszach.
     const selectGroup = h('div', { class: 'drawing__group' }, pasteButton, h('button', {
       type: 'button', class: 'drawing__chip', 'aria-label': 'Zaznacz wszystko', dataset: { testid: 'drawing-select-all' }, onClick: () => selectAll()
     }, h('span', { class: 'drawing__wide-label' }, 'Zaznacz wszystko'), h('span', { class: 'drawing__narrow-label' }, 'Wszystko')));
@@ -2293,25 +2306,44 @@ export function openDrawingEditor({
       type: 'button', class: 'drawing__tool', 'aria-label': 'Ponów', title: 'Ponów (Ctrl+Shift+Z)', dataset: { testid: 'drawing-redo' },
       onClick: () => stepHistory(true)
     }, icon('redo', { size: 24 }));
-    // Tło strony (od 1.15 – panel: rodzaj, jasność linii, szablon); na telefonie krótki napis.
-    const paperLabel = h('span', { class: 'drawing__wide-label' });
+    // Tło strony (od 1.15 – panel: rodzaj, jasność linii, szablon); od 1.32 na dolnym pasku – sama ikona, opis dla czytnika.
+    const paperLabel = h('span', { class: 'visually-hidden' });
     const paperButton = h('button', {
-      type: 'button', class: 'drawing__chip drawing__chip--paper', 'aria-haspopup': 'dialog', dataset: { testid: 'drawing-paper' }, hidden: Boolean(drawing.photo),
+      type: 'button', class: 'drawing__tool', 'aria-haspopup': 'dialog', dataset: { testid: 'drawing-paper' }, hidden: Boolean(drawing.photo),
       onClick: () => togglePaperPanel()
-    }, paperLabel, h('span', { class: 'drawing__narrow-label' }, 'Tło'));
+    }, icon('paper', { size: 24 }), paperLabel);
     const guideButton = h('button', {
       type: 'button', class: 'drawing__tool', 'aria-label': 'Liniuszek', title: 'Liniuszek – równoległe linie, do których przyciąga się kreska',
       'aria-pressed': 'false', dataset: { testid: 'drawing-guide' }, onClick: () => toggleGuide()
     }, icon('guide', { size: 24 }));
-    // Grupy narzędzi zawijają się w całości (na telefonie – w kilku wierszach).
+    // Górne menu: nazwa grupy, narzędzia grupy, pod nimi kolor i grubość (na telefonie – po dotknięciu kropki koloru).
+    const groupName = h('div', { class: 'drawing__group-name', dataset: { testid: 'drawing-group-name' } });
+    const toolRow = h('div', { class: 'drawing__row drawing__row--tools', role: 'group', dataset: { testid: 'drawing-tool-row' } });
+    const optionsDot = h('span', { class: 'drawing__options-dot' });
+    const optionsButton = h('button', {
+      type: 'button', class: 'drawing__tool drawing__options-toggle', 'aria-label': 'Kolor i grubość', title: 'Kolor i grubość', 'aria-expanded': 'false',
+      dataset: { testid: 'drawing-options' }, onClick: () => toggleOptions()
+    }, optionsDot);
+    const optionRow = h('div', { class: 'drawing__row drawing__row--options', dataset: { testid: 'drawing-option-row' } }, swatches, widths, eraserSizes, selectGroup);
     const toolbar = h('div', { class: 'drawing__toolbar', role: 'toolbar', 'aria-label': 'Narzędzia rysunku' },
-      h('div', { class: 'drawing__group' }, penButton, highlighterButton, eraserButton, selectButton, shapeButton, textButton, mathButton),
-      h('div', { class: 'drawing__group' }, tableButton, stickyButton),
-      swatches, widths, eraserModes, eraserSizes, selectShapes, selectModes, selectGroup,
-      h('div', { class: 'drawing__group' }, rulerButton, guideButton, undoButton, redoButton, paperButton));
+      groupName, h('div', { class: 'drawing__row drawing__row--main' }, optionsButton, toolRow), optionRow);
+    // Wybór bez osobnego okna (tryb gumki, obszar i tryb zaznaczania) – pastylka pod menu.
+    const choices = h('div', { class: 'drawing__choices', dataset: { testid: 'drawing-choices' } }, eraserModes, selectShapes, selectModes);
+    const topHandle = h('button', {
+      type: 'button', class: 'drawing__handle', 'aria-label': 'Schowaj górne menu', title: 'Schowaj górne menu (przesuń w górę)',
+      dataset: { testid: 'drawing-hide-top' }, onClick: () => setHidden('top', true)
+    }, h('span'));
+    // Dolny pasek: narzędzia ogólne.
+    const dockHandle = h('button', {
+      type: 'button', class: 'drawing__handle', 'aria-label': 'Schowaj dolny pasek', title: 'Schowaj dolny pasek (przesuń w dół)',
+      dataset: { testid: 'drawing-hide-bottom' }, onClick: () => setHidden('bottom', true)
+    }, h('span'));
+    const dock = h('div', { class: 'drawing__dock' }, dockHandle,
+      h('div', { class: 'drawing__dock-bar', role: 'toolbar', 'aria-label': 'Narzędzia ogólne' },
+        selectButton, rulerButton, guideButton, paperButton, h('span', { class: 'drawing__dock-gap', 'aria-hidden': 'true' }), undoButton, redoButton));
 
     const zoomButton = h('button', {
-      type: 'button', class: 'drawing__pill', title: 'Cała strona', dataset: { testid: 'drawing-zoom' },
+      type: 'button', class: 'drawing__pill drawing__pill--gray', title: 'Powiększenie – dotknij: cała strona', dataset: { testid: 'drawing-zoom' },
       onClick: () => { view.zoom = 1; view.width = 0; resize(); zoomButton.textContent = '100%'; }
     }, '100%');
     // Rysik i palec (od 1.30 przełącznik): palec przesuwa stronę (dłoń nie zostawia śladów) albo też rysuje –
@@ -2333,7 +2365,7 @@ export function openDrawingEditor({
       flash(tools.fingerDraws ? 'Palec też rysuje – dwa palce przesuwają i powiększają stronę.' : 'Rysuje tylko rysik – palec przesuwa stronę, dłoń oparta o ekran nie zostawia śladów.');
     }
     const selectHint = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, dataset: { testid: 'drawing-select-hint' } });
-    const notice = h('span', { class: 'drawing__pill drawing__pill--info drawing__pill--notice', hidden: true, role: 'status', dataset: { testid: 'drawing-notice' } });
+    const notice = h('span', { class: 'drawing__pill drawing__pill--info drawing__pill--notice drawing__notice', hidden: true, role: 'status', dataset: { testid: 'drawing-notice' } });
     const lengthPill = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, dataset: { testid: 'drawing-ruler-length' } });
     // Kąt linijki; dotknięcie – skala rysunku i przyciąganie (od 1.14).
     const rulerText = h('span');
@@ -2364,7 +2396,11 @@ export function openDrawingEditor({
     }, icon(name, { size: 16 }));
     const pagePrev = pageStep(-1, 'Poprzednia kartka', 'chevronLeft', 'drawing-page-prev');
     const pageNext = pageStep(1, 'Następna kartka', 'chevronRight', 'drawing-page-next');
-    const status = h('div', { class: 'drawing__status' }, notice, penPill, selectHint, lengthPill, guidePill, rulerPill, perpendicularButton, pagePrev, pagePill, pageNext, zoomButton);
+    // Od 1.32: po lewej – pastylki informacyjne (szare), po prawej – to, co można zmienić (białe).
+    const scalePill = h('span', { class: 'drawing__pill drawing__pill--info', dataset: { testid: 'drawing-scale-info' } });
+    const info = h('div', { class: 'drawing__info', dataset: { testid: 'drawing-info' } }, selectHint, lengthPill, scalePill, zoomButton);
+    const status = h('div', { class: 'drawing__status', dataset: { testid: 'drawing-status' } }, penPill, guidePill, rulerPill, perpendicularButton,
+      h('div', { class: 'drawing__pages' }, pagePrev, pagePill, pageNext));
     let noticeTimer = 0;
     /** Krótki komunikat w edytorze (komunikaty aplikacji są pod oknem rysunku). */
     function flash(message) {
@@ -2379,9 +2415,11 @@ export function openDrawingEditor({
       'aria-pressed': String(pressed), dataset: { testid: testID }, onClick
     });
     function updateToolbar() {
-      for (const button of [penButton, highlighterButton, eraserButton, selectButton, shapeButton]) {
+      for (const button of [penButton, highlighterButton, eraserButton, selectButton]) {
         button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
       }
+      for (const [kind, button] of kindButtons) button.setAttribute('aria-pressed', String(tool === 'shape' && tools.shape === kind));
+      updateMenu();
       // Kształty (od 1.15) mają kolor i grubość pióra.
       const inking = tool === 'pen' || tool === 'highlighter' || tool === 'shape';
       const highlighter = tool === 'highlighter';
@@ -2404,6 +2442,7 @@ export function openDrawingEditor({
           'aria-expanded': String(!colorPanel.hidden), dataset: { testid: 'drawing-color-custom' }, onClick: () => toggleColorPanel()
         }, icon('plus', { size: 16 })));
       swatches.hidden = !inking;
+      optionsDot.style.setProperty('--swatch', inking ? (highlighter ? highlighterHex(chosen) : inkHex(chosen)) : 'transparent');
       // Pasek pod ikoną zakreślacza w kolorze wybranego zakreślacza.
       highlighterButton.style.setProperty('--highlighter-ink', highlighterHex(tools.highlighterColor));
       const sizes = highlighter ? tools.highlighterWidths.map((width) => width / 3) : tools.penWidths.map((width) => (width.min + width.max) / 1.4);
@@ -2426,6 +2465,11 @@ export function openDrawingEditor({
       for (const button of eraserSizes.children) button.setAttribute('aria-checked', String(Number(button.dataset.size) === tools.eraserSize));
       eraserButton.setAttribute('aria-label', `Gumka – ${ERASER_MODE_LABELS[tools.eraserMode].toLowerCase()}`);
       for (const group of [selectShapes, selectModes, selectGroup]) group.hidden = tool !== 'select';
+      // Wiersz koloru i pastylka wyboru – tylko gdy mają co pokazać.
+      optionRow.hidden = [swatches, widths, eraserSizes, selectGroup].every((group) => group.hidden);
+      optionsButton.hidden = optionRow.hidden;
+      if (optionRow.hidden) setOptionsOpen(false);
+      choices.hidden = [eraserModes, selectShapes, selectModes].every((group) => group.hidden);
       for (const button of selectShapes.children) button.setAttribute('aria-checked', String(button.dataset.shape === tools.selectShape));
       for (const button of selectModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === selectMode()));
       pasteButton.hidden = !readClipboard();
@@ -2436,12 +2480,6 @@ export function openDrawingEditor({
         const label = `Zaznaczanie – ${OUTLINE_LABELS[tools.selectShape].toLowerCase()}`;
         selectButton.setAttribute('aria-label', label);
         selectButton.title = label;
-      }
-      if (shapeButton.dataset.kind !== tools.shape) {
-        shapeButton.dataset.kind = tools.shape;
-        replaceChildren(shapeButton, icon(SHAPE_ICONS[tools.shape], { size: 24 }));
-        shapeButton.setAttribute('aria-label', `Kształty – ${SHAPE_LABELS[tools.shape].toLowerCase()}`);
-        shapeButton.title = `Kształty – ${SHAPE_LABELS[tools.shape].toLowerCase()}`;
       }
       rulerButton.setAttribute('aria-pressed', String(Boolean(ruler)));
       guideButton.setAttribute('aria-pressed', String(Boolean(guide)));
@@ -2454,7 +2492,259 @@ export function openDrawingEditor({
       paperButton.setAttribute('aria-label', `Tło strony: ${PAPER_LABELS[drawing.paper].toLowerCase()}${drawing.template ? ' i szablon' : ''} – zmień`);
       paperButton.title = paperLabel.textContent;
       paperButton.setAttribute('aria-expanded', String(!paperPanel.hidden));
+      scalePill.textContent = `Kratka: ${formatLength(PAPER_STEP, drawing.scale)}`;
+      updateRings();
     }
+
+    // ---- kółka narzędzi (od 1.32): grupy standardowe po prawej, użytkownika po lewej
+    /** Pokazywana grupa: { side, id } – jej narzędzia są w pierwszym wierszu górnego menu. */
+    let shownGroup = startGroup(tools.toolGroup, toolItem(tool, tools.shape));
+    /** Ostatnio użyte narzędzie każdej grupy – wybór grupy wraca do niego. */
+    const groupTools = new Map();
+    let menuGroup = null;
+    function updateMenu() {
+      const group = findGroup(shownGroup.side, shownGroup.id);
+      const key = `${shownGroup.side}:${group.id}`;
+      if (menuGroup !== key) {
+        menuGroup = key;
+        replaceChildren(toolRow, group.items.map((item) => itemButtons.get(item)));
+        groupName.textContent = group.label;
+        toolbar.dataset.group = group.id;
+      }
+    }
+    /** Wybór grupy z kółka: menu pokazuje jej narzędzia; grupa z narzędziami (pióro, kształty) – od razu ostatnie z nich. */
+    function showGroup(side, id) {
+      const group = findGroup(side, id);
+      if (!group) return;
+      shownGroup = { side, id };
+      tools.toolGroup = `${side}:${id}`;
+      saveTools(tools);
+      ctrlHold = null;
+      const current = toolItem(tool, tools.shape);
+      // Otwarte ustawienia kształtów: grupa tylko się pokazuje – kształt zmienia dopiero dotknięcie (jak w panelu do 1.31).
+      const browsing = tool === 'shape' && !shapePanel.hidden;
+      if (!group.items.includes(current) && !browsing) {
+        const remembered = groupTools.get(`${side}:${id}`);
+        const lastShape = `shape:${tools.shape}`;
+        // Grupa kształtów – ostatnio używany kształt (jak dawny przycisk „Kształty”), inaczej pierwsze narzędzie grupy.
+        const next = remembered && group.items.includes(remembered) ? remembered
+          : group.items.includes(lastShape) ? lastShape : group.items.find(isModeItem);
+        if (next) {
+          applyItem(next);
+          return;
+        }
+      }
+      // Narzędzie bez zmian – otwarty panel zostaje (np. ustawienia kształtu przy przejściu do „Konstrukcji”).
+      updateToolbar();
+      requestLive();
+    }
+    /** Narzędzie albo polecenie z menu; drugie dotknięcie wybranego narzędzia – jego ustawienia. */
+    function activateItem(item) {
+      ctrlHold = null;
+      const current = toolItem(tool, tools.shape);
+      if (item === current && (item === 'pen' || item === 'highlighter')) {
+        toggleSettings();
+        return;
+      }
+      if (item === current && item.startsWith('shape:')) {
+        toggleShapePanel();
+        return;
+      }
+      applyItem(item);
+    }
+    function applyItem(item) {
+      if (isModeItem(item)) groupTools.set(`${shownGroup.side}:${shownGroup.id}`, item);
+      if (item.startsWith('shape:')) {
+        const panelWasOpen = !shapePanel.hidden;
+        // Otwarte ustawienia kształtów zostają przy odcinku, strzałkach i punkcie – pod spodem zakończenia albo znacznik.
+        const keepPanel = (kind) => panelWasOpen && (hasCaps({ shape: kind }) || kind === 'point');
+        tools.shape = item.slice(6);
+        saveTools(tools);
+        if (tool !== 'shape') {
+          setTool('shape');
+          if (keepPanel(tools.shape)) toggleShapePanel();
+          return;
+        }
+        // Inny kształt przy narzędziu kształtów – zaznaczenie zostaje (jak w panelu kształtów do 1.31).
+        if (keepPanel(tools.shape)) renderShapePanel();
+        else closeSettings();
+        updateToolbar();
+        requestLive();
+        return;
+      }
+      if (isModeItem(item)) {
+        setTool(item);
+        return;
+      }
+      closeSettings();
+      updateToolbar();
+      const open = { text: () => editElement('text'), math: () => editElement('math'), table: () => editTable(), sticky: () => editSticky(),
+        gdt: () => editGdt(), datum: () => editDatum(), roughness: () => editRoughness() }[item];
+      open?.();
+    }
+    /** Wygląd dużego kółka (wariant C): wypełnienie w kolorze narzędzia, obwódka biała; narzędzie bez koloru – kolor aplikacji. */
+    function mainLook() {
+      const shape = tool === 'shape' ? tools.shape : null;
+      const iconName = tool === 'select' ? (tools.selectShape === 'lasso' ? 'lasso' : 'marquee')
+        : shape ? SHAPE_ICONS[shape] : tool === 'highlighter' ? 'highlighter' : tool === 'eraser' ? 'eraser' : 'pen';
+      const name = tool === 'select' ? 'Zaznaczanie' : shape ? SHAPE_LABELS[shape] : { pen: 'Pióro', highlighter: 'Zakreślacz', eraser: 'Gumka' }[tool] ?? 'Pióro';
+      const hex = tool === 'highlighter' ? highlighterHex(tools.highlighterColor) : tool === 'pen' || tool === 'shape' ? inkHex(tools.penColor) : null;
+      return {
+        icon: iconName,
+        fill: hex ?? 'var(--accent-fill)',
+        ink: hex ? (lightColor(hex) ? '#1d1d1f' : '#ffffff') : 'var(--on-accent)',
+        label: `${name}${tool === 'pen' || tool === 'highlighter' || tool === 'shape' ? ' – dotknij: ustawienia' : ''}`
+      };
+    }
+    /** Kolor jasny (żółty zakreślacz) – ikona na nim ciemna. */
+    function lightColor(hex) {
+      const value = parseInt(hex.slice(1, 7), 16);
+      const [r, g, b] = [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+      return 0.299 * r + 0.587 * g + 0.114 * b > 170;
+    }
+    function onRingMain(side) {
+      if (shownGroup.side !== side) {
+        const group = findGroup(side, menuGroups[side]) ?? groupsOf(side)[0];
+        showGroup(side, group.id);
+        return;
+      }
+      if (tool === 'pen' || tool === 'highlighter') toggleSettings();
+      else if (tool === 'shape') toggleShapePanel();
+      updateToolbar();
+    }
+    /** Ostatnio pokazana grupa każdego kółka (duże kółko drugiej strony pokazuje jej ikonę). */
+    const menuGroups = { right: shownGroup.side === 'right' ? shownGroup.id : TOOL_GROUPS[0].id, left: shownGroup.side === 'left' ? shownGroup.id : USER_GROUPS[0].id };
+    const rings = Object.fromEntries(RING_SIDES.map((side) => [side, createRing({
+      side,
+      groups: groupsOf(side),
+      label: side === 'right' ? 'Narzędzia standardowe' : 'Moje narzędzia',
+      onPick: (id) => showGroup(side, id),
+      onMain: () => onRingMain(side),
+      onHide: (hiddenNow) => setHidden(side, hiddenNow)
+    })]));
+    function updateRings() {
+      menuGroups[shownGroup.side] = shownGroup.id;
+      const narrow = isNarrow();
+      for (const side of RING_SIDES) {
+        const own = shownGroup.side === side;
+        const other = findGroup(side, menuGroups[side]) ?? groupsOf(side)[0];
+        rings[side].update({
+          active: own ? shownGroup.id : null,
+          main: own ? mainLook() : { icon: other.icon, fill: 'var(--accent-fill)', ink: 'var(--on-accent)', label: `${side === 'right' ? 'Narzędzia standardowe' : 'Moje narzędzia'}: ${other.label}` },
+          hidden: uiPartHidden(uiHidden, side, narrow),
+          all: uiAll,
+          narrow
+        });
+      }
+    }
+    const isNarrow = () => window.matchMedia?.('(max-width: 599px)').matches ?? false;
+
+    // ---- chowanie elementów interfejsu (od 1.32): przesunięcie do krawędzi, zakładka przywraca; oko w nagłówku – wszystko
+    const uiHidden = tools.uiHidden;
+    let uiAll = false;
+    function setHidden(part, value) {
+      uiHidden[part] = value;
+      tools.uiHidden = uiHidden;
+      saveTools(tools);
+      if (value && part === 'top') closeSettings();
+      applyUi();
+    }
+    function toggleAll() {
+      uiAll = !uiAll;
+      if (uiAll) closeSettings();
+      applyUi();
+    }
+    const showTab = (part, label, iconName, testID) => h('button', {
+      type: 'button', class: `drawing__show drawing__show--${part}`, hidden: true, 'aria-label': label, title: label,
+      dataset: { testid: testID }, onClick: () => setHidden(part, false)
+    }, icon(iconName, { size: 16 }));
+    const topTab = showTab('top', 'Pokaż górne menu', 'chevronDown', 'drawing-show-top');
+    const dockTab = showTab('bottom', 'Pokaż dolny pasek', 'chevronUp', 'drawing-show-bottom');
+    const infoTab = showTab('info', 'Pokaż informacje', 'chevronRight', 'drawing-show-info');
+    const statusTab = showTab('status', 'Pokaż kartki i przełączniki', 'chevronLeft', 'drawing-show-status');
+    function applyUi() {
+      const narrow = isNarrow();
+      const parts = [['top', topBar, topTab], ['bottom', dock, dockTab], ['info', info, infoTab], ['status', status, statusTab]];
+      for (const [part, element, tab] of parts) {
+        const hiddenPart = uiPartHidden(uiHidden, part, narrow);
+        element.classList.toggle('drawing--away', hiddenPart || uiAll);
+        element.inert = hiddenPart || uiAll;
+        tab.hidden = !hiddenPart || uiAll;
+      }
+      hideAllButton.setAttribute('aria-pressed', String(uiAll));
+      const label = uiAll ? 'Pokaż interfejs' : 'Ukryj cały interfejs';
+      hideAllButton.setAttribute('aria-label', label);
+      hideAllButton.title = label;
+      replaceChildren(hideAllButton, icon(uiAll ? 'eye' : 'eyeOff', { size: 22 }));
+      updateRings();
+    }
+    /**
+     * Przesunięcie elementu w stronę krawędzi chowa go (górne menu – w górę, dolny pasek – w dół, pastylki – na boki).
+     * Gest zaczyna się na elemencie (nie na kartce); dotknięcie przycisku działa jak zwykle.
+     */
+    function swipeAway(element, part, direction) {
+      let start = null;
+      element.addEventListener('pointerdown', (event) => {
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        if (event.target.closest('input, select, textarea, .drawing__settings, .drawing__row--tools')) return;
+        start = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+      });
+      element.addEventListener('pointermove', (event) => {
+        if (!start || start.id !== event.pointerId) return;
+        const dx = event.clientX - start.x;
+        const dy = event.clientY - start.y;
+        const along = direction === 'up' ? -dy : direction === 'down' ? dy : direction === 'left' ? -dx : dx;
+        const across = direction === 'up' || direction === 'down' ? Math.abs(dx) : Math.abs(dy);
+        if (!start.moved) {
+          if (along < 10 || along < across) return;
+          start.moved = true;
+          try {
+            element.setPointerCapture(event.pointerId);
+          } catch {
+            // bez przechwycenia gest też działa
+          }
+        }
+      });
+      const end = (event, cancelled) => {
+        if (!start || start.id !== event.pointerId) return;
+        const { moved, x, y } = start;
+        start = null;
+        if (!moved || cancelled) return;
+        const dx = event.clientX - x;
+        const dy = event.clientY - y;
+        const along = direction === 'up' ? -dy : direction === 'down' ? dy : direction === 'left' ? -dx : dx;
+        if (along > 36) setHidden(part, true);
+      };
+      element.addEventListener('pointerup', (event) => end(event, false));
+      element.addEventListener('pointercancel', (event) => end(event, true));
+    }
+    // Telefon (od 1.32): kolor i grubość po dotknięciu kropki koloru – pod jednym wierszem narzędzi.
+    let optionsOpen = false;
+    function setOptionsOpen(open) {
+      optionsOpen = open;
+      topBarElement()?.classList.toggle('drawing__top--options', open);
+      optionsButton.setAttribute('aria-expanded', String(open));
+    }
+    function toggleOptions() {
+      setOptionsOpen(!optionsOpen);
+    }
+    const topBarElement = () => toolbar.parentElement;
+
+    // ---- lewy Alt (od 1.32): samo naciśnięcie – zaznaczanie na stałe, ponownie – poprzednie narzędzie
+    /** Wciśnięty lewy Alt: clean – bez innego klawisza i bez wskaźnika w tym czasie. */
+    let altTap = null;
+    function toggleSelectTool() {
+      ctrlHold = null;
+      if (tool === 'select') {
+        setTool(lastTool);
+        flash(`Wrócono do: ${mainLook().label.split(' – ')[0].toLowerCase()}.`);
+        return;
+      }
+      const previous = mainLook().label.split(' – ')[0].toLowerCase();
+      setTool('select');
+      flash(`Zaznaczanie – lewy Alt wraca do: ${previous}.`);
+    }
+
     function updateGuidePill() {
       guidePill.hidden = !guide;
       if (!guide) return;
@@ -3032,34 +3322,9 @@ export function openDrawingEditor({
     }
     function renderShapePanel() {
       if (shapePanel.hidden) return;
+      // Od 1.32 rodzaje kształtów i symbole są w górnym menu (grupy na kółku) – tu ustawienia nowych kształtów.
       replaceChildren(shapePanel,
-        panelTitle('Kształty'),
-        h('div', { class: 'drawing__shape-kinds', role: 'radiogroup', 'aria-label': 'Kształt' }, SHAPES.map((kind) => h('button', {
-          type: 'button', class: 'drawing__shape-kind', role: 'radio', 'aria-checked': String(kind === tools.shape), dataset: { testid: `drawing-shape-${kind}` },
-          onClick: () => {
-            tools.shape = kind;
-            saveTools(tools);
-            // Odcinek, strzałka (od 1.19), strzałka po łuku i punkt (od 1.27): panel zostaje – pod spodem
-            // wybór zakończeń albo znacznika.
-            if (hasCaps({ shape: kind }) || kind === 'point') renderShapePanel();
-            else closeSettings();
-            updateToolbar();
-          }
-        }, icon(SHAPE_ICONS[kind], { size: 26 }), h('span', null, SHAPE_LABELS[kind])))),
-        // Od 1.22.1: symbole metrologiczne – okno, potem dotknięcie krawędzi albo narożnika.
-        h('p', { class: 'drawing__settings-label' }, 'Symbole metrologiczne'),
-        h('div', { class: 'drawing__shape-kinds drawing__shape-kinds--symbols' }, [
-          ['gdt', 'gdtFrame', 'Ramka tolerancji', () => editGdt()],
-          ['datum', 'datumMark', 'Baza', () => editDatum()],
-          ['roughness', 'roughness', 'Chropowatość', () => editRoughness()]
-        ].map(([kind, iconName, label, open]) => h('button', {
-          type: 'button', class: 'drawing__shape-kind', dataset: { testid: `drawing-symbol-${kind}` },
-          onClick: () => {
-            closeSettings();
-            updateToolbar();
-            open();
-          }
-        }, icon(iconName, { size: 26 }), h('span', null, label)))),
+        panelTitle(`Kształty – ${SHAPE_LABELS[tools.shape].toLowerCase()}`),
         // Od 1.17: wypełnienie nowych kształtów (i zaznaczonego).
         h('p', { class: 'drawing__settings-label' }, 'Wypełnienie'),
         h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Wypełnienie' }, SHAPE_FILLS.map((fill) => h('button', {
@@ -3381,7 +3646,7 @@ export function openDrawingEditor({
       requestLive();
     }
 
-    const topBar = h('div', { class: 'drawing__top' }, toolbar, settings, colorPanel, rulerPanel, paperPanel, shapePanel, guidePanel);
+    const topBar = h('div', { class: 'drawing__top' }, toolbar, choices, topHandle, settings, colorPanel, rulerPanel, paperPanel, shapePanel, guidePanel);
     function toggleSettings() {
       const open = settings.hidden;
       closeSettings();
@@ -5752,11 +6017,18 @@ export function openDrawingEditor({
         if (!active) startPan(event);
         return;
       }
+      // Lewy Alt wciśnięty razem ze wskaźnikiem – to swobodne końce, nie przełączenie na zaznaczanie.
+      if (altTap) altTap.clean = false;
       // Ctrl przy myszy albo rysiku (od 1.19) – zaznaczanie od razu, bez czekania na przytrzymanie.
       if (event.ctrlKey && event.pointerType !== 'touch' && tool !== 'select' && !active) beginCtrlHold();
-      // Prawy przycisk myszy albo przycisk na rysiku przy zaznaczaniu – wycinek (od 1.17).
-      const snipping = event.button === 2 && (event.pointerType === 'mouse' || event.pointerType === 'pen') && tool === 'select' && !picking && !placing;
-      if (event.pointerType === 'mouse' && event.button !== 0 && !snipping) return;
+      // Prawy przycisk myszy albo przycisk na rysiku (od 1.32) – zaznaczanie przy każdym narzędziu; narzędzie
+      // zostaje zaznaczaniem (lewy Alt albo przycisk zaznaczania wraca do poprzedniego). Wycinek – tryb „Wycinek”.
+      const rightSelect = event.button === 2 && (event.pointerType === 'mouse' || event.pointerType === 'pen') && !picking && !placing && !symbolPlacing && !active;
+      if (rightSelect && tool !== 'select') {
+        ctrlHold = null;
+        setTool('select');
+      }
+      if (event.pointerType === 'mouse' && event.button !== 0 && !rightSelect) return;
       event.preventDefault();
       if (event.pointerType === 'pen' && !penSeen) {
         penSeen = true;
@@ -5827,15 +6099,15 @@ export function openDrawingEditor({
       } catch {
         // przechwycenie nie jest konieczne
       }
-      const handle = snipping ? null : shapeHandleAt(point);
+      const handle = rightSelect ? null : shapeHandleAt(point);
       // Narożnik tabeli albo karteczki i koniec strzałki karteczki (od 1.21).
-      const boxHandle = snipping || handle ? null : boxHandleAt(point);
+      const boxHandle = rightSelect || handle ? null : boxHandleAt(point);
       // Środek zaznaczonego szyku kołowego (od 1.19) – przed linijką i zaznaczeniem.
-      const centerHit = !snipping && !handle && !boxHandle && arrayCenterHit(point);
+      const centerHit = !rightSelect && !handle && !boxHandle && arrayCenterHit(point);
       // Uchwyt obrotu zaznaczenia (od 1.30).
-      const turnHit = !snipping && !handle && !boxHandle && !centerHit && turnKnobHit(point);
-      const hit = handle || boxHandle || centerHit || turnHit || snipping ? null : rulerHit(point);
-      if (snipping) startSelect(event, true);
+      const turnHit = !rightSelect && !handle && !boxHandle && !centerHit && turnKnobHit(point);
+      const hit = handle || boxHandle || centerHit || turnHit || rightSelect ? null : rulerHit(point);
+      if (rightSelect) startSelect(event);
       else if (handle) startShapeEdit(event, handle);
       else if (boxHandle) startBoxEdit(event, boxHandle);
       else if (centerHit) startArrayCenter(event);
@@ -5893,7 +6165,7 @@ export function openDrawingEditor({
     };
     live.addEventListener('pointerup', (event) => release(event, false));
     live.addEventListener('pointercancel', (event) => release(event, true));
-    // Prawy przycisk na płótnie robi wycinek – bez menu przeglądarki.
+    // Prawy przycisk na płótnie zaznacza – bez menu przeglądarki.
     live.addEventListener('contextmenu', (event) => event.preventDefault());
     live.addEventListener('pointerleave', () => {
       if (!hover && !pickHover && !edgeHover) return;
@@ -5909,6 +6181,8 @@ export function openDrawingEditor({
     live.addEventListener('auxclick', (event) => event.preventDefault());
     live.addEventListener('wheel', (event) => {
       event.preventDefault();
+      // Od 1.32: kółko myszy przy kółku narzędzi (między małymi kółkami) obraca grupy, a nie przesuwa strony.
+      if (!event.ctrlKey && !event.metaKey && RING_SIDES.some((side) => rings[side].wheelAt(event))) return;
       if (event.ctrlKey || event.metaKey) {
         // Ctrl + kółko powiększa – to nie przytrzymanie Ctrl do zaznaczania.
         clearTimeout(ctrlTimer);
@@ -5987,9 +6261,19 @@ export function openDrawingEditor({
     const cancelButton = h('button', { type: 'button', class: 'button button--plain', dataset: { testid: 'drawing-cancel' }, onClick: () => close(false) }, 'Anuluj');
     const doneButton = h('button', { type: 'button', class: 'button button--plain sheet__submit', dataset: { testid: 'drawing-done' }, onClick: () => close(true) }, 'Gotowe');
     const headerTitle = h('h2', { class: 'sheet__title', dataset: { testid: 'drawing-title' } }, title);
+    // Od 1.32: oko w nagłówku chowa i przywraca cały interfejs (zostaje sam rysunek).
+    const hideAllButton = h('button', {
+      type: 'button', class: 'drawing__hide-all', 'aria-pressed': 'false', dataset: { testid: 'drawing-hide-ui' }, onClick: () => toggleAll()
+    });
+    const body = h('div', { class: 'drawing__body' }, stage,
+      rings.right.element, rings.left.element, topBar, topTab, dock, dockTab, info, infoTab, status, statusTab, rings.right.tab, rings.left.tab, notice);
     const panel = h('div', { class: 'sheet__panel drawing', 'aria-label': `Rysunek: ${title}` },
-      h('header', { class: 'sheet__header' }, cancelButton, headerTitle, doneButton),
-      h('div', { class: 'drawing__body' }, stage, topBar, status));
+      h('header', { class: 'sheet__header' }, cancelButton, headerTitle, h('div', { class: 'drawing__header-end' }, hideAllButton, doneButton)),
+      body);
+    swipeAway(topBar, 'top', 'up');
+    swipeAway(dock, 'bottom', 'down');
+    swipeAway(info, 'info', 'left');
+    swipeAway(status, 'status', 'right');
 
     /** Pole do pisania (skala, kod koloru) – skróty i Delete działają w nim jak zwykle. */
     const typing = (target) => target instanceof window.HTMLElement && (target.isContentEditable || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
@@ -6003,9 +6287,13 @@ export function openDrawingEditor({
         refreshShapeDrag();
       }
       if (event.key === 'Alt') {
-        // Bez paska menu przeglądarki – Alt to tu swobodne osadzanie końców.
+        // Bez paska menu przeglądarki – Alt to tu swobodne osadzanie końców, a samo naciśnięcie lewego Alt
+        // (od 1.32) przełącza na zaznaczanie. Prawy Alt (AltGr – polskie litery) nie przełącza.
         event.preventDefault();
         altDown = true;
+        if (!event.repeat) altTap = event.code === 'AltLeft' && !event.ctrlKey && !typing(event.target) && !panelOpen() ? { clean: true } : null;
+      } else if (altTap) {
+        altTap.clean = false;
       }
       if (event.key === 'Control') {
         // Przytrzymanie (bez innego klawisza) – zaznaczanie; skrót Ctrl+… nie zmienia narzędzia.
@@ -6053,6 +6341,11 @@ export function openDrawingEditor({
       } else if (command && key === 'v' && readClipboard()) {
         event.preventDefault();
         paste();
+      } else if (event.key === ' ' && !command && !event.altKey && selection.size > 0 && !snip) {
+        // Spacja (od 1.32) – powiel zaznaczenie; puszczenie spacji nie naciska przycisku z fokusem.
+        event.preventDefault();
+        spaceDuplicated = true;
+        if (!event.repeat) duplicateSelection();
       } else if ((event.key === 'Delete' || event.key === 'Backspace') && selection.size > 0) {
         event.preventDefault();
         deleteSelection();
@@ -6071,13 +6364,22 @@ export function openDrawingEditor({
       if (event.key === 'Alt') {
         event.preventDefault();
         altDown = false;
+        const tap = altTap;
+        altTap = null;
+        if (event.code === 'AltLeft' && tap?.clean && !active) toggleSelectTool();
+      }
+      if (event.key === ' ' && spaceDuplicated) {
+        event.preventDefault();
+        spaceDuplicated = false;
       }
       if (event.key === 'Control') endCtrlHold();
     };
+    let spaceDuplicated = false;
     // Okno bez fokusu (np. Alt+Tab z wciśniętym Ctrl) – puszczenia klawisza nie będzie.
     const onBlur = () => {
       shiftDown = false;
       altDown = false;
+      altTap = null;
       endCtrlHold();
     };
 
@@ -6101,6 +6403,7 @@ export function openDrawingEditor({
     document.addEventListener('keyup', onKeyUp, true);
     window.addEventListener('blur', onBlur);
     updateToolbar();
+    applyUi();
     observer.observe(stage);
     for (const [index, sheet] of sheetList.entries()) {
       const current = index === startIndex;

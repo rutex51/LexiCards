@@ -7330,3 +7330,326 @@ button.drawing__pill .icon { color: var(--text-2); }
 .note-pdf-sheet__file-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
 .note-pdf-sheet__file-text .field__hint { margin: 0; }
 .note-pdf-sheet__action { width: 100%; }
+
+/* ---------------------------------------------------------------- rysunek 1.32: kółka narzędzi, górne menu, dolny pasek */
+
+/* Górne menu: jedna pastylka – nazwa grupy, narzędzia grupy, pod nimi kolor i grubość; niżej wybór i uchwyt. */
+.drawing__top {
+  top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.drawing__top,
+.drawing__dock,
+.drawing__info,
+.drawing__status { transition: transform 0.3s ease, opacity 0.3s ease; }
+
+.drawing__top.drawing--away { transform: translate(-50%, calc(-100% - 16px)); opacity: 0; pointer-events: none; }
+
+.drawing__toolbar {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 2px;
+  max-width: calc(100vw - 16px);
+  padding: 4px 8px 6px;
+  border-radius: 24px;
+}
+
+.drawing__group-name {
+  color: var(--text-2);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+}
+
+.drawing__row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  max-width: 100%;
+}
+
+.drawing__row[hidden] { display: none; }
+
+.drawing__row--main { min-width: 0; }
+
+.drawing__row--tools {
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.drawing__row--tools::-webkit-scrollbar { display: none; }
+
+.drawing__row--options .drawing__group + .drawing__group { margin-left: 0; padding-left: 0; border-left: 0; }
+.drawing__row--options .drawing__group:not([hidden]) ~ .drawing__group:not([hidden]) { margin-left: 4px; padding-left: 8px; border-left: 1px solid var(--separator); }
+
+.drawing__row--options {
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--separator);
+}
+
+.drawing__tool--labeled {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 60px;
+  height: 52px;
+  border-radius: 14px;
+}
+
+.drawing__tool--labeled[aria-pressed="true"] { background: var(--accent-fill); color: var(--on-accent); }
+
+.drawing__tool-label {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.66rem;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Kropka koloru (telefon) – otwiera wiersz koloru i grubości. */
+.drawing__options-toggle { display: none; }
+.drawing__options-toggle[hidden] { display: none; }
+
+.drawing__options-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--swatch, transparent);
+  box-shadow: 0 0 0 2px var(--elevated), 0 0 0 4px var(--swatch, var(--separator));
+}
+
+/* Wybór bez okna (tryb gumki, obszar i tryb zaznaczania) – mała pastylka pod menu. */
+.drawing__choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  max-width: calc(100vw - 24px);
+  padding: 4px;
+  border-radius: 18px;
+  background: var(--elevated);
+  box-shadow: 0 1px 0 var(--separator), 0 4px 14px rgba(0, 0, 0, 0.1);
+}
+
+.drawing__choices[hidden] { display: none; }
+.drawing__choices .drawing__group + .drawing__group { margin-left: 0; padding-left: 0; border-left: 0; }
+
+/* Uchwyt pod menu i nad dolnym paskiem – dotknięcie albo przesunięcie chowa. */
+.drawing__handle {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 18px;
+  border-radius: 9px;
+  touch-action: none;
+}
+
+.drawing__handle span {
+  width: 38px;
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-3) 70%, transparent);
+}
+
+/* Dolny pasek: zaznaczanie, linijka, liniuszek, tło, cofnij, ponów. */
+.drawing__dock {
+  position: absolute;
+  left: 50%;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transform: translateX(-50%);
+}
+
+.drawing__dock.drawing--away { transform: translate(-50%, calc(100% + 24px)); opacity: 0; pointer-events: none; }
+
+.drawing__dock-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px;
+  border-radius: 22px;
+  background: var(--elevated);
+  box-shadow: 0 1px 0 var(--separator), 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+
+.drawing__dock-bar .drawing__tool { width: 46px; height: 44px; border-radius: 14px; }
+.drawing__dock-bar .drawing__tool[aria-pressed="true"] { background: var(--accent-fill); color: var(--on-accent); }
+.drawing__dock-bar .drawing__tool[hidden] { display: none; }
+.drawing__dock-gap { width: 1px; height: 26px; margin: 0 4px; background: var(--separator); }
+
+/* Pastylki: po lewej informacje (szare), po prawej to, co można zmienić (białe). */
+.drawing__info {
+  position: absolute;
+  left: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: calc(50% - 180px);
+}
+
+.drawing__info .drawing__pill { pointer-events: auto; }
+.drawing__info.drawing--away { transform: translateX(calc(-100% - 24px)); opacity: 0; pointer-events: none; }
+.drawing__info .drawing__pill--info,
+.drawing__pill--gray { background: var(--fill); box-shadow: none; color: var(--text-2); }
+button.drawing__pill--gray { color: var(--text-2); font-weight: 500; }
+
+.drawing__status { max-width: calc(50% - 180px); }
+/* Poprzednia, numer i następna kartka zawsze w jednym wierszu. */
+.drawing__pages { display: flex; flex-wrap: nowrap; gap: 8px; }
+.drawing__status.drawing--away { transform: translateX(calc(100% + 24px)); opacity: 0; }
+.drawing__status.drawing--away .drawing__pill { pointer-events: none; }
+
+.drawing__notice {
+  position: absolute;
+  left: 50%;
+  bottom: calc(90px + env(safe-area-inset-bottom));
+  z-index: 4;
+  max-width: calc(100% - 32px);
+  transform: translateX(-50%);
+}
+
+/* Zakładki schowanych elementów – przy krawędzi. */
+.drawing__show {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: var(--elevated);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.16);
+  color: var(--text-2);
+}
+
+.drawing__show[hidden] { display: none; }
+.drawing__show--top { top: 0; left: 50%; width: 72px; height: 22px; border-radius: 0 0 12px 12px; transform: translateX(-50%); }
+.drawing__show--bottom { bottom: env(safe-area-inset-bottom); left: 50%; width: 72px; height: 22px; border-radius: 12px 12px 0 0; transform: translateX(-50%); }
+.drawing__show--info { left: 0; bottom: calc(14px + env(safe-area-inset-bottom)); width: 20px; height: 48px; border-radius: 0 12px 12px 0; }
+.drawing__show--status { right: 0; bottom: calc(14px + env(safe-area-inset-bottom)); width: 20px; height: 48px; border-radius: 12px 0 0 12px; }
+
+/* Nagłówek: oko (ukryj cały interfejs) obok „Gotowe”. */
+.drawing__header-end { justify-self: end; display: flex; align-items: center; gap: 2px; }
+
+.drawing__hide-all {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  color: var(--accent);
+}
+
+.drawing__hide-all[aria-pressed="true"] { background: var(--fill); }
+
+/* Kółka narzędzi: małe kółka grup wokół dużego (położenie – w kodzie), między kółkami rysuje się dalej. */
+.drawing-ring {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  transition: transform 0.3s ease, opacity 0.3s ease, visibility 0s;
+}
+
+.drawing-ring__group {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: var(--ring-small);
+  height: var(--ring-small);
+  padding: 0;
+  border-radius: 50%;
+  background: var(--elevated);
+  box-shadow: 0 3px 10px -3px rgba(0, 0, 0, 0.35), 0 0 0 1px var(--separator);
+  color: var(--text);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.drawing-ring--ready .drawing-ring__group { transition: left 0.28s ease, top 0.28s ease, opacity 0.28s ease; }
+
+.drawing-ring__group[aria-pressed="true"] { background: var(--accent-fill); color: var(--on-accent); }
+.drawing-ring--ready.drawing-ring--turning .drawing-ring__group { transition: none; }
+
+/* Duże kółko jak kółko „Nauka” w menu: wypełnienie w kolorze narzędzia (wariant C), obwódka w kolorze paska. */
+.drawing-ring__main {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: var(--ring-main);
+  height: var(--ring-main);
+  margin: calc(var(--ring-main) / -2) 0 0 calc(var(--ring-main) / -2);
+  padding: 0;
+  border-radius: 50%;
+  background: var(--ring-fill, var(--accent-fill));
+  box-shadow: 0 0 0 4px var(--bar-solid), 0 8px 18px -6px rgba(0, 0, 0, 0.4);
+  color: var(--ring-ink, var(--on-accent));
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+}
+
+.drawing-ring__main:active { cursor: grabbing; }
+
+.drawing-ring--hidden { opacity: 0; visibility: hidden; transition: transform 0.3s ease, opacity 0.3s ease, visibility 0s 0.3s; }
+.drawing-ring--hidden.drawing-ring--right { transform: translateX(calc(50% + 40px)); }
+.drawing-ring--hidden.drawing-ring--left { transform: translateX(calc(-50% - 40px)); }
+
+.drawing-ring__tab {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 52px;
+  padding: 0;
+  background: var(--elevated);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.16);
+  color: var(--text-2);
+}
+
+.drawing-ring__tab[hidden] { display: none; }
+.drawing-ring__tab--right { right: 0; border-radius: 12px 0 0 12px; }
+.drawing-ring__tab--left { left: 0; border-radius: 0 12px 12px 0; }
+
+/* Telefon: jeden wiersz narzędzi z kropką koloru (kolor i grubość po dotknięciu), wybór jak zakładka pod menu. */
+@media (max-width: 599px) {
+  .drawing__group-name { display: none; }
+  .drawing__toolbar { padding: 3px 4px; border-radius: 24px; }
+  .drawing__options-toggle { display: grid; flex: none; }
+  .drawing__row--options { display: none; }
+  .drawing__top--options .drawing__row--options:not([hidden]) { display: flex; }
+  .drawing__row--tools { max-width: calc(100vw - 72px); justify-content: flex-start; }
+  .drawing__tool--labeled { width: 42px; height: 44px; border-radius: 13px; }
+  .drawing__tool-label { display: none; }
+  .drawing__choices { margin-top: -6px; padding-top: 8px; border-radius: 0 0 16px 16px; }
+  .drawing__dock-bar .drawing__tool { width: 44px; }
+  .drawing__info,
+  .drawing__status { bottom: calc(78px + env(safe-area-inset-bottom)); }
+  .drawing__info { max-width: 44%; }
+  .drawing__status { max-width: 56%; }
+  .drawing__show--info,
+  .drawing__show--status { bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .drawing__notice { bottom: calc(126px + env(safe-area-inset-bottom)); }
+}

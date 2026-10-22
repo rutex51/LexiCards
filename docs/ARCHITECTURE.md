@@ -44,7 +44,8 @@ js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podg
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
 js/ui/fit-table.js         okno „Tabela pasowań” (od 1.25): pasowania zalecane, dowolna klasa albo pasowanie z litery i klasy IT
-js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek (równoległy, od 1.22 promieniowy), kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka, od 1.22 przyciąganie końców i magnes, od 1.24 punkty w wierzchołkach łamanej), figury z odręcznych kształtów (od 1.24 – przytrzymane pióro), spirala na grzbiecie (od 1.24.1), Shift i Ctrl, środkowy przycisk, szyk, kartki (od 1.22 kółko, ‹ › i animacja przewracania, od 1.24 zagięcie od rogu, od 1.30 – rysunki i zdjęcia notatki), od 1.30 obrót i odbicie zaznaczenia, Shift – kilka elementów, przełącznik palca, obraz PNG / JPEG
+js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek (równoległy, od 1.22 promieniowy), kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka, od 1.22 przyciąganie końców i magnes, od 1.24 punkty w wierzchołkach łamanej), figury z odręcznych kształtów (od 1.24 – przytrzymane pióro), spirala na grzbiecie (od 1.24.1), Shift i Ctrl, środkowy przycisk, szyk, kartki (od 1.22 kółko, ‹ › i animacja przewracania, od 1.24 zagięcie od rogu, od 1.30 – rysunki i zdjęcia notatki), od 1.30 obrót i odbicie zaznaczenia, Shift – kilka elementów, przełącznik palca, obraz PNG / JPEG; od 1.32 górne menu grupy, dolny pasek, pastylki, chowanie elementów, lewy Alt, prawy przycisk i spacja
+js/ui/drawing-ring.js      kółko narzędzi (od 1.32): duże kółko i małe kółka grup, obrót przeciągnięciem i kółkiem myszy, dociąganie, schowanie przesunięciem i zakładką
 js/ui/drawing-paint.js     rysunek na płótnie: kształty geometryczne (z zakończeniami odcinka), szablon (boisko liniami, obraz mnożony z tłem)
 js/ui/drawing-boxes.js     tabele i karteczki na rysunku (od 1.21): układ i pomiar (szerokości kolumn, łamanie, wysokość z treści), rysowanie, strzałka, ikona zwiniętej, treść obok ikony
 js/ui/drawing-gdt.js       wymiary techniczne i symbole metrologiczne na płótnie (od 1.22.1): linie pomocnicze, linia wymiarowa, łuk, liczba z tolerancją, ramka tolerancji, znak bazy, chropowatość; znaki ⌀ □ Ⓜ Ⓛ i 14 symboli ISO 1101 rysowane kreską
@@ -61,6 +62,7 @@ sounds/kartka.wav          nagranie przewracanej kartki (od 1.31.1)
 js/core/backup.js          kopia zapasowa: plik danych i plik obrazów i załączników – tworzenie, walidacja, przywracanie
 js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (PDF, Word, Excel, PowerPoint…)
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
+js/core/tool-ring.js       kółka narzędzi (od 1.32): grupy (standardowe, zestaw Metrologia), grupa na starcie, układ i widoczność małych kółek, obrót i dociąganie, schowane elementy interfejsu
 js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, skala, przyciąganie linijki, obszar zaznaczania, tabele i karteczki (prostokąt, strzałka), sprawdzanie danych rysunku
 js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
 js/core/pdf.js             zapis pliku PDF (od 1.28): strony A4, tekst wbudowanymi krojami (Helvetica, Times, Symbol) z polskimi literami i ToUnicode, ścieżki, obrazy, linki, kompresja; rysowanie przez obiekt płótna (wzory)
@@ -1390,6 +1392,63 @@ dostają szare tło tak samo jak przy aktualizacji.
 Kopie w formacie 2 (wersje 1.1–1.7, obrazy w Base64 w tym samym pliku) nadal się przywracają:
 obrazy z pliku trafiają do bazy, a opis obrazu bez bajtów w takiej kopii jest pomijany. W formacie 3
 opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
+
+## Interfejs edytora rysunku (od 1.32)
+
+Grupy i geometria – `js/core/tool-ring.js` (bez przeglądarki, testy w Node.js):
+
+- `TOOL_GROUPS` (kółko po prawej): Pisanie (`pen`, `highlighter`, `eraser`), Kształty (`shape:<rodzaj>` –
+  odcinek, strzałka, prostokąt, elipsa, trójkąt, romb, trapez, strzałka po łuku), Konstrukcja
+  (`shape:xline`, `shape:point`), Tekst i wzory (`text`, `math`, `table`, `sticky`), Symbole metrologiczne
+  (`gdt`, `datum`, `roughness`). `USER_GROUPS` (po lewej) – na razie zestaw Metrologia; własne grupy –
+  w następnej wersji. Pozycja to narzędzie (`isModeItem`) albo polecenie otwierające okno.
+- `startGroup(saved, item)` – grupa zapamiętana (`toolGroup` w ustawieniach narzędzi, np. `'left:metrology'`),
+  inaczej grupa z bieżącym narzędziem.
+- `ringItems({ count, rotation, side, radius, edge, size })` – położenie małych kółek co 45° (`ringStep`;
+  od ośmiu grup okrąg się zamyka) wokół środka wycinka (`RING_CENTER`: po prawej 122° – w dół i w lewo,
+  po lewej 58°); pełna widoczność do 50° od środka, zanikanie do 95° (wycinek ok. 40% obwodu), do tego
+  zanikanie przy krawędzi ekranu (`edge` – odległość środka dużego kółka od krawędzi). `clampRotation`,
+  `snapRotation` (dociągnięcie do grupy), `rotationFor` (najkrótszą drogą).
+- `cleanUiHidden` / `uiPartHidden` – schowane części: `right`, `left`, `top`, `bottom`, `info`, `status`
+  (`uiHidden` w ustawieniach narzędzi na urządzeniu); lewe kółko domyślnie `null` – schowane na wąskim
+  ekranie.
+
+`js/ui/drawing-ring.js` – `createRing({ side, groups, label, onPick, onMain, onHide })`: przyciski grup
+w kwadracie wokół dużego kółka (kontener `pointer-events: none` – między kółkami rysuje się dalej);
+przeciągnięcie po kółku obraca (przechwycenie wskaźnika po 8 px łuku, po puszczeniu dociągnięcie,
+„kliknięcie” po obrocie nie wybiera grupy), `wheelAt(event)` – kółko myszy w pierścieniu (wywoływane też
+z płótna, bo w trakcie obrotu kółka uciekają spod kursora), fokus z klawiatury obraca grupę na środek;
+duże kółko: dotknięcie – `onMain`, przesunięcie do krawędzi o 40 px – `onHide(true)`; zakładka przy
+krawędzi. Pierwsze ułożenie bez animacji (klasa `drawing-ring--ready` po dwóch klatkach).
+
+`js/ui/drawing.js`:
+- **Górne menu** (`.drawing__toolbar`): nazwa grupy, `toolRow` – przyciski pozycji pokazanej grupy
+  (`itemButtons`: ten sam przycisk w kilku grupach, w DOM tylko w pokazanej), `optionRow` – kolory,
+  grubości, wielkość gumki, „Wklej” i „Zaznacz wszystko”; `choices` – pastylka wyboru pod menu (tryb gumki,
+  obszar i tryb zaznaczania). Telefon (do 599 px): kropka koloru (`drawing-options`) otwiera `optionRow`
+  (klasa `drawing__top--options`), wybór jak zakładka. `showGroup` – grupa z narzędziami od razu wybiera
+  narzędzie (ostatnio używane w grupie, w kształtach – `tools.shape`); przy otwartych ustawieniach
+  kształtów grupa tylko się pokazuje. `activateItem` – drugie dotknięcie wybranego pióra, zakreślacza
+  albo kształtu – ustawienia; inny kształt przy narzędziu kształtów nie zdejmuje zaznaczenia, ustawienia
+  zostają przy odcinku, strzałkach i punkcie (jak w panelu kształtów do 1.31). Panel kształtów nie ma już
+  rodzajów i symboli (są w menu).
+- **Duże kółko** (`mainLook`, wariant C): wypełnienie w kolorze pióra, zakreślacza albo kształtu (jasny
+  kolor – ciemna ikona), narzędzie bez koloru – kolor aplikacji; kółko drugiej strony – ikona jej grupy.
+- **Dolny pasek** (`.drawing__dock`): zaznaczanie, linijka, liniuszek, tło, cofnij, ponów. **Pastylki:**
+  `.drawing__info` (lewy dół, szare: podpowiedź zaznaczania, długość kreski, `Kratka: …` ze skali,
+  powiększenie), `.drawing__status` (prawy dół, białe: rysik i palec, liniuszek, linijka, kartki w jednym
+  wierszu `.drawing__pages`); komunikat – nad dolnym paskiem.
+- **Chowanie** (`setHidden`, `applyUi`): klasa `drawing--away` i `inert`, zakładki `drawing-show-*`;
+  `swipeAway(element, part, kierunek)` – przesunięcie o 36 px w stronę krawędzi (przechwycenie po 10 px,
+  więc dotknięcie przycisku działa); oko w nagłówku (`drawing-hide-ui`) – `uiAll`, bez zapisu.
+- **Miejsce strony:** `view.top` – pod pastylką menu (bez uchwytu), `view.bottom` – margines (dolny pasek
+  leży nad marginesem strony); kółka: od 1100 px szerokości obok menu (`--drawing-ring-top: 10px`), węziej –
+  pod nim.
+- **Skróty:** lewy Alt (`event.code === 'AltLeft'`, bez innego klawisza i bez wskaźnika w tym czasie) –
+  `toggleSelectTool` (zaznaczanie ↔ `lastTool`); prawy przycisk myszy albo rysika – zaznaczanie przy każdym
+  narzędziu (narzędzie zostaje zaznaczaniem; do 1.31 – wycinek, teraz tryb „Wycinek”); spacja przy
+  zaznaczeniu – `duplicateSelection` (puszczenie spacji nie „klika” przycisku z fokusem); przytrzymany
+  Ctrl (od 1.19) i Ctrl+Z / Y / A / C / X / V – bez zmian; kółko myszy przy kółku narzędzi – obrót grup.
 
 ## Dźwięki (od 1.31)
 

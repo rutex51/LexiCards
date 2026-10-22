@@ -156,6 +156,8 @@ const ICONS = {
   // Magnes (od 1.22): przyciąganie końców do krawędzi i narożników.
   // Od 1.22.1: uchwyt odsunięcia linii wymiarowej, ramka tolerancji, znak bazy, chropowatość.
   dimDrag: [p('M12 4v16'), p('M8.5 7.5L12 4l3.5 3.5'), p('M8.5 16.5L12 20l3.5-3.5')],
+  // Od 1.32: zestaw Metrologia na kółku narzędzi – suwmiarka.
+  caliper: [p('M2.5 5h19v4h-19z'), p('M5 9v9.5l3 1.5V9'), p('M14 9v6.5l3 1.5V9'), p('M10 5v2M13 5v2M16 5v2M19 5v2')],
   gdtFrame: [p('M2.5 8h19v8h-19z'), p('M9 8v8'), p('M15.5 8v8'), p('M4 14h3.5'), p('M5.75 14v-4')],
   datumMark: [p('M8 3.5h8v7H8z'), p('M12 10.5v5'), filled('M8 20.5h8L12 15.5z')],
   roughness: [p('M3.5 12.5l3.2 6.5 5.6-14h9')],

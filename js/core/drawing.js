@@ -45,6 +45,7 @@ import { keepLinks } from './attach.js';
 import { cleanSymbol, isSymbol, symbolBox, symbolLeaderStart } from './gdt.js';
 import { cleanTable } from './tables.js';
 import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
+import { cleanUiHidden } from './tool-ring.js';
 
 /**
  * 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13), 3 – kształty, jasność tła, szablon (1.15),
@@ -387,7 +388,10 @@ export function defaultToolSettings() {
     // Od 1.25: ostatnio użyte pasowania (okno tolerancji wymiaru pokazuje tylko je).
     recentFits: [...DEFAULT_RECENT_FITS],
     // Od 1.30: palec rysuje także wtedy, gdy aplikacja zna rysik (dwa palce przesuwają i powiększają).
-    fingerDraws: false
+    fingerDraws: false,
+    // Od 1.32 (kółka narzędzi): ostatnio pokazana grupa ('right:shapes') i schowane elementy interfejsu.
+    toolGroup: null,
+    uiHidden: cleanUiHidden(null)
   };
 }
 
@@ -484,7 +488,9 @@ export function cleanToolSettings(raw) {
     dimOffset: finite(raw.dimOffset) ? clamp(Math.round(raw.dimOffset), DIM_OFFSET_LIMITS.min, DIM_OFFSET_LIMITS.max) : base.dimOffset,
     recognize: typeof raw.recognize === 'boolean' ? raw.recognize : base.recognize,
     recentFits: cleanRecentFits(raw.recentFits, (fit) => FIT_RE.test(fit)),
-    fingerDraws: typeof raw.fingerDraws === 'boolean' ? raw.fingerDraws : base.fingerDraws
+    fingerDraws: typeof raw.fingerDraws === 'boolean' ? raw.fingerDraws : base.fingerDraws,
+    toolGroup: typeof raw.toolGroup === 'string' && raw.toolGroup.length <= 40 ? raw.toolGroup : base.toolGroup,
+    uiHidden: cleanUiHidden(raw.uiHidden)
   };
 }
 

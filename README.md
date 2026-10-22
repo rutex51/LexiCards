@@ -1,4 +1,4 @@
-# LexiCards 1.31
+# LexiCards 1.32
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -40,8 +40,9 @@ Plik PDF notatki tworzony w aplikacji – prawdziwy tekst, strona A4, wybór jak
 Notatki: osobne okno tekstu na cały ekran i okno „Obrazy i załączniki”, ołówek na miniaturze, oczko (obiekt ukryty w notatce), usunięcie obiektu usuwa jego odwołania, ⓘ chowa podpowiedzi w oknach (wersja 1.29): [docs/RELEASE-1.29.md](docs/RELEASE-1.29.md).
 Rysunek: rysunki notatki (i jej zdjęcia) przewracane jak kartki w jednym oknie, palec też rysuje (przełącznik), obrót zaznaczenia uchwytem, odbicie lustrzane, Shift – kilka elementów kliknięciami (wersja 1.30); okno „Obrazy i załączniki” w układzie okien – białe, sekcje w ramkach (1.30.1); wydzielony magazyn danych – przygotowanie pod plik danych w OneDrive (1.30.2): [docs/RELEASE-1.30.md](docs/RELEASE-1.30.md).
 Dźwięki: szum odlatującej fiszki i szelest przewracanej kartki notatki i rysunku, tak długi jak przewracanie (wersja 1.31); kartka z nagrania prawdziwej kartki, bez dudnienia (1.31.1), bez dudnięcia przy klapnięciu (1.31.2): [docs/RELEASE-1.31.md](docs/RELEASE-1.31.md).
+Rysunek – nowy układ: kółka narzędzi (grupy standardowe po prawej, zestaw Metrologia po lewej), górne menu w dwóch wierszach z wysuwanym wyborem, dolny pasek narzędzi ogólnych, pastylki informacji i zmian, chowanie każdego elementu i całego interfejsu, lewy Alt i prawy przycisk – zaznaczanie, spacja – powiel (wersja 1.32): [docs/RELEASE-1.32.md](docs/RELEASE-1.32.md).
 
-## Co potrafi wersja 1.31
+## Co potrafi wersja 1.32
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -114,7 +115,7 @@ Dźwięki: szum odlatującej fiszki i szelest przewracanej kartki notatki i rysu
   powiększ, dopasuj, wyśrodkuj, jasność; potem nieruchomy jak kratka), liniuszek – równoległe
   i poprzeczne linie pod wybranym kątem, do których przyciąga się kreska – i kształty geometryczne
   (odcinek, strzałka, prostokąt, elipsa, trójkąt, romb, trapez) poprawiane punktami konstrukcyjnymi:
-  szerokość, wysokość, pochylenie, obrót. Od 1.17: wycinek (prawy przycisk albo tryb „Wycinek” –
+  szerokość, wysokość, pochylenie, obrót. Od 1.17: wycinek (tryb „Wycinek”; do 1.31 też prawy przycisk –
   obraz obszaru z tłem i kratką), **Osadź** – zaznaczenie albo wycinek jako obraz notatki, wymiary
   i kąt pochylenia kształtu wpisywane w polach przy jego ramce, wypełnienie kształtu i tekst na
   kształcie. Od 1.19: wielkość szablonu wpisana w procentach albo narożnikiem, Shift (kwadrat, koło,
@@ -505,8 +506,28 @@ przykładu wpisuje go do pola. Kwoty pisane ze znakiem dolara („$20 i $30”) 
 czytają go słowami w języku notatki. Zapis trafia bez zmian do eksportu, kopii i „Kopiuj notatkę”
 (inne aplikacje dostają tekst `$…$`).
 
-**Rysunki:** w sekcji obrazów edytora kafelek **Narysuj** otwiera edytor rysunku na cały ekran –
-z nagłówkiem **Anuluj – Rysunek 1 – Gotowe** i paskiem narzędzi na środku u góry: **pióro**,
+**Rysunki:** w sekcji obrazów edytora kafelek **Narysuj** otwiera edytor rysunku na cały ekran.
+**Układ od 1.32:** po prawej u góry **kółko narzędzi standardowych** – duże kółko pokazuje wybrane
+narzędzie w jego kolorze (wypełnienie w kolorze, biała obwódka; narzędzie bez koloru – kolor aplikacji),
+a małe kółka wokół niego to **grupy**: Pisanie, Kształty, Konstrukcja (prosta, punkt), Tekst i wzory
+(pole tekstowe, wzór, tabela, karteczka), Symbole metrologiczne. Widać wycinek okręgu skierowany do
+środka ekranu; przeciągnięcie po małych kółkach albo kółko myszy obraca je (dalsze i te przy krawędzi
+ekranu płynnie znikają), dotknięcie wybiera grupę. Po lewej – lustrzane **kółko moich narzędzi**,
+na początek z zestawem **Metrologia** (odcinek, prosta, punkt, ramka tolerancji, baza, chropowatość).
+**Górne menu** pokazuje grupę: w pierwszym wierszu jej narzędzia, w drugim kolor i grubość, pod spodem
+wysuwa się wybór bez osobnego okna (tryb gumki, obszar i tryb zaznaczania); na iPhonie menu ma jeden
+wiersz, a kolor i grubość otwiera kropka koloru. Drugie dotknięcie wybranego narzędzia albo dotknięcie
+dużego kółka – ustawienia narzędzia (pióra, zakreślacza, kształtu). Na dole na środku **narzędzia
+ogólne**: zaznaczanie, linijka, liniuszek, tło, cofnij, ponów; w lewym dolnym rogu szare pastylki
+informacji (kratka w skali rysunku, powiększenie), w prawym – białe pastylki do zmiany (kartka, rysik
+i palec, liniuszek, linijka). **Chowanie:** duże kółko przesunięte do krawędzi ekranu, menu w górę,
+dolny pasek w dół, pastylki na boki – element się chowa, zakładka przy krawędzi go przywraca (wybór
+zapamiętany na urządzeniu; na iPhonie lewe kółko jest na początku schowane); **oko** w nagłówku chowa
+cały interfejs. **Skróty:** samo naciśnięcie **lewego Alt** – zaznaczanie na stałe, ponownie – poprzednie
+narzędzie (Alt z przeciąganiem to dalej swobodne końce, prawy Alt – polskie litery – nic nie zmienia);
+**prawy przycisk myszy** (albo przycisk na rysiku) – zaznaczanie przy każdym narzędziu; **spacja** –
+powiel zaznaczenie. Do 1.31 – jeden pasek narzędzi na środku u góry z elementami opisanymi niżej:
+nagłówek **Anuluj – Rysunek 1 – Gotowe** i narzędzia: **pióro**,
 **zakreślacz** (półprzezroczysty, nie zasłania tuszu), **gumka**, **zaznaczanie**, kolory (pióro:
 czarny, niebieski, czerwony, zielony, pomarańczowy, fioletowy; zakreślacz: żółty, zielony, różowy,
 niebieski), trzy grubości, **linijka**, **cofnij** i **ponów** (też Ctrl+Z, Ctrl+Shift+Z albo Ctrl+Y)
@@ -607,8 +628,8 @@ boku bez przeciągania ustawia kursor w odpowiednim polu. **Wypełnienie** (Brak
 kształtu): w panelu kształtów dla nowych, polecenie **Wypełnienie** nad zaznaczonym (od 1.27 w oknie **Styl**). **Tekst** nad
 zaznaczonym kształtem (albo dotknięcie zaznaczonego kształtu) – tekst na środku kształtu (odcinka –
 nad nim), który przesuwa się, obraca i zmienia szerokość razem z nim.
-**Wycinek i Osadź** (od 1.17): przy zaznaczaniu przeciągnięcie **prawym przyciskiem myszy** (albo
-z przyciskiem na rysiku) – a na iPadzie i iPhonie w trybie **Wycinek** – robi wycinek: obraz wszystkiego
+**Wycinek i Osadź** (od 1.17): przy zaznaczaniu w trybie **Wycinek** (do 1.31 także przeciągnięcie
+prawym przyciskiem myszy – od 1.32 prawy przycisk zaznacza) przeciągnięcie robi wycinek: obraz wszystkiego
 w prostokącie albo lassie, z tłem, kratką, szablonem i częściami kresek. **Kopiuj** wkłada go do
 schowka jako obraz (wkleisz go w notatce albo w innej aplikacji). **Osadź** – nad wycinkiem i nad
 każdym zaznaczeniem – dodaje obraz do obrazów notatki („Obraz N”, zaraz za rysunkiem): wycinek z tłem,
@@ -676,7 +697,7 @@ albo ramki tolerancji). Pierwsza tolerancja albo ramka tolerancji na rysunku „
 bez jednostki (Anuluj w oknie tolerancji – zostaje jak było); jednostkę zmienisz też w oknie tolerancji.
 Tolerancje długości są zapisane w mm, więc zmiana jednostki ich nie zmienia (0,1 mm to w cm 0,01).
 Znaki ⌀ i □ są rysowane kreską – tak samo na iPadzie i w Windows.
-**Symbole metrologiczne** (od 1.22.1): w panelu kształtów – **Ramka tolerancji**, **Baza**,
+**Symbole metrologiczne** (od 1.22.1; od 1.32 w grupie „Symbole metrologiczne” na kółku i w zestawie Metrologia) – **Ramka tolerancji**, **Baza**,
 **Chropowatość**. Okno ramki: **14 symboli ISO 1101** (prostoliniowość, płaskość, okrągłość, walcowość,
 kształt wyznaczonego zarysu i powierzchni, równoległość, prostopadłość, nachylenie, pozycja,
 współosiowość, symetria, bicie, bicie całkowite – rysowane kreską), **tolerancja** z ⌀ przed nią i Ⓜ
