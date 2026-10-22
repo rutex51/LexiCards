@@ -6973,16 +6973,6 @@ button.drawing__pill .icon { color: var(--text-2); }
 
 .drawing__style[aria-checked="true"] { background: var(--fill); font-weight: 600; }
 
-/* Okno „Styl” (od 1.27): każda grupa – w ramce jak pole okna. */
-.dialog.sheet .drawing__style-group,
-.dialog.sheet .drawing__caps-group {
-  padding: 11px 14px 12px;
-  border: 1px solid var(--outline);
-  border-radius: 14px;
-}
-.dialog.sheet .drawing__style-group > .drawing__settings-label,
-.dialog.sheet .drawing__caps-group > .drawing__settings-label { margin-top: 0; }
-
 .drawing__gdt-symbols {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -7449,6 +7439,31 @@ button.drawing__pill .icon { color: var(--text-2); }
 .drawing__choices[hidden] { display: none; }
 .drawing__choices .drawing__group + .drawing__group { margin-left: 0; padding-left: 0; border-left: 0; }
 
+/* Trzecie menu kształtów (od 1.35): od razu przyciski jednej grupy, przy kilku – przyciski z rozwijanym wyborem, ⓘ – więcej. */
+.drawing__style-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px; }
+.drawing__style-row[hidden] { display: none; }
+.drawing__choices .drawing__group:not([hidden]) ~ .drawing__style-row:not([hidden]) { margin-left: 2px; padding-left: 6px; border-left: 1px solid var(--separator); }
+.drawing__style-row .drawing__styles { display: flex; gap: 2px; }
+.drawing__style-row .drawing__style { width: 40px; min-height: 34px; }
+.drawing__style-row .drawing__style[aria-checked="true"] { background: var(--elevated); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14); }
+.drawing__picker { display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; }
+.drawing__picker[aria-expanded="true"] { background: var(--fill); }
+.drawing__picker-label { font-size: 0.78rem; }
+.drawing__style-info { display: grid; place-items: center; width: 36px; padding: 0; color: var(--text-2); }
+.drawing__style-info[aria-expanded="true"] { background: var(--fill); color: var(--accent); }
+.drawing__style-drop {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(360px, calc(100vw - 24px));
+  padding: 8px 12px 10px;
+  border-radius: 18px;
+  background: var(--elevated);
+  box-shadow: var(--shadow);
+}
+.drawing__style-drop[hidden] { display: none; }
+.drawing__style-drop .drawing__settings-label { margin: 0; }
+
 /* Uchwyt pod menu i nad dolnym paskiem – dotknięcie albo przesunięcie chowa. */
 .drawing__handle {
   display: grid;
@@ -7480,6 +7495,18 @@ button.drawing__pill .icon { color: var(--text-2); }
 }
 
 .drawing__dock.drawing--away { transform: translate(-50%, calc(100% + 24px)); opacity: 0; pointer-events: none; }
+
+/* Od 1.35: wybór narzędzi ogólnych i ich panele (linijka, tło, liniuszek) – nad dolnym paskiem. Puste miejsce obok
+   węższych pastylek (menu i pasek są tak szerokie jak najszersza z nich) nie zasłania kartki. */
+.drawing__top,
+.drawing__dock { pointer-events: none; }
+.drawing__top > :not([hidden]),
+.drawing__dock > :not([hidden]) { pointer-events: auto; }
+.drawing__dock > .drawing__settings { top: auto; bottom: calc(100% + 8px); }
+.drawing__choices--dock { margin-bottom: 2px; }
+.drawing:has(.drawing__choices--dock:not([hidden])) .drawing__notice { bottom: calc(146px + env(safe-area-inset-bottom)); }
+.drawing:has(.drawing__choices--dock:not([hidden])) :is(.drawing__info, .drawing__status) { max-width: calc(50% - 300px); }
+.drawing__stage--moving .drawing__canvas--live { cursor: move; }
 
 .drawing__dock-bar {
   display: flex;
@@ -7749,6 +7776,11 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   .drawing__tool--labeled { width: 42px; height: 44px; border-radius: 13px; }
   .drawing__tool-label { display: none; }
   .drawing__choices { margin-top: -6px; padding-top: 8px; border-radius: 0 0 16px 16px; }
+  .drawing__choices--dock { margin: 0 0 2px; padding-top: 4px; border-radius: 18px; row-gap: 2px; }
+  /* Dwa wiersze: obszar i „Wszystko”, pod nimi tryby. */
+  .drawing__choices--dock::after { content: ''; flex-basis: 100%; order: 1; }
+  .drawing__choices--dock > .drawing__modes { order: 2; }
+  .drawing__picker-label { display: none; }
   .drawing__dock-bar .drawing__tool { width: 44px; }
   .drawing__info,
   .drawing__status { bottom: calc(78px + env(safe-area-inset-bottom)); }
@@ -7757,4 +7789,8 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   .drawing__show--info,
   .drawing__show--status { bottom: calc(80px + env(safe-area-inset-bottom)); }
   .drawing__notice { bottom: calc(126px + env(safe-area-inset-bottom)); }
+  /* Wybór zaznaczania nad dolnym paskiem (od 1.35) – pastylki i komunikat wyżej. */
+  .drawing:has(.drawing__choices--dock:not([hidden])) :is(.drawing__info, .drawing__status) { bottom: calc(196px + env(safe-area-inset-bottom)); max-width: 50%; }
+  .drawing:has(.drawing__choices--dock:not([hidden])) :is(.drawing__show--info, .drawing__show--status) { bottom: calc(198px + env(safe-area-inset-bottom)); }
+  .drawing:has(.drawing__choices--dock:not([hidden])) .drawing__notice { bottom: calc(246px + env(safe-area-inset-bottom)); }
 }

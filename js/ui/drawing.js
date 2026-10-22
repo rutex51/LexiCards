@@ -45,7 +45,7 @@ import {
 } from '../core/attach.js';
 import {
   DrawingHistory, ELEMENT_TEXT_MAX, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA,
-  HIGHLIGHTER_COLORS, HIGHLIGHTER_RANGE, INK_COLORS, RAY_STEPS, STICKY_COLORS, STICKY_MIN, STICKY_TEXT_MAX, STICKY_TEXT_SIZES, TABLE_TEXT_SIZES, isBox, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
+  HIGHLIGHTER_COLORS, HIGHLIGHTER_RANGE, INK_COLORS, RAY_STEPS, WIDTH_LIMITS, STICKY_COLORS, STICKY_MIN, STICKY_TEXT_MAX, STICKY_TEXT_SIZES, TABLE_TEXT_SIZES, isBox, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
   SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings,
   DIM_UNITS, DRAWING_VERSION, defaultDimUnit, defaultToolSettings, dimFactor, dimFormat, dimMillimeters, dimUnitLabel, dimUnitNote, dimensionParts, formatTolerance, hasMeasuredContent, elementBox, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
   isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
@@ -176,6 +176,10 @@ const HOLD_SLOP = 6;
  */
 const SPIRAL = Object.freeze({ step: PAPER_STEP, holeX: 24, holeR: 7, axis: -6, wire: 5, margin: 30 });
 const SPIRAL_OUT = 40;
+/** Połysk drutu spirali (od 1.35): [kolor, szerokość względem drutu, przesunięcie ku górze 0–1]. */
+const WIRE_SHINE = Object.freeze([
+  ['#7c7c80', 0.8, 0], ['#8e8e93', 0.66, 0.15], ['#a1a1a6', 0.52, 0.35], ['#b7b7bc', 0.4, 0.55], ['#cdcdd2', 0.29, 0.75], ['rgba(236, 236, 241, 0.92)', 0.17, 1]
+]);
 /** Oznaczenie „Wymiary w mm” (od 1.25): wielkość tekstu, odstęp od dołu i od lewej krawędzi (za dziurkami spirali). */
 const UNIT_NOTE_SIZE = 22;
 const UNIT_NOTE_MARGIN = 20;
@@ -750,9 +754,7 @@ export function openDrawingEditor({
       const [only] = selection;
       if (isShape(only)) editShapeLabel(only);
     });
-    // Od 1.27 jeden przycisk „Styl” (do 1.26 „Wypełnienie” i „Końce”): rodzaj linii, wypełnienie, zakończenia
-    // odcinka i łuku, znacznik punktu – w jednym oknie (pasek zaznaczenia mieści się na telefonie).
-    const styleButton = selectionButton('drawing-selection-style', 'lineDashed', 'Styl', 'Styl kształtu: rodzaj linii, wypełnienie, zakończenia, znacznik punktu', () => chooseStyle());
+    // Od 1.35 styl zaznaczonego kształtu (do 1.34 przycisk „Styl” i okno) – w trzecim menu nad stroną.
     // Od 1.19: szyk (nowy albo zmiana parametrów) i rozdzielenie szyku.
     // Od 1.22: magnes – przyciąganie końców do krawędzi i narożników (wł./wył., zapamiętane na urządzeniu).
     const magnetButton = selectionButton('drawing-selection-magnet', 'magnet', 'Przyciąganie',
@@ -766,8 +768,19 @@ export function openDrawingEditor({
     mirrorButton.setAttribute('aria-haspopup', 'menu');
     const embedButton = selectionButton('drawing-selection-embed', 'embed', 'Osadź', 'Osadź w notatce jako obraz', () => embedSelection());
     const deleteButton = selectionButton('drawing-selection-delete', 'trash', 'Usuń', 'Usuń (Delete)', () => deleteSelection(), true);
+    // Od 1.35: „Przesuń” – przeciągnięcie w dowolnym miejscu strony przesuwa zaznaczenie (na ekranie dotykowym
+    // trudno trafić w cienką kreskę); ponowne dotknięcie przycisku albo zdjęcie zaznaczenia – koniec.
+    let moveMode = false;
+    const moveButton = selectionButton('drawing-selection-move', 'move', 'Przesuń', 'Przesuń – przeciągnij w dowolnym miejscu strony (dotknij ponownie, żeby skończyć)', () => {
+      moveMode = !moveMode;
+      moveButton.setAttribute('aria-pressed', String(moveMode));
+      stage.classList.toggle('drawing__stage--moving', moveMode);
+      updateToolbar();
+      requestLive();
+    });
+    moveButton.setAttribute('aria-pressed', 'false');
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
-      selectionCount, editButton, collapseButton, shapeTextButton, styleButton, magnetButton, copyButton, duplicateButton, mirrorButton, arrayButton, explodeButton, embedButton, deleteButton);
+      selectionCount, moveButton, editButton, collapseButton, shapeTextButton, magnetButton, copyButton, duplicateButton, mirrorButton, arrayButton, explodeButton, embedButton, deleteButton);
     // Pola wymiarów zaznaczonego kształtu (od 1.17): na liniach ramki konstrukcyjnej, wpisywane z klawiatury.
     const dims = h('div', { class: 'drawing__dims', hidden: true, dataset: { testid: 'drawing-dims' } });
     // Od 1.22: animacja przewracania kartki (zdjęcia stron nad płótnem, tylko w trakcie).
@@ -880,6 +893,8 @@ export function openDrawingEditor({
      * Zwoje spirali (płótno z przekształceniem strony): drut wokół osi przy krawędzi – przednia połowa
      * zwoju wychodzi z dziurki, przechodzi nad krawędzią i schodzi o pół kratki (z cieniem na kartce
      * i połyskiem), tylna – pod kartką do następnej dziurki (widać ją tylko za krawędzią, ciemniejszą).
+     * Od 1.35 drut kończy się w ostatniej dziurce (bez zwoju w powietrzu pod nią), a połysk przechodzi
+     * łagodnie – kilka coraz jaśniejszych i węższych pasm.
      */
     function paintCoils(ctx) {
       if (!hasSpiral()) return;
@@ -910,7 +925,7 @@ export function openDrawingEditor({
         ctx.stroke();
       }
       ctx.restore();
-      for (const y of holes) {
+      for (const y of holes.slice(0, -1)) {
         const points = turn(y, 0, Math.PI);
         ctx.save();
         ctx.shadowColor = 'rgba(0, 0, 0, 0.28)';
@@ -922,17 +937,16 @@ export function openDrawingEditor({
         ctx.lineWidth = SPIRAL.wire;
         ctx.stroke();
         ctx.restore();
-        path(points);
-        ctx.strokeStyle = '#98989d';
-        ctx.lineWidth = SPIRAL.wire * 0.62;
-        ctx.stroke();
-        ctx.save();
-        ctx.translate(-0.5, -0.7);
-        path(points);
-        ctx.strokeStyle = 'rgba(229, 229, 234, 0.95)';
-        ctx.lineWidth = SPIRAL.wire * 0.22;
-        ctx.stroke();
-        ctx.restore();
+        // Połysk: pasma od szarego do prawie białego, coraz węższe i bliżej górnej krawędzi drutu.
+        for (const [color, width, lift] of WIRE_SHINE) {
+          ctx.save();
+          ctx.translate(-0.5 * lift, -0.7 * lift);
+          path(points);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = SPIRAL.wire * width;
+          ctx.stroke();
+          ctx.restore();
+        }
       }
       ctx.restore();
     }
@@ -1344,7 +1358,21 @@ export function openDrawingEditor({
       ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
       ctx.strokeStyle = SELECT_COLORS.whole;
       ctx.lineWidth = 1;
-      if (!isSegment(shape) && !isPointShape(shape)) {
+      if (isPointShape(shape)) {
+        // Zaznaczony punkt (od 1.35): kółko wokół znacznika – punkt nie ma uchwytów, a ramka byłaby za mała.
+        const center = toScreen(shape);
+        ctx.save();
+        ctx.setLineDash([5, 4]);
+        ctx.lineWidth = 1.5;
+        ctx.fillStyle = SELECT_FILLS.whole;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, Math.max(20, (shape.w / 2) * view.scale + 10), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+      // Wymiar (od 1.34) – bez ramki i uchwytu obrotu, same punkty.
+      if (!isSegment(shape) && !isPointShape(shape) && !isMeasure(shape)) {
         // Ramka kształtu (przy pochyleniu – równoległobok) i ramię uchwytu obrotu.
         ctx.setLineDash([4, 3]);
         ctx.beginPath();
@@ -1938,9 +1966,18 @@ export function openDrawingEditor({
     }
 
     const eraserRadius = () => (tools.eraserMode === 'pixel' ? ERASER_SIZES[tools.eraserSize] / 2 : ERASER_RADIUS) / view.scale;
+    /** Zaznaczenie z wyglądem (od 1.35): po jego zmianie menu pokazuje kolor, grubość i styl zaznaczonych. */
+    let shownEdit = '';
+    const editSignature = () => `${selectionKind}:${snip ? 'snip' : ''}:${[...selection].map((stroke) => [stroke.tool, stroke.shape, stroke.color, stroke.size, stroke.dash,
+      stroke.fill, stroke.mark, stroke.startCap, stroke.endCap, stroke.points?.[2]].join(',')).join('|')}`;
     const renderLive = () => {
       const ctx = live.getContext('2d');
       prepare(ctx);
+      const edit = editSignature();
+      if (edit !== shownEdit) {
+        shownEdit = edit;
+        updateToolbar();
+      }
       // Zwoje spirali (od 1.24.1) – nad zapisanymi kreskami, pod wszystkim innym na tej warstwie
       // (w trakcie przewracania kartki – na płótnie animacji).
       if (!coilsOnFlip) paintCoils(ctx);
@@ -2090,6 +2127,8 @@ export function openDrawingEditor({
     }
     /** Polecenia zaznaczenia nad ramką (albo pod nią, gdy u góry brakuje miejsca); `extra` – pola wymiarów do ominięcia. */
     function placeSelectionBar(bounds, extra = null) {
+      // Bez zaznaczenia nie ma czego przesuwać – „Przesuń” się wyłącza.
+      if (moveMode && selection.size === 0) moveMode = false;
       const show = Boolean(bounds) && !['move', 'marquee', 'lasso', 'pick', 'shape-new', 'shape-edit', 'template-move', 'template-scale', 'array-center', 'box-edit', 'turn']
         .includes(active?.kind) && !placing;
       selectionBar.hidden = !show;
@@ -2113,13 +2152,15 @@ export function openDrawingEditor({
         collapseButton.title = sticky.collapsed ? 'Rozwiń karteczkę' : 'Zwiń karteczkę do ikony';
         replaceChildren(collapseButton, icon(sticky.collapsed ? 'plus' : 'minus', { size: 18 }), h('span', { class: 'drawing__selection-label' }, label));
       }
-      // Wymiar (od 1.34) – bez tekstu na kształcie i bez stylu linii.
+      // Wymiar (od 1.34) – bez tekstu na kształcie.
       shapeTextButton.hidden = !shape || isMeasure(shape);
-      styleButton.hidden = Boolean(snip) || (shape ? isMeasure(shape) : dashable().length === 0);
       // Magnes (od 1.22): przy odcinku, strzałce i karteczce ze strzałką.
       // Od 1.22.1 także strzałka ramki tolerancji, trójkąt bazy i wierzchołek chropowatości.
       const withEnds = Boolean(shape && isSegment(shape)) || Boolean(sticky?.leader) || (!snip && selection.size === 1 && isSymbol(only));
       magnetButton.hidden = !withEnds;
+      moveButton.hidden = Boolean(snip);
+      moveButton.setAttribute('aria-pressed', String(moveMode));
+      stage.classList.toggle('drawing__stage--moving', moveMode);
       if (withEnds) {
         const label = tools.edgeSnap ? 'Przyciąganie wł.' : 'Przyciąganie wył.';
         magnetButton.setAttribute('aria-pressed', String(tools.edgeSnap));
@@ -2221,9 +2262,7 @@ export function openDrawingEditor({
       // Od 1.32 pod górnym menu (bez uchwytu); dolny pasek leży nad marginesem strony – da się go schować.
       view.top = Math.max(STAGE_MARGIN, toolbar.getBoundingClientRect().bottom - box.top + 8);
       view.bottom = STAGE_MARGIN;
-      // Kółka narzędzi: na szerokim ekranie obok górnego menu, na węższym – pod nim.
-      const ringTop = box.width >= 1100 ? 10 : Math.max(10, Math.round(toolbar.getBoundingClientRect().bottom - box.top + 14));
-      body.style.setProperty('--drawing-ring-top', `${ringTop}px`);
+      placeRingTop();
       applyUi();
       view.dpr = Math.min(window.devicePixelRatio || 1, 3);
       for (const canvas of [base, live]) {
@@ -2375,7 +2414,7 @@ export function openDrawingEditor({
       type: 'button', class: 'drawing__tool drawing__options-toggle', 'aria-label': 'Kolor i grubość', title: 'Kolor i grubość', 'aria-expanded': 'false',
       dataset: { testid: 'drawing-options' }, onClick: () => toggleOptions()
     }, optionsDot);
-    const optionRow = h('div', { class: 'drawing__row drawing__row--options', dataset: { testid: 'drawing-option-row' } }, swatches, widths, eraserSizes, selectGroup);
+    const optionRow = h('div', { class: 'drawing__row drawing__row--options', dataset: { testid: 'drawing-option-row' } }, swatches, widths, eraserSizes);
     const toolbar = h('div', { class: 'drawing__toolbar', role: 'toolbar', 'aria-label': 'Narzędzia rysunku' },
       groupName, h('div', { class: 'drawing__row drawing__row--main' }, optionsButton, toolRow), optionRow);
     // Wybór bez osobnego okna (tryb gumki, obszar i tryb zaznaczania) – pastylka pod menu.
@@ -2397,7 +2436,13 @@ export function openDrawingEditor({
         : [h('span', { class: 'drawing__wide-label' }, short[mode][0]), h('span', { class: 'drawing__narrow-label' }, short[mode][1])])));
     const ellipseModes = modeChoices(ELLIPSE_MODES, ELLIPSE_MODE_LABELS, ELLIPSE_SHORT, 'Okrąg i elipsa', 'drawing-ellipse', 'ellipseMode');
     const dimModes = modeChoices(DIM_MODES, DIM_MODE_LABELS, DIM_SHORT, 'Rodzaj wymiaru', 'drawing-dim-mode', 'dimMode');
-    const choices = h('div', { class: 'drawing__choices', dataset: { testid: 'drawing-choices' } }, eraserModes, selectShapes, selectModes, ellipseModes, dimModes);
+    // Od 1.35 trzecie menu kształtów: styl nowych kształtów (i zaznaczonych) – znacznik punktu, rodzaj linii,
+    // wypełnienie, zakończenia; kilka grup – przyciski z rozwijanym wyborem; ⓘ rozwija w dół resztę (przełączniki, opis).
+    const styleRow = h('div', { class: 'drawing__group drawing__style-row', hidden: true, dataset: { testid: 'drawing-style-row' } });
+    const styleDrop = h('div', { class: 'drawing__style-drop', hidden: true, dataset: { testid: 'drawing-style-drop' } });
+    const choices = h('div', { class: 'drawing__choices', dataset: { testid: 'drawing-choices' } }, eraserModes, ellipseModes, dimModes, styleRow);
+    // Od 1.35 wybór narzędzi ogólnych (zaznaczanie: obszar, tryb, „Wklej”, „Zaznacz wszystko”) – nad dolnym paskiem.
+    const dockChoices = h('div', { class: 'drawing__choices drawing__choices--dock', hidden: true, dataset: { testid: 'drawing-dock-choices' } }, selectShapes, selectModes, selectGroup);
     const topHandle = h('button', {
       type: 'button', class: 'drawing__handle', 'aria-label': 'Schowaj górne menu', title: 'Schowaj górne menu (przesuń w górę)',
       dataset: { testid: 'drawing-hide-top' }, onClick: () => setHidden('top', true)
@@ -2407,7 +2452,7 @@ export function openDrawingEditor({
       type: 'button', class: 'drawing__handle', 'aria-label': 'Schowaj dolny pasek', title: 'Schowaj dolny pasek (przesuń w dół)',
       dataset: { testid: 'drawing-hide-bottom' }, onClick: () => setHidden('bottom', true)
     }, h('span'));
-    const dock = h('div', { class: 'drawing__dock' }, dockHandle,
+    const dock = h('div', { class: 'drawing__dock' }, dockChoices, dockHandle,
       h('div', { class: 'drawing__dock-bar', role: 'toolbar', 'aria-label': 'Narzędzia ogólne' },
         selectButton, rulerButton, guideButton, paperButton, h('span', { class: 'drawing__dock-gap', 'aria-hidden': 'true' }), undoButton, redoButton));
 
@@ -2485,21 +2530,93 @@ export function openDrawingEditor({
       type: 'button', class: custom ? 'drawing__swatch drawing__swatch--custom' : 'drawing__swatch', style: { '--swatch': hex }, 'aria-label': label, title: label,
       'aria-pressed': String(pressed), dataset: { testid: testID }, onClick
     });
+    // ---- edycja zaznaczonego (od 1.35): kolor, grubość i styl z menu zmieniają zaznaczone elementy
+    /** Element z kolorem do zmiany: kreska pióra i zakreślacza, kształt, pole tekstowe, wzór, symbol. */
+    const hasPaint = (stroke) => ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness'].includes(stroke.tool);
+    /** Element z grubością linii: kreska pióra i zakreślacza, kształt (bez wymiaru). */
+    const hasLineWidth = (stroke) => stroke.tool === 'pen' || stroke.tool === 'highlighter' || (isShape(stroke) && !isMeasure(stroke));
+    /**
+     * Zaznaczone całe elementy, które zmienia menu (bez fragmentu i wycinka); przy narzędziu kształtów – tylko kształty
+     * tego rodzaju (właśnie narysowany), inny rodzaj w menu – ustawienia następnych.
+     */
+    const editedSelection = () => (snip || selectionKind !== 'whole' ? [] : [...selection].filter((stroke) => drawing.strokes.includes(stroke)
+      && (tool !== 'shape' || (isShape(stroke) && stroke.shape === tools.shape))));
+    /** Zaznaczone elementy z kolorem do zmiany. */
+    const paintedSelection = () => editedSelection().filter(hasPaint);
+    /** Wspólny kolor zaznaczonych jako wybór palety (id albo własny kolor) – null, gdy różne. */
+    function commonColor(strokes, highlighter) {
+      const palette = highlighter ? HIGHLIGHTER_COLORS : INK_COLORS;
+      const ids = new Set(strokes.map((stroke) => palette.find((color) => color.hex.toLowerCase() === stroke.color.toLowerCase())?.id ?? stroke.color.toLowerCase()));
+      return ids.size === 1 ? [...ids][0] : null;
+    }
+    /** Średnia grubość kreski albo grubość linii kształtu. */
+    const lineWidthOf = (stroke) => {
+      if (isShape(stroke)) return stroke.size;
+      let sum = 0;
+      for (let index = 2; index < stroke.points.length; index += 3) sum += stroke.points[index];
+      return sum / Math.max(1, stroke.points.length / 3);
+    };
+    /** Grubość z menu (0–2) najbliższa grubości elementu. */
+    function widthIndexOf(stroke) {
+      const presets = stroke.tool === 'highlighter' ? tools.highlighterWidths : tools.penWidths.map((width) => (width.min + width.max) / 2);
+      const size = lineWidthOf(stroke);
+      return presets.reduce((best, value, index) => (Math.abs(value - size) < Math.abs(presets[best] - size) ? index : best), 0);
+    }
+    /** Wspólna grubość zaznaczonych (numer w menu) albo -1. */
+    function commonWidth(strokes) {
+      const indexes = new Set(strokes.map(widthIndexOf));
+      return indexes.size === 1 ? [...indexes][0] : -1;
+    }
+    /** Element z grubością `index` z menu: kształt – grubość linii, kreska – szerokości punktów przeskalowane (nacisk zostaje). */
+    function withLineWidth(stroke, index) {
+      if (isShape(stroke)) {
+        const width = tools.penWidths[index];
+        return { ...stroke, size: Math.round(((width.min + width.max) / 2) * 10) / 10 };
+      }
+      const highlighter = stroke.tool === 'highlighter';
+      const target = highlighter ? tools.highlighterWidths[index] : (tools.penWidths[index].min + tools.penWidths[index].max) / 2;
+      const factor = target / Math.max(0.1, lineWidthOf(stroke));
+      const limit = highlighter ? HIGHLIGHTER_RANGE.max : WIDTH_LIMITS.max;
+      const points = stroke.points.map((value, at) => (at % 3 === 2 ? Math.round(Math.min(limit, Math.max(WIDTH_LIMITS.min, highlighter ? target : value * factor)) * 100) / 100 : value));
+      return { ...stroke, points };
+    }
+    /** Zmiana zaznaczonych elementów spełniających `test` – jeden krok cofania; zaznaczenie zostaje (nowe obiekty). */
+    function changeSelection(test, change) {
+      const targets = editedSelection().filter(test);
+      const pairs = targets.map((stroke) => [stroke, change(stroke)]).filter(([stroke, next]) => JSON.stringify(stroke) !== JSON.stringify(next));
+      if (pairs.length === 0) return;
+      history.begin();
+      for (const [stroke, next] of pairs) drawing.strokes[drawing.strokes.indexOf(stroke)] = next;
+      commitStep();
+      selection = new Set([...selection].map((stroke) => pairs.find(([original]) => original === stroke)?.[1] ?? stroke));
+      selectionKind = 'whole';
+      updateToolbar();
+      requestRender();
+    }
     function updateToolbar() {
       for (const button of [penButton, highlighterButton, eraserButton, selectButton]) {
         button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
       }
       for (const [kind, button] of kindButtons) button.setAttribute('aria-pressed', String(tool === 'shape' && tools.shape === kind));
       updateMenu();
-      // Kształty (od 1.15) mają kolor i grubość pióra.
+      // Kształty (od 1.15) mają kolor i grubość pióra. Od 1.35 zaznaczone elementy: kolor i grubość w menu
+      // zmieniają je (przy narzędziu do rysowania – także kolor i grubość następnych).
       const inking = tool === 'pen' || tool === 'highlighter' || tool === 'shape';
-      const highlighter = tool === 'highlighter';
+      const painted = paintedSelection();
+      const sized = painted.filter(hasLineWidth);
+      const highlighter = painted.length > 0 ? painted.every((stroke) => stroke.tool === 'highlighter') : tool === 'highlighter';
       const palette = highlighter ? HIGHLIGHTER_COLORS : INK_COLORS;
-      const chosen = highlighter ? tools.highlighterColor : tools.penColor;
+      const chosen = painted.length > 0 ? commonColor(painted, highlighter) : highlighter ? tools.highlighterColor : tools.penColor;
       const choose = (value) => {
-        if (highlighter) tools.highlighterColor = value;
-        else tools.penColor = value;
-        saveTools(tools);
+        if (inking) {
+          if (tool === 'highlighter') tools.highlighterColor = value;
+          else tools.penColor = value;
+          saveTools(tools);
+        }
+        if (painted.length > 0) {
+          const hex = highlighter ? highlighterHex(value) : inkHex(value);
+          changeSelection(hasPaint, (stroke) => ({ ...stroke, color: hex }));
+        }
         closeSettings();
         updateToolbar();
         requestLive();
@@ -2512,24 +2629,28 @@ export function openDrawingEditor({
           type: 'button', class: 'drawing__swatch drawing__swatch--add', 'aria-label': 'Inny kolor – siatka, suwaki albo pipetka', title: 'Inny kolor',
           'aria-expanded': String(!colorPanel.hidden), dataset: { testid: 'drawing-color-custom' }, onClick: () => toggleColorPanel()
         }, icon('plus', { size: 16 })));
-      swatches.hidden = !inking;
-      optionsDot.style.setProperty('--swatch', inking ? (highlighter ? highlighterHex(chosen) : inkHex(chosen)) : 'transparent');
+      swatches.hidden = !inking && painted.length === 0;
+      const dotColor = chosen ? (highlighter ? highlighterHex(chosen) : inkHex(chosen)) : 'transparent';
+      optionsDot.style.setProperty('--swatch', inking || painted.length > 0 ? dotColor : 'transparent');
       // Pasek pod ikoną zakreślacza w kolorze wybranego zakreślacza.
       highlighterButton.style.setProperty('--highlighter-ink', highlighterHex(tools.highlighterColor));
       const sizes = highlighter ? tools.highlighterWidths.map((width) => width / 3) : tools.penWidths.map((width) => (width.min + width.max) / 1.4);
-      const current = highlighter ? tools.highlighterWidth : tools.penWidth;
+      const current = sized.length > 0 ? commonWidth(sized) : highlighter ? tools.highlighterWidth : tools.penWidth;
       replaceChildren(widths, sizes.map((size, index) => h('button', {
         type: 'button', class: 'drawing__width', 'aria-label': ['Cienka', 'Średnia', 'Gruba'][index], title: ['Cienka', 'Średnia', 'Gruba'][index],
         'aria-pressed': String(index === current), dataset: { testid: `drawing-width-${index}` },
         onClick: () => {
-          if (highlighter) tools.highlighterWidth = index;
-          else tools.penWidth = index;
-          saveTools(tools);
+          if (inking) {
+            if (tool === 'highlighter') tools.highlighterWidth = index;
+            else tools.penWidth = index;
+            saveTools(tools);
+          }
+          if (sized.length > 0) changeSelection(hasLineWidth, (stroke) => withLineWidth(stroke, index));
           updateToolbar();
           refreshSettings?.();
         }
       }, h('span', { style: { width: `${Math.max(3, Math.min(14, size))}px`, height: `${Math.max(3, Math.min(14, size))}px` } }))));
-      widths.hidden = !inking;
+      widths.hidden = !inking && sized.length === 0;
       eraserModes.hidden = tool !== 'eraser';
       for (const button of eraserModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.eraserMode));
       eraserSizes.hidden = tool !== 'eraser' || tools.eraserMode !== 'pixel';
@@ -2537,14 +2658,16 @@ export function openDrawingEditor({
       eraserButton.setAttribute('aria-label', `Gumka – ${ERASER_MODE_LABELS[tools.eraserMode].toLowerCase()}`);
       for (const group of [selectShapes, selectModes, selectGroup]) group.hidden = tool !== 'select';
       // Wiersz koloru i pastylka wyboru – tylko gdy mają co pokazać.
-      optionRow.hidden = [swatches, widths, eraserSizes, selectGroup].every((group) => group.hidden);
+      optionRow.hidden = [swatches, widths, eraserSizes].every((group) => group.hidden);
       optionsButton.hidden = optionRow.hidden;
       if (optionRow.hidden) setOptionsOpen(false);
       ellipseModes.hidden = !(tool === 'shape' && tools.shape === 'ellipse');
       for (const button of ellipseModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.ellipseMode));
       dimModes.hidden = !(tool === 'shape' && tools.shape === 'dim');
       for (const button of dimModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.dimMode));
-      choices.hidden = [eraserModes, selectShapes, selectModes, ellipseModes, dimModes].every((group) => group.hidden);
+      renderStyleRow();
+      choices.hidden = [eraserModes, ellipseModes, dimModes, styleRow].every((group) => group.hidden);
+      dockChoices.hidden = [selectShapes, selectModes, selectGroup].every((group) => group.hidden);
       updateShapeHint();
       for (const button of selectShapes.children) button.setAttribute('aria-checked', String(button.dataset.shape === tools.selectShape));
       for (const button of selectModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === selectMode()));
@@ -2632,7 +2755,7 @@ export function openDrawingEditor({
       if (isModeItem(item)) groupTools.set(`${shownGroup.side}:${shownGroup.id}`, item);
       if (item.startsWith('shape:')) {
         const panelWasOpen = !shapePanel.hidden;
-        // Otwarte ustawienia kształtów zostają przy odcinku, strzałkach i punkcie – pod spodem zakończenia albo znacznik.
+        // Otwarte „Więcej” (ⓘ) zostaje przy odcinku, strzałkach i punkcie – jak do 1.34, gdy były w nim zakończenia i znacznik.
         const keepPanel = (kind) => panelWasOpen && (hasCaps({ shape: kind }) || kind === 'point');
         tools.shape = item.slice(6);
         saveTools(tools);
@@ -2703,7 +2826,22 @@ export function openDrawingEditor({
       onHide: (hiddenNow) => setHidden(side, hiddenNow),
       onEdit: () => editGroups(side)
     })]));
+    /**
+     * Kółka narzędzi: na szerokim ekranie obok górnego menu, na węższym – pod nim, od 1.35 także pod wyborem
+     * (trzecie menu z kilkoma grupami nie zasłania małych kółek).
+     */
+    let ringTop = 0;
+    function placeRingTop() {
+      const box = stage.getBoundingClientRect();
+      if (box.width === 0) return;
+      const below = Math.max(toolbar.getBoundingClientRect().bottom, choices.hidden ? 0 : choices.getBoundingClientRect().bottom);
+      const top = box.width >= 1100 ? 10 : Math.max(10, Math.round(below - box.top + 14));
+      if (top === ringTop) return;
+      ringTop = top;
+      body.style.setProperty('--drawing-ring-top', `${top}px`);
+    }
     function updateRings() {
+      placeRingTop();
       menuGroups[shownGroup.side] = shownGroup.id;
       const narrow = isNarrow();
       for (const side of RING_SIDES) {
@@ -2753,7 +2891,7 @@ export function openDrawingEditor({
       uiHidden[part] = value;
       tools.uiHidden = uiHidden;
       saveTools(tools);
-      if (value && part === 'top') closeSettings();
+      if (value && (part === 'top' || part === 'bottom')) closeSettings();
       applyUi();
     }
     function toggleAll() {
@@ -3427,8 +3565,13 @@ export function openDrawingEditor({
       shapePanel.hidden = false;
       renderShapePanel();
     }
-    /** Wskazówki do kształtów z 1.34 w panelu kształtów. */
+    /** Wskazówki do kształtów w panelu kształtów (od 1.34; od 1.35 także punkt, prosta i strzałka po łuku – zamiast opisu ogólnego). */
     const SHAPE_TIPS = {
+      point: 'Punkt: dotknij strony – znacznik w tym miejscu. Rodzaj znacznika (punkt symetrii, kropka, krzyżyk, środek) – pod menu; '
+        + 'zmienia też zaznaczone punkty.',
+      xline: 'Prosta: przeciągnij od punktu do punktu – biegnie przez całą stronę przez te dwa punkty. Rodzaj linii (np. osiowa) – pod menu.',
+      curve: 'Strzałka po łuku: przeciągnij od początku do końca. Zaznaczona ma dwa punkty pośrednie – przeciągnij je, łuk przechodzi przez nie. '
+        + 'Rodzaj linii i końce – pod menu.',
       ellipse: 'Okrąg i elipsa – wybór pod menu: Ramka (prostokąt przeciągnięcia), Środek i R (od środka do okręgu), 2 pkt (średnica – od punktu do punktu), '
         + '3 pkt (okrąg przez trzy dotknięte punkty). Punkty przyciągają się do narożników, krawędzi i środków okręgów.',
       arc: 'Łuk przez trzy punkty: przeciągnij od początku do końca (albo dotknij obu), potem dotknij punktu, przez który ma przejść. '
@@ -3439,56 +3582,140 @@ export function openDrawingEditor({
     };
     function renderShapePanel() {
       if (shapePanel.hidden) return;
-      // Wypełnienie – ustawienie nowych kształtów; przy łuku i wymiarze (od 1.34) go nie ma.
-      const unfilled = tools.shape === 'arc' || tools.shape === 'dim';
-      // Od 1.32 rodzaje kształtów i symbole są w górnym menu (grupy na kółku) – tu ustawienia nowych kształtów.
+      // Od 1.35 styl (znacznik, linia, wypełnienie, zakończenia) jest w trzecim menu – tu, po ⓘ, przełączniki i opis.
       replaceChildren(shapePanel,
         panelTitle(`Kształty – ${SHAPE_LABELS[tools.shape].toLowerCase()}`),
-        // Od 1.17: wypełnienie nowych kształtów (i zaznaczonego).
-        unfilled ? null : h('p', { class: 'drawing__settings-label' }, 'Wypełnienie'),
-        unfilled ? null : h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Wypełnienie' }, SHAPE_FILLS.map((fill) => h('button', {
-          type: 'button', role: 'radio', 'aria-checked': String(fill === tools.shapeFill), dataset: { testid: `drawing-fill-default-${fill}` },
-          onClick: () => {
-            tools.shapeFill = fill;
-            saveTools(tools);
-            const [only] = selection;
-            if (selection.size === 1 && isShape(only) && canFill(only)) fillShape(only, fill);
-            renderShapePanel();
-          }
-        }, SHAPE_FILL_LABELS[fill]))),
-        // Od 1.27: rodzaj linii nowych kształtów (i zaznaczonych), przy punkcie – znacznik.
-        tools.shape === 'point'
-          ? [h('p', { class: 'drawing__settings-label' }, `Znacznik punktu – ${POINT_MARK_LABELS[tools.pointMark].toLowerCase()}`), styleChoices(POINT_MARKS, MARK_ICONS, POINT_MARK_LABELS, tools.pointMark, 'drawing-mark-default', (mark) => {
-            tools.pointMark = mark;
-            saveTools(tools);
-            restyle((shape) => isPointShape(shape), (shape) => ({ ...shape, mark }));
-            renderShapePanel();
-          })]
-          : !canDash({ shape: tools.shape }) ? null
-          : [h('p', { class: 'drawing__settings-label' }, `Linia – ${SHAPE_DASH_LABELS[tools.shapeDash].toLowerCase()}`), styleChoices(SHAPE_DASHES, DASH_ICONS, SHAPE_DASH_LABELS, tools.shapeDash, 'drawing-dash-default', (dash) => {
-            tools.shapeDash = dash;
-            saveTools(tools);
-            restyle(canDash, (shape) => withDash(shape, dash));
-            renderShapePanel();
-          })],
-        // Od 1.19: zakończenia nowych odcinków i strzałek (zaznaczonego – przyciskiem „Końce”); od 1.27 też łuku.
-        hasCaps({ shape: tools.shape }) ? capChoices(segmentDefaultCaps(), 'drawing-caps-default', (caps) => {
-          tools[CAPS_KEYS[tools.shape]] = caps;
-          saveTools(tools);
-          renderShapePanel();
-        }) : null,
-        tools.shape === 'dim' || tools.shape === 'arc' ? null : h('div', { class: 'drawing__settings-switch' }, lockToggle()),
-        h('div', { class: 'drawing__settings-switch' }, edgeSnapToggle()),
+        tools.shape === 'dim' || tools.shape === 'arc' || tools.shape === 'point' ? null : h('div', { class: 'drawing__settings-switch' }, lockToggle()),
+        tools.shape === 'point' ? null : h('div', { class: 'drawing__settings-switch' }, edgeSnapToggle()),
         // Od 1.34: okrąg z punktów, łuk i wymiar – jak ich używać.
         SHAPE_TIPS[tools.shape] ? h('p', { class: 'field__hint' }, SHAPE_TIPS[tools.shape]) : null,
-        h('p', { class: 'field__hint' }, 'Przeciągnij po stronie – kształt powstaje w prostokącie przeciągnięcia (odcinek i strzałka – od początku do końca); '
-          + 'dotknięcie – kształt w tym miejscu. Kolor i grubość – jak pióra; wypełnienie jasne jest przejrzyste. Punkty zaznaczonego kształtu: '
-          + 'narożniki i boki – szerokość i wysokość, romb na górnej krawędzi – pochylenie, kółko nad kształtem – obrót, pomarańczowy punkt – '
-          + 'wierzchołek trójkąta albo wcięcie trapezu. Wymiary i kąt pochylenia wpiszesz w polach przy ramce (oko przy polu – wymiar zostaje '
-          + 'na rysunku), tekst – przyciskiem „Tekst” albo dotknięciem zaznaczonego kształtu. Z klawiszem Shift (albo z włączonymi '
-          + 'proporcjami): kwadrat, koło, odcinek co 15°, narożnik bez zmiany proporcji. Prosta biegnie przez całą stronę przez dwa punkty; '
-          + 'strzałka po łuku ma dwa punkty pośrednie (przeciągnij je – łuk przechodzi przez nie); punkt – dotknięcie strony.'));
+        // Opis ogólny – przy kształtach z ramką (punkt, prosta i strzałka po łuku mają własny).
+        ['point', 'xline', 'curve', 'arc', 'dim'].includes(tools.shape) ? null : h('p', { class: 'field__hint' },
+          'Przeciągnij po stronie – kształt powstaje w prostokącie przeciągnięcia (odcinek i strzałka – od początku do końca); '
+          + 'dotknięcie – kształt w tym miejscu. Kolor i grubość – jak pióra; rodzaj linii, wypełnienie (jasne jest przejrzyste) i końce – pod menu. '
+          + 'Punkty zaznaczonego kształtu: narożniki i boki – szerokość i wysokość, romb na górnej krawędzi – pochylenie, kółko nad kształtem – obrót, '
+          + 'pomarańczowy punkt – wierzchołek trójkąta albo wcięcie trapezu. Wymiary i kąt pochylenia wpiszesz w polach przy ramce (oko przy polu – '
+          + 'wymiar zostaje na rysunku), tekst – przyciskiem „Tekst” albo dotknięciem zaznaczonego kształtu. Z klawiszem Shift (albo z włączonymi '
+          + 'proporcjami): kwadrat, koło, odcinek co 15°, narożnik bez zmiany proporcji.'));
       updateToolbar();
+    }
+    // ---- trzecie menu kształtów (od 1.35): styl nowych kształtów i zaznaczonych
+    /** Otwarty wybór pod trzecim menu: 'mark' | 'dash' | 'fill' | 'caps' | null. */
+    let openPicker = null;
+    let styleKey = '';
+    const STYLE_LABELS = { mark: 'Znacznik', dash: 'Linia', fill: 'Wypełnienie', caps: 'Końce' };
+    const sameValue = (values) => (values.length > 0 && values.every((value) => value === values[0]) ? values[0] : null);
+    /**
+     * Styl w trzecim menu: zaznaczone kształty (całe) – ich wspólne wartości (null – różne), bez zaznaczenia –
+     * ustawienia nowych kształtów narzędzia. Klucz bez wartości – ta grupa nie dotyczy kształtów. null – nic do pokazania.
+     */
+    function styleState() {
+      const targets = editedSelection().filter(isShape);
+      const kind = tool === 'shape' ? tools.shape : null;
+      if (targets.length === 0 && !kind) return null;
+      const probe = targets.length > 0 ? targets : [{ shape: kind }];
+      const pick = (test, value, fallback) => {
+        if (!probe.some(test)) return undefined;
+        return targets.length > 0 ? sameValue(targets.filter(test).map(value)) : fallback;
+      };
+      const caps = probe.some(hasCaps)
+        ? (targets.length > 0 ? { start: sameValue(targets.filter(hasCaps).map((shape) => segmentCaps(shape).start)), end: sameValue(targets.filter(hasCaps).map((shape) => segmentCaps(shape).end)) }
+          : segmentDefaultCaps())
+        : undefined;
+      return {
+        targets, kind,
+        values: {
+          mark: pick(isPointShape, pointMark, tools.pointMark),
+          dash: pick(canDash, shapeDash, tools.shapeDash),
+          fill: pick(canFill, (shape) => shape.fill ?? 'none', tools.shapeFill),
+          caps
+        }
+      };
+    }
+    /** Ikona przycisku grupy – wybrana wartość. */
+    function styleIcon(key, value) {
+      if (key === 'mark') return MARK_ICONS[value ?? 'center'];
+      if (key === 'dash') return DASH_ICONS[value ?? 'solid'];
+      if (key === 'caps') return CAP_ICONS[value?.end ?? 'none'];
+      return 'fill';
+    }
+    /** Kształt z wypełnieniem `fill` (pełne w kolorze tekstu – tekst biały, żeby było go widać). */
+    function withFill(shape, fill) {
+      const next = { ...shape };
+      if (fill === 'none') delete next.fill;
+      else next.fill = fill;
+      if (fill === 'solid' && next.label?.color === next.color) next.label = { ...next.label, color: '#ffffff' };
+      return next;
+    }
+    /** Wybór w trzecim menu: zaznaczone kształty, a przy narzędziu kształtów (albo bez zaznaczenia) – też następne. */
+    function pickStyle(key, value, which = null) {
+      const state = styleState();
+      if (!state) return;
+      if (tool === 'shape' || state.targets.length === 0) {
+        if (key === 'mark') tools.pointMark = value;
+        if (key === 'dash') tools.shapeDash = value;
+        if (key === 'fill') tools.shapeFill = value;
+        if (key === 'caps' && hasCaps({ shape: tools.shape })) tools[CAPS_KEYS[tools.shape]] = { ...segmentDefaultCaps(), [which]: value };
+        saveTools(tools);
+      }
+      if (key === 'mark') restyle(isPointShape, (shape) => ({ ...shape, mark: value }));
+      if (key === 'dash') restyle(canDash, (shape) => withDash(shape, value));
+      if (key === 'fill') restyle(canFill, (shape) => withFill(shape, value));
+      if (key === 'caps') restyle(hasCaps, (shape) => withCaps(shape, { ...segmentCaps(shape), [which]: value }));
+      updateToolbar();
+      requestLive();
+    }
+    /** Przyciski wyboru jednej grupy stylu (ikony; zakończenia – początek i koniec, wypełnienie – napisy). */
+    function styleTiles(key, value) {
+      if (key === 'mark') return styleChoices(POINT_MARKS, MARK_ICONS, POINT_MARK_LABELS, value, 'drawing-mark-default', (mark) => pickStyle('mark', mark));
+      if (key === 'dash') return styleChoices(SHAPE_DASHES, DASH_ICONS, SHAPE_DASH_LABELS, value, 'drawing-dash-default', (dash) => pickStyle('dash', dash));
+      if (key === 'caps') {
+        const before = { ...value };
+        return capChoices({ ...value }, 'drawing-caps-default', (caps) => {
+          const which = caps.start !== before.start ? 'start' : 'end';
+          pickStyle('caps', caps[which], which);
+        });
+      }
+      return h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Wypełnienie' }, SHAPE_FILLS.map((fill) => h('button', {
+        type: 'button', role: 'radio', 'aria-checked': String(fill === value), dataset: { testid: `drawing-fill-default-${fill}` },
+        onClick: () => pickStyle('fill', fill)
+      }, SHAPE_FILL_LABELS[fill])));
+    }
+    /**
+     * Trzecie menu kształtów: jedna grupa (znacznik punktu, rodzaj linii prostej i łuku) – od razu jej przyciski;
+     * kilka – przyciski z wybraną wartością, które rozwijają wybór w dół; ⓘ – przełączniki i opis (panel kształtów).
+     */
+    function renderStyleRow() {
+      const state = styleState();
+      const keys = state ? Object.keys(state.values).filter((key) => state.values[key] !== undefined) : [];
+      const info = tool === 'shape';
+      const key = JSON.stringify([keys, state?.values ?? null, openPicker, info, tools.shape, shapePanel.hidden]);
+      styleRow.hidden = keys.length === 0 && !info;
+      if (openPicker && !keys.includes(openPicker)) openPicker = null;
+      renderStyleDrop(state);
+      if (key === styleKey) return;
+      styleKey = key;
+      const inline = keys.length === 1 && (keys[0] === 'mark' || keys[0] === 'dash');
+      const parts = inline ? [styleTiles(keys[0], state.values[keys[0]])] : keys.map((name) => h('button', {
+        type: 'button', class: 'drawing__mode drawing__picker', 'aria-haspopup': 'true', 'aria-expanded': String(openPicker === name),
+        'aria-label': `${STYLE_LABELS[name]} – wybór`, title: STYLE_LABELS[name], dataset: { testid: `drawing-style-${name}` },
+        onClick: () => {
+          const next = openPicker === name ? null : name;
+          closeSettings();
+          openPicker = next;
+          updateToolbar();
+        }
+      }, icon(styleIcon(name, state.values[name]), { size: 20 }), h('span', { class: 'drawing__picker-label' }, STYLE_LABELS[name]), icon('chevronDown', { size: 12 })));
+      replaceChildren(styleRow, parts, info ? h('button', {
+        type: 'button', class: 'drawing__mode drawing__style-info', 'aria-expanded': String(!shapePanel.hidden), 'aria-label': 'Więcej – przełączniki i opis', title: 'Więcej',
+        dataset: { testid: 'drawing-style-info' }, onClick: () => toggleShapePanel()
+      }, icon('info', { size: 18 })) : null);
+    }
+    /** Rozwinięty wybór grupy stylu pod trzecim menu. */
+    function renderStyleDrop(state) {
+      styleDrop.hidden = !openPicker || !state;
+      if (styleDrop.hidden) return;
+      replaceChildren(styleDrop, h('p', { class: 'drawing__settings-label' }, STYLE_LABELS[openPicker]), styleTiles(openPicker, state.values[openPicker]));
     }
     /** Przyciąganie końców odcinka i strzałki do krawędzi i narożników (od 1.22) – na urządzeniu; Alt – chwilowo swobodnie. */
     function edgeSnapToggle() {
@@ -3529,90 +3756,9 @@ export function openDrawingEditor({
         onClick: () => onPick(value)
       }, icon(icons[value], { size: 28 }))));
     }
-    /** Zaznaczone kształty, którym można zmienić rodzaj linii. */
-    const dashable = () => [...selection].filter((stroke) => isShape(stroke) && canDash(stroke));
     /** Zmiana stylu zaznaczonych kształtów spełniających `test` – jeden krok cofania. */
     function restyle(test, change) {
-      const targets = [...selection].filter((stroke) => isShape(stroke) && test(stroke) && drawing.strokes.includes(stroke));
-      if (targets.length === 0) return;
-      const pairs = targets.map((shape) => [shape, change(shape)]).filter(([shape, next]) => JSON.stringify(shape) !== JSON.stringify(next));
-      if (pairs.length === 0) return;
-      history.begin();
-      for (const [shape, next] of pairs) drawing.strokes[drawing.strokes.indexOf(shape)] = next;
-      commitStep();
-      selection = new Set([...selection].map((stroke) => pairs.find(([shape]) => shape === stroke)?.[1] ?? stroke));
-      selectionKind = 'whole';
-      updateToolbar();
-      requestRender();
-    }
-    /**
-     * Styl zaznaczonego kształtu (od 1.27): rodzaj linii, wypełnienie, zakończenia (odcinek, strzałka, łuk)
-     * albo znacznik punktu – zmiana po „Gotowe”, jeden krok cofania. Kilka kształtów – sam rodzaj linii.
-     */
-    function chooseStyle() {
-      const [only] = selection;
-      const single = selection.size === 1 && isShape(only) ? only : null;
-      const shapes = single ? [single] : dashable();
-      if (shapes.length === 0) return;
-      const choice = {
-        dash: shapes.every((shape) => shapeDash(shape) === shapeDash(shapes[0])) ? shapeDash(shapes[0]) : null,
-        fill: single?.fill ?? 'none',
-        caps: single && hasCaps(single) ? segmentCaps(single) : null,
-        mark: single && isPointShape(single) ? pointMark(single) : null
-      };
-      let picked = null;
-      /** Przyciski z ikoną do wyboru jednej wartości; nagłówek pokazuje nazwę wybranej. */
-      const tiles = (key, values, icons, labels, title, testID) => {
-        const heading = h('p', { class: 'drawing__settings-label' });
-        const show = () => { heading.textContent = choice[key] ? `${title} – ${labels[choice[key]].toLowerCase()}` : title; };
-        const buttons = values.map((value) => h('button', {
-          type: 'button', class: 'drawing__style', role: 'radio', 'aria-checked': String(choice[key] === value), 'aria-label': labels[value], title: labels[value],
-          dataset: { testid: `${testID}-${value}` },
-          onClick: () => {
-            choice[key] = value;
-            for (const button of buttons) button.setAttribute('aria-checked', String(button === buttons[values.indexOf(value)]));
-            show();
-          }
-        }, icon(icons[value], { size: 28 })));
-        show();
-        return h('div', { class: 'drawing__style-group' }, heading, h('div', { class: 'drawing__styles', role: 'radiogroup', 'aria-label': title }, buttons));
-      };
-      const fills = single && canFill(single) ? SHAPE_FILLS.map((fill) => h('button', {
-        type: 'button', role: 'radio', 'aria-checked': String(choice.fill === fill), dataset: { testid: `drawing-fill-${fill}` },
-        onClick: (event) => {
-          choice.fill = fill;
-          for (const button of event.currentTarget.parentNode.children) button.setAttribute('aria-checked', String(button === event.currentTarget));
-        }
-      }, SHAPE_FILL_LABELS[fill])) : null;
-      openFormSheet({
-        title: shapes.length > 1 ? `Styl – ${plural(shapes.length, 'kształt', 'kształty', 'kształtów')}` : `Styl – ${SHAPE_LABELS[single.shape].toLowerCase()}`,
-        submitLabel: 'Gotowe',
-        build: () => [
-          choice.mark ? tiles('mark', POINT_MARKS, MARK_ICONS, POINT_MARK_LABELS, 'Znacznik punktu', 'drawing-mark') : null,
-          shapes.some(canDash) ? tiles('dash', SHAPE_DASHES, DASH_ICONS, SHAPE_DASH_LABELS, 'Rodzaj linii', 'drawing-dash') : null,
-          fills ? h('div', { class: 'drawing__style-group' }, h('p', { class: 'drawing__settings-label' }, 'Wypełnienie'),
-            h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Wypełnienie' }, fills)) : null,
-          choice.caps ? capChoices(choice.caps, 'drawing-caps', (next) => { choice.caps = next; }) : null
-        ],
-        onSubmit: () => { picked = { ...choice }; },
-        onClose: () => {
-          if (!picked) return;
-          const targets = new Set(shapes);
-          restyle((shape) => targets.has(shape), (shape) => {
-            let next = picked.dash ? withDash(shape, picked.dash) : shape;
-            if (picked.mark && isPointShape(next)) next = { ...next, mark: picked.mark };
-            if (picked.caps && hasCaps(next)) next = withCaps(next, picked.caps);
-            if (single && canFill(next) && (next.fill ?? 'none') !== picked.fill) {
-              next = { ...next };
-              if (picked.fill === 'none') delete next.fill;
-              else next.fill = picked.fill;
-              // Pełne wypełnienie w kolorze tekstu – tekst biały, żeby było go widać.
-              if (picked.fill === 'solid' && next.label?.color === next.color) next.label = { ...next.label, color: '#ffffff' };
-            }
-            return next;
-          });
-        }
-      });
+      changeSelection((stroke) => isShape(stroke) && test(stroke), change);
     }
     /**
      * Wybór zakończeń odcinka (od 1.19): dwa wiersze – początek i koniec – po sześć przycisków z ikoną.
@@ -3621,7 +3767,7 @@ export function openDrawingEditor({
     function capChoices(caps, testID, onPick) {
       const row = (which, label) => h('div', { class: 'drawing__caps-row' },
         h('span', { class: 'drawing__caps-label' }, label),
-        h('div', { class: 'drawing__caps', role: 'radiogroup', 'aria-label': `${label} odcinka` }, SEGMENT_CAPS.map((cap) => h('button', {
+        h('div', { class: 'drawing__caps', role: 'radiogroup', 'aria-label': `${label} linii` }, SEGMENT_CAPS.map((cap) => h('button', {
           type: 'button', class: `drawing__cap${which === 'start' ? ' drawing__cap--start' : ''}`, role: 'radio', 'aria-checked': String(caps[which] === cap),
           'aria-label': `${label}: ${SEGMENT_CAP_LABELS[cap].toLowerCase()}`, title: SEGMENT_CAP_LABELS[cap], dataset: { testid: `${testID}-${which}-${cap}` },
           onClick: (event) => {
@@ -3630,9 +3776,7 @@ export function openDrawingEditor({
             onPick({ ...caps });
           }
         }, icon(CAP_ICONS[cap], { size: 22 })))));
-      return h('div', { class: 'drawing__caps-group' },
-        h('p', { class: 'drawing__settings-label' }, 'Zakończenia odcinka'),
-        row('start', 'Początek'), row('end', 'Koniec'));
+      return h('div', { class: 'drawing__caps-group' }, row('start', 'Początek'), row('end', 'Koniec'));
     }
 
     // ---- liniuszek (od 1.15): odstęp i kąt linii, linie poprzeczne, przyciąganie
@@ -3768,7 +3912,9 @@ export function openDrawingEditor({
       requestLive();
     }
 
-    const topBar = h('div', { class: 'drawing__top' }, toolbar, choices, topHandle, settings, colorPanel, rulerPanel, paperPanel, shapePanel, guidePanel);
+    const topBar = h('div', { class: 'drawing__top' }, toolbar, choices, styleDrop, topHandle, settings, colorPanel, shapePanel);
+    // Od 1.35 panele narzędzi ogólnych (linijka i skala, tło, liniuszek) – nad dolnym paskiem.
+    dock.prepend(rulerPanel, paperPanel, guidePanel);
     function toggleSettings() {
       const open = settings.hidden;
       closeSettings();
@@ -3777,6 +3923,8 @@ export function openDrawingEditor({
     }
     /** Zamyka panele pod paskiem: ustawienia pióra, własny kolor (i pipetkę), linijkę i skalę. */
     function closeSettings() {
+      openPicker = null;
+      styleDrop.hidden = true;
       settings.hidden = true;
       refreshSettings = null;
       colorPanel.hidden = true;
@@ -4239,6 +4387,7 @@ export function openDrawingEditor({
     }
     function clearSelection() {
       dropRegion();
+      moveMode = false;
       selectionKind = 'whole';
       if (snip) {
         snip = null;
@@ -4457,17 +4606,6 @@ export function openDrawingEditor({
     }
 
     // ---- wypełnienie i tekst kształtu (od 1.17)
-    function fillShape(shape, fill) {
-      if (!drawing.strokes.includes(shape) || (shape.fill ?? 'none') === fill) return;
-      const next = { ...shape };
-      if (fill === 'none') delete next.fill;
-      else next.fill = fill;
-      // Pełne wypełnienie w kolorze tekstu – tekst biały, żeby było go widać.
-      if (fill === 'solid' && next.label?.color === next.color) next.label = { ...next.label, color: '#ffffff' };
-      replaceShape(shape, next);
-      updateToolbar();
-      requestRender();
-    }
     /** Tekst na kształcie: wpisanie albo poprawka (pusty – usuwa tekst); wielkość i kolor jak w polu tekstowym. */
     function editShapeLabel(shape) {
       const { label } = shape;
@@ -6246,6 +6384,8 @@ export function openDrawingEditor({
         const tap = Math.abs(done.dx) * view.scale < TAP_SLOP && Math.abs(done.dy) * view.scale < TAP_SLOP;
         const [only] = selection;
         if (!tap) moveSelection(done.dx, done.dy);
+        // Przy „Przesuń” (od 1.35) dotknięcie niczego nie otwiera.
+        else if (done.free) requestLive();
         // Dotknięcie zaznaczonego pola tekstowego albo wzoru – poprawka; kształtu (od 1.17) – tekst na nim; szyku (od 1.19) – parametry.
         else if (selection.size === 1 && isTextual(only) && touchesStroke(only, done.start.x, done.start.y, 0)) editElement(only.tool, only);
         // Tabela i karteczka (od 1.21) – okno edycji.
@@ -6363,6 +6503,17 @@ export function openDrawingEditor({
       }
       if (!placing) closeSettings();
       const point = toDrawing(event);
+      // „Przesuń” (od 1.35): przeciągnięcie w dowolnym miejscu przesuwa zaznaczenie (drugi palec – jak zwykle, powiększanie).
+      if (moveMode && selection.size > 0 && !snip && !active && !gesture && touches.size === 0 && event.button === 0) {
+        try {
+          live.setPointerCapture(event.pointerId);
+        } catch {
+          // przechwycenie nie jest konieczne
+        }
+        active = { kind: 'move', id: event.pointerId, touch: event.pointerType === 'touch', start: point, dx: 0, dy: 0, client: local(event), free: true };
+        requestRender();
+        return;
+      }
       // Wstawianie symbolu metrologicznego (od 1.22.1): dotknięcie – miejsce strzałki, trójkąta albo wierzchołka.
       // Gdy aplikacja zna już rysik, palec (i dłoń) przesuwa stronę – symbol wstawia rysik albo mysz.
       if (symbolPlacing && !active && !gesture && touches.size === 0 && !(fingerPans() && event.pointerType === 'touch')) {

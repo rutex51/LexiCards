@@ -44,7 +44,7 @@ js/ui/attachments.js       załączniki notatek: plakietka rodzaju, lista w podg
 js/ui/recorder.js          notatka głosowa: nagrywanie z mikrofonu (MediaRecorder), pauza, limit czasu, blokada wygaszania ekranu
 js/ui/math.js              wzory w notatce: drzewo zapisu → MathML, zamiana $…$ w podglądzie, ściągawka „Równania”
 js/ui/fit-table.js         okno „Tabela pasowań” (od 1.25): pasowania zalecane, dowolna klasa albo pasowanie z litery i klasy IT
-js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek (równoległy, od 1.22 promieniowy), kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka, od 1.22 przyciąganie końców i magnes, od 1.24 punkty w wierzchołkach łamanej), figury z odręcznych kształtów (od 1.24 – przytrzymane pióro), spirala na grzbiecie (od 1.24.1), Shift i Ctrl, środkowy przycisk, szyk, kartki (od 1.22 kółko, ‹ › i animacja przewracania, od 1.24 zagięcie od rogu, od 1.30 – rysunki i zdjęcia notatki), od 1.30 obrót i odbicie zaznaczenia, Shift – kilka elementów, przełącznik palca, obraz PNG / JPEG; od 1.32 górne menu grupy, dolny pasek, pastylki, chowanie elementów, lewy Alt, prawy przycisk i spacja
+js/ui/drawing.js           edytor rysunku: płótno, pióro z naciskiem, zakreślacz, gumka, gesty, ustawienia pióra, linijka ze skalą, własne kolory, zaznaczanie i schowek, wycinek i „Osadź”, tło i szablon (narożniki, wielkość w %), liniuszek (równoległy, od 1.22 promieniowy), kształty (pola wymiarów z okiem, wypełnienie, tekst, zakończenia odcinka, od 1.22 przyciąganie końców i magnes, od 1.24 punkty w wierzchołkach łamanej), figury z odręcznych kształtów (od 1.24 – przytrzymane pióro), spirala na grzbiecie (od 1.24.1), Shift i Ctrl, środkowy przycisk, szyk, kartki (od 1.22 kółko, ‹ › i animacja przewracania, od 1.24 zagięcie od rogu, od 1.30 – rysunki i zdjęcia notatki), od 1.30 obrót i odbicie zaznaczenia, Shift – kilka elementów, przełącznik palca, obraz PNG / JPEG; od 1.32 górne menu grupy, dolny pasek, pastylki, chowanie elementów, lewy Alt, prawy przycisk i spacja; od 1.35 trzecie menu kształtów, zmiana zaznaczonego z menu, „Przesuń”, wybór zaznaczania nad dolnym paskiem
 js/ui/drawing-ring.js      kółko narzędzi (od 1.32): duże kółko i małe kółka grup, obrót przeciągnięciem i kółkiem myszy, dociąganie, schowanie przesunięciem i zakładką
 js/ui/drawing-paint.js     rysunek na płótnie: kształty geometryczne (z zakończeniami odcinka), szablon (boisko liniami, obraz mnożony z tłem)
 js/ui/drawing-boxes.js     tabele i karteczki na rysunku (od 1.21): układ i pomiar (szerokości kolumn, łamanie, wysokość z treści), rysowanie, strzałka, ikona zwiniętej, treść obok ikony
@@ -859,7 +859,7 @@ w ustawieniach), trójkąt przycina krzywą (`bezierTrim`, `bezierPart` – de C
 zwraca tylko klucze `dimKeys`). Przyciąganie (`snapGeometry`): punkt – środek, łuk – końce i krzywa.
 Edytor: panel kształtów – **Prosta**, **Strzałka po łuku**, **Punkt**, rząd **Linia** (`styleChoices`,
 `tools.shapeDash`; zmienia też zaznaczone kształty – `restyle`, jeden krok cofania) albo **Znacznik punktu**
-(`tools.pointMark`), zakończenia łuku (`CAPS_KEYS`); nad zaznaczeniem jeden przycisk **Styl** (`chooseStyle`,
+(`tools.pointMark`), zakończenia łuku (`CAPS_KEYS`); nad zaznaczeniem jeden przycisk **Styl** (do 1.34; od 1.35 – trzecie menu, niżej; `chooseStyle`,
 w miejsce dawnych „Wypełnienie” i „Końce” – pasek mieści się na telefonie): okno z rodzajem linii, wypełnieniem,
 zakończeniami (`capChoices`) albo znacznikiem; kilka zaznaczonych kształtów – sam rodzaj linii; zmiana po
 „Gotowe” przez `restyle` (jeden krok cofania). `openMenu` pokazuje ikonę także przy pozycji do wyboru.
@@ -1520,7 +1520,50 @@ w szarej pastylce (`drawing-shape-hint`). „Wymiar”: przeciągnięcie – `di
 końcami, dotknięcie – `measureAt` (okrąg albo łuk pod palcem – średnica, promień przyklejony do środka
 i krawędzi; krawędź – wymiar liniowy przyklejony do jej narożników). Przy wymiarze i kształtach
 z punktów przeciągnięcie zaznaczonego kształtu go nie przesuwa (wspólne narożniki). Pole liczby
-zaznaczonego wymiaru – tylko do odczytu, bez oka; „Tekst” i „Styl” – ukryte.
+zaznaczonego wymiaru – tylko do odczytu, bez oka; „Tekst” i „Styl” – ukryte (od 1.35 trzecie menu wymiaru – samo ⓘ).
+
+## Trzecie menu, zmiana zaznaczonego i „Przesuń” (od 1.35)
+
+Wszystko w `js/ui/drawing.js` (bez zmian w `js/core`, format rysunku bez zmian):
+
+- **Trzecie menu** (`styleRow`, `drawing-style-row`, w pastylce wyboru pod menu; `styleDrop` – rozwinięty
+  wybór pod nim): `styleState()` – zaznaczone kształty (`editedSelection`) i ich wspólne wartości
+  (`sameValue`, różne – null) albo, bez zaznaczenia, ustawienia nowych kształtów narzędzia; klucz bez
+  wartości (`undefined`) – grupa nie dotyczy kształtu (`isPointShape`, `canDash`, `canFill`, `hasCaps`).
+  Jedna grupa (znacznik punktu, rodzaj linii prostej i łuku) – od razu jej przyciski (`styleTiles`); kilka –
+  przyciski `drawing-style-<mark|dash|fill|caps>` z ikoną wybranej wartości (`styleIcon`), które otwierają
+  `styleDrop` (`openPicker`; `closeSettings` zamyka). `pickStyle` – przy narzędziu kształtów albo bez
+  zaznaczenia zapisuje ustawienie nowych (`tools.pointMark`, `shapeDash`, `shapeFill`, `CAPS_KEYS`), potem
+  `restyle` zaznaczonych (jeden krok cofania). Przyciski wyboru mają testid `drawing-<mark|dash|fill|caps>-default-…`.
+  **ⓘ** (`drawing-style-info`, tylko przy narzędziu kształtów) – `toggleShapePanel`: panel kształtów ma już
+  tylko przełączniki (proporcje, przyciąganie końców) i opis (`SHAPE_TIPS` – od 1.35 też punkt, prosta,
+  strzałka po łuku; opis ogólny – przy kształtach z ramką). Okno „Styl” (`chooseStyle`) usunięte.
+- **Zmiana zaznaczonego z menu:** `editedSelection()` – zaznaczenie (całe elementy); przy narzędziu kształtów
+  tylko kształty wybranego rodzaju (właśnie narysowany, nie zaznaczony wcześniej okrąg). `paintedSelection`
+  (`hasPaint` – kreska, kształt, pole tekstowe, wzór, symbol) i `hasLineWidth` decydują, czy w menu są kolory
+  i grubości także przy zaznaczaniu; wybrana jest wspólna wartość (`commonColor`, `commonWidth` – najbliższa
+  z trzech grubości). Wybór – `changeSelection(test, change)` (jeden krok cofania, zaznaczenie przechodzi na
+  nowe obiekty): kolor (`inkHex` / `highlighterHex`), grubość – `withLineWidth` (kształt – `size`, kreska –
+  szerokości punktów przeskalowane, nacisk zostaje; zakreślacz – stała szerokość). Przy piórze, zakreślaczu
+  i kształtach wybór zapisuje też ustawienie narzędzia. `editSignature()` na początku `renderLive` odświeża
+  menu, gdy zaznaczenie się zmieniło.
+- **Przesuń** (`drawing-selection-move`, pierwszy na pasku poleceń, `aria-pressed`): `moveMode` – w
+  `pointerdown` przeciągnięcie gdziekolwiek na stronie przy zaznaczeniu to `{ kind: 'move', free: true }`
+  (jak przesunięcie zaznaczenia; koniec – `requestLive`). Wyłącza je ponowne dotknięcie, `clearSelection`
+  i brak zaznaczenia w `placeSelectionBar`; klasa `drawing__stage--moving` – kursor przesuwania.
+- **Wybór nad dolnym paskiem:** `dockChoices` (`drawing-dock-choices`: kształt i tryb zaznaczania, Wklej,
+  Zaznacz wszystko) – w `.drawing__dock` nad uchwytem; panele linijki, tła i liniuszka też są w doku
+  (`.drawing__dock > .drawing__settings` – nad paskiem). Pastylki i komunikat podnosi
+  `.drawing:has(.drawing__choices--dock:not([hidden]))`; na telefonie wybór ma dwa wiersze (`::after` jako
+  przełamanie, tryby `order: 2`). `.drawing__top` i `.drawing__dock` nie łapią dotknięć poza swoimi
+  pastylkami (`pointer-events`). `placeRingTop()` – na węższych ekranach kółka pod menu i wyborem.
+- **Kółko narzędzi** (`js/ui/drawing-ring.js`): mysz bez wciśniętego przycisku (`buttons === 0`) w trakcie
+  przeciągania – przycisk puszczony poza kółkiem – kończy obrót (`cancelDrag`, dociągnięcie, bez blokady
+  kliknięcia); tak samo przesunięcie dużego kółka.
+- **Zaznaczony punkt:** w `paintHandles` przerywane kółko (promień ≥ 20 px, `SELECT_FILLS.whole`) zamiast
+  ramki; wymiar – bez ramki.
+- **Spirala:** przednie zwoje dla `holes.slice(0, -1)` – drut kończy się w ostatniej dziurce; połysk
+  (`WIRE_SHINE`) – sześć warstw coraz cieńszych i jaśniejszych kresek przesuniętych ku światłu.
 
 ## Dźwięki (od 1.31)
 

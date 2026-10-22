@@ -1,4 +1,4 @@
-# LexiCards 1.34
+# LexiCards 1.35
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -43,8 +43,9 @@ Dźwięki: szum odlatującej fiszki i szelest przewracanej kartki notatki i rysu
 Rysunek – nowy układ: kółka narzędzi (grupy standardowe po prawej, zestaw Metrologia po lewej), górne menu w dwóch wierszach z wysuwanym wyborem, dolny pasek narzędzi ogólnych, pastylki informacji i zmian, chowanie każdego elementu i całego interfejsu, lewy Alt i prawy przycisk – zaznaczanie, spacja – powiel (wersja 1.32): [docs/RELEASE-1.32.md](docs/RELEASE-1.32.md).
 Rysunek – okno „Grupy narzędzi”: które grupy standardowe są na prawym kółku i w jakiej kolejności, gotowe zestawy (Metrologia, Szkic odręczny, Geometria, Notatki) i własne grupy z wybranymi narzędziami na lewym kółku (wersja 1.33): [docs/RELEASE-1.33.md](docs/RELEASE-1.33.md).
 Rysunek: okrąg ze środka i promienia, z dwóch i z trzech punktów, łuk przez trzy punkty, narzędzie „Wymiar” (liniowy, średnica, promień, kąt – końce przyklejone do kształtu), przyciąganie do środka okręgu (wersja 1.34): [docs/RELEASE-1.34.md](docs/RELEASE-1.34.md).
+Rysunek: trzecie menu kształtów (znacznik punktu, rodzaj linii, wypełnienie, końce i ⓘ – rozwijane w dół zamiast okna „Styl”), zmiana zaznaczonego elementu z menu (kolor, grubość, styl), „Przesuń” nad zaznaczeniem, wybór zaznaczania nad dolnym paskiem, duże kółko zaznaczonego punktu, kółko narzędzi bez obracania przy samym najechaniu myszą, spirala kończy się w ostatniej dziurce (wersja 1.35): [docs/RELEASE-1.35.md](docs/RELEASE-1.35.md).
 
-## Co potrafi wersja 1.34
+## Co potrafi wersja 1.35
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -536,7 +537,21 @@ zapamiętany na urządzeniu; na iPhonie lewe kółko jest na początku schowane)
 cały interfejs. **Skróty:** samo naciśnięcie **lewego Alt** – zaznaczanie na stałe, ponownie – poprzednie
 narzędzie (Alt z przeciąganiem to dalej swobodne końce, prawy Alt – polskie litery – nic nie zmienia);
 **prawy przycisk myszy** (albo przycisk na rysiku) – zaznaczanie przy każdym narzędziu; **spacja** –
-powiel zaznaczenie. Do 1.31 – jeden pasek narzędzi na środku u góry z elementami opisanymi niżej:
+powiel zaznaczenie.
+**Od 1.35:** wybór narzędzi ogólnych (obszar i tryb zaznaczania, **Wklej**, **Zaznacz wszystko**) i ich panele
+(tło, linijka, liniuszek) są **nad dolnym paskiem**, nie pod górnym menu (na iPhonie wybór zaznaczania ma dwa
+wiersze, a pastylki są nad nim). Przy kształtach pod menu jest **trzecie menu**: przy punkcie – od razu znaczniki,
+przy prostej i łuku – rodzaje linii, przy innych kształtach przyciski **Linia**, **Wypełnienie** i **Końce**
+z wybraną wartością, które rozwijają wybór w dół; **ⓘ** rozwija w dół przełączniki (proporcje, przyciąganie
+końców) i opis kształtu – bez osobnego okna (okna **Styl** z 1.27 już nie ma). **Zaznaczony element zmieniasz
+od razu:** kolor i grubość w menu i trzecie menu zmieniają zaznaczone kształty i kreski pióra albo zakreślacza
+(kolor – także pola tekstowe, wzory i symbole), jeden krok cofania. Przy zaznaczaniu następne elementy rysują
+się jak dotąd; przy narzędziu do rysowania wybrany kolor, grubość i styl są też ustawieniem następnych, a przy
+narzędziu kształtów zmiana dotyczy zaznaczonych kształtów tego rodzaju (np. właśnie narysowanego). **Przesuń** –
+pierwszy przycisk nad zaznaczeniem: przeciągnięcie w dowolnym miejscu strony przesuwa zaznaczenie (nie trzeba
+trafiać palcem w cienką kreskę); ponowne dotknięcie albo zdjęcie zaznaczenia kończy. Zaznaczony **punkt** ma duże
+przerywane kółko zamiast kwadratowej ramki. Mysz puszczona poza kółkiem narzędzi nie zostawia go „przyklejonego” –
+samo najechanie już go nie obraca. Do 1.31 – jeden pasek narzędzi na środku u góry z elementami opisanymi niżej:
 nagłówek **Anuluj – Rysunek 1 – Gotowe** i narzędzia: **pióro**,
 **zakreślacz** (półprzezroczysty, nie zasłania tuszu), **gumka**, **zaznaczanie**, kolory (pióro:
 czarny, niebieski, czerwony, zielony, pomarańczowy, fioletowy; zakreślacz: żółty, zielony, różowy,
@@ -647,7 +662,8 @@ szerokość i wysokość.
 i strzałka: **długość** i **kąt**). Długości są w skali rysunku; wpisz liczbę i Enter – kształt zmienia
 się wokół środka (odcinek – od początku), Esc – bez zmiany. Dotknięcie rombu pochylenia albo punktu
 boku bez przeciągania ustawia kursor w odpowiednim polu. **Wypełnienie** (Brak, Jasne, Pełne – w kolorze
-kształtu): w panelu kształtów dla nowych, polecenie **Wypełnienie** nad zaznaczonym (od 1.27 w oknie **Styl**). **Tekst** nad
+kształtu): w panelu kształtów dla nowych, polecenie **Wypełnienie** nad zaznaczonym (od 1.27 w oknie **Styl**, od 1.35 –
+**Wypełnienie** w trzecim menu, dla nowych i zaznaczonych). **Tekst** nad
 zaznaczonym kształtem (albo dotknięcie zaznaczonego kształtu) – tekst na środku kształtu (odcinka –
 nad nim), który przesuwa się, obraca i zmienia szerokość razem z nim.
 **Wycinek i Osadź** (od 1.17): przy zaznaczaniu w trybie **Wycinek** (do 1.31 także przeciągnięcie
@@ -663,14 +679,15 @@ dowolnym narzędziu włącza zaznaczanie (tryb Auto); puszczony – wraca poprze
 znika (przesuń je, usuń albo skopiuj, trzymając Ctrl). Wciśnięte **kółko myszy** i ruch przesuwa stronę.
 **Zakończenia odcinka** (od 1.19): początek i koniec odcinka albo strzałki – brak, grot, trójkąt, koło,
 kwadrat, romb; dla nowych w panelu kształtów (po wybraniu odcinka), dla zaznaczonego – polecenie **Końce**
-(od 1.27 w oknie **Styl**).
+(od 1.27 w oknie **Styl**); od 1.35 – **Końce** w trzecim menu (początek i koniec), dla nowych i zaznaczonych.
 
 **Rodzaj linii** (od 1.27): w panelu kształtów rząd **Linia** – ciągła, przerywana, osiowa (kreska-kropka,
 jak oś symetrii), dwupunktowa (kreska-dwie kropki) i kropkowa – dla nowych kształtów i od razu dla
 zaznaczonych. **Styl** (od 1.27 – w miejsce dawnych poleceń **Wypełnienie** i **Końce**) nad zaznaczonym
-kształtem otwiera jedno okno: rodzaj linii, wypełnienie, zakończenia (odcinek, strzałka, łuk) albo znacznik
-punktu – zmiana po **Gotowe**, jeden krok cofania; przy kilku zaznaczonych kształtach – rodzaj linii
-wszystkich naraz. Pasek poleceń jest przez to krótszy i mieści się na telefonie. Kreski i kropki zależą od grubości linii; groty i zakończenia zostają ciągłe.
+kształtem otwierał jedno okno: rodzaj linii, wypełnienie, zakończenia (odcinek, strzałka, łuk) albo znacznik
+punktu. Od 1.35 zamiast okna jest trzecie menu pod menu (**Linia**, **Wypełnienie**, **Końce**, znacznik) – zmienia
+od razu nowe i zaznaczone kształty (przy kilku zaznaczonych z różnymi wartościami żadna nie jest wybrana),
+a na pasku poleceń jest **Przesuń**. Kreski i kropki zależą od grubości linii; groty i zakończenia zostają ciągłe.
 Działa przy każdym kształcie oprócz punktu, także na obrazie w notatce.
 
 **Prosta** (od 1.27): przeciągnięcie jak przy odcinku wyznacza dwa punkty (kąt co 45° lekko przyskakuje,
@@ -678,12 +695,12 @@ z Shift – co 15°), a linia biegnie przez całą stronę w obie strony. Zaznac
 przeciągnięcia i pole kąta; z linią osiową to oś symetrii. **Punkt** (od 1.27): dotknięcie strony stawia
 znacznik – **punkt symetrii** (kółko z krzyżykiem, domyślnie), **kropka**, **krzyżyk** albo **środek** (+);
 wielkość – od grubości pióra; znacznik wybierasz w panelu albo w oknie **Styl** nad zaznaczonym
-punktem, tekst (np. „O”, „S”) – poleceniem **Tekst** (stoi obok znacznika). **Strzałka po łuku** (od 1.27):
+punktem (od 1.35 – od razu w trzecim menu), tekst (np. „O”, „S”) – poleceniem **Tekst** (stoi obok znacznika). **Strzałka po łuku** (od 1.27):
 przeciągnięcie od początku do końca tworzy łuk wygięty na lewo od kierunku ruchu (w prawo – łuk w górę);
 zaznaczona ma cztery niebieskie punkty – początek, **dwa punkty pośrednie** i koniec – a łuk zawsze przechodzi
 przez wszystkie cztery (przeciągnij punkt pośredni, żeby zmienić wygięcie), narożniki ramki zmieniają
 wielkość, kółko – obrót. Zakończenia jak przy odcinku (grot, trójkąt, koło, kwadrat, romb – w panelu albo w oknie
-**Styl**), domyślnie grot na końcu; bez grotów to zwykły łuk.
+**Styl**, od 1.35 – **Końce** w trzecim menu), domyślnie grot na końcu; bez grotów to zwykły łuk.
 **Przyciąganie końców** (od 1.22): początek i koniec nowego odcinka albo strzałki, przeciągany koniec
 zaznaczonego odcinka i koniec strzałki karteczki przyskakują do **narożnika** (kwadracik) albo
 **krawędzi** (kółko) innego elementu, gdy są bliżej niż ok. 3 mm (14 punktów ekranu; narożnik ma
@@ -759,7 +776,8 @@ najpierw do widoku całej strony (bez animacji, gdy system prosi o ograniczenie 
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę
 i dalej poza ekran, a gdy zgięcie dochodzi do grzbietu, płynnie znika i spirala wychodzi spod niego
-(poprzednia kartka wraca tą samą drogą); od 1.26 płat znika później – widać go prawie do końca przewracania. To tylko wygląd edytora – obraz rysunku w notatce,
+(poprzednia kartka wraca tą samą drogą); od 1.26 płat znika później – widać go prawie do końca przewracania. Od 1.35 drut
+kończy się w ostatniej dziurce (bez zwoju w powietrzu pod kartką), a odblask na zwojach przechodzi łagodniej. To tylko wygląd edytora – obraz rysunku w notatce,
 wycinek i „Osadź” są bez spirali, a kreska narysowana pod dziurką zostaje cała. Strona ze zdjęciem
 („Rysuj na zdjęciu”) – bez spirali.
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno

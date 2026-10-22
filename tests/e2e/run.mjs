@@ -4487,7 +4487,6 @@ test('rysunek 1.17: kształt – wymiary w polach przy ramce (szerokość, wysok
   const ids = await sampleLessons(page);
   const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Wymiary</p>');
   const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
-  const panel = editor.locator('[data-testid=drawing-shape-panel]');
   const dim = (key) => editor.locator(`[data-testid=drawing-dim-${key}]`);
   const box = await editor.locator('[data-testid=drawing-canvas]').boundingBox();
   const enter = async (key, value) => {
@@ -4536,18 +4535,17 @@ test('rysunek 1.17: kształt – wymiary w polach przy ramce (szerokość, wysok
   await enter('skew', '20');
   await waitUntil(async () => (await dim('skew').inputValue()) === '20', 'Pochylenie 20°');
 
-  // Wypełnienie z polecenia zaznaczenia (od 1.27 w oknie „Styl”): pełne, potem jasne (środek – szary, nie biały).
+  // Wypełnienie zaznaczonego (od 1.35 w trzecim menu – „Wypełnienie” rozwija wybór): pełne, potem jasne (środek – szary, nie biały).
   const center = [0.375, 0.4];
-  await editor.locator('[data-testid=drawing-selection-style]').click();
-  const styleSheet = page.locator('dialog.sheet[open]').last();
-  assert.equal(await styleSheet.locator('[data-testid=drawing-fill-none]').getAttribute('aria-checked'), 'true');
-  await styleSheet.locator('[data-testid=drawing-fill-solid]').click();
-  await sheetSubmit(page).click();
+  const drop = editor.locator('[data-testid=drawing-style-drop]');
+  await editor.locator('[data-testid=drawing-style-fill]').click();
+  assert.equal(await drop.locator('[data-testid=drawing-fill-default-none]').getAttribute('aria-checked'), 'true');
+  await drop.locator('[data-testid=drawing-fill-default-solid]').click();
   await waitUntil(() => darkAt(page, ...center), 'Pełne wypełnienie');
-  await editor.locator('[data-testid=drawing-selection-style]').click();
-  await styleSheet.locator('[data-testid=drawing-fill-light]').click();
-  await sheetSubmit(page).click();
+  await drop.locator('[data-testid=drawing-fill-default-light]').click();
   await waitUntil(async () => { const [red] = await pixelAt(page, ...center); return red > 150 && red < 235; }, 'Jasne wypełnienie');
+  await editor.locator('[data-testid=drawing-style-fill]').click();
+  await drop.waitFor({ state: 'hidden' });
 
   // Tekst na kształcie: czerwony, na środku; przesunięcie kształtu przenosi tekst.
   await editor.locator('[data-testid=drawing-selection-text]').click();
@@ -4598,11 +4596,13 @@ test('rysunek 1.17: kształt – wymiary w polach przy ramce (szerokość, wysok
   await enter('length', '4');
   await waitUntil(async () => (await dim('length').inputValue()) === '4' && (await dim('angle').inputValue()) === '30', 'Odcinek 4 cm pod kątem 30°');
 
-  // Wypełnienie nowych kształtów w panelu – pełne; dotknięcie zdejmuje zaznaczenie, następne – kształt.
+  // Wypełnienie nowych kształtów (od 1.35 w trzecim menu) – pełne; dotknięcie zdejmuje zaznaczenie, następne – kształt.
   await shapeTool(editor);
-  await panel.locator('[data-testid=drawing-fill-default-solid]').click();
-  assert.equal(await panel.locator('[data-testid=drawing-fill-default-solid]').getAttribute('aria-checked'), 'true');
   await press(editor, 'drawing-shape-ellipse');
+  await editor.locator('[data-testid=drawing-style-fill]').click();
+  await drop.locator('[data-testid=drawing-fill-default-solid]').click();
+  assert.equal(await drop.locator('[data-testid=drawing-fill-default-solid]').getAttribute('aria-checked'), 'true');
+  await editor.locator('[data-testid=drawing-style-fill]').click();
   await drawStroke(page, [[0.85, 0.3, 0.5]]);
   await drawStroke(page, [[0.85, 0.3, 0.5]]);
   await expectText(selectionCount, 'Elipsa');
@@ -4657,7 +4657,7 @@ test('rysunek 1.17 na telefonie: tryb „Wycinek” palcem i „Osadź”; pola 
   const bar = await editor.locator('.drawing__selection').boundingBox();
   assert.ok(bar.x >= 0 && bar.x + bar.width <= 390, `polecenia zaznaczenia w szerokości ekranu (${bar.x}, ${bar.width})`);
   assert.ok(bar.y >= toolbarBottom, 'polecenia zaznaczenia pod paskiem narzędzi');
-  assert.equal(await editor.locator('[data-testid=drawing-selection-style]').isVisible(), true);
+  assert.equal(await editor.locator('[data-testid=drawing-selection-move]').isVisible(), true);
   assert.equal(await editor.locator('[data-testid=drawing-selection-text]').isVisible(), true);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-wymiary-telefon.png') });
   assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
@@ -4841,26 +4841,30 @@ test('rysunek 1.19: zakończenia odcinka (panel i „Końce”), wymiar widoczny
   const frame = await pageFrame(page);
   const { at } = frame;
   const selectionCount = editor.locator('[data-testid=drawing-selection-count]');
-  const panel = editor.locator('[data-testid=drawing-shape-panel]');
   const sheet = page.locator('dialog.sheet[open]').last();
   const dark = async (x, y, side = 8) => (await darkest(page, ...at(x, y), side)) < 110;
 
-  // Odcinek: w panelu (zostaje otwarty po wyborze odcinka) – koło na początku, trójkąt na końcu.
+  // Odcinek: od 1.35 w trzecim menu – „Końce” rozwija wybór w dół: koło na początku, trójkąt na końcu.
   await shapeTool(editor);
   await press(editor, 'drawing-shape-line');
-  await panel.locator('[data-testid=drawing-caps-default-start-circle]').click();
-  await panel.locator('[data-testid=drawing-caps-default-end-triangle]').click();
-  assert.equal(await panel.locator('[data-testid=drawing-caps-default-end-triangle]').getAttribute('aria-checked'), 'true');
+  const drop = editor.locator('[data-testid=drawing-style-drop]');
+  const capsPicker = editor.locator('[data-testid=drawing-style-caps]');
+  await capsPicker.click();
+  await drop.locator('[data-testid=drawing-caps-default-start-circle]').click();
+  await drop.locator('[data-testid=drawing-caps-default-end-triangle]').click();
+  assert.equal(await drop.locator('[data-testid=drawing-caps-default-end-triangle]').getAttribute('aria-checked'), 'true');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-konce-panel-ipad.png') });
+  await capsPicker.click();
+  await drop.waitFor({ state: 'hidden' });
   await drawStroke(page, segment(at(200, 900), at(600, 900), 10));
   await expectText(selectionCount, 'Odcinek');
-  // Zakończenia zaznaczonego odcinka (od 1.27 w oknie „Styl”): koniec – romb.
-  await editor.locator('[data-testid=drawing-selection-style]').click();
-  await expectText(sheet.locator('.sheet__title'), 'Styl – odcinek');
-  assert.equal(await sheet.locator('[data-testid=drawing-caps-start-circle]').getAttribute('aria-checked'), 'true');
-  await sheet.locator('[data-testid=drawing-caps-end-diamond]').click();
-  await sheetSubmit(page).click();
-  await waitUntil(async () => (await page.locator('dialog.sheet:not(.note-dialog)').count()) === 0, 'Okno zakończeń zamknięte');
+  // Zakończenia zaznaczonego odcinka (od 1.35 w trzecim menu, bez osobnego okna): koniec – romb.
+  await capsPicker.click();
+  assert.equal(await drop.locator('[data-testid=drawing-caps-default-start-circle]').getAttribute('aria-checked'), 'true');
+  await drop.locator('[data-testid=drawing-caps-default-end-diamond]').click();
+  await waitUntil(async () => (await drop.locator('[data-testid=drawing-caps-default-end-diamond]').getAttribute('aria-checked')) === 'true', 'Koniec – romb');
+  await capsPicker.click();
+  await drop.waitFor({ state: 'hidden' });
 
   // Prostokąt 5 × 3 cm; oko przy szerokości – po odznaczeniu napis „5 cm” pod dolną linią.
   await shapeTool(editor);
@@ -5024,7 +5028,7 @@ test('rysunek 1.19 na telefonie: polecenia zaznaczonego odcinka (Końce, Szyk) i
   await expectText(selectionCount, 'Odcinek');
   const bar = await editor.locator('.drawing__selection').boundingBox();
   assert.ok(bar.x >= 0 && bar.x + bar.width <= 390, `polecenia w szerokości ekranu (${Math.round(bar.x)}–${Math.round(bar.x + bar.width)})`);
-  for (const name of ['style', 'array', 'embed']) assert.equal(await editor.locator(`[data-testid=drawing-selection-${name}]`).isVisible(), true, name);
+  for (const name of ['move', 'array', 'embed']) assert.equal(await editor.locator(`[data-testid=drawing-selection-${name}]`).isVisible(), true, name);
   const pill = await editor.locator('[data-testid=drawing-pages]').boundingBox();
   assert.ok(pill.x >= 0 && pill.x + pill.width <= 390, 'kartki w szerokości ekranu');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-odcinek-telefon.png') });
@@ -5796,6 +5800,9 @@ test('rysunek 1.21: okno grubości zakreślacza; tabela (okno tabeli, wielkość
   // Zwinięta karteczka: obok ikony jej treść – polecenia zaznaczenia jej nie zasłaniają.
   await page.keyboard.press('Escape');
   await again.locator('.drawing__selection').waitFor({ state: 'hidden' });
+  // Od 1.35 nad dolnym paskiem jest wybór zaznaczania – zasłania ikonę przy dole strony; pasek schowany na chwilę.
+  await again.locator('[data-testid=drawing-hide-bottom]').click();
+  await waitUntil(() => isAway(again.locator('.drawing__dock')), 'Pasek schowany');
   await page.mouse.click(...frame2.screen(second.x + 20, second.y + 20));
   await expectText(again.locator('[data-testid=drawing-selection-count]'), 'Karteczka 2');
   const popover = await boxes(['popover', second]);
@@ -5805,6 +5812,7 @@ test('rysunek 1.21: okno grubości zakreślacza; tabela (okno tabeli, wielkość
   assert.ok(bar.y + bar.height <= popTop || bar.y >= popBottom || bar.x + bar.width <= popLeft || bar.x >= popRight,
     `polecenia obok treści karteczki (${JSON.stringify(bar)}, ${popTop}–${popBottom})`);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-121-zwinieta-karteczka.png') });
+  await again.locator('[data-testid=drawing-show-bottom]').click();
   await again.locator('[data-testid=drawing-done]').click();
   await again.waitFor({ state: 'detached' });
   await dialog.locator('[data-testid=note-right]').click();
@@ -7836,59 +7844,58 @@ test('rysunek 1.27: linia osiowa i przerywana, prosta przez całą stronę, punk
     await page.mouse.move(...frame.screen(...to), { steps: 8 });
     await page.mouse.up();
   };
-  const openPanel = async () => {
-    await shapeTool(editor);
-    if (await panel.isHidden()) await shapeTool(editor);
-    await panel.waitFor();
-  };
-  // Prosta, linia osiowa (kreska-kropka).
-  await openPanel();
-  await panel.locator('[data-testid=drawing-dash-default-center]').click();
-  assert.equal(await panel.locator('[data-testid=drawing-dash-default-center]').getAttribute('aria-checked'), 'true');
+  const choices = editor.locator('[data-testid=drawing-choices]');
+  const drop = editor.locator('[data-testid=drawing-style-drop]');
+  const picker = (key) => editor.locator(`[data-testid=drawing-style-${key}]`);
+  // Prosta, linia osiowa (kreska-kropka): od 1.35 rodzaj linii od razu w trzecim menu.
+  await shapeTool(editor);
   await press(editor, 'drawing-shape-xline');
+  await choices.locator('[data-testid=drawing-dash-default-center]').click();
+  assert.equal(await choices.locator('[data-testid=drawing-dash-default-center]').getAttribute('aria-checked'), 'true');
   await drag([600, 250], [1000, 250]);
   await expectText(count, 'Prosta');
-  // Punkt symetrii: panel zostaje otwarty – znacznik; dotknięcie strony.
-  await openPanel();
+  // Punkt symetrii: znacznik w trzecim menu, ⓘ – opis (panel kształtów); dotknięcie strony.
   await press(editor, 'drawing-shape-point');
-  assert.equal(await panel.locator('[data-testid=drawing-mark-default-center]').getAttribute('aria-checked'), 'true', 'domyślnie punkt symetrii');
+  assert.equal(await choices.locator('[data-testid=drawing-mark-default-center]').getAttribute('aria-checked'), 'true', 'domyślnie punkt symetrii');
+  if (await panel.isHidden()) await editor.locator('[data-testid=drawing-style-info]').click();
+  await expectText(panel, 'Kształty – punkt');
   await panel.locator('[data-testid=drawing-panel-close]').click();
+  await panel.waitFor({ state: 'hidden' });
   // Pierwsze dotknięcie odznacza prostą, drugie – stawia punkt.
   await page.mouse.click(...frame.screen(800, 520));
   await page.mouse.click(...frame.screen(800, 520));
   await expectText(count, 'Punkt');
-  // Strzałka po łuku – linia ciągła; punkt pośredni przeciągnięty wyżej.
-  await openPanel();
+  // Strzałka po łuku – linia ciągła (wybór „Linia” rozwija się w dół); punkt pośredni przeciągnięty wyżej.
   await press(editor, 'drawing-shape-curve');
-  await panel.locator('[data-testid=drawing-dash-default-solid]').click();
-  await settled(panel);
-  await panel.locator('[data-testid=drawing-caps-default-end-arrow]').scrollIntoViewIfNeeded();
+  assert.equal(await picker('fill').count(), 0, 'łuk bez wypełnienia');
+  await picker('dash').click();
+  await drop.locator('[data-testid=drawing-dash-default-solid]').click();
+  await settled(drop);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-127-panel-ksztaltow.png') });
-  await panel.locator('[data-testid=drawing-panel-close]').click();
+  await picker('dash').click();
+  await drop.waitFor({ state: 'hidden' });
   await drag([300, 900], [900, 900]);
   await expectText(count, 'Strzałka po łuku');
   assert.equal(await editor.locator('[data-testid=drawing-dim-box-width]').isHidden(), true, 'łuk – bez pól wymiarów');
   await drag([500, 780], [500, 650]);
-  // Końce łuku: koło na początku (okno „Styl” – rodzaj linii i zakończenia, bez wypełnienia).
-  await editor.locator('[data-testid=drawing-selection-style]').click();
-  await expectText(sheet(page).locator('.sheet__title'), 'Styl – strzałka po łuku');
-  assert.equal(await sheet(page).locator('[data-testid=drawing-fill-none]').count(), 0, 'łuk bez wypełnienia');
-  assert.equal(await sheet(page).locator('[data-testid=drawing-caps-end-arrow]').getAttribute('aria-checked'), 'true', 'grot na końcu');
-  await sheet(page).locator('[data-testid=drawing-caps-start-circle]').click();
-  await settled(sheet(page));
+  // Końce zaznaczonego łuku: koło na początku (od 1.35 w trzecim menu – „Końce”).
+  await picker('caps').click();
+  assert.equal(await drop.locator('[data-testid=drawing-caps-default-end-arrow]').getAttribute('aria-checked'), 'true', 'grot na końcu');
+  await drop.locator('[data-testid=drawing-caps-default-start-circle]').click();
+  await waitUntil(async () => (await drop.locator('[data-testid=drawing-caps-default-start-circle]').getAttribute('aria-checked')) === 'true', 'Koło na początku');
+  await settled(drop);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-127-styl-luku.png') });
-  await sheetSubmit(page).click();
-  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno stylu zamknięte');
-  // Prostokąt i rodzaj linii z okna „Styl” nad zaznaczeniem.
-  await openPanel();
+  await picker('caps').click();
+  await drop.waitFor({ state: 'hidden' });
+  // Prostokąt i rodzaj linii zaznaczonego z trzeciego menu.
   await press(editor, 'drawing-shape-rect');
   await drag([1100, 600], [1400, 800]);
   await expectText(count, 'Prostokąt');
-  await editor.locator('[data-testid=drawing-selection-style]').click();
-  await sheet(page).locator('[data-testid=drawing-dash-dashed]').click();
-  await expectText(sheet(page).locator('.drawing__style-group .drawing__settings-label').first(), 'Rodzaj linii – przerywana');
-  await sheetSubmit(page).click();
-  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno stylu zamknięte');
+  await picker('dash').click();
+  await drop.locator('[data-testid=drawing-dash-default-dashed]').click();
+  await waitUntil(async () => (await drop.locator('[data-testid=drawing-dash-default-dashed]').getAttribute('aria-checked')) === 'true', 'Przerywana');
+  await picker('dash').click();
+  await drop.waitFor({ state: 'hidden' });
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-127-ksztalty.png') });
 
   await editor.locator('[data-testid=drawing-done]').click();
@@ -9131,7 +9138,9 @@ test('rysunek 1.34: okrąg – ramka, środek i promień, dwa punkty, trzy punkt
   // Łuk: od początku do końca, potem punkt łuku (półokrąg nad cięciwą).
   await press(editor, 'drawing-shape-arc');
   await expectText(hint, 'Łuk: przeciągnij od początku do końca');
-  assert.equal(await editor.locator('[data-testid=drawing-choices]').isHidden(), true, 'łuk – bez wyboru');
+  // Od 1.35 w trzecim menu – rodzaj linii łuku (jedyna grupa – od razu przyciski) i ⓘ.
+  assert.equal(await editor.locator('[data-testid=drawing-choices] [data-testid=drawing-dash-default-solid]').isVisible(), true, 'łuk – rodzaj linii');
+  assert.equal(await editor.locator('[data-testid=drawing-style-info]').isVisible(), true);
   await mouse.drag([300, 700], [476, 700]);
   await expectText(hint, 'Łuk: dotknij punktu, przez który ma przejść');
   await mouse.tap([388, 612]);
@@ -9186,7 +9195,8 @@ test('rysunek 1.34: narzędzie „Wymiar” – krawędź dotknięciem, od punkt
   await nearValue(value('length'), 4);
   assert.equal(await value('length').evaluate((input) => input.readOnly), true, 'wymiar mierzy – bez wpisywania');
   assert.equal(await editor.locator('[data-testid=drawing-dim-eye-length]').isHidden(), true);
-  assert.equal(await editor.locator('[data-testid=drawing-selection-style]').isHidden(), true, 'bez stylu linii');
+  // Od 1.35 styl w trzecim menu – przy wymiarze bez rodzaju linii, wypełnienia i końców (tylko ⓘ).
+  for (const key of ['dash', 'fill', 'caps']) assert.equal(await editor.locator(`[data-testid=drawing-style-${key}]`).count(), 0, `bez ${key}`);
   // Od narożnika do narożnika (przyciągnięte): górna krawędź – wymiar nad prostokątem (najpierw dotknięcie obok – pasek zaznaczenia znika).
   await mouse.tap([300, 300]);
   await count.waitFor({ state: 'hidden' });
@@ -9278,6 +9288,264 @@ test('rysunek 1.34 na telefonie: grupa Wymiary – rodzaje wymiaru pod menu bez 
   await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Wymiar');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-134-wymiar-telefon.png') });
 });
+
+/** Prostokąty ekranu (boundingBox) zachodzą na siebie. */
+const overlaps = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+test('rysunek 1.35: trzecie menu – punkt i prosta: wybór od razu pod menu, ⓘ rozwija opis w dół (bez okna); strzałka: „Linia” i „Końce” rozwijane w dół; zaznaczone – kolor, grubość i końce z menu, następne bez zmian; kreska pióra – kolor i grubość (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Edycja</p>');
+  const frame = await pageFrame(page);
+  const mouse = pageMouse(page, frame);
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const choices = editor.locator('[data-testid=drawing-choices]');
+  const drop = editor.locator('[data-testid=drawing-style-drop]');
+  const panel = editor.locator('[data-testid=drawing-shape-panel]');
+  const info = editor.locator('[data-testid=drawing-style-info]');
+  const picker = (key) => editor.locator(`[data-testid=drawing-style-${key}]`);
+  const forms = () => page.locator('dialog.sheet[open]:not(.note-dialog)').count();
+  // Punkt: znaczniki od razu w trzecim menu; ⓘ rozwija opis pod menu – bez osobnego okna.
+  await press(editor, 'drawing-shape-point');
+  assert.equal(await choices.locator('[data-testid^=drawing-mark-default-]').count(), 4, 'znaczniki punktu w trzecim menu');
+  assert.equal(await picker('mark').count(), 0, 'znaczniki bez rozwijania');
+  if (await panel.isVisible()) await info.click();
+  await panel.waitFor({ state: 'hidden' });
+  await info.click();
+  await panel.waitFor();
+  assert.equal(await forms(), 0, 'bez osobnego okna');
+  assert.equal(await info.getAttribute('aria-expanded'), 'true');
+  const row = await choices.boundingBox();
+  assert.ok((await panel.boundingBox()).y >= row.y + row.height - 1, 'opis rozwija się pod trzecim menu');
+  await settled(panel);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-135-punkt-info.png') });
+  await info.click();
+  await panel.waitFor({ state: 'hidden' });
+  // Prosta: rodzaj linii od razu w trzecim menu.
+  await press(editor, 'drawing-shape-xline');
+  assert.equal(await choices.locator('[data-testid^=drawing-dash-default-]').count(), 5, 'rodzaje linii prostej w trzecim menu');
+  assert.equal(await picker('dash').count(), 0);
+  // Strzałka: „Linia” i „Końce” rozwijają wybór w dół; bez wypełnienia.
+  await press(editor, 'drawing-shape-arrow');
+  assert.equal(await picker('dash').isVisible(), true);
+  assert.equal(await picker('fill').count(), 0, 'strzałka bez wypełnienia');
+  await picker('caps').click();
+  await drop.waitFor();
+  assert.equal(await picker('caps').getAttribute('aria-expanded'), 'true');
+  const arrowRow = await choices.boundingBox();
+  assert.ok((await drop.boundingBox()).y >= arrowRow.y + arrowRow.height - 1, 'wybór pod trzecim menu');
+  assert.equal(await drop.locator('[data-testid=drawing-caps-default-end-arrow]').getAttribute('aria-checked'), 'true', 'grot na końcu');
+  assert.equal(await forms(), 0, 'bez osobnego okna');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-135-strzalka-konce.png') });
+  await picker('caps').click();
+  await drop.waitFor({ state: 'hidden' });
+
+  // Strzałka narysowana; zaznaczanie – zaznaczona zostaje, menu zmienia ją (kolor, grubość, koniec).
+  await mouse.drag([300, 300], [700, 300]);
+  await expectText(count, 'Strzałka');
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await expectText(count, 'Strzałka');
+  await press(editor, 'drawing-color-red');
+  await waitUntil(async () => (await editor.locator('[data-testid=drawing-color-red]').getAttribute('aria-pressed')) === 'true', 'Czerwony zaznaczony');
+  await press(editor, 'drawing-width-2');
+  await waitUntil(async () => (await editor.locator('[data-testid=drawing-width-2]').getAttribute('aria-pressed')) === 'true', 'Gruba linia');
+  await picker('caps').click();
+  await drop.locator('[data-testid=drawing-caps-default-end-triangle]').click();
+  await waitUntil(async () => (await drop.locator('[data-testid=drawing-caps-default-end-triangle]').getAttribute('aria-checked')) === 'true', 'Koniec – trójkąt');
+  await picker('caps').click();
+  await drop.waitFor({ state: 'hidden' });
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-135-edycja-zaznaczonego.png') });
+  // Kreska pióra: zaznaczona ramką – niebieska i cienka.
+  await press(editor, 'drawing-tool-pen');
+  await mouse.drag([300, 600], [700, 650]);
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await mouse.drag([250, 540], [760, 720]);
+  await expectText(count, '1 kreska');
+  await press(editor, 'drawing-color-blue');
+  await press(editor, 'drawing-width-0');
+  await waitUntil(async () => (await editor.locator('[data-testid=drawing-width-0]').getAttribute('aria-pressed')) === 'true', 'Cienka kreska');
+  // Następna strzałka – kolor, grubość i końce jak przed zmianami zaznaczonych.
+  await press(editor, 'drawing-shape-arrow');
+  await mouse.drag([300, 900], [700, 900]);
+  await expectText(count, 'Strzałka');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  const [first, ink, second] = await savedStrokes(page, ids.statements);
+  assert.deepEqual([first.shape, first.color, first.endCap], ['arrow', '#d70015', 'triangle']);
+  assert.equal(ink.tool, 'pen');
+  assert.equal(ink.color, '#0040dd');
+  assert.equal(second.shape, 'arrow');
+  assert.notEqual(second.color, '#d70015', 'następna strzałka bez zmiany koloru');
+  assert.notEqual(second.endCap, 'triangle', 'następna strzałka bez zmiany końca');
+  assert.ok(first.size > second.size, `grubsza zaznaczona (${first.size} > ${second.size})`);
+}, { device: DESKTOP });
+
+test('rysunek 1.35: „Przesuń” przy zaznaczeniu – przeciągnięcie palcem z dowolnego miejsca strony przesuwa zaznaczenie, ponowne dotknięcie kończy; wybór zaznaczania i tło strony nad dolnym paskiem, w górnym menu bez nich (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Przesuń</p>');
+  const frame = await pageFrame(page);
+  const { at } = frame;
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const move = editor.locator('[data-testid=drawing-selection-move]');
+  const dark = async (x, y) => (await darkest(page, ...at(x, y), 8)) < 110;
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  if (await editor.locator('[data-testid=drawing-shape-panel]').isVisible()) await editor.locator('[data-testid=drawing-panel-close]').click();
+  await drawStroke(page, segment(at(300, 300), at(520, 432), 10), { type: 'touch', id: 3 });
+  await expectText(count, 'Prostokąt');
+  assert.equal(await move.getAttribute('aria-pressed'), 'false');
+  await move.click();
+  assert.equal(await move.getAttribute('aria-pressed'), 'true');
+  // Przeciągnięcie daleko od prostokąta – prostokąt jedzie o tyle samo (3 × 2 kratki), zaznaczenie zostaje.
+  await drawStroke(page, segment(at(900, 800), at(1032, 888), 10), { type: 'touch', id: 4 });
+  await expectText(count, 'Prostokąt');
+  await waitUntil(() => dark(542, 388), 'Górny bok przesunięty');
+  assert.ok(!(await dark(410, 300)), 'w starym miejscu pusto');
+  assert.equal(await move.getAttribute('aria-pressed'), 'true', '„Przesuń” zostaje włączone');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-135-przesun-ipad.png') });
+  // Drugie przeciągnięcie – dalej; ponowne dotknięcie przycisku kończy.
+  await drawStroke(page, segment(at(1200, 300), at(1244, 300), 6), { type: 'touch', id: 5 });
+  await waitUntil(() => dark(586, 388), 'Przesunięty o kratkę dalej');
+  await move.click();
+  assert.equal(await move.getAttribute('aria-pressed'), 'false');
+
+  // Zaznaczanie: obszar, tryb, „Zaznacz wszystko” nad dolnym paskiem; w górnym menu ich nie ma.
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  const dockChoices = editor.locator('[data-testid=drawing-dock-choices]');
+  await dockChoices.waitFor();
+  for (const id of ['drawing-select-rect', 'drawing-select-lasso', 'drawing-select-mode-region', 'drawing-select-all']) {
+    assert.equal(await dockChoices.locator(`[data-testid=${id}]`).isVisible(), true, id);
+    assert.equal(await editor.locator(`[data-testid=drawing-choices] [data-testid=${id}]`).count(), 0, `${id} nie w górnym menu`);
+  }
+  const bar = await editor.locator('.drawing__dock-bar').boundingBox();
+  const above = await dockChoices.boundingBox();
+  assert.ok(above.y + above.height <= bar.y + 1, `wybór nad dolnym paskiem (${Math.round(above.y + above.height)} ≤ ${Math.round(bar.y)})`);
+  assert.ok(above.y > (await editor.locator('[data-testid=drawing-canvas]').boundingBox()).height / 2, 'na dole ekranu');
+  // Zaznaczony prostokąt przy zaznaczaniu – jego styl w trzecim menu (u góry, przy kształcie).
+  assert.equal(await editor.locator('[data-testid=drawing-style-dash]').isVisible(), true, 'styl zaznaczonego');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-135-zaznaczanie-dol-ipad.png') });
+  await editor.locator('[data-testid=drawing-select-all]').click();
+  await expectText(count, 'Prostokąt');
+  // Tło strony – panel nad dolnym paskiem.
+  await editor.locator('[data-testid=drawing-paper]').click();
+  const paperPanel = editor.locator('[data-testid=drawing-paper-panel]');
+  await paperPanel.waitFor();
+  const paperBox = await paperPanel.boundingBox();
+  assert.ok(paperBox.y + paperBox.height <= bar.y + 1, `panel tła nad dolnym paskiem (${Math.round(paperBox.y + paperBox.height)} ≤ ${Math.round(bar.y)})`);
+  await page.keyboard.press('Escape');
+  await paperPanel.waitFor({ state: 'hidden' });
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  const [rect] = await savedStrokes(page, ids.statements);
+  assert.ok(Math.abs(rect.x - 586) < 2 && Math.abs(rect.y - 454) < 2, `prostokąt przesunięty (${rect.x}, ${rect.y})`);
+  assert.ok(near(rect.w, 220, 1) && near(rect.h, 132, 1), `wielkość bez zmian (${rect.w} × ${rect.h})`);
+}, { device: IPAD });
+
+test('rysunek 1.35 na telefonie: wybór zaznaczania nad dolnym paskiem nie zasłania pastylek; trzecie menu strzałki i „Przesuń” mieszczą się na ekranie', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  const dockChoices = editor.locator('[data-testid=drawing-dock-choices]');
+  await dockChoices.waitFor();
+  const above = await dockChoices.boundingBox();
+  assert.ok(above.x >= 0 && above.x + above.width <= 390, `wybór w szerokości ekranu (${Math.round(above.x)}–${Math.round(above.x + above.width)})`);
+  const bar = await editor.locator('.drawing__dock-bar').boundingBox();
+  assert.ok(above.y + above.height <= bar.y + 1, 'nad dolnym paskiem');
+  for (const id of ['drawing-pages', 'drawing-zoom', 'drawing-scale-info']) {
+    const pill = editor.locator(`[data-testid=${id}]`);
+    if (!(await pill.isVisible())) continue;
+    assert.equal(overlaps(await pill.boundingBox(), above), false, `${id} nie pod wyborem`);
+  }
+  assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-135-zaznaczanie-telefon.png') });
+  // Strzałka: trzecie menu (same ikony) w szerokości ekranu; zaznaczona – „Przesuń” w poleceniach.
+  await press(editor, 'drawing-shape-arrow');
+  await drawStroke(page, segment([0.3, 0.6], [0.7, 0.6], 10), { type: 'touch', id: 7 });
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Strzałka');
+  const row = await editor.locator('[data-testid=drawing-style-row]').boundingBox();
+  assert.ok(row.x >= 0 && row.x + row.width <= 390, `trzecie menu w szerokości ekranu (${Math.round(row.x)}–${Math.round(row.x + row.width)})`);
+  await editor.locator('[data-testid=drawing-style-caps]').click();
+  const drop = await editor.locator('[data-testid=drawing-style-drop]').boundingBox();
+  assert.ok(drop.x >= 0 && drop.x + drop.width <= 390, `wybór końców w szerokości ekranu (${Math.round(drop.x)}–${Math.round(drop.x + drop.width)})`);
+  assert.equal(await editor.locator('[data-testid=drawing-selection-move]').isVisible(), true);
+  assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-135-strzalka-telefon.png') });
+});
+
+test('rysunek 1.35: spirala kończy się w ostatniej dziurce (bez zwoju w powietrzu); zaznaczony punkt – duże kółko zamiast ramki; kółko narzędzi – mysz puszczona poza kółkiem: najechanie nie obraca grup, kliknięcie wybiera grupę (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Spirala</p>');
+  const frame = await pageFrame(page);
+  const { at } = frame;
+  // 24 dziurki co 44 jednostki: zwój między przedostatnią a ostatnią jest, za ostatnią – nie (drut kończy się w dziurce).
+  const holes = Array.from({ length: 24 }, (_, index) => 44 + index * 44);
+  const wire = async (y) => (await livePixel(page, ...at(-36, y)))[3] > 200;
+  assert.ok(await wire(holes[22] + 22), 'zwój do ostatniej dziurki');
+  assert.ok(!(await wire(holes[23] + 22)), 'za ostatnią dziurką bez zwoju');
+  const bottom = frame.screen(0, holes[23] + 44);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-135-spirala-koniec.png'), clip: { x: bottom[0] - 70, y: bottom[1] - 200, width: 160, height: 220 } });
+
+  // Punkt: zaznaczenie – przerywane kółko ok. 20 px od środka (w każdą stronę), dalej pusto.
+  await press(editor, 'drawing-shape-point');
+  await page.mouse.click(...frame.screen(800, 520));
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Punkt');
+  const [cx, cy] = frame.screen(800, 520);
+  const ringAt = (radius) => page.locator('[data-testid=drawing-canvas]').evaluate((canvas, [x, y, r]) => {
+    const box = canvas.getBoundingClientRect();
+    const ratio = canvas.width / box.width;
+    const ctx = canvas.getContext('2d');
+    let hits = 0;
+    for (let angle = 0; angle < 360; angle += 5) {
+      const px = Math.round((x - box.x + Math.cos((angle * Math.PI) / 180) * r) * ratio);
+      const py = Math.round((y - box.y + Math.sin((angle * Math.PI) / 180) * r) * ratio);
+      const data = ctx.getImageData(px - 2, py - 2, 5, 5).data;
+      let alpha = 0;
+      for (let index = 3; index < data.length; index += 4) alpha = Math.max(alpha, data[index]);
+      if (alpha > 150) hits += 1;
+    }
+    return hits;
+  }, [cx, cy, radius]);
+  const near20 = await waitUntil(async () => { const hits = await ringAt(20); return hits >= 24 ? hits : null; }, 'Kółko zaznaczenia punktu');
+  assert.ok(near20 <= 72);
+  assert.ok((await ringAt(34)) <= 4, 'poza kółkiem pusto');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-135-punkt-zaznaczony.png'), clip: { x: cx - 120, y: cy - 90, width: 240, height: 180 } });
+
+  // Kółko narzędzi: wciśnięcie myszy na małym kółku bez puszczenia nad kółkiem (puszczona nad menu albo oknem).
+  const ring = editor.locator('[data-testid=drawing-ring-right]');
+  const places = () => ring.locator('[data-testid^=drawing-group-]').evaluateAll((buttons) => buttons.map((button) => `${button.style.left},${button.style.top}`).join(' '));
+  const before = await places();
+  const shapes = await editor.locator('[data-testid=drawing-group-shapes]').boundingBox();
+  const [sx, sy] = [shapes.x + shapes.width / 2, shapes.y + shapes.height / 2];
+  await page.mouse.move(sx, sy);
+  await editor.locator('[data-testid=drawing-group-shapes]').evaluate((element, [x, y]) => element.dispatchEvent(new window.PointerEvent('pointerdown', {
+    bubbles: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1, clientX: x, clientY: y
+  })), [sx, sy]);
+  // Najechanie bez przycisku po małych kółkach – grupy stoją.
+  await page.mouse.move(sx - 30, sy + 70, { steps: 12 });
+  await page.mouse.move(sx + 10, sy - 70, { steps: 12 });
+  await nextFrames(page);
+  assert.equal(await places(), before, 'najechanie myszą nie obraca kółek');
+  // Kliknięcie widocznej grupy wybiera ją.
+  const other = await ring.locator('[data-testid^=drawing-group-]').evaluateAll((buttons) => buttons
+    .find((button) => button.style.opacity === '1' && button.getAttribute('aria-pressed') === 'false')?.dataset.testid);
+  assert.ok(other, 'widoczna inna grupa');
+  const target = await editor.locator(`[data-testid=${other}]`).boundingBox();
+  await page.mouse.click(target.x + target.width / 2, target.y + target.height / 2);
+  await waitUntil(async () => (await editor.locator(`[data-testid=${other}]`).getAttribute('aria-pressed')) === 'true', 'Grupa wybrana kliknięciem');
+}, { device: DESKTOP });
 
 // ---------------------------------------------------------------- nauka z fiszkami
 

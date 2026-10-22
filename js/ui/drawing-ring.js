@@ -129,6 +129,12 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
   });
   element.addEventListener('pointermove', (event) => {
     if (!drag || drag.id !== event.pointerId) return;
+    // Mysz bez wciśniętego przycisku (od 1.35): puszczona poza kółkiem albo nad oknem – to już nie przeciąganie,
+    // samo najechanie nie obraca grup.
+    if (event.pointerType === 'mouse' && event.buttons === 0) {
+      cancelDrag();
+      return;
+    }
     const delta = wrap(angleAt(event, drag.origin) - drag.start);
     if (!drag.moved) {
       const reach = Math.abs((delta * Math.PI) / 180) * sizes.radius;
@@ -159,6 +165,15 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
   };
   element.addEventListener('pointerup', endDrag);
   element.addEventListener('pointercancel', endDrag);
+  /** Przeciąganie przerwane bez puszczenia nad kółkiem – kółka dociągnięte, bez wyboru grupy. */
+  function cancelDrag() {
+    const moved = drag?.moved;
+    drag = null;
+    if (!moved) return;
+    element.classList.remove('drawing-ring--turning');
+    rotation = snapRotation(rotation, buttons.length).rotation;
+    layout();
+  }
   /** Kółko myszy w pierścieniu małych kółek (także między nimi – kółka uciekają spod kursora w trakcie obrotu). */
   function wheelAt(event) {
     if (hidden || element.inert) return false;
@@ -189,6 +204,11 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
   });
   main.addEventListener('pointermove', (event) => {
     if (!swipe || swipe.id !== event.pointerId) return;
+    if (event.pointerType === 'mouse' && event.buttons === 0) {
+      swipe = null;
+      main.style.transform = '';
+      return;
+    }
     const dx = event.clientX - swipe.x;
     const dy = event.clientY - swipe.y;
     if (!swipe.moved) {
