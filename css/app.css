@@ -6214,6 +6214,12 @@ svg.icon--note { color: var(--note-icon); }
   position: absolute;
   z-index: 1;
   display: flex;
+  /* Od 1.41 (więcej poleceń) także na komputerze: polecenia, które nie mieszczą się w jednym wierszu, przechodzą do drugiego;
+     szerokość nie zależy od miejsca paska (ustawianego po zmierzeniu). */
+  flex-wrap: wrap;
+  justify-content: center;
+  width: max-content;
+  max-width: calc(100% - 16px);
   align-items: center;
   gap: 2px;
   padding: 4px;
@@ -6235,6 +6241,7 @@ svg.icon--note { color: var(--note-icon); }
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  white-space: nowrap;
   min-height: 36px;
   padding: 0 10px;
   border-radius: 10px;
@@ -6244,8 +6251,18 @@ svg.icon--note { color: var(--note-icon); }
 }
 
 .drawing__selection-button--danger { color: var(--danger); }
-/* Od 1.40: pole i obwód zaznaczonego zamkniętego kształtu – obok jego nazwy (na telefonie – osobny wiersz). */
-.drawing__selection-measure { padding: 0 8px 0 0; color: var(--text-2); font-size: var(--size-foot); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Od 1.41: polecenia nie mieszczą się w jednym wierszu – same ikony (jak na telefonie). */
+.drawing__selection--compact .drawing__selection-label { display: none; }
+.drawing__selection--compact .drawing__selection-button { padding: 0 9px; }
+/* Od 1.40: pole i obwód zaznaczonego zamkniętego kształtu – od 1.41 pod nazwą elementu (na telefonie – osobny wiersz). */
+.drawing__selection-head { display: flex; flex-direction: column; align-items: flex-start; }
+.drawing__selection-measure {
+  padding: 0 8px;
+  color: var(--text-2);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 .drawing__selection-measure[hidden] { display: none; }
 /* Magnes (od 1.22): włączone przyciąganie końców – przycisk wciśnięty. */
 .drawing__selection-button[aria-pressed="true"] { background: var(--accent-soft); }
@@ -6699,7 +6716,8 @@ button.drawing__pill .icon { color: var(--text-2); }
   /* Od 1.30 (przycisk „Odbij”) polecenia, które nie mieszczą się w jednym wierszu, przechodzą do drugiego;
      szerokość nie zależy od miejsca paska (ustawianego po zmierzeniu). */
   .drawing__selection { flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100% - 16px); }
-  .drawing__selection-measure { flex-basis: 100%; order: -1; padding: 2px 8px 0; text-align: center; }
+  .drawing__selection-head { display: contents; }
+  .drawing__selection-measure { flex-basis: 100%; order: -1; padding: 2px 8px 0; font-size: var(--size-foot); text-align: center; }
   .drawing__wide-label { display: none; }
   .drawing__narrow-label { display: inline; }
 }

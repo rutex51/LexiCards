@@ -14,6 +14,7 @@
 import { isArray, expandArray } from './arrays.js';
 import { PAPER_STEP, SCALE_UNITS, cleanScale, dimFormat, dimensionParts, dimensionText, leaderStart, stickyColor } from './drawing.js';
 import { drawingLayers, elementLayers, layersOf } from './layers.js';
+import { frameLayout } from './title-block.js';
 import {
   arcFromPoints, arcGeometry, circleShape, cornerSize, curveSamples, dimGeometry, dimKeys, isMeasure, polyFromPoints, polyPoints, shapeHatch,
   shapeOutline, shapePoint, shownDims, DIM_ARROW, DIM_FONT, POLY_NODES_MAX
@@ -927,6 +928,24 @@ export function drawingToDxf(drawing) {
     for (let index = 0; index + 1 < points.length; index += 2) list.push(pt({ x: points[index], y: points[index + 1] }));
     polyline(stroke, list, closed);
   };
+  // Ramka rysunkowa z tabliczką (od 1.41) – osobna warstwa RAMKA: brzeg arkusza, ramka, tabliczka i jej napisy.
+  const frameLayer = drawing.frame ? ['RAMKA', 'RAMKA_RYSUNKOWA', 'RAMKA_LEXICARDS'].find((name) => !seen.has(name)) : null;
+  if (frameLayer) {
+    const start = entities.length;
+    const ink = { color: '#1d1d1f' };
+    const { sheet, border, block, lines, cells } = frameLayout(drawing.frame, drawing.width, drawing.height, drawing.scale);
+    const box = (x, y, w, h) => polyline(ink, [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }].map(pt), true);
+    box(sheet.x, sheet.y, sheet.width, sheet.height);
+    box(border.x, border.y, border.w, border.h);
+    box(block.x, block.y, block.w, block.h);
+    for (const [a, b] of lines) line(ink, pt(a), pt(b));
+    for (const cell of cells) {
+      const pad = cell.labelSize * 0.7;
+      text(ink, pt({ x: cell.x + pad, y: cell.y + pad + cell.labelSize * 0.8 }), cell.labelSize * 0.7 * mm, cell.label);
+      if (cell.value) text(ink, pt({ x: cell.x + pad, y: cell.y + cell.h - pad * 1.1 }), cell.valueSize * 0.7 * mm, cell.value);
+    }
+    for (let index = start; index < entities.length; index += 1) entities[index] = entities[index].map(([code, value]) => (code === 8 ? [8, frameLayer] : [code, value]));
+  }
   let written = 0;
   for (const stroke of drawing.strokes) {
     const before = skipped;
@@ -948,8 +967,11 @@ export function drawingToDxf(drawing) {
     for (const value of pattern) pair(49, fixed(value));
   }
   pair(0, 'ENDTAB');
-  pair(0, 'TABLE'); pair(2, 'LAYER'); pair(70, names.size + 1);
+  pair(0, 'TABLE'); pair(2, 'LAYER'); pair(70, names.size + 1 + (frameLayer ? 1 : 0));
   pair(0, 'LAYER'); pair(2, '0'); pair(70, 0); pair(62, 7); pair(6, 'CONTINUOUS');
+  if (frameLayer) {
+    pair(0, 'LAYER'); pair(2, frameLayer); pair(70, 0); pair(62, 7); pair(6, 'CONTINUOUS');
+  }
   for (const layer of elementLayers(layers)) {
     pair(0, 'LAYER'); pair(2, names.get(layer.id)); pair(70, 0); pair(62, layer.hidden ? -7 : 7); pair(6, 'CONTINUOUS');
   }

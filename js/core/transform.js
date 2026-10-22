@@ -5,17 +5,21 @@
 // z resztą. Przyklejone końce (core/attach.js) między przekształcanymi elementami dostają miejsca
 // przyklejenia, w które trafiły; przyklejone do elementów spoza zaznaczenia – odklejają się.
 //
-// Odbicie „w poziomie” zamienia lewą stronę z prawą (oś pionowa), „w pionie” – górę z dołem.
+// Odbicie „w poziomie” zamienia lewą stronę z prawą (oś pionowa), „w pionie” – górę z dołem; od 1.41
+// także względem prostej przez dwa punkty. Od 1.41 skalowanie o współczynnik wokół punktu (kształty
+// i kreski rosną, elementy stojące prosto zmieniają tylko miejsce) i przenoszenie stylu elementu.
 // Kształt odbity zostaje tym samym rodzajem kształtu: zmienia się kąt, pochylenie, wierzchołek
 // trójkąta i wierzchołki łamanej; odcinek i strzałka – tylko kąt (początek zostaje początkiem).
 
 import { isArray, polarStep, rotateItem } from './arrays.js';
 import { endPoint, findSnap, keepLinksTo, withLink } from './attach.js';
 import { elementBox, isElement, translateStroke } from './drawing.js';
-import { isSegment, isShape } from './shapes.js';
+import { MIN_SHAPE, canDash, canFill, isMeasure, isSegment, isShape, withDash, withShapeFill } from './shapes.js';
 
 export const MIRROR_AXES = Object.freeze(['horizontal', 'vertical']);
 export const MIRROR_LABELS = Object.freeze({ horizontal: 'W poziomie', vertical: 'W pionie' });
+/** Skalowanie (od 1.41): najmniejszy i największy współczynnik. */
+export const SCALE_LIMITS = Object.freeze({ min: 0.01, max: 100 });
 /** Krok obrotu z Shift (albo „Proporcje”) i przyciąganie bez niego – jak przy obrocie kształtu. */
 export const TURN_STEP = Math.PI / 12;
 const TURN_SNAP = (2 * Math.PI) / 180;
@@ -171,4 +175,97 @@ export function transformStrokes(strokes, transform, boxOf = elementBox) {
     }
     return next;
   });
+}
+
+// ---------------------------------------------------------------- odbicie względem prostej, skala, styl (od 1.41)
+
+/**
+ * Element odbity względem prostej przez punkty `a` i `b` (od 1.41): obrót do poziomu wokół `a`, odbicie góra–dół,
+ * obrót z powrotem. Punkty w jednym miejscu – bez zmian.
+ */
+export function mirrorAcross(stroke, a, b) {
+  if (Math.hypot(b.x - a.x, b.y - a.y) < 1e-6) return stroke;
+  const angle = Math.atan2(b.y - a.y, b.x - a.x);
+  return rotateStroke(mirrorStroke(rotateStroke(stroke, a.x, a.y, -angle), 'vertical', a.y), a.x, a.y, angle);
+}
+
+/** Kształt powiększony `factor` razy wokół punktu (`map` – nowe miejsce punktu): wymiary, odsunięcia wymiarów, narożniki. */
+function scaleShape(shape, map, factor) {
+  const center = map(shape);
+  const next = { ...shape, x: round(center.x), y: round(center.y) };
+  // Punkt – znacznik tej samej wielkości.
+  if (shape.shape === 'point') return next;
+  next.w = round(Math.max(MIN_SHAPE, shape.w * factor));
+  if (!isSegment(shape)) next.h = round(Math.max(MIN_SHAPE, shape.h * factor));
+  if (shape.dimOffsets) next.dimOffsets = Object.fromEntries(Object.entries(shape.dimOffsets).map(([key, value]) => [key, round(value * factor)]));
+  if (shape.corner) next.corner = { ...shape.corner, size: round(Math.max(0.5, shape.corner.size * factor)) };
+  return next;
+}
+
+/**
+ * Element powiększony `factor` razy wokół (cx, cy) (od 1.41) – nowy obiekt. Kreski i kształty rosną (grubość linii,
+ * tekst na kształcie, znacznik punktu i kreskowanie – bez zmian), elementy stojące prosto (pola tekstowe, wzory, tabele,
+ * karteczki, symbole) – zmienia się tylko ich miejsce; szyk – źródło i odstępy.
+ */
+export function scaleStroke(stroke, cx, cy, factor) {
+  if (factor === 1) return stroke;
+  const map = (point) => ({ x: cx + (point.x - cx) * factor, y: cy + (point.y - cy) * factor });
+  if (isArray(stroke)) {
+    const next = { ...stroke, items: stroke.items.map((item) => scaleStroke(item, cx, cy, factor)) };
+    if (stroke.kind === 'linear') {
+      next.dx = round(stroke.dx * factor);
+      next.dy = round(stroke.dy * factor);
+    } else {
+      const center = map({ x: stroke.cx, y: stroke.cy });
+      next.cx = round(center.x);
+      next.cy = round(center.y);
+      if (Number.isFinite(stroke.ringStep)) next.ringStep = round(stroke.ringStep * factor);
+    }
+    return next;
+  }
+  if (isUpright(stroke)) return placeUpright(stroke, map);
+  if (isShape(stroke)) return scaleShape(stroke, map, factor);
+  const points = stroke.points.slice();
+  for (let index = 0; index < points.length; index += 3) {
+    points[index] = round(cx + (points[index] - cx) * factor, 1);
+    points[index + 1] = round(cy + (points[index + 1] - cy) * factor, 1);
+  }
+  return { ...stroke, points };
+}
+
+const HEX = /^#[0-9a-f]{6}$/i;
+/** Elementy z kolorem do przeniesienia: kreski, kształty, pola tekstowe, wzory i symbole. */
+const STYLED = ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness'];
+/** Grubość linii: kształtu – size, kreski – średnia szerokość punktów; inne – null. */
+export function lineWidthOf(stroke) {
+  if (isShape(stroke)) return stroke.size;
+  if (stroke.tool !== 'pen' && stroke.tool !== 'highlighter') return null;
+  let sum = 0;
+  for (let index = 2; index < stroke.points.length; index += 3) sum += stroke.points[index];
+  return sum / Math.max(1, stroke.points.length / 3);
+}
+/** Czy z elementu da się przenieść styl (kolor w zapisie #rrggbb). */
+export const hasStyle = (stroke) => STYLED.includes(stroke?.tool) && HEX.test(stroke.color ?? '');
+
+/**
+ * Element `target` w stylu elementu `source` (od 1.41, jak „Przenieś właściwości” w CAD): kolor; między kształtami
+ * i kreskami – grubość linii (kreska – szerokości punktów przeskalowane, nacisk zostaje); między kształtami – rodzaj
+ * linii, wypełnienie i kreskowanie. Szyk – każdy element źródła. Bez stylu – bez zmian.
+ */
+export function withStyleOf(target, source) {
+  if (!hasStyle(source)) return target;
+  if (isArray(target)) return { ...target, items: target.items.map((item) => withStyleOf(item, source)) };
+  if (!hasStyle(target)) return target;
+  let next = { ...target, color: source.color.toLowerCase() };
+  const width = lineWidthOf(source);
+  if (width !== null && isShape(next) && !isMeasure(next)) next.size = round(Math.min(40, Math.max(0.5, width)), 1);
+  if (width !== null && (next.tool === 'pen' || next.tool === 'highlighter') && source.tool !== 'highlighter' && next.tool !== 'highlighter') {
+    const factor = width / Math.max(0.1, lineWidthOf(next));
+    next.points = next.points.map((value, at) => (at % 3 === 2 ? round(Math.min(40, Math.max(0.5, value * factor))) : value));
+  }
+  if (isShape(source) && isShape(next)) {
+    if (canDash(source) && canDash(next)) next = withDash(next, source.dash ?? 'solid');
+    if (canFill(source) && canFill(next)) next = withShapeFill(next, source.fill ?? 'none', source.hatch);
+  }
+  return next;
 }

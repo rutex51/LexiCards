@@ -1,4 +1,4 @@
-# LexiCards 1.40
+# LexiCards 1.41
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -49,8 +49,9 @@ Rysunek: wczytywanie plików DXF (odcinki, okręgi, łuki, łamane, splajny, tek
 Rysunek: wymiary graniczne, teoretycznie dokładny w ramce, pomocniczy w nawiasie, kontrolny w owalnej ramce, miejsca po przecinku; ramka tolerancji z Ⓟ i wysokością, modyfikatorem przy bazie, drugim wierszem i znakiem „dookoła”; chropowatość z kierunkiem struktury, naddatkiem, metodą i „dookoła”; odnośnik – tekst ze strzałką bez karteczki (wersja 1.38): [docs/RELEASE-1.38.md](docs/RELEASE-1.38.md).
 Rysunek: kółko narzędzi przesuwane przytrzymaniem (w środku ekranu cały okrąg, schowanie – stałe miejsce), kółko od razu wyżej po zwinięciu menu, rząd 2 i 3 menu na iPhonie w osobnej pastylce, kształty tylko na kartce; fiszki: 1, 2 albo 3 obroty z wyborem treści każdej strony (wersja 1.39): [docs/RELEASE-1.39.md](docs/RELEASE-1.39.md).
 Rysunek – etap D, część 1: wielokąt foremny (3–12 boków), półprosta, zaokrąglenie R i faza narożników prostokąta, kreskowanie (kąt, odstęp, krzyżowe), pole i obwód zaznaczonego kształtu, kolejność rysowania (na wierzch, wyżej, niżej, na spód), DXF z łukami narożników i kreskowaniem (wersja 1.40): [docs/RELEASE-1.40.md](docs/RELEASE-1.40.md).
+Rysunek – etap D, część 2: odbicie i kopia odbita względem prostej przez dwa punkty, skalowanie o współczynnik, „Styl jak…” (kolor, grubość, linia, wypełnienie z dotkniętego elementu), ramka rysunkowa A4 albo A3 z tabliczką (tytuł, numer, materiał, skala, data, rysował; także w DXF) (wersja 1.41): [docs/RELEASE-1.41.md](docs/RELEASE-1.41.md).
 
-## Co potrafi wersja 1.40
+## Co potrafi wersja 1.41
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -151,7 +152,8 @@ Rysunek – etap D, część 1: wielokąt foremny (3–12 boków), półprosta, 
   kreskę); łamana i wielokąt mają punkt w każdym wierzchołku. Od 1.40 (etap D): **wielokąt foremny** (3–12 boków,
   od środka do wierzchołka), **półprosta**, prostokąt z **zaokrągleniem R** albo **fazą**, **kreskowanie** (kąt,
   odstęp, krzyżowe), **pole i obwód** zaznaczonego kształtu i **kolejność rysowania** (na wierzch, wyżej, niżej,
-  na spód). Od 1.24.1 kartka w edytorze wygląda
+  na spód). Od 1.41: odbicie i **kopia odbita względem prostej** przez dwa punkty, **skalowanie** o współczynnik,
+  **Styl jak…** (styl dotkniętego elementu na zaznaczonych) i **ramka rysunkowa** A4 albo A3 z tabliczką. Od 1.24.1 kartka w edytorze wygląda
   jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
@@ -856,6 +858,19 @@ z rozpoznania), w jednostce liczb wymiarów, np. „pole 49,8 cm² · obwód 29,
 i zaokrąglenia – dokładnie. **Kolejność** nad zaznaczeniem: **Na wierzch**, **Wyżej**, **Niżej**, **Na spód**; „wyżej”
 i „niżej” przesuwają zaznaczenie nad (pod) najbliższy element, z którym się styka – jeden krok cofania; gdy nic go nie
 zakrywa – komunikat.
+**Przekształcenia i ramka** (od 1.41): **Odbij** nad zaznaczeniem ma też **Względem prostej…** i **Kopia względem prostej…** –
+dotknij dwóch punktów osi (przyciągają się do narożników i krawędzi; mysz pokazuje oś przerywaną linią, Esc – rezygnacja);
+kopia zostaje obok oryginału i jest zaznaczona. **Skaluj** – współczynnik (2, 0,5 albo 2:1, 1:2; od 0,01 do 100) wokół
+środka zaznaczenia: kreski i kształty rosną (grubość linii, tekst na kształcie, znacznik punktu i kreskowanie – bez zmian;
+odsunięcia wymiarów i narożniki – razem z kształtem), pola tekstowe, wzory, tabele, karteczki i symbole tylko się przesuwają.
+**Styl jak…** – dotknij elementu, którego styl przenieść na zaznaczone: kolor, grubość linii (kreska – szerokości przeskalowane,
+nacisk zostaje), a między kształtami także rodzaj linii, wypełnienie i kreskowanie (jak „Przenieś właściwości” w CAD);
+tekst dostaje sam kolor. **Ramka rysunkowa…** (menu kartek, kartka bez zdjęcia): kartka staje się arkuszem **A4** albo **A3**
+w poziomie (wyśrodkowanym na kartce) – ramka 20 mm od lewego brzegu i 10 mm od pozostałych, tabliczka 180 × 34 mm w prawym
+dolnym rogu: Rysował, Data (na start dzisiejsza), Skala, Format, Tytuł, Materiał, Nr rysunku. Skala bez wpisu jest liczona
+z kratki rysunku i wielkości arkusza (np. kratka = 1 cm na A4 – „1:1,19”). Ramka jest częścią tła kartki (ukrycie tła
+w warstwach ukrywa i ją), widać ją na obrazie w notatce i w PDF, a w DXF – na osobnej warstwie **RAMKA** (łamane, linie,
+teksty); format rysunku – 14.
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę

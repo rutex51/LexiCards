@@ -62,7 +62,11 @@ import {
 import { constrainCorner, cornerOf, cornerPath, foldGeometry } from '../core/page-curl.js';
 import { recognizeStroke } from '../core/recognize.js';
 import { rememberFit } from '../core/fits.js';
-import { MIRROR_AXES, MIRROR_LABELS, canTurn, mirrorStroke, rotateStroke, snapTurn, transformStrokes, turnDegrees } from '../core/transform.js';
+import {
+  MIRROR_AXES, MIRROR_LABELS, SCALE_LIMITS, canTurn, hasStyle, mirrorAcross, mirrorStroke, rotateStroke, scaleStroke, snapTurn, transformStrokes, turnDegrees,
+  withStyleOf
+} from '../core/transform.js';
+import { FRAME_FIELDS, FRAME_FIELD_LABELS, FRAME_FIELD_MAX, FRAME_FORMATS, cleanFrame, frameScaleText } from '../core/title-block.js';
 import { cleanColumnWidths, moveColumnBorder } from '../core/tables.js';
 import { openFitTable } from './fit-table.js';
 import { RING_SIDES, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPartHidden } from '../core/tool-ring.js';
@@ -84,7 +88,7 @@ import {
 } from '../core/templates.js';
 import { plural } from '../core/text.js';
 import { TOOLS_KEY, colorTabBody } from './color-picker.js';
-import { field, group, radioRow, segmented, textArea, toggle } from './components.js';
+import { field, group, radioRow, segmented, textArea, textInput, toggle } from './components.js';
 import { deliverFile, pickFile } from './files.js';
 import { confirmDialog, mountDialog, openFormSheet, openMenu, showError } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
@@ -99,7 +103,7 @@ import {
   dimTextWidth, gdtGlyphCanvas, measureGdt, measureRoughness, paintDatum, paintDimText, paintGdt, paintRoughness, paintTechnicalDim
 } from './drawing-gdt.js';
 import { openMathHelp } from './math.js';
-import { paintShape, paintTemplate } from './drawing-paint.js';
+import { paintFrame, paintShape, paintTemplate } from './drawing-paint.js';
 import { prepareImage } from './images.js';
 import { symbolField } from './symbols.js';
 import { TEXT_FONT, TEXT_LINE, measureText, textFont, textLines } from './canvas-text.js';
@@ -121,6 +125,8 @@ const RULER_SNAP = 26;
 const RULER_HANDLE_RADIUS = 17;
 /** Zaznaczenie: margines ramki (px ekranu), dotknięcie bez przesunięcia (px), przesunięcie kopii (jednostki strony). */
 const SELECTION_PAD = 8;
+/** Wysokość paska zaznaczenia w jednym wierszu (px) – wyższy znaczy, że polecenia przeszły do drugiego wiersza (od 1.41). */
+const SELECTION_ROW = 60;
 const TAP_SLOP = 5;
 const DUPLICATE_OFFSET = PAPER_STEP / 2;
 /** Zakres suwaków grubości pióra (jednostki rysunku). */
@@ -507,6 +513,13 @@ export function paintDrawing(ctx, drawing, media = {}, skip = null, plain = null
     ctx.restore();
     if (background && background.saturation < 1) desaturate(ctx, drawing.template, background.saturation);
   }
+  // Ramka rysunkowa z tabliczką (od 1.41) – razem z tłem (ukryte tło – bez ramki).
+  if (drawing.frame && !background?.hidden) {
+    ctx.save();
+    if (background) ctx.globalAlpha = background.opacity;
+    paintFrame(ctx, drawing);
+    ctx.restore();
+  }
   let number = 0;
   for (const stroke of drawing.strokes) {
     // Karteczki mają numery w kolejności na rysunku (od 1.21).
@@ -835,8 +848,11 @@ export function openDrawingEditor({
     const copyButton = selectionButton('drawing-selection-copy', 'copy', 'Kopiuj', 'Kopiuj (Ctrl+C) – wklejasz przyciskiem „Wklej” albo Ctrl+V, także w innym rysunku', () => copySelection());
     const duplicateButton = selectionButton('drawing-selection-duplicate', 'duplicate', 'Powiel', 'Powiel – kopia obok', () => duplicateSelection());
     // Od 1.30: odbicie lustrzane zaznaczenia – w poziomie albo w pionie (menu), obok „Powiel”.
-    const mirrorButton = selectionButton('drawing-selection-mirror', 'mirror', 'Odbij', 'Odbicie lustrzane – w poziomie albo w pionie', () => openMirrorMenu());
+    const mirrorButton = selectionButton('drawing-selection-mirror', 'mirror', 'Odbij', 'Odbicie lustrzane – w poziomie, w pionie albo względem prostej przez dwa punkty', () => openMirrorMenu());
     mirrorButton.setAttribute('aria-haspopup', 'menu');
+    // Od 1.41: skalowanie o współczynnik i „Styl jak…” – styl dotkniętego elementu na zaznaczonych.
+    const scaleButton = selectionButton('drawing-selection-scale', 'scale', 'Skaluj', 'Skaluj o współczynnik – wokół środka zaznaczenia', () => openScaleSheet());
+    const matchButton = selectionButton('drawing-selection-match', 'brush', 'Styl jak…', 'Styl jak… – dotknij elementu, którego kolor, grubość, linię i wypełnienie przenieść na zaznaczone', () => startPointPick('match'));
     // Od 1.40: kolejność rysowania – na wierzch, wyżej, niżej, na spód (menu).
     const orderButton = selectionButton('drawing-selection-order', 'order', 'Kolejność', 'Kolejność rysowania – na wierzch, wyżej, niżej, na spód', () => openOrderMenu());
     orderButton.setAttribute('aria-haspopup', 'menu');
@@ -856,8 +872,9 @@ export function openDrawingEditor({
     });
     moveButton.setAttribute('aria-pressed', 'false');
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
-      selectionCount, selectionMeasure, moveButton, editButton, collapseButton, shapeTextButton, magnetButton, layersSelectionButton, copyButton, duplicateButton,
-      mirrorButton, orderButton, arrayButton, explodeButton, embedButton, deleteButton);
+      // Od 1.41 nazwa i pole z obwodem w jednej kolumnie (na telefonie – pole i obwód w osobnym wierszu).
+      h('span', { class: 'drawing__selection-head' }, selectionCount, selectionMeasure), moveButton, editButton, collapseButton, shapeTextButton, magnetButton, layersSelectionButton, copyButton, duplicateButton,
+      mirrorButton, scaleButton, matchButton, orderButton, arrayButton, explodeButton, embedButton, deleteButton);
     // Pola wymiarów zaznaczonego kształtu (od 1.17): na liniach ramki konstrukcyjnej, wpisywane z klawiatury.
     const dims = h('div', { class: 'drawing__dims', hidden: true, dataset: { testid: 'drawing-dims' } });
     // Od 1.22: animacja przewracania kartki (zdjęcia stron nad płótnem, tylko w trakcie).
@@ -2221,8 +2238,9 @@ export function openDrawingEditor({
       // Miejsca przyciągnięcia końców (od 1.22): w trakcie rysowania i przeciągania, a z myszą – też przed.
       const snaps = active?.kind === 'shape-new' ? [active.startSnap, active.endSnap]
         : active?.kind === 'shape-edit' || active?.kind === 'box-edit' || active?.kind === 'points' ? [active.snap]
-          : !active && (tool === 'shape' || symbolPlacing) ? [edgeHover] : [];
+          : !active && (tool === 'shape' || symbolPlacing || pointPick) ? [edgeHover] : [];
       for (const snap of snaps) if (snap) paintSnapMarker(ctx, snap);
+      if (pointPick?.first) paintAxisPick(ctx);
       if (ruler) paintRuler(ctx);
       if (active?.kind === 'stroke' && active.edge && active.edge.to >= active.edge.from) paintLength(ctx, active.edge);
       const cursor = active?.kind === 'erase' ? active.last : (tool === 'eraser' ? hover : null);
@@ -2308,10 +2326,16 @@ export function openDrawingEditor({
       duplicateButton.hidden = Boolean(snip);
       mirrorButton.hidden = Boolean(snip) || !canTurn(items);
       orderButton.hidden = Boolean(snip) || selectionKind !== 'whole' || items.length === drawing.strokes.length;
+      scaleButton.hidden = Boolean(snip) || selectionKind !== 'whole' || !canTurn(items);
+      matchButton.hidden = Boolean(snip) || selectionKind !== 'whole' || !items.some((stroke) => hasStyle(stroke) || isArray(stroke));
       deleteButton.hidden = Boolean(snip);
       embedButton.hidden = !onEmbed;
       copyButton.title = snip ? 'Kopiuj wycinek jako obraz (Ctrl+C) – wkleisz go w notatce albo w innej aplikacji'
         : 'Kopiuj (Ctrl+C) – wklejasz przyciskiem „Wklej” albo Ctrl+V, także w innym rysunku';
+      // Od 1.41: polecenia, które nie mieszczą się w jednym wierszu – same ikony (napis w podpowiedzi i dla czytnika ekranu);
+      // na telefonie i tak w dwóch wierszach.
+      selectionBar.classList.remove('drawing__selection--compact');
+      if (selectionBar.offsetHeight > SELECTION_ROW) selectionBar.classList.add('drawing__selection--compact');
       const top = Math.min(toScreen({ x: 0, y: bounds.minY }).y - SELECTION_PAD, extra?.top ?? Infinity);
       const bottom = Math.max(toScreen({ x: 0, y: bounds.maxY }).y + SELECTION_PAD, extra?.bottom ?? -Infinity);
       const middle = toScreen({ x: (bounds.minX + bounds.maxX) / 2, y: 0 }).x;
@@ -4746,9 +4770,64 @@ export function openDrawingEditor({
           'separator',
           { label: 'Wczytaj DXF…', icon: 'upload', testID: 'drawing-dxf-import', onSelect: () => importDxf() },
           { label: 'Zapisz kartkę jako DXF', icon: 'download', testID: 'drawing-dxf-export', onSelect: () => exportDxf() },
+          // Od 1.41: ramka rysunkowa z tabliczką (kartka bez zdjęcia).
+          drawing.photo ? null : { label: drawing.frame ? `Ramka rysunkowa ${drawing.frame.format}…` : 'Ramka rysunkowa…', icon: 'titleBlock', testID: 'drawing-frame', onSelect: () => editFrame() },
           added ? 'separator' : null,
           added ? { label: 'Usuń tę kartkę', icon: 'trash', destructive: true, testID: 'drawing-page-delete', onSelect: () => deletePage() } : null
         ]
+      });
+    }
+
+    // ---- ramka rysunkowa z tabliczką (od 1.41)
+    /** Okno ramki: arkusz (bez ramki, A4, A3 – w poziomie) i napisy tabliczki; skala pusta – z kratki i arkusza. */
+    function editFrame() {
+      const old = drawing.frame;
+      const draft = { format: old?.format ?? 'A4' };
+      for (const key of FRAME_FIELDS) draft[key] = old?.[key] ?? '';
+      if (!old) draft.date = new Date().toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      let saved = false;
+      const autoScale = (format) => `${frameScaleText(format, drawing.width, drawing.height, drawing.scale)} – z kratki`;
+      const inputs = {};
+      openFormSheet({
+        title: 'Ramka rysunkowa',
+        submitLabel: 'Gotowe',
+        build: () => [
+          segmented({
+            name: 'drawing-frame-format', value: draft.format, label: 'Arkusz',
+            options: [{ value: 'none', label: 'Bez ramki' }, ...Object.keys(FRAME_FORMATS).map((format) => ({ value: format, label: `${format} poziomo` }))],
+            onChange: (value) => {
+              draft.format = value;
+              if (FRAME_FORMATS[value]) inputs.scale.placeholder = autoScale(value);
+            }
+          }),
+          ...FRAME_FIELDS.map((key) => {
+            const input = textInput({
+              value: draft[key], placeholder: key === 'scale' ? autoScale(FRAME_FORMATS[draft.format] ? draft.format : 'A4') : '', testID: `drawing-frame-${key}`,
+              onInput: (value) => { draft[key] = value; }
+            });
+            input.maxLength = FRAME_FIELD_MAX[key];
+            inputs[key] = input;
+            return field(FRAME_FIELD_LABELS[key], input);
+          }),
+          h('p', { class: 'field__hint' }, 'Kartka to arkusz w poziomie: ramka 20 mm od lewego brzegu i 10 mm od pozostałych, tabliczka 180 mm w prawym '
+            + 'dolnym rogu (rysował, data, skala, format, tytuł, materiał, numer rysunku). Skala bez wpisu – z kratki rysunku i wielkości arkusza. '
+            + 'Ramka jest częścią tła kartki: widać ją na obrazie w notatce, w PDF i w pliku DXF (warstwa RAMKA).')
+        ],
+        onSubmit: () => {
+          saved = true;
+          return true;
+        },
+        onClose: () => {
+          if (!saved) return;
+          const next = FRAME_FORMATS[draft.format] ? cleanFrame(draft) : null;
+          if (JSON.stringify(next) === JSON.stringify(old ?? null)) return;
+          if (next) drawing.frame = next;
+          else delete drawing.frame;
+          changed = true;
+          updateToolbar();
+          requestRender();
+          flash(next ? `Ramka ${next.format} z tabliczką` : 'Bez ramki rysunkowej');
+        }
       });
     }
 
@@ -4926,6 +5005,7 @@ export function openDrawingEditor({
     function clearSelection() {
       dropRegion();
       moveMode = false;
+      if (pointPick) cancelPointPick();
       selectionKind = 'whole';
       if (snip) {
         snip = null;
@@ -5051,11 +5131,159 @@ export function openDrawingEditor({
     function openMirrorMenu() {
       openMenu({
         title: 'Odbicie lustrzane',
-        items: MIRROR_AXES.map((axis) => ({
-          label: MIRROR_LABELS[axis], icon: axis === 'horizontal' ? 'mirror' : 'mirrorVertical', testID: `drawing-mirror-${axis}`,
-          onSelect: () => mirrorSelection(axis)
-        }))
+        items: [
+          ...MIRROR_AXES.map((axis) => ({
+            label: MIRROR_LABELS[axis], icon: axis === 'horizontal' ? 'mirror' : 'mirrorVertical', testID: `drawing-mirror-${axis}`,
+            onSelect: () => mirrorSelection(axis)
+          })),
+          // Od 1.41: względem prostej przez dwa dotknięte punkty – zaznaczone albo ich odbita kopia (oryginał zostaje).
+          'separator',
+          { label: 'Względem prostej…', icon: 'mirrorLine', testID: 'drawing-mirror-line', onSelect: () => startPointPick('mirror') },
+          { label: 'Kopia względem prostej…', icon: 'mirrorLine', testID: 'drawing-mirror-copy', onSelect: () => startPointPick('mirror-copy') }
+        ]
       });
+    }
+    // ---- odbicie względem prostej, skalowanie, „Styl jak…” (od 1.41)
+    /** Czekanie na dotknięcia: 'mirror' i 'mirror-copy' – dwa punkty osi (first – pierwszy), 'match' – element wzoru stylu. */
+    let pointPick = null;
+    let axisHover = null;
+    const PICK_HINTS = {
+      mirror: ['Odbicie: dotknij pierwszego punktu osi (Esc – bez odbicia)', 'Odbicie: dotknij drugiego punktu osi (Esc – bez odbicia)'],
+      'mirror-copy': ['Kopia odbita: dotknij pierwszego punktu osi (Esc – bez kopii)', 'Kopia odbita: dotknij drugiego punktu osi (Esc – bez kopii)'],
+      match: ['Dotknij elementu, którego styl przenieść na zaznaczone (Esc – bez zmian)']
+    };
+    /** Podpowiedź wyboru – zostaje do końca wyboru (bez znikania po kilku sekundach). */
+    function showPickHint() {
+      clearTimeout(noticeTimer);
+      notice.textContent = PICK_HINTS[pointPick.kind][pointPick.first ? 1 : 0];
+      notice.hidden = false;
+    }
+    function startPointPick(kind) {
+      if (selection.size === 0 || snip) return;
+      pointPick = { kind, first: null };
+      showPickHint();
+      requestLive();
+    }
+    function cancelPointPick(message = null) {
+      pointPick = null;
+      axisHover = null;
+      edgeHover = null;
+      if (message) flash(message);
+      else notice.hidden = true;
+      requestLive();
+    }
+    /** Dotknięcie przy wyborze: punkt osi (przyciągnięty do narożników i krawędzi) albo element – wzór stylu. */
+    function pickPointAt(point, event) {
+      if (pointPick.kind === 'match') {
+        const shown = shownStrokes();
+        const [index] = strokesAt(shown, point.x, point.y, HANDLE_HIT / view.scale);
+        const source = index === undefined ? null : shown[index];
+        if (!source || !hasStyle(source)) {
+          flash(source ? 'Ten element nie ma koloru ani linii do przeniesienia – dotknij kreski, kształtu albo tekstu.' : 'Tu nie ma elementu – dotknij jego linii (Esc – bez zmian).');
+          setTimeout(() => { if (pointPick) showPickHint(); }, 2500);
+          return;
+        }
+        cancelPointPick('Styl przeniesiony na zaznaczone');
+        changeSelection((stroke) => hasStyle(stroke) || isArray(stroke), (stroke) => withStyleOf(stroke, source));
+        return;
+      }
+      const snap = edgeSnapAt(point, event);
+      const at = snap ? { x: snap.x, y: snap.y } : point;
+      if (!pointPick.first) {
+        pointPick.first = at;
+        showPickHint();
+        requestLive();
+        return;
+      }
+      const { kind, first } = pointPick;
+      if (Math.hypot(at.x - first.x, at.y - first.y) * view.scale < 8) {
+        flash('Drugi punkt osi – w innym miejscu niż pierwszy');
+        return;
+      }
+      cancelPointPick(kind === 'mirror' ? 'Odbito względem prostej' : 'Dodano kopię odbitą – oryginał został');
+      mirrorAcrossSelection(first, at, kind === 'mirror-copy');
+    }
+    /** Zaznaczenie odbite względem prostej a–b; `copy` – odbita kopia obok oryginału (zaznaczona kopia). Jeden krok cofania. */
+    function mirrorAcrossSelection(a, b, copy) {
+      const items = orderedSelection();
+      if (items.length === 0) return;
+      const mirrored = transformStrokes(items, (stroke) => mirrorAcross(stroke, a, b), elementBox);
+      if (!copy) {
+        replaceSelection(items, mirrored);
+        return;
+      }
+      dropRegion();
+      history.begin();
+      const copies = relinkCopies(mirrored, drawing.strokes);
+      drawing.strokes.push(...copies);
+      commitStep();
+      selection = new Set(copies);
+      updateToolbar();
+      requestRender();
+    }
+    /** Oś odbicia w trakcie wyboru: pierwszy punkt i prosta przez punkt pod wskaźnikiem (przerywana, przez całą stronę). */
+    function paintAxisPick(ctx) {
+      const { first } = pointPick;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0, 88, 190, 0.85)';
+      ctx.fillStyle = 'rgba(0, 88, 190, 0.85)';
+      ctx.lineWidth = 1.5 / view.scale;
+      if (axisHover && Math.hypot(axisHover.x - first.x, axisHover.y - first.y) > 1) {
+        const length = Math.hypot(axisHover.x - first.x, axisHover.y - first.y);
+        const reach = (drawing.width + drawing.height) * 2;
+        const [ux, uy] = [(axisHover.x - first.x) / length, (axisHover.y - first.y) / length];
+        ctx.setLineDash([8 / view.scale, 5 / view.scale]);
+        ctx.beginPath();
+        ctx.moveTo(first.x - ux * reach, first.y - uy * reach);
+        ctx.lineTo(first.x + ux * reach, first.y + uy * reach);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.beginPath();
+      ctx.arc(first.x, first.y, 5 / view.scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    /** Okno „Skaluj”: współczynnik (2, 0,5 albo 1:2), wokół środka zaznaczenia; jeden krok cofania. */
+    function openScaleSheet() {
+      const items = orderedSelection();
+      if (snip || items.length === 0) return;
+      let text = '2';
+      let factor = null;
+      const parse = (value) => {
+        const ratio = /^\s*([\d.,]+)\s*:\s*([\d.,]+)\s*$/.exec(value);
+        if (ratio) {
+          const [a, b] = [parseDecimal(ratio[1]), parseDecimal(ratio[2])];
+          return a && b ? a / b : null;
+        }
+        return parseDecimal(value);
+      };
+      openFormSheet({
+        title: 'Skaluj',
+        submitLabel: 'Skaluj',
+        build: () => [
+          field('Współczynnik', textInput({ value: text, testID: 'drawing-scale-factor', onInput: (value) => { text = value; } }),
+            { hint: 'Wokół środka zaznaczenia: 2 – dwa razy większe, 0,5 – o połowę mniejsze (także 2:1 albo 1:2). Kreski i kształty rosną '
+              + '(grubość linii, tekst na kształcie i kreskowanie – bez zmian), pola tekstowe, wzory, tabele, karteczki i symbole tylko się przesuwają.' })
+        ],
+        onSubmit: () => {
+          const value = parse(text);
+          if (!(value >= SCALE_LIMITS.min && value <= SCALE_LIMITS.max)) throw new Error(`Współczynnik od ${formatNumber(SCALE_LIMITS.min)} do ${SCALE_LIMITS.max}`);
+          factor = value;
+          return true;
+        },
+        onClose: () => {
+          if (factor) scaleSelection(factor);
+        }
+      });
+    }
+    function scaleSelection(factor) {
+      const items = orderedSelection();
+      if (snip || items.length === 0 || factor === 1) return;
+      const bounds = selectionBounds(items);
+      const [cx, cy] = [(bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2];
+      replaceSelection(items, transformStrokes(items, (stroke) => scaleStroke(stroke, cx, cy, factor), elementBox));
+      flash(`Przeskalowano ×${formatNumber(factor)}`);
     }
     /** Kolejność rysowania zaznaczonych (od 1.40) – jeden krok cofania; bez zmiany – komunikat. */
     function orderSelection(move) {
@@ -7266,6 +7494,11 @@ export function openDrawingEditor({
         else placeSymbol(point, event);
         return;
       }
+      // Odbicie względem prostej i „Styl jak…” (od 1.41): dotknięcie – punkt osi albo element wzoru.
+      if (pointPick && !active && !gesture && touches.size === 0 && !(fingerPans() && event.pointerType === 'touch')) {
+        pickPointAt(point, event);
+        return;
+      }
       if (event.pointerType === 'touch') {
         // Kolejny palec dołącza do trwającego gestu.
         if (gesture) {
@@ -7351,6 +7584,12 @@ export function openDrawingEditor({
           requestLive();
         } else if (tool === 'eraser') {
           hover = toDrawing(event);
+          requestLive();
+        } else if (pointPick?.first) {
+          const at = toDrawing(event);
+          const snap = edgeSnapAt(at, event);
+          axisHover = snap ? { x: snap.x, y: snap.y } : at;
+          edgeHover = snap;
           requestLive();
         } else if (symbolPlacing || (tool === 'shape' && snapsPoints())) {
           const at = toDrawing(event);
@@ -7533,6 +7772,11 @@ export function openDrawingEditor({
       if (event.key === 'Escape' && symbolPlacing) {
         event.preventDefault();
         cancelSymbolPlacing();
+        return;
+      }
+      if (event.key === 'Escape' && pointPick) {
+        event.preventDefault();
+        cancelPointPick(pointPick.kind === 'match' ? 'Bez przenoszenia stylu' : 'Bez odbicia');
         return;
       }
       // Kształt z punktów (od 1.34): Esc – od nowa.

@@ -138,7 +138,7 @@ test('wymiary techniczne 1.22.1: styl „50” (mm) i „5 cm”, znak ⌀ R □
   // Rysunek: styl liczb i wersja formatu; ustawienia – wzór odsunięcia.
   const drawing = cleanDrawing({ width: 1600, height: 1100, strokes: [cleaned], dimStyle: 'technical' });
   assert.equal(drawing.version, DRAWING_VERSION);
-  assert.equal(DRAWING_VERSION, 13, 'od 1.40 – wielokąt foremny, półprosta, narożniki, kreskowanie (1.38 – uzupełnienia tolerancji i symboli)');
+  assert.equal(DRAWING_VERSION, 14, 'od 1.41 – ramka rysunkowa; 1.40 – wielokąt foremny, półprosta, narożniki, kreskowanie (1.38 – uzupełnienia tolerancji i symboli)');
   assert.equal(drawing.dimStyle, 'technical');
   assert.equal('dimStyle' in cleanDrawing({ width: 1600, height: 1100, strokes: [], dimStyle: 'mm' }), false);
   assert.equal(defaultToolSettings().dimOffset, DIM_OFFSET);

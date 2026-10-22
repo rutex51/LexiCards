@@ -1717,6 +1717,34 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
 - **DXF** (`js/core/dxf.js`): półprosta – LINE od początku przez kartkę; kreskowanie – LINE (linia ciągła);
   zaokrąglony prostokąt bez pochylenia – POLYLINE z `42` (bulge −tan 22,5° na każdym łuku); wczytany RAY – `'ray'`.
 
+## Etap D, część 2: odbicie względem prostej, skala, styl, ramka rysunkowa (od 1.41)
+
+- **Odbicie względem prostej** (`js/core/transform.js`): `mirrorAcross(element, a, b)` – obrót wokół `a` do poziomu,
+  `mirrorStroke(…, 'vertical', a.y)`, obrót z powrotem (elementy stojące prosto – tylko miejsce). Edytor: menu **Odbij** –
+  `drawing-mirror-line` i `drawing-mirror-copy`, potem `pointPick` (`kind`: `mirror`, `mirror-copy`, `match`) – dotknięcia
+  w `pickPointAt` (przed narzędziem; punkt przyciągany `edgeSnapAt`), podgląd osi `paintAxisPick` (`axisHover`), podpowiedź
+  w `drawing-notice` bez znikania (`showPickHint`), Esc i zdjęcie zaznaczenia – `cancelPointPick`. Kopia – `relinkCopies`
+  (nowe identyfikatory), oryginał zostaje; jeden krok cofania.
+- **Skalowanie**: `scaleStroke(element, cx, cy, współczynnik)` – kreska: punkty (szerokości bez zmian); kształt: środek,
+  `w`, `h` (odcinek – `w`), `dimOffsets`, `corner.size` (punkt – tylko miejsce); szyk: źródło, `dx`/`dy` albo środek
+  i `ringStep`; elementy stojące prosto – `placeUpright`. `SCALE_LIMITS` 0,01–100. Edytor: `drawing-selection-scale` →
+  okno z polem `drawing-scale-factor` (liczba albo „a:b”), środek – środek granic zaznaczenia, `transformStrokes`.
+- **Styl jak…**: `withStyleOf(cel, źródło)` – kolor (`hasStyle`: kreski, kształty, tekst, wzór, symbole z kolorem
+  #rrggbb), grubość (`lineWidthOf`: kształt – `size`, kreska – średnia szerokość; kreska – szerokości przeskalowane,
+  zakreślacz – bez zmiany grubości), między kształtami `withDash` i `withShapeFill` (z kreskowaniem); szyk – elementy źródła.
+  Edytor: `drawing-selection-match`, wzór – najwyższy element pod dotknięciem (`strokesAt`), `changeSelection`.
+- **Ramka rysunkowa** (`js/core/title-block.js`): `frame { format: 'A4' | 'A3', title?, number?, material?, scale?, date?,
+  author? }` w rysunku bez zdjęcia (`cleanFrame` w `cleanDrawing`, `DRAWING_VERSION` 14). `frameSheet` – arkusz wpasowany
+  w stronę (jednostek na mm, wyśrodkowany), `frameLayout` – brzeg arkusza, ramka (marginesy 20/10 mm), tabliczka 180 × 34 mm
+  (wiersze 10, 14, 10 mm; pola: rysował, data, skala, format / tytuł / materiał, numer), grubości linii 0,25/0,7/0,35 mm;
+  `frameScaleText` – skala z kratki (`PAPER_STEP` / mm arkusza wobec skali rysunku). Malowanie – `paintFrame`
+  (`js/ui/drawing-paint.js`) w `paintDrawing` po szablonie, z efektem poziomu Tło; za długi napis – mniejsza czcionka
+  (do 60%) i przycięcie do pola. DXF: warstwa `RAMKA` (bez kolizji z nazwami warstw rysunku) – trzy zamknięte łamane, linie
+  tabliczki, teksty. Edytor: menu kartek `drawing-frame` → okno (`drawing-frame-format`, pola `drawing-frame-<pole>`).
+- **Pasek zaznaczenia**: `flex-wrap` i `width: max-content` także na komputerze; nazwa i pole z obwodem w kolumnie
+  `.drawing__selection-head` (na telefonie `display: contents` – pole i obwód w osobnym wierszu); po zmierzeniu wyższy niż
+  `SELECTION_ROW` (60 px) – klasa `drawing__selection--compact` (same ikony).
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).
@@ -1801,7 +1829,8 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   tolerancji, tabela pasowań i ostatnio użyte; od 1.36 warstwy i sygnatury; od 1.37 pliki DXF – czytanie,
   zamiana na elementy, zapis i odczyt z powrotem, strony kodowe; od 1.38 wymiary graniczne, rodzaj wymiaru, ramka
   złożona, chropowatość z kierunkiem struktury, odnośnik; od 1.39 kółko przesuwane i obroty fiszki; od 1.40 wielokąt
-  foremny, półprosta, narożniki, kreskowanie, pole i obwód, kolejność rysowania, DXF z łukami i kreskowaniem),
+  foremny, półprosta, narożniki, kreskowanie, pole i obwód, kolejność rysowania, DXF z łukami i kreskowaniem; od 1.41
+  odbicie względem prostej, skalowanie, styl jak…, ramka rysunkowa i jej DXF),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

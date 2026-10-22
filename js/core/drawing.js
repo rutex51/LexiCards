@@ -36,6 +36,7 @@
 //   w milimetrach (starsze rysunki – przeliczane przy wczytaniu), ramka tolerancji może mieć odchyłki.
 //   Od 1.36 (format 11) layers – warstwy rysunku (core/layers.js; brak – tło, obraz i warstwy 1–5),
 //   activeLayer – warstwa nowych elementów (brak – 1), w elementach layers – sygnatury (warstwy rzędu 1–3).
+//   Od 1.41 (format 14) frame – ramka rysunkowa z tabliczką (core/title-block.js; tylko kartka bez zdjęcia).
 
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import { DEFAULT_RECENT_FITS, cleanRecentFits } from './fits.js';
@@ -48,6 +49,7 @@ import { keepLinks } from './attach.js';
 import { cleanSymbol, isSymbol, symbolBox, symbolLeaderStart } from './gdt.js';
 import { cleanTable } from './tables.js';
 import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
+import { cleanFrame } from './title-block.js';
 import { cleanRingPositions, cleanToolGroups, cleanUiHidden, defaultToolGroups } from './tool-ring.js';
 import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './layers.js';
 
@@ -57,9 +59,10 @@ import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './la
  * 6 – tabele i karteczki (1.21), 7 – identyfikatory elementów i przyklejone końce odcinków (1.22),
  * 8 – wymiary techniczne (odsunięcia, tolerancje, styl liczb) i symbole metrologiczne (1.22.1), 11 – warstwy (1.36),
  * 12 – wymiary graniczne, rodzaj wymiaru, miejsca po przecinku, ramka z Ⓟ i drugim wierszem, chropowatość
- * z kierunkiem struktury, odnośnik (1.38), 13 – wielokąt foremny, półprosta, narożniki prostokąta, kreskowanie (1.40).
+ * z kierunkiem struktury, odnośnik (1.38), 13 – wielokąt foremny, półprosta, narożniki prostokąta, kreskowanie (1.40),
+ * 14 – ramka rysunkowa z tabliczką (1.41).
  */
-export const DRAWING_VERSION = 13;
+export const DRAWING_VERSION = 14;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -1292,6 +1295,8 @@ export function cleanDrawing(raw) {
     ...(raw.dimStyle === 'technical' ? { dimStyle: 'technical', ...(dimUnitOf(raw.dimUnit) ? { dimUnit: raw.dimUnit } : {}) } : {}),
     ...(template ? { template } : {}),
     ...(photo ? { photo } : {}),
+    // Ramka rysunkowa (od 1.41) – tylko kartka bez zdjęcia.
+    ...(!photo && cleanFrame(raw.frame) ? { frame: cleanFrame(raw.frame) } : {}),
     ...(layers ? { layers } : {}),
     ...(Number.isInteger(raw.activeLayer) && raw.activeLayer !== 1 && known.has(raw.activeLayer) ? { activeLayer: raw.activeLayer } : {})
   };

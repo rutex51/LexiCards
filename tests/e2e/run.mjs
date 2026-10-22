@@ -10325,6 +10325,107 @@ test('rysunek 1.40 na telefonie: narożniki i kreskowanie pod menu mieszczą si�
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-140-kreskowanie-telefon.png') });
 }, { device: PHONE });
 
+test('rysunek 1.41: kopia odbita względem prostej przez dwa punkty, skalowanie ×2, „Styl jak…”, ramka A4 z tabliczką; zapis (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Etap D, część 2</p>');
+  const { at } = await pageFrame(page);
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  const tap = (x, y) => drawStroke(page, [[...at(x, y), 0.5]], { type: 'mouse' });
+  const deselect = async () => {
+    await page.keyboard.press('Escape');
+    await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  };
+
+  // Czerwony trójkąt i jego kopia odbita względem pionowej prostej x = 800 (dwa dotknięcia – punkty osi).
+  await pickGroup(editor, 'shapes');
+  await press(editor, 'drawing-color-red');
+  await press(editor, 'drawing-shape-triangle');
+  await drawStroke(page, segment(at(500, 300), at(700, 500), 12), { type: 'mouse' });
+  await expectText(count, 'Trójkąt');
+  await editor.locator('[data-testid=drawing-selection-mirror]').click();
+  await page.locator('[data-testid=drawing-mirror-copy]').click();
+  await expectText(notice, 'Kopia odbita: dotknij pierwszego punktu osi');
+  await tap(800, 150);
+  await expectText(notice, 'Kopia odbita: dotknij drugiego punktu osi');
+  await page.mouse.move(...(await (async () => {
+    const box = await editor.locator('[data-testid=drawing-canvas]').boundingBox();
+    // Mysz nad kartką (niżej jest pasek zaznaczenia).
+    const [x, y] = at(800, 300);
+    return [box.x + box.width * x, box.y + box.height * y];
+  })()));
+  // Oś pod myszą – przerywana linia przez pierwszy punkt (po narysowaniu klatki).
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await waitUntil(() => page.locator('.drawing__canvas--live').evaluate((canvas, spot) => {
+    const box = canvas.getBoundingClientRect();
+    const ratio = canvas.width / box.width;
+    const data = canvas.getContext('2d').getImageData(Math.round(box.width * spot[0] * ratio) - 2, Math.round(box.height * spot[1] * ratio) - 6, 5, 12).data;
+    for (let index = 3; index < data.length; index += 4) if (data[index] > 0) return true;
+    return false;
+  }, at(800, 400)), 'Oś odbicia pod myszą');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-141-os-odbicia.png') });
+  await tap(800, 650);
+  await expectText(notice, 'Dodano kopię odbitą – oryginał został');
+  await expectText(count, 'Trójkąt');
+  await deselect();
+
+  // Prostokąt 200 × 100 – „Skaluj” ×2 wokół środka.
+  await press(editor, 'drawing-color-black');
+  await press(editor, 'drawing-shape-rect');
+  await drawStroke(page, segment(at(250, 700), at(450, 800), 12), { type: 'mouse' });
+  await expectText(count, 'Prostokąt');
+  await editor.locator('[data-testid=drawing-selection-scale]').click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Skaluj');
+  await page.locator('[data-testid=drawing-scale-factor]').fill('1:0');
+  await sheetSubmit(page).click();
+  await expectText(sheet(page).locator('.form-message--error'), 'Współczynnik od 0,01 do 100');
+  await page.locator('[data-testid=drawing-scale-factor]').fill('2');
+  await sheetSubmit(page).click();
+  await expectText(notice, 'Przeskalowano ×2');
+  // „Styl jak…”: dotknięcie podstawy trójkąta – prostokąt czerwony.
+  await editor.locator('[data-testid=drawing-selection-match]').click();
+  await expectText(notice, 'Dotknij elementu, którego styl przenieść');
+  await tap(300, 300);
+  await expectText(notice, 'Tu nie ma elementu');
+  await tap(600, 500);
+  await expectText(notice, 'Styl przeniesiony na zaznaczone');
+  await deselect();
+
+  // Ramka A4 z tabliczką (menu kartek); skala bez wpisu – z kratki.
+  await editor.locator('[data-testid=drawing-pages]').click();
+  await page.locator('[data-testid=drawing-frame]').click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Ramka rysunkowa');
+  assert.equal(await page.locator('[data-testid=drawing-frame-scale]').getAttribute('placeholder'), '1:1,19 – z kratki');
+  assert.match(await page.locator('[data-testid=drawing-frame-date]').inputValue(), /^\d{2}\.\d{2}\.\d{4}$/, 'dzisiejsza data');
+  await page.locator('[data-testid=drawing-frame-title]').fill('Wspornik');
+  await page.locator('[data-testid=drawing-frame-number]').fill('LC-041');
+  await page.locator('[data-testid=drawing-frame-material]').fill('S235JR');
+  await page.locator('[data-testid=drawing-frame-author]').fill('Konstruktor');
+  await sheetSubmit(page).click();
+  await expectText(notice, 'Ramka A4 z tabliczką');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-141-ramka-a4.png') });
+  // Ramka – linia w miejscu 20 mm od lewego brzegu arkusza (A4 na kartce 1600 × 1100: 5,24 jednostki na mm).
+  const mm = 1100 / 210;
+  const left = (1600 - 297 * mm) / 2 + 20 * mm;
+  await waitUntil(() => darkAt(page, ...at(left, 550)), 'Linia ramki');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const frame = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing.frame, ids.statements);
+  assert.deepEqual({ ...frame, date: 'dziś' }, { format: 'A4', title: 'Wspornik', number: 'LC-041', material: 'S235JR', author: 'Konstruktor', date: 'dziś' });
+  const strokes = await savedStrokes(page, ids.statements);
+  const triangles = strokes.filter((stroke) => stroke.shape === 'triangle');
+  assert.equal(triangles.length, 2, 'trójkąt i kopia');
+  assert.ok(Math.abs(triangles[0].x + triangles[1].x - 1600) < 3, `kopia po drugiej stronie osi x = 800 (${triangles[0].x}, ${triangles[1].x})`);
+  const rect = strokes.find((stroke) => stroke.shape === 'rect');
+  assert.ok(Math.abs(rect.w - 400) < 3 && Math.abs(rect.h - 200) < 3, `prostokąt ×2 (${rect.w} × ${rect.h})`);
+  assert.equal(rect.color, '#d70015', 'styl trójkąta');
+}, { device: DESKTOP });
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

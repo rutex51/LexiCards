@@ -198,6 +198,11 @@ const ICONS = {
   // Od 1.30: odbicie lustrzane (w poziomie, w pionie), obrót zaznaczenia i palec (palec też rysuje).
   mirror: [{ d: 'M12 3v18', 'stroke-dasharray': '2 2' }, p('M9.5 6.5L3.5 17.5h6z'), filled('M14.5 6.5l6 11h-6z')],
   mirrorVertical: [{ d: 'M3 12h18', 'stroke-dasharray': '2 2' }, p('M17.5 9.5L6.5 3.5v6z'), filled('M17.5 14.5l-11 6v-6z')],
+  // Od 1.41: odbicie względem prostej (ukośna oś), skalowanie, „Styl jak…” (pędzel), ramka rysunkowa z tabliczką.
+  mirrorLine: [{ d: 'M4 20L20 4', 'stroke-dasharray': '2 2' }, p('M4.5 11.5l5.5-5.5 1 6.5z'), filled('M12.5 19.5l6.5-1-5.5-5.5z')],
+  scale: [p('M4 13.5v6.5h6.5'), p('M4 20l7-7'), p('M13 4h7v7'), p('M20 4l-8 8'), { d: 'M4 9V4h5', 'stroke-dasharray': '1.6 2' }],
+  brush: [p('M14.5 4.5l5 5-7.5 7.5-5-5z'), p('M7 12l-1.8 1.8a2.3 2.3 0 0 0 0 3.2l1.8 1.8a2.3 2.3 0 0 0 3.2 0L12 17'), p('M4 20.5h6')],
+  titleBlock: [p('M3 4.5h18v15H3z'), p('M11 14h10'), p('M11 14v5.5'), p('M16 14v5.5'), p('M11 16.8h10')],
   rotate: [p('M19 12.5a7 7 0 1 1-2.2-5.1'), p('M17.6 3.4v4.2h-4.2'), dot(12, 12.5, 1.4)],
   finger: [
     p('M9 14.2V5.3a1.6 1.6 0 0 1 3.2 0V11'), p('M12.2 10.4a1.6 1.6 0 0 1 3.2 0v.9'),

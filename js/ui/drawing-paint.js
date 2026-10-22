@@ -4,6 +4,66 @@
 
 import { FILL_ALPHA, dashPattern, hatchWidth, isPointShape, pointMarkGeometry, shapeHatch, shapePath } from '../core/shapes.js';
 import { PITCH, TEMPLATE_ALPHA } from '../core/templates.js';
+import { frameLayout } from '../core/title-block.js';
+import { textFont } from './canvas-text.js';
+
+/** Kolory ramki rysunkowej (od 1.41): linie i napisy – tusz, nazwy pól – szare, brzeg arkusza – jasny. */
+const FRAME_INK = '#1d1d1f';
+const FRAME_LABEL = '#6e6e73';
+const FRAME_EDGE = '#a1a1a6';
+
+/**
+ * Ramka rysunkowa z tabliczką (od 1.41): brzeg arkusza (cienka linia), ramka (gruba), tabliczka i jej napisy
+ * (za długi napis – mniejszy, najwyżej do 60%, potem ucięty).
+ */
+export function paintFrame(ctx, drawing) {
+  if (!drawing.frame) return;
+  const layout = frameLayout(drawing.frame, drawing.width, drawing.height, drawing.scale);
+  const { sheet, border, block, lines, cells, widths } = layout;
+  ctx.save();
+  ctx.lineJoin = 'miter';
+  ctx.lineCap = 'butt';
+  ctx.strokeStyle = FRAME_EDGE;
+  ctx.lineWidth = widths.edge;
+  ctx.strokeRect(sheet.x, sheet.y, sheet.width, sheet.height);
+  ctx.strokeStyle = FRAME_INK;
+  ctx.lineWidth = widths.border;
+  ctx.strokeRect(border.x, border.y, border.w, border.h);
+  ctx.strokeRect(block.x, block.y, block.w, block.h);
+  ctx.lineWidth = widths.thin;
+  ctx.beginPath();
+  for (const [a, b] of lines) {
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+  }
+  ctx.stroke();
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  for (const cell of cells) {
+    const pad = cell.labelSize * 0.7;
+    ctx.fillStyle = FRAME_LABEL;
+    ctx.font = textFont(cell.labelSize);
+    ctx.fillText(cell.label, cell.x + pad, cell.y + pad + cell.labelSize * 0.8);
+    if (!cell.value) continue;
+    const room = cell.w - pad * 2;
+    let size = cell.valueSize;
+    const weight = cell.bold ? '600' : '';
+    ctx.font = textFont(size, weight);
+    const wide = ctx.measureText(cell.value).width;
+    if (wide > room) {
+      size = Math.max(cell.valueSize * 0.6, size * (room / wide));
+      ctx.font = textFont(size, weight);
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(cell.x, cell.y, cell.w, cell.h);
+    ctx.clip();
+    ctx.fillStyle = FRAME_INK;
+    ctx.fillText(cell.value, cell.x + pad, cell.y + cell.h - pad * 1.1);
+    ctx.restore();
+  }
+  ctx.restore();
+}
 
 /**
  * Kształt: łamana albo krzywe Béziera (elipsa) o stałej grubości; wypełnienie pod linią; odcinek
