@@ -20,17 +20,20 @@ import { SHAPE_LABELS } from './shapes.js';
 export const TOOL_GROUPS = Object.freeze([
   { id: 'write', label: 'Pisanie', icon: 'pen', items: ['pen', 'highlighter', 'eraser'] },
   {
+    // Od 1.34 także łuk przez trzy punkty.
     id: 'shapes', label: 'Kształty', icon: 'shapeRect',
-    items: ['shape:line', 'shape:arrow', 'shape:rect', 'shape:ellipse', 'shape:triangle', 'shape:diamond', 'shape:trapezoid', 'shape:curve']
+    items: ['shape:line', 'shape:arrow', 'shape:rect', 'shape:ellipse', 'shape:arc', 'shape:triangle', 'shape:diamond', 'shape:trapezoid', 'shape:curve']
   },
   { id: 'construct', label: 'Konstrukcja', icon: 'shapeXline', items: ['shape:xline', 'shape:point'] },
   { id: 'text', label: 'Tekst i wzory', icon: 'textBox', items: ['text', 'math', 'table', 'sticky'] },
+  // Od 1.34: narzędzie „Wymiar” (liniowy, średnica, promień, kąt).
+  { id: 'dims', label: 'Wymiary', icon: 'dimension', items: ['shape:dim'] },
   { id: 'symbols', label: 'Symbole metrologiczne', icon: 'gdtFrame', items: ['gdt', 'datum', 'roughness'] }
 ].map((group) => Object.freeze({ ...group, items: Object.freeze(group.items) })));
 
 /** Gotowe zestawy (od 1.33): w oknie „Grupy narzędzi” dotknięcie dodaje zestaw jako grupę na lewym kółku albo go usuwa. */
 export const PRESETS = Object.freeze([
-  { id: 'metrology', label: 'Metrologia', icon: 'caliper', items: ['shape:line', 'shape:xline', 'shape:point', 'gdt', 'datum', 'roughness'] },
+  { id: 'metrology', label: 'Metrologia', icon: 'caliper', items: ['shape:dim', 'shape:line', 'shape:xline', 'shape:point', 'gdt', 'datum', 'roughness'] },
   { id: 'sketch', label: 'Szkic odręczny', icon: 'sketch', items: ['pen', 'eraser', 'shape:arrow'] },
   { id: 'geometry', label: 'Geometria', icon: 'geometry', items: ['shape:line', 'shape:ellipse', 'shape:xline', 'shape:point'] },
   { id: 'notes', label: 'Notatki', icon: 'notes', items: ['text', 'math', 'sticky', 'highlighter'] }
@@ -54,6 +57,8 @@ export const GROUP_ICONS = Object.freeze(['star', 'caliper', 'sketch', 'geometry
 export const GROUP_LIMITS = Object.freeze({ groups: 8, items: 12, label: 30 });
 const GROUP_ID = /^[a-z0-9-]{1,24}$/;
 const STANDARD_IDS = TOOL_GROUPS.map((group) => group.id);
+/** Zestaw Metrologia z 1.32–1.33 (bez wymiaru) – niezmieniony przez użytkownika dostaje od 1.34 narzędzie „Wymiar”. */
+const METROLOGY_133 = 'shape:line,shape:xline,shape:point,gdt,datum,roughness';
 
 /** Dobór grup (od 1.33): order – kolejność grup standardowych, off – grupy schowane, mine – grupy lewego kółka. */
 export function defaultToolGroups() {
@@ -64,20 +69,26 @@ export function defaultToolGroups() {
 function cleanOwnGroup(raw) {
   if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string' || !GROUP_ID.test(raw.id) || STANDARD_IDS.includes(raw.id)) return null;
   const label = typeof raw.label === 'string' ? raw.label.trim().slice(0, GROUP_LIMITS.label) : '';
-  const items = Array.isArray(raw.items) ? [...new Set(raw.items.filter((item) => ALL_ITEMS.includes(item)))].slice(0, GROUP_LIMITS.items) : [];
+  let items = Array.isArray(raw.items) ? [...new Set(raw.items.filter((item) => ALL_ITEMS.includes(item)))].slice(0, GROUP_LIMITS.items) : [];
+  if (raw.id === 'metrology' && items.join() === METROLOGY_133) items = [...PRESETS[0].items];
   return { id: raw.id, label: label || 'Moja grupa', icon: GROUP_ICONS.includes(raw.icon) ? raw.icon : 'star', items };
 }
 
 /**
  * Dobór grup z pamięci urządzenia: nieznane grupy standardowe wypadają, brakujące (np. nowe w następnej
- * wersji) dochodzą na końcu; zawsze zostaje co najmniej jedna grupa standardowa. Bez zapisanych grup
- * lewego kółka – zestaw Metrologia.
+ * wersji) dochodzą w miejscu z kolejności domyślnej; zawsze zostaje co najmniej jedna grupa standardowa.
+ * Bez zapisanych grup lewego kółka – zestaw Metrologia.
  */
 export function cleanToolGroups(raw) {
   const base = defaultToolGroups();
   if (!raw || typeof raw !== 'object') return base;
   const order = Array.isArray(raw.order) ? [...new Set(raw.order.filter((id) => STANDARD_IDS.includes(id)))] : [];
-  for (const id of STANDARD_IDS) if (!order.includes(id)) order.push(id);
+  // Nowa grupa standardowa (np. Wymiary od 1.34) – za grupą, która jest przed nią w kolejności domyślnej.
+  STANDARD_IDS.forEach((id, index) => {
+    if (order.includes(id)) return;
+    const before = STANDARD_IDS.slice(0, index).reverse().find((other) => order.includes(other));
+    order.splice(before ? order.indexOf(before) + 1 : 0, 0, id);
+  });
   const off = Array.isArray(raw.off) ? [...new Set(raw.off.filter((id) => STANDARD_IDS.includes(id)))] : [];
   const mine = [];
   for (const group of Array.isArray(raw.mine) ? raw.mine : base.mine) {

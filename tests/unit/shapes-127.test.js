@@ -34,8 +34,8 @@ test('rysunek 1.27: rodzaj linii – wzór kresek od grubości, zapis tylko inne
   const point = shapeFromDrag('point', { x: 0, y: 0 }, { x: 500, y: 400 }, { ...style, dash: 'dashed' });
   assert.equal(canDash(point), false);
   assert.equal('dash' in point, false);
-  // Nowe kształty w panelu.
-  assert.deepEqual(SHAPES.slice(-3), ['xline', 'curve', 'point']);
+  // Nowe kształty w panelu (od 1.34 za nimi łuk i wymiar).
+  assert.deepEqual(SHAPES.slice(7, 10), ['xline', 'curve', 'point']);
 });
 
 test('rysunek 1.27: prosta – dwa punkty jak odcinek, linia przez całą stronę, granice z punktów, tylko kąt, bez zakończeń', () => {

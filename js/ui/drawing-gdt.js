@@ -221,7 +221,11 @@ export function paintTechnicalDim(ctx, shape, key, parts, { offset, dashed = fal
     const length = Math.hypot(to.x - from.x, to.y - from.y);
     const angle = Math.atan2(to.y - from.y, to.x - from.x);
     const [dx, dy] = [Math.cos(angle), Math.sin(angle)];
-    if (length >= DIM_ARROW * 2.6) {
+    if (geometry.arrows === 'end') {
+      // Promień (od 1.34): od środka do okręgu, grot tylko przy okręgu.
+      line(ctx, from, to);
+      arrowHead(ctx, to.x, to.y, angle, DIM_ARROW);
+    } else if (length >= DIM_ARROW * 2.6) {
       line(ctx, from, to);
       arrowHead(ctx, from.x, from.y, angle + Math.PI, DIM_ARROW);
       arrowHead(ctx, to.x, to.y, angle, DIM_ARROW);
@@ -235,7 +239,9 @@ export function paintTechnicalDim(ctx, shape, key, parts, { offset, dashed = fal
   } else {
     const { center, radius, start, sweep, ref } = geometry;
     ctx.lineWidth = DIM_LINE * 0.8;
-    line(ctx, { x: center.x + Math.cos(start) * DIM_EXT_GAP, y: center.y + Math.sin(start) * DIM_EXT_GAP }, ref[1]);
+    if (ref) line(ctx, { x: center.x + Math.cos(start) * DIM_EXT_GAP, y: center.y + Math.sin(start) * DIM_EXT_GAP }, ref[1]);
+    // Wymiar kąta (od 1.34): linie pomocnicze wzdłuż ramion, gdy łuk leży dalej niż ich punkty.
+    for (const [a, b] of geometry.exts ?? []) line(ctx, a, b);
     ctx.lineWidth = DIM_LINE;
     if (Math.abs(sweep) > 1e-3) {
       ctx.beginPath();

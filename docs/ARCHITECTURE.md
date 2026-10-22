@@ -1477,6 +1477,51 @@ polach (`input`, `label`…), więc pole zaznaczenia w wierszu działa jak zwykl
   zaznaczeniu – `duplicateSelection` (puszczenie spacji nie „klika” przycisku z fokusem); przytrzymany
   Ctrl (od 1.19) i Ctrl+Z / Y / A / C / X / V – bez zmian; kółko myszy przy kółku narzędzi – obrót grup.
 
+## Okrąg z punktów, łuk i narzędzie „Wymiar” (od 1.34)
+
+`js/core/shapes.js` (bez przeglądarki, testy w Node.js):
+
+- **Okrąg:** `circleThrough(a, b, c)` – środek i promień albo null (punkty na jednej prostej: wysokość
+  trójkąta mniejsza niż 0,4% najdłuższego boku albo 0,5 jednostki); `circleShape`, `circleFromPoints`;
+  `shapeFromDrag('ellipse', …, { mode })` – `ELLIPSE_MODES`: `frame` (jak dotąd), `center` (od środka),
+  `two` (średnica). Wynik to zwykła elipsa o równych bokach.
+- **Łuk `'arc'`:** trzy wierzchołki w `nodes` (początek, punkt na łuku, koniec), więc przesuwanie, obrót,
+  odbicie i ramka działają jak przy strzałce po łuku; `arcGeometry` – środek, promień, kąt początku
+  i `sweep` (kierunek przez punkt pośredni), `arcSamples` – obrys, `arcBeziers` – ćwiartki okręgu jako
+  krzywe Béziera (`shapePath`), `arcFromPoints(początek, koniec, punkt łuku)` zapisuje punkt pośredni
+  w połowie łuku (uchwyt). Bez krzywizny – odcinek. Bez wypełnienia i zakończeń, z rodzajem linii.
+- **Wymiar `'dim'`:** jak odcinek między mierzonymi punktami (`isSegment` – przyciąganie i przyklejanie
+  końców, uchwyty końców), rysowany sam wymiar `'length'` (`isMeasure`, `paintStroke` – bez linii
+  kształtu): `mode` `'linear'` – `measureGeometry` z odsunięciem **ze znakiem** (dodatnie – „nad”
+  kierunkiem od początku do końca; `dimAwayFrom` – strona dalsza od punktu, `dimOffsetAt` – strona
+  wskaźnika, `stackDimOffset` – piętro dalej po swojej stronie, wzór `tools.dimOffset` – wielkość),
+  `'diameter'` (⌀ w `dimTols.length.prefix`, linia na punktach, bez linii pomocniczych), `'radius'` (R, grot
+  przy okręgu – `arrows: 'end'`). Liczba – `dimensionParts` jak dotąd (długość w skali rysunku).
+- **Wymiar kąta `'angledim'`:** wierzchołek i po punkcie na ramionach w `nodes`; `angleDimArms` – mniejszy
+  kąt, `angleDimGeometry` – łuk o promieniu z `dimOffsets.angle` (domyślnie połowa krótszego ramienia),
+  linie pomocnicze wzdłuż ramion, gdy łuk jest dalej; uchwyty – tylko wierzchołki.
+- Obrys i dotyk wymiaru (`shapeOutline`, `touchesShape`) – linia wymiarowa, linie pomocnicze, łuk i liczba
+  (mierzone punkty leżą na innych kształtach i nie zaznaczają wymiaru). `cleanShape` – łuk i wymiar kąta
+  dokładnie z trzema wierzchołkami, wymiar zawsze z widocznym swoim wymiarem, bez tekstu na kształcie.
+
+`js/core/attach.js`: środek okręgu i łuku (`snapGeometry(…).center`) – miejsce przyciągnięcia jak
+narożnik (`kind: 'center'`, odnośnik `{ id, kind: 'center' }`); do wymiaru nic się nie przyciąga.
+
+`js/core/tool-ring.js`: łuk w „Kształtach”, grupa `dims` („Wymiary”, `shape:dim`) przed Symbolami;
+zestaw Metrologia zaczyna się od wymiaru – zapisany w 1.33 bez zmian użytkownika dostaje go przy
+odczycie (`METROLOGY_133`); brakująca grupa standardowa wchodzi za grupę, która jest przed nią
+w kolejności domyślnej.
+
+`js/ui/drawing.js`: wybór pod menu (`ellipseModes`, `dimModes` – `tools.ellipseMode`, `tools.dimMode`);
+kształty z punktów (`multiKind`: okrąg przez 3 punkty, łuk, kąt) – `pending` { kind, points }:
+dotknięcie dodaje punkt, przeciągnięcie przy pierwszym – dwa, trzeci tworzy kształt (`pointsShape`);
+podgląd do punktu pod palcem albo myszą (`paintPending`), Esc i zmiana narzędzia – od nowa; podpowiedź
+w szarej pastylce (`drawing-shape-hint`). „Wymiar”: przeciągnięcie – `dimFromPoints` z przyklejonymi
+końcami, dotknięcie – `measureAt` (okrąg albo łuk pod palcem – średnica, promień przyklejony do środka
+i krawędzi; krawędź – wymiar liniowy przyklejony do jej narożników). Przy wymiarze i kształtach
+z punktów przeciągnięcie zaznaczonego kształtu go nie przesuwa (wspólne narożniki). Pole liczby
+zaznaczonego wymiaru – tylko do odczytu, bez oka; „Tekst” i „Styl” – ukryte.
+
 ## Dźwięki (od 1.31)
 
 `js/core/sounds.js` – bez przeglądarki (testy w Node.js):

@@ -41,7 +41,7 @@ import {
   ARRAY_LABELS, ARRAY_MAX, arrayDefaults, arraySize, cleanArrayParams, expandArray, isArray, itemsBounds, makeArray, polarRadius, withPolarRadius
 } from '../core/arrays.js';
 import {
-  endPoint, findSnap, followersOf, keepLinksTo, newElementId, relinkCopies, resolveAttachments, segmentBetween, snapNormal, withLink
+  endPoint, findSnap, followersOf, keepLinksTo, newElementId, relinkCopies, resolveAttachments, segmentBetween, snapGeometry, snapNormal, withLink
 } from '../core/attach.js';
 import {
   DrawingHistory, ELEMENT_TEXT_MAX, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA,
@@ -68,7 +68,8 @@ import {
   canFill, dimCenter, dimGeometry, dimOffset, dimOffsetAt, dimPlaces, guideLinesIn, isLinearDim, isSegment, isShape, labelFrame, labelMaxWidth, moveShapeHandle, nearestGuideLine, nearestRay,
   nearestRing, rayAngles, resizeShape, ringsIn, stackDimOffset, withDimOffset, withDimTolerance,
   segmentCaps, segmentDegrees, setSegment, shapeContains, shapeFromDrag, shapeHandles, shapePoint, shownDims, skewDegrees, touchesShape,
-  withCaps, withDims
+  withCaps, withDims, DIM_MODES, DIM_MODE_LABELS, ELLIPSE_MODES, ELLIPSE_MODE_LABELS, angleDimFromPoints, arcFromPoints, arcGeometry,
+  angleDimDegrees, circleFromPoints, dimAwayFrom, dimFromPoints, dimMode, isArc, isMeasure
 } from '../core/shapes.js';
 import {
   DEFAULT_PAPER_LEVEL, DEFAULT_TEMPLATE_LEVEL, LEVEL_LABELS, PAPER_COLORS, TEMPLATE_ALPHA, TEMPLATE_CORNERS, TEMPLATE_LABELS, centerTemplate,
@@ -151,7 +152,7 @@ const GUIDE_COLOR = 'rgba(0, 88, 190, 0.42)';
 const CAP_ICONS = { none: 'capNone', arrow: 'capArrow', triangle: 'capTriangle', circle: 'capCircle', square: 'capSquare', diamond: 'capDiamond' };
 const SHAPE_ICONS = {
   line: 'shapeLine', arrow: 'shapeArrow', rect: 'shapeRect', ellipse: 'shapeEllipse', triangle: 'shapeTriangle', diamond: 'shapeDiamond', trapezoid: 'shapeTrapezoid',
-  xline: 'shapeXline', curve: 'shapeCurve', point: 'shapePoint'
+  xline: 'shapeXline', curve: 'shapeCurve', point: 'shapePoint', arc: 'shapeArc', dim: 'dimension'
 };
 /** Rodzaje linii i znaczniki punktu (od 1.27) – ikony wyboru. */
 const DASH_ICONS = { solid: 'lineSolid', dashed: 'lineDashed', center: 'lineCenter', phantom: 'linePhantom', dotted: 'lineDotted' };
@@ -400,6 +401,11 @@ export function paintStroke(ctx, stroke, options = {}) {
     return;
   }
   if (isShape(stroke)) {
+    // Wymiar narzędzia „Wymiar” (od 1.34) – sam wymiar; bez liczby (dims: false), gdy liczba jest w polu zaznaczonego.
+    if (isMeasure(stroke)) {
+      paintDims(ctx, stroke, options.scale, options.dimFormat, { text: options.dims !== false });
+      return;
+    }
     paintShape(ctx, stroke);
     if (stroke.label) paintLabel(ctx, stroke);
     if (options.dims !== false) paintDims(ctx, stroke, options.scale, options.dimFormat);
@@ -693,6 +699,9 @@ export function openDrawingEditor({
     let snip = null;
     /** Kółko gumki pod myszą albo zawieszonym rysikiem (jednostki strony) albo null. */
     let hover = null;
+    /** Kształt z kilku punktów w trakcie (od 1.34): { kind: 'circle3' | 'arc' | 'angle', points } i punkt pod myszą. */
+    let pending = null;
+    let pendingHover = null;
     /** Pipetka (od 1.14): dotknięcie płótna pobiera kolor; lupa pod palcem, rysikiem albo kursorem. */
     let picking = false;
     let pickHover = null;
@@ -1452,6 +1461,8 @@ export function openDrawingEditor({
       if (key === 'width' || key === 'length') return toScaleLength(shape.w, drawing.scale) * factor;
       if (key === 'height') return toScaleLength(shape.h, drawing.scale) * factor;
       if (key === 'skew') return skewDegrees(shape);
+      // Wymiar kąta (od 1.34) – zmierzony kąt.
+      if (shape.shape === 'angledim') return angleDimDegrees(shape);
       return segmentDegrees(shape);
     }
     /** Wpisana wartość: nowy kształt (jeden krok cofania); zła – komunikat i poprzednia wartość. */
@@ -1459,7 +1470,8 @@ export function openDrawingEditor({
       if (!field.dirty) return;
       field.dirty = false;
       const shape = editedShape();
-      if (!shape || active) return;
+      // Wymiar narzędzia „Wymiar” (od 1.34) mierzy – liczby się nie wpisuje.
+      if (!shape || active || isMeasure(shape)) return;
       const value = parseDecimal(field.input.value);
       if (value === null || (field.kind === 'length' && value <= 0)) {
         flash(field.kind === 'length' ? 'Wpisz wymiar większy od zera.' : 'Wpisz kąt w stopniach.');
@@ -1504,6 +1516,10 @@ export function openDrawingEditor({
           field.input.value = formatNumber(dimValue(field.key, shape));
           field.unit.textContent = field.kind === 'length' ? dimUnitLabel(drawing.scale, dimFormat(drawing)) : '°';
         }
+        // Wymiar narzędzia „Wymiar” (od 1.34): liczba tylko do odczytu, bez oka; odsunięcie – liniowy i kąt.
+        const measure = isMeasure(shape);
+        field.input.readOnly = measure;
+        field.eye.hidden = measure;
         // Oko (od 1.19): wymiar widoczny na rysunku także po odznaczeniu kształtu.
         const visible = shown.includes(field.key);
         if (field.shown !== visible) {
@@ -1513,7 +1529,7 @@ export function openDrawingEditor({
           field.eye.title = visible ? 'Widoczny na rysunku – dotknij, żeby ukryć' : 'Pokaż ten wymiar na rysunku na stałe';
           replaceChildren(field.eye, icon(visible ? 'eye' : 'eyeOff', { size: 15 }));
         }
-        field.grip.hidden = !visible;
+        field.grip.hidden = !visible || (measure && shape.shape === 'dim' && dimMode(shape) !== 'linear');
         field.marks.setAttribute('aria-pressed', String(Boolean(shape.dimTols?.[field.key])));
         const [width, height] = [field.box.offsetWidth, field.box.offsetHeight];
         // Wymiar widoczny na stałe (od 1.22.1) – pole w miejscu liczby nad linią wymiarową.
@@ -1529,7 +1545,7 @@ export function openDrawingEditor({
     /** Oko przy polu wymiaru: wymiar widoczny na rysunku na stałe albo nie – jeden krok cofania. */
     function toggleDim(key) {
       const shape = editedShape();
-      if (!shape || active) return;
+      if (!shape || active || isMeasure(shape)) return;
       const shown = shownDims(shape);
       replaceShape(shape, shown.includes(key) ? withDims(shape, shown.filter((item) => item !== key)) : showDim(shape, key));
       updateToolbar();
@@ -1574,7 +1590,8 @@ export function openDrawingEditor({
         if (upEvent.type === 'pointerup' && done.offset !== dimOffset(shape, key)) {
           replaceShape(shape, withDimOffset(shape, key, done.offset));
           if (isLinearDim(key)) {
-            tools.dimOffset = done.offset;
+            // Wymiar narzędzia „Wymiar” (od 1.34) ma odsunięcie ze znakiem – wzorem jest jego wielkość.
+            tools.dimOffset = Math.abs(done.offset);
             saveTools(tools);
           }
           updateToolbar();
@@ -1951,7 +1968,8 @@ export function openDrawingEditor({
       for (const [original, preview] of activeFollowers() ?? []) {
         paintStroke(ctx, preview, { scale: drawing.scale, dimFormat: dimFormat(drawing), editor: true, number: original.tool === 'sticky' ? stickyNumber(drawing, original) : null });
       }
-      if (active?.kind === 'shape-new' && active.shape) paintStroke(ctx, active.shape);
+      if (active?.kind === 'shape-new' && active.shape) paintStroke(ctx, active.shape, { scale: drawing.scale, dimFormat: dimFormat(drawing) });
+      paintPending(ctx);
       if (active?.kind === 'shape-edit') paintStroke(ctx, active.preview, { dims: false });
       if (active?.kind === 'array-center') paintStroke(ctx, active.preview, { scale: drawing.scale, dimFormat: dimFormat(drawing) });
       // Zaznaczony kształt (od 1.22.1): linie wymiarów technicznych – liczby są w polach wymiarów;
@@ -2033,7 +2051,7 @@ export function openDrawingEditor({
       if (guide) paintGuideKnob(ctx);
       // Miejsca przyciągnięcia końców (od 1.22): w trakcie rysowania i przeciągania, a z myszą – też przed.
       const snaps = active?.kind === 'shape-new' ? [active.startSnap, active.endSnap]
-        : active?.kind === 'shape-edit' || active?.kind === 'box-edit' ? [active.snap]
+        : active?.kind === 'shape-edit' || active?.kind === 'box-edit' || active?.kind === 'points' ? [active.snap]
           : !active && (tool === 'shape' || symbolPlacing) ? [edgeHover] : [];
       for (const snap of snaps) if (snap) paintSnapMarker(ctx, snap);
       if (ruler) paintRuler(ctx);
@@ -2095,8 +2113,9 @@ export function openDrawingEditor({
         collapseButton.title = sticky.collapsed ? 'Rozwiń karteczkę' : 'Zwiń karteczkę do ikony';
         replaceChildren(collapseButton, icon(sticky.collapsed ? 'plus' : 'minus', { size: 18 }), h('span', { class: 'drawing__selection-label' }, label));
       }
-      shapeTextButton.hidden = !shape;
-      styleButton.hidden = Boolean(snip) || (!shape && dashable().length === 0);
+      // Wymiar (od 1.34) – bez tekstu na kształcie i bez stylu linii.
+      shapeTextButton.hidden = !shape || isMeasure(shape);
+      styleButton.hidden = Boolean(snip) || (shape ? isMeasure(shape) : dashable().length === 0);
       // Magnes (od 1.22): przy odcinku, strzałce i karteczce ze strzałką.
       // Od 1.22.1 także strzałka ramki tolerancji, trójkąt bazy i wierzchołek chropowatości.
       const withEnds = Boolean(shape && isSegment(shape)) || Boolean(sticky?.leader) || (!snip && selection.size === 1 && isSymbol(only));
@@ -2128,6 +2147,36 @@ export function openDrawingEditor({
       // Od 1.19 – pod paskiem w jego obecnej wysokości (przy zaznaczaniu na iPadzie pasek ma dwa wiersze).
       const toolbarBottom = Math.max(view.top, topBar.getBoundingClientRect().bottom - stage.getBoundingClientRect().top + 8);
       selectionBar.style.top = `${above >= toolbarBottom ? above : Math.min(bottom + 8, view.height - height - 8)}px`;
+    }
+    /** Kształt z kilku punktów (od 1.34): okrąg przez 3 punkty, łuk, wymiar kąta – albo null. */
+    function multiKind() {
+      if (tool !== 'shape') return null;
+      if (tools.shape === 'ellipse' && tools.ellipseMode === 'three') return 'circle3';
+      if (tools.shape === 'arc') return 'arc';
+      if (tools.shape === 'dim' && tools.dimMode === 'angle') return 'angle';
+      return null;
+    }
+    /** Punkty nowego kształtu przyciągane do narożników, krawędzi i (od 1.34) środków okręgów. */
+    const snapsPoints = () => isSegment({ shape: tools.shape }) || multiKind() !== null || (tools.shape === 'ellipse' && (tools.ellipseMode === 'center' || tools.ellipseMode === 'two'));
+    const POINT_HINTS = {
+      circle3: ['Okrąg przez 3 punkty: dotknij pierwszego punktu (albo przeciągnij od pierwszego do drugiego)', 'Okrąg: dotknij drugiego punktu · Esc – od nowa', 'Okrąg: dotknij trzeciego punktu · Esc – od nowa'],
+      arc: ['Łuk: przeciągnij od początku do końca (albo dotknij obu)', 'Łuk: dotknij końca · Esc – od nowa', 'Łuk: dotknij punktu, przez który ma przejść · Esc – od nowa'],
+      angle: ['Kąt: przeciągnij od wierzchołka wzdłuż pierwszego ramienia', 'Kąt: dotknij punktu na pierwszym ramieniu · Esc – od nowa', 'Kąt: dotknij punktu na drugim ramieniu · Esc – od nowa']
+    };
+    const DIM_HINTS = {
+      linear: 'Wymiar: przeciągnij od punktu do punktu albo dotknij krawędzi', diameter: 'Średnica: dotknij okręgu albo łuku (albo przeciągnij przez średnicę)',
+      radius: 'Promień: dotknij okręgu albo łuku (albo przeciągnij od środka do okręgu)'
+    };
+    /** Podpowiedź przy narzędziach z punktów (od 1.34): co dotknąć teraz. */
+    function updateShapeHint() {
+      const kind = multiKind();
+      let text = null;
+      if (kind) text = POINT_HINTS[kind][Math.min(2, pending?.kind === kind ? pending.points.length : 0)];
+      else if (tool === 'shape' && tools.shape === 'dim') text = DIM_HINTS[tools.dimMode];
+      else if (tool === 'shape' && tools.shape === 'ellipse' && tools.ellipseMode === 'center') text = 'Okrąg: przeciągnij od środka do okręgu';
+      else if (tool === 'shape' && tools.shape === 'ellipse' && tools.ellipseMode === 'two') text = 'Okrąg: przeciągnij przez średnicę – od punktu do punktu';
+      shapeHint.hidden = !text;
+      shapeHint.textContent = text ?? '';
     }
     /** Podpowiedź przy zaznaczaniu: co zaznaczy kierunek obrysu, a w trakcie – co właśnie zaznaczasz. */
     function updateSelectHint() {
@@ -2208,6 +2257,7 @@ export function openDrawingEditor({
     };
     function setTool(id) {
       if (id !== 'select') clearSelection();
+      pending = null;
       // Lewy Alt (od 1.32) wraca do ostatniego narzędzia sprzed zaznaczania.
       if (id !== 'select') lastTool = id;
       tool = id;
@@ -2329,7 +2379,25 @@ export function openDrawingEditor({
     const toolbar = h('div', { class: 'drawing__toolbar', role: 'toolbar', 'aria-label': 'Narzędzia rysunku' },
       groupName, h('div', { class: 'drawing__row drawing__row--main' }, optionsButton, toolRow), optionRow);
     // Wybór bez osobnego okna (tryb gumki, obszar i tryb zaznaczania) – pastylka pod menu.
-    const choices = h('div', { class: 'drawing__choices', dataset: { testid: 'drawing-choices' } }, eraserModes, selectShapes, selectModes);
+    // Od 1.34: sposób rysowania okręgu i rodzaj wymiaru – wybór pod menu (makieta: „Ramka / Środek i R / 2 pkt / 3 pkt”).
+    // Na telefonie – krótsze napisy (wybór mieści się obok kółka).
+    const ELLIPSE_SHORT = { frame: ['Ramka', 'Ramka'], center: ['Środek i R', 'Środek'], two: ['2 pkt', '2 pkt'], three: ['3 pkt', '3 pkt'] };
+    const DIM_SHORT = { linear: ['Liniowy', 'Liniowy'], diameter: ['⌀ Średnica', '⌀'], radius: ['R Promień', 'R'], angle: ['Kąt', 'Kąt'] };
+    const modeChoices = (modes, labels, short, label, testID, key) => h('div', { class: 'drawing__group drawing__modes', role: 'radiogroup', 'aria-label': label },
+      modes.map((mode) => h('button', {
+        type: 'button', class: 'drawing__mode', role: 'radio', 'aria-label': labels[mode], title: labels[mode], dataset: { mode, testid: `${testID}-${mode}` },
+        onClick: () => {
+          tools[key] = mode;
+          saveTools(tools);
+          pending = null;
+          updateToolbar();
+          requestLive();
+        }
+      }, short[mode][0] === short[mode][1] ? short[mode][0]
+        : [h('span', { class: 'drawing__wide-label' }, short[mode][0]), h('span', { class: 'drawing__narrow-label' }, short[mode][1])])));
+    const ellipseModes = modeChoices(ELLIPSE_MODES, ELLIPSE_MODE_LABELS, ELLIPSE_SHORT, 'Okrąg i elipsa', 'drawing-ellipse', 'ellipseMode');
+    const dimModes = modeChoices(DIM_MODES, DIM_MODE_LABELS, DIM_SHORT, 'Rodzaj wymiaru', 'drawing-dim-mode', 'dimMode');
+    const choices = h('div', { class: 'drawing__choices', dataset: { testid: 'drawing-choices' } }, eraserModes, selectShapes, selectModes, ellipseModes, dimModes);
     const topHandle = h('button', {
       type: 'button', class: 'drawing__handle', 'aria-label': 'Schowaj górne menu', title: 'Schowaj górne menu (przesuń w górę)',
       dataset: { testid: 'drawing-hide-top' }, onClick: () => setHidden('top', true)
@@ -2366,6 +2434,8 @@ export function openDrawingEditor({
       flash(tools.fingerDraws ? 'Palec też rysuje – dwa palce przesuwają i powiększają stronę.' : 'Rysuje tylko rysik – palec przesuwa stronę, dłoń oparta o ekran nie zostawia śladów.');
     }
     const selectHint = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, dataset: { testid: 'drawing-select-hint' } });
+    // Od 1.34: co robić przy okręgu z punktów, łuku i wymiarze (który punkt teraz).
+    const shapeHint = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, role: 'status', dataset: { testid: 'drawing-shape-hint' } });
     const notice = h('span', { class: 'drawing__pill drawing__pill--info drawing__pill--notice drawing__notice', hidden: true, role: 'status', dataset: { testid: 'drawing-notice' } });
     const lengthPill = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, dataset: { testid: 'drawing-ruler-length' } });
     // Kąt linijki; dotknięcie – skala rysunku i przyciąganie (od 1.14).
@@ -2399,7 +2469,7 @@ export function openDrawingEditor({
     const pageNext = pageStep(1, 'Następna kartka', 'chevronRight', 'drawing-page-next');
     // Od 1.32: po lewej – pastylki informacyjne (szare), po prawej – to, co można zmienić (białe).
     const scalePill = h('span', { class: 'drawing__pill drawing__pill--info', dataset: { testid: 'drawing-scale-info' } });
-    const info = h('div', { class: 'drawing__info', dataset: { testid: 'drawing-info' } }, selectHint, lengthPill, scalePill, zoomButton);
+    const info = h('div', { class: 'drawing__info', dataset: { testid: 'drawing-info' } }, selectHint, shapeHint, lengthPill, scalePill, zoomButton);
     const status = h('div', { class: 'drawing__status', dataset: { testid: 'drawing-status' } }, penPill, guidePill, rulerPill, perpendicularButton,
       h('div', { class: 'drawing__pages' }, pagePrev, pagePill, pageNext));
     let noticeTimer = 0;
@@ -2470,7 +2540,12 @@ export function openDrawingEditor({
       optionRow.hidden = [swatches, widths, eraserSizes, selectGroup].every((group) => group.hidden);
       optionsButton.hidden = optionRow.hidden;
       if (optionRow.hidden) setOptionsOpen(false);
-      choices.hidden = [eraserModes, selectShapes, selectModes].every((group) => group.hidden);
+      ellipseModes.hidden = !(tool === 'shape' && tools.shape === 'ellipse');
+      for (const button of ellipseModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.ellipseMode));
+      dimModes.hidden = !(tool === 'shape' && tools.shape === 'dim');
+      for (const button of dimModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.dimMode));
+      choices.hidden = [eraserModes, selectShapes, selectModes, ellipseModes, dimModes].every((group) => group.hidden);
+      updateShapeHint();
       for (const button of selectShapes.children) button.setAttribute('aria-checked', String(button.dataset.shape === tools.selectShape));
       for (const button of selectModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === selectMode()));
       pasteButton.hidden = !readClipboard();
@@ -2561,6 +2636,7 @@ export function openDrawingEditor({
         const keepPanel = (kind) => panelWasOpen && (hasCaps({ shape: kind }) || kind === 'point');
         tools.shape = item.slice(6);
         saveTools(tools);
+        pending = null;
         if (tool !== 'shape') {
           setTool('shape');
           if (keepPanel(tools.shape)) toggleShapePanel();
@@ -3351,14 +3427,26 @@ export function openDrawingEditor({
       shapePanel.hidden = false;
       renderShapePanel();
     }
+    /** Wskazówki do kształtów z 1.34 w panelu kształtów. */
+    const SHAPE_TIPS = {
+      ellipse: 'Okrąg i elipsa – wybór pod menu: Ramka (prostokąt przeciągnięcia), Środek i R (od środka do okręgu), 2 pkt (średnica – od punktu do punktu), '
+        + '3 pkt (okrąg przez trzy dotknięte punkty). Punkty przyciągają się do narożników, krawędzi i środków okręgów.',
+      arc: 'Łuk przez trzy punkty: przeciągnij od początku do końca (albo dotknij obu), potem dotknij punktu, przez który ma przejść. '
+        + 'Punkty zaznaczonego łuku: początek, środek łuku i koniec – przeciągnij je.',
+      dim: 'Wymiar – wybór pod menu: Liniowy (przeciągnij od punktu do punktu albo dotknij krawędzi), Średnica ⌀ i Promień R (dotknij okręgu albo łuku), '
+        + 'Kąt (wierzchołek i po punkcie na ramionach). Końce przyciągnięte do kształtu idą za nim. Liczba mierzy rysunek w jego skali; ± przy liczbie – znak '
+        + 'i tolerancja, uchwyt przy liczbie – odsunięcie (także na drugą stronę).'
+    };
     function renderShapePanel() {
       if (shapePanel.hidden) return;
+      // Wypełnienie – ustawienie nowych kształtów; przy łuku i wymiarze (od 1.34) go nie ma.
+      const unfilled = tools.shape === 'arc' || tools.shape === 'dim';
       // Od 1.32 rodzaje kształtów i symbole są w górnym menu (grupy na kółku) – tu ustawienia nowych kształtów.
       replaceChildren(shapePanel,
         panelTitle(`Kształty – ${SHAPE_LABELS[tools.shape].toLowerCase()}`),
         // Od 1.17: wypełnienie nowych kształtów (i zaznaczonego).
-        h('p', { class: 'drawing__settings-label' }, 'Wypełnienie'),
-        h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Wypełnienie' }, SHAPE_FILLS.map((fill) => h('button', {
+        unfilled ? null : h('p', { class: 'drawing__settings-label' }, 'Wypełnienie'),
+        unfilled ? null : h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Wypełnienie' }, SHAPE_FILLS.map((fill) => h('button', {
           type: 'button', role: 'radio', 'aria-checked': String(fill === tools.shapeFill), dataset: { testid: `drawing-fill-default-${fill}` },
           onClick: () => {
             tools.shapeFill = fill;
@@ -3376,6 +3464,7 @@ export function openDrawingEditor({
             restyle((shape) => isPointShape(shape), (shape) => ({ ...shape, mark }));
             renderShapePanel();
           })]
+          : !canDash({ shape: tools.shape }) ? null
           : [h('p', { class: 'drawing__settings-label' }, `Linia – ${SHAPE_DASH_LABELS[tools.shapeDash].toLowerCase()}`), styleChoices(SHAPE_DASHES, DASH_ICONS, SHAPE_DASH_LABELS, tools.shapeDash, 'drawing-dash-default', (dash) => {
             tools.shapeDash = dash;
             saveTools(tools);
@@ -3388,8 +3477,10 @@ export function openDrawingEditor({
           saveTools(tools);
           renderShapePanel();
         }) : null,
-        h('div', { class: 'drawing__settings-switch' }, lockToggle()),
+        tools.shape === 'dim' || tools.shape === 'arc' ? null : h('div', { class: 'drawing__settings-switch' }, lockToggle()),
         h('div', { class: 'drawing__settings-switch' }, edgeSnapToggle()),
+        // Od 1.34: okrąg z punktów, łuk i wymiar – jak ich używać.
+        SHAPE_TIPS[tools.shape] ? h('p', { class: 'field__hint' }, SHAPE_TIPS[tools.shape]) : null,
         h('p', { class: 'field__hint' }, 'Przeciągnij po stronie – kształt powstaje w prostokącie przeciągnięcia (odcinek i strzałka – od początku do końca); '
           + 'dotknięcie – kształt w tym miejscu. Kolor i grubość – jak pióra; wypełnienie jasne jest przejrzyste. Punkty zaznaczonego kształtu: '
           + 'narożniki i boki – szerokość i wysokość, romb na górnej krawędzi – pochylenie, kółko nad kształtem – obrót, pomarańczowy punkt – '
@@ -5557,25 +5648,155 @@ export function openDrawingEditor({
         dash: tools.shapeDash, mark: tools.pointMark
       };
     };
+    /** Styl nowego kształtu z rodzajem wymiaru i wzorem odsunięcia (od 1.34) – dla narzędzia „Wymiar”. */
+    const newShapeStyle = () => ({ ...shapeStyle(), mode: tools.dimMode, offset: tools.dimOffset });
+    const dragShape = (from, to, event) => shapeFromDrag(tools.shape, from, to, newShapeStyle(), { tap: 0, lock: locked(event), mode: tools.ellipseMode });
     const common = (event, point) => ({ id: event.pointerId, touch: event.pointerType === 'touch', start: point, client: local(event) });
     /** Kształty: przeciągnięcie zaznaczonego kształtu przesuwa go, gdzie indziej – nowy kształt. */
     function startShape(event) {
       const point = toDrawing(event);
       const [only] = selection;
-      if (selection.size === 1 && isShape(only) && (shapeContains(only, point.x, point.y) || touchesShape(only, point.x, point.y, HANDLE_HIT / view.scale))) {
+      // Wymiar i kształty z punktów (od 1.34) zaczynają się tam, gdzie wskaźnik – także na zaznaczonym (np. wspólny narożnik).
+      const measuring = tools.shape === 'dim' || multiKind() !== null;
+      if (!measuring && selection.size === 1 && isShape(only) && (shapeContains(only, point.x, point.y) || touchesShape(only, point.x, point.y, HANDLE_HIT / view.scale))) {
         active = { kind: 'move', ...common(event, point), dx: 0, dy: 0 };
         requestRender();
         return;
       }
       const hadSelection = selection.size > 0;
       clearSelection();
+      // Od 1.34: okrąg przez 3 punkty, łuk i wymiar kąta – punkt po punkcie.
+      if (multiKind()) {
+        startPoints(event, point, hadSelection);
+        return;
+      }
       active = { kind: 'shape-new', ...common(event, point), shape: null, moved: false, hadSelection };
-      // Odcinek i strzałka (od 1.22): początek przyciągnięty do narożnika albo krawędzi.
-      const snap = isSegment({ shape: tools.shape }) ? edgeSnapAt(point, event) : null;
+      // Odcinek i strzałka (od 1.22), wymiar i okrąg ze środka albo z dwóch punktów (od 1.34): początek przyciągnięty.
+      const snap = snapsPoints() ? edgeSnapAt(point, event) : null;
       if (snap) {
         active.start = { x: snap.x, y: snap.y };
         active.startSnap = snap;
       }
+    }
+    /** Punkt kształtu z kilku punktów (od 1.34): dotknięcie – jeden punkt, przeciągnięcie – od pierwszego do drugiego. */
+    function startPoints(event, point, hadSelection) {
+      const kind = multiKind();
+      if (pending?.kind !== kind) pending = { kind, points: [] };
+      const snap = edgeSnapAt(point, event);
+      const at = snap ? { x: snap.x, y: snap.y } : point;
+      active = { kind: 'points', ...common(event, at), point: at, snap, moved: false, hadSelection: hadSelection && pending.points.length === 0 };
+      requestLive();
+    }
+    /** Kształt z trzech punktów albo null (punkty na jednej prostej, ramię kąta bez długości). */
+    function pointsShape(kind, [a, b, c]) {
+      if (kind === 'circle3') return circleFromPoints(a, b, c, shapeStyle());
+      if (kind === 'arc') return arcFromPoints(a, b, c, shapeStyle());
+      return angleDimFromPoints(a, b, c, shapeStyle());
+    }
+    /** Koniec gestu przy kształcie z punktów: nowy punkt; przy trzecim – kształt (jeden krok cofania), zostaje zaznaczony. */
+    function finishPoints(done) {
+      if (!pending || pending.kind !== multiKind()) return;
+      // Dotknięcie przy zaznaczeniu tylko je zdejmuje (jak przy innych kształtach).
+      if (done.hadSelection && !done.moved) return;
+      const { points } = pending;
+      const push = (point) => {
+        const last = points.at(-1);
+        if (!last || Math.hypot(point.x - last.x, point.y - last.y) * view.scale >= 3) points.push(point);
+      };
+      if (points.length === 0) {
+        push(done.start);
+        if (done.moved) push(done.point);
+      } else {
+        push(done.point);
+      }
+      if (points.length >= 3) {
+        const shape = pointsShape(pending.kind, points.slice(0, 3));
+        if (!shape) {
+          points.splice(2);
+          flash(pending.kind === 'angle' ? 'Ramię kąta bez długości – dotknij innego punktu.' : 'Trzy punkty na jednej prostej – dotknij innego trzeciego punktu.');
+        } else {
+          pending = null;
+          history.add(shape);
+          changed = true;
+          selection = new Set([shape]);
+          selectionKind = 'whole';
+        }
+      }
+      updateShapeHint();
+    }
+    /** Okrąg (elipsa o równych bokach, bez pochylenia). */
+    const isCircle = (stroke) => stroke.shape === 'ellipse' && !stroke.skew && Math.abs(stroke.w - stroke.h) <= Math.max(stroke.w, stroke.h) * 0.02;
+    /** Środek elementu – strona linii wymiarowej (od 1.34): dalej od niego. */
+    function centerOf(target) {
+      if (isShape(target)) return { x: target.x, y: target.y };
+      const box = elementBox(target);
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    }
+    /** Przyklejenie końca wymiaru w punkcie `point` leżącym na elemencie `target` (krawędź okręgu, narożnik). */
+    const snapOn = (target, point) => findSnap([target], point, 1, { boxOf: elementBox });
+    /** Wymiar liniowy w odsunięciu z wzoru po stronie dalszej od `away` – piętro dalej, gdy wchodziłby na inny. */
+    function placedDim(shape, away) {
+      const sided = away ? dimAwayFrom(shape, away) : shape;
+      return withDimOffset(sided, 'length', stackDimOffset(drawing.strokes, sided, 'length', dimOffset(sided, 'length')));
+    }
+    /**
+     * Wymiar z dotknięcia (od 1.34): średnica albo promień – okręgu albo łuku pod palcem (linia wymiarowa
+     * w kierunku dotknięcia, końce przyklejone – wymiar idzie za okręgiem); liniowy – krawędzi pod palcem
+     * (odcinek, bok kształtu albo ramki; końce przyklejone do jej narożników). { shape, links } albo null.
+     */
+    function measureAt(point) {
+      const reach = HANDLE_HIT / view.scale;
+      const style = newShapeStyle();
+      if (tools.dimMode === 'diameter' || tools.dimMode === 'radius') {
+        const target = [...drawing.strokes].reverse().find((stroke) => isShape(stroke) && (isArc(stroke) || isCircle(stroke)) && touchesShape(stroke, point.x, point.y, reach));
+        const circle = target ? (isArc(target) ? arcGeometry(target) : { center: { x: target.x, y: target.y }, radius: target.w / 2 }) : null;
+        if (!circle) return null;
+        const { center, radius } = circle;
+        const length = Math.hypot(point.x - center.x, point.y - center.y);
+        const [ux, uy] = length > 1e-6 ? [(point.x - center.x) / length, (point.y - center.y) / length] : [Math.SQRT1_2, -Math.SQRT1_2];
+        const edge = (sign) => ({ x: center.x + ux * radius * sign, y: center.y + uy * radius * sign });
+        if (tools.dimMode === 'radius') {
+          return { shape: dimFromPoints('radius', center, edge(1), style), links: [['start', { target, ref: { kind: 'center' } }], ['end', snapOn(target, edge(1))]] };
+        }
+        // Średnica łuku – bez przyklejenia (drugi koniec nie leży na łuku).
+        return { shape: dimFromPoints('diameter', edge(-1), edge(1), style), links: isArc(target) ? [] : [['start', snapOn(target, edge(-1))], ['end', snapOn(target, edge(1))]] };
+      }
+      const snap = findSnap(drawing.strokes, point, reach, { boxOf: elementBox });
+      if (!snap || snap.kind !== 'edge' || !Number.isInteger(snap.ref.index)) return null;
+      const { target } = snap;
+      if (isShape(target) && (isArc(target) || target.shape === 'curve' || target.shape === 'xline')) return null;
+      const geometry = snapGeometry(target, elementBox);
+      const [a, b] = geometry.edges[snap.ref.index];
+      const ends = isShape(target) && isSegment(target) ? [0, 1] : [snap.ref.index, (snap.ref.index + 1) % geometry.corners.length];
+      return {
+        shape: placedDim(dimFromPoints('linear', a, b, style, tools.dimOffset), centerOf(target)),
+        links: ends.map((index, at) => [at === 0 ? 'start' : 'end', { target, ref: { kind: 'corner', index } }])
+      };
+    }
+    /** Koniec gestu narzędzia „Wymiar” (od 1.34): przeciągnięcie – wymiar między punktami, dotknięcie – measureAt. */
+    function finishDim(done) {
+      let made = null;
+      if (!done.moved) {
+        if (done.hadSelection) return;
+        made = measureAt(done.start);
+        if (!made) {
+          flash(tools.dimMode === 'linear' ? 'Wymiar: przeciągnij od punktu do punktu albo dotknij krawędzi kształtu.' : 'Dotknij linii okręgu albo łuku.');
+          return;
+        }
+      } else if (done.shape) {
+        const links = [['start', done.startSnap], ['end', done.endSnap]].filter(([, snap]) => snap);
+        const target = (done.startSnap ?? done.endSnap)?.target;
+        made = { shape: dimMode(done.shape) === 'linear' ? placedDim(done.shape, target ? centerOf(target) : null) : done.shape, links };
+      }
+      if (!made) return;
+      const links = made.links.filter(([, snap]) => snap);
+      history.begin();
+      const added = links.length > 0 ? linkEnds(made.shape, links) : made.shape;
+      drawing.strokes.push(added);
+      commitStep();
+      changed = true;
+      selection = new Set([added]);
+      selectionKind = 'whole';
     }
     function startShapeEdit(event, handle) {
       active = { kind: 'shape-edit', ...common(event, toDrawing(event)), handle: handle.id, original: handle.shape, preview: handle.shape, moved: false };
@@ -5662,6 +5883,47 @@ export function openDrawingEditor({
       selection = new Set([drawing.strokes[index]]);
       selectionKind = 'whole';
     }
+    /**
+     * Kształt z punktów w trakcie (od 1.34): postawione punkty, linia między nimi, a przy trzecim (pod palcem
+     * albo myszą) – podgląd okręgu, łuku albo wymiaru kąta.
+     */
+    function paintPending(ctx) {
+      const kind = multiKind();
+      if (!kind || (pending?.kind !== kind && active?.kind !== 'points')) return;
+      const points = [...(pending?.kind === kind ? pending.points : [])];
+      if (active?.kind === 'points') {
+        // Pierwszy gest – od początku do miejsca pod palcem; następne – punkt pod palcem.
+        if (points.length === 0) {
+          points.push(active.start);
+          if (active.moved) points.push(active.point);
+        } else {
+          points.push(active.point);
+        }
+      } else if (pendingHover && points.length > 0) {
+        points.push(pendingHover);
+      }
+      if (points.length === 0) return;
+      const preview = points.length >= 3 ? pointsShape(kind, points.slice(0, 3)) : null;
+      if (preview) paintStroke(ctx, preview, { scale: drawing.scale, dimFormat: dimFormat(drawing) });
+      ctx.save();
+      ctx.strokeStyle = ZERO_COLOR;
+      ctx.fillStyle = ZERO_COLOR;
+      ctx.lineWidth = 1.5 / view.scale;
+      if (!preview && points.length >= 2) {
+        ctx.setLineDash([6 / view.scale, 4 / view.scale]);
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (const point of points.slice(1)) ctx.lineTo(point.x, point.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      for (const point of points.slice(0, 3)) {
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 4.5 / view.scale, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
     /** Znacznik miejsca przyciągnięcia: kwadrat – narożnik, kółko – krawędź. */
     function paintSnapMarker(ctx, snap) {
       const point = toScreen(snap);
@@ -5674,6 +5936,13 @@ export function openDrawingEditor({
       if (snap.kind === 'corner') ctx.rect(point.x - 6, point.y - 6, 12, 12);
       else ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
       ctx.fill();
+      // Środek okręgu albo łuku (od 1.34) – kółko z krzyżykiem.
+      if (snap.kind === 'center') {
+        ctx.moveTo(point.x - 9, point.y);
+        ctx.lineTo(point.x + 9, point.y);
+        ctx.moveTo(point.x, point.y - 9);
+        ctx.lineTo(point.x, point.y + 9);
+      }
       ctx.stroke();
       ctx.restore();
     }
@@ -5701,7 +5970,8 @@ export function openDrawingEditor({
     /** Kształt w trakcie przeciągania od nowa – po wciśnięciu albo puszczeniu Shift bez ruchu wskaźnika. */
     function refreshShapeDrag() {
       if (active?.kind === 'shape-new' && active.moved && active.point) {
-        active.shape = shapeFromDrag(tools.shape, active.start, active.point, shapeStyle(), { tap: 0, lock: locked() });
+        active.shape = dragShape(active.start, active.endSnap ?? active.point, null);
+        if (active.endSnap && isSegment(active.shape)) active.shape = segmentBetween(active.shape, active.start, active.endSnap);
         requestLive();
       } else if (active?.kind === 'shape-edit' && active.moved && active.point) {
         active.preview = measureLabel(moveShapeHandle(active.original, active.handle, active.point, { lock: locked() }));
@@ -5777,12 +6047,23 @@ export function openDrawingEditor({
         case 'shape-new':
           active.point = point;
           if (Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale >= TAP_SLOP) active.moved = true;
-          if (active.moved) active.shape = shapeFromDrag(tools.shape, active.start, point, shapeStyle(), { tap: 0, lock: locked(event) });
-          // Koniec odcinka przyciągnięty (od 1.22) – dokładnie w tym miejscu, bez przyciągania kąta.
-          active.endSnap = active.moved && isSegment({ shape: tools.shape }) ? edgeSnapAt(point, event) : null;
-          if (active.endSnap) active.shape = segmentBetween(active.shape, active.start, active.endSnap);
+          if (active.moved) active.shape = dragShape(active.start, point, event);
+          // Koniec odcinka przyciągnięty (od 1.22) – dokładnie w tym miejscu, bez przyciągania kąta; od 1.34 także wymiaru i okręgu.
+          active.endSnap = active.moved && snapsPoints() ? edgeSnapAt(point, event) : null;
+          if (active.endSnap) {
+            active.shape = isSegment(active.shape) ? segmentBetween(active.shape, active.start, active.endSnap)
+              : dragShape(active.start, { x: active.endSnap.x, y: active.endSnap.y }, event);
+          }
           requestLive();
           break;
+        case 'points': {
+          // Od 1.34: punkt kształtu z kilku punktów – przyciągany.
+          active.snap = edgeSnapAt(point, event);
+          active.point = active.snap ? { x: active.snap.x, y: active.snap.y } : point;
+          if (Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale >= TAP_SLOP) active.moved = true;
+          requestLive();
+          break;
+        }
         case 'shape-edit':
           active.point = point;
           // Drobny ruch to jeszcze dotknięcie (pole wymiaru), nie przeciąganie punktu.
@@ -5923,10 +6204,14 @@ export function openDrawingEditor({
         // Dotknięcie kółka liniuszka przy zaznaczaniu (od 1.24) – jak dotknięcie strony: zaznacza element pod nim.
         clearSelection();
         finishOutline({ kind: 'marquee', start: done.start, rect: { x0: done.start.x, y0: done.start.y, x1: done.start.x, y1: done.start.y } });
+      } else if (done.kind === 'points' && !cancelled) {
+        finishPoints(done);
+      } else if (done.kind === 'shape-new' && !cancelled && tools.shape === 'dim') {
+        finishDim(done);
       } else if (done.kind === 'shape-new' && !cancelled) {
         // Dotknięcie przy zaznaczonym kształcie tylko je zdejmuje; inaczej – kształt (dotknięcie – domyślnej wielkości).
         if (done.moved || !done.hadSelection) {
-          const shape = done.shape ?? shapeFromDrag(tools.shape, done.start, done.start, shapeStyle(), { lock: locked() });
+          const shape = done.shape ?? shapeFromDrag(tools.shape, done.start, done.start, newShapeStyle(), { lock: locked(), mode: tools.ellipseMode });
           // Końce przyciągnięte (od 1.22) – przyklejone do kształtu (idą za nim).
           const links = isSegment(shape) ? [['start', done.startSnap], ['end', done.moved ? done.endSnap : null]].filter(([, snap]) => snap) : [];
           let added = shape;
@@ -5966,7 +6251,7 @@ export function openDrawingEditor({
         // Tabela i karteczka (od 1.21) – okno edycji.
         else if (selection.size === 1 && isBox(only) && touchesStroke(only, done.start.x, done.start.y, 0)) editBox(only);
         else if (selection.size === 1 && isArray(only) && touchesStroke(only, done.start.x, done.start.y, SELECTION_PAD / view.scale)) editArray();
-        else if (selection.size === 1 && isShape(only)
+        else if (selection.size === 1 && isShape(only) && !isMeasure(only)
           && (shapeContains(only, done.start.x, done.start.y) || touchesShape(only, done.start.x, done.start.y, SELECTION_PAD / view.scale))) editShapeLabel(only);
       }
       // Palce, które zostały na ekranie, przesuwają dalej od miejsca, w którym są teraz.
@@ -6170,9 +6455,15 @@ export function openDrawingEditor({
         } else if (tool === 'eraser') {
           hover = toDrawing(event);
           requestLive();
-        } else if (symbolPlacing || (tool === 'shape' && isSegment({ shape: tools.shape }))) {
-          const snap = edgeSnapAt(toDrawing(event), event);
-          if (snap || edgeHover) {
+        } else if (symbolPlacing || (tool === 'shape' && snapsPoints())) {
+          const at = toDrawing(event);
+          const snap = edgeSnapAt(at, event);
+          // Od 1.34: kształt z punktów – podgląd do punktu pod myszą.
+          if (pending?.points.length > 0) {
+            pendingHover = snap ? { x: snap.x, y: snap.y } : at;
+            edgeHover = snap;
+            requestLive();
+          } else if (snap || edgeHover) {
             edgeHover = snap;
             requestLive();
           }
@@ -6199,10 +6490,11 @@ export function openDrawingEditor({
     // Prawy przycisk na płótnie zaznacza – bez menu przeglądarki.
     live.addEventListener('contextmenu', (event) => event.preventDefault());
     live.addEventListener('pointerleave', () => {
-      if (!hover && !pickHover && !edgeHover) return;
+      if (!hover && !pickHover && !edgeHover && !pendingHover) return;
       hover = null;
       pickHover = null;
       edgeHover = null;
+      pendingHover = null;
       requestLive();
     });
     // Środkowy przycisk: bez przewijania przeglądarki (kółko z czterema strzałkami w Windows).
@@ -6344,6 +6636,15 @@ export function openDrawingEditor({
       if (event.key === 'Escape' && symbolPlacing) {
         event.preventDefault();
         cancelSymbolPlacing();
+        return;
+      }
+      // Kształt z punktów (od 1.34): Esc – od nowa.
+      if (event.key === 'Escape' && pending?.points.length > 0) {
+        event.preventDefault();
+        pending = null;
+        pendingHover = null;
+        updateShapeHint();
+        requestLive();
         return;
       }
       if (event.key === 'Escape' && panelOpen()) {

@@ -14,7 +14,8 @@ import {
 const COMMANDS = ['text', 'math', 'table', 'sticky', 'gdt', 'datum', 'roughness'];
 
 test('kółka 1.32: grupy – każdy kształt i polecenie w grupie standardowej, Metrologia z symbolami, pozycje bez powtórzeń', () => {
-  assert.deepEqual(TOOL_GROUPS.map((group) => group.id), ['write', 'shapes', 'construct', 'text', 'symbols']);
+  // Od 1.34 także Wymiary.
+  assert.deepEqual(TOOL_GROUPS.map((group) => group.id), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols']);
   const items = TOOL_GROUPS.flatMap((group) => group.items);
   assert.equal(new Set(items).size, items.length, 'pozycja w jednej grupie standardowej');
   const panelShapes = SHAPES.filter((kind) => kind !== 'polyline' && kind !== 'polygon');

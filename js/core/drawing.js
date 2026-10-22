@@ -38,8 +38,9 @@
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import { DEFAULT_RECENT_FITS, cleanRecentFits } from './fits.js';
 import {
-  DIM_OFFSET, DIM_OFFSET_LIMITS, FIT_RE, POINT_MARKS, SEGMENT_CAPS, SHAPES, SHAPE_DASHES, SHAPE_FILLS, capPoints, cleanShape, isLinearDim, isShape, scaleDimTolerances, segmentDegrees, shapeAsStroke, shapeBounds,
-  shapeOutline, skewDegrees, touchesShape
+  DIM_MODES, DIM_OFFSET, DIM_OFFSET_LIMITS, ELLIPSE_MODES, FIT_RE, POINT_MARKS, SEGMENT_CAPS, SHAPES, SHAPE_DASHES, SHAPE_FILLS, angleDimDegrees,
+  capPoints, cleanShape, isLinearDim, isShape, scaleDimTolerances, segmentDegrees, shapeAsStroke, shapeBounds, shapeOutline, skewDegrees,
+  touchesShape
 } from './shapes.js';
 import { keepLinks } from './attach.js';
 import { cleanSymbol, isSymbol, symbolBox, symbolLeaderStart } from './gdt.js';
@@ -108,7 +109,7 @@ export const SENSITIVITY_LABELS = Object.freeze({ off: 'Wył.', low: 'Mała', me
  */
 export function dimensionParts(shape, key, scale, format = 'unit') {
   const marks = shape.dimTols?.[key] ?? null;
-  const degrees = key === 'skew' ? skewDegrees(shape) : key === 'angle' ? segmentDegrees(shape) : null;
+  const degrees = key === 'skew' ? skewDegrees(shape) : key === 'angle' ? (shape.shape === 'angledim' ? angleDimDegrees(shape) : segmentDegrees(shape)) : null;
   const units = key === 'height' ? shape.h : shape.w;
   const technical = formatOf(format).style === 'technical';
   let main = degrees !== null ? `${formatNumber(degrees)}°`
@@ -376,6 +377,9 @@ export function defaultToolSettings() {
     shapeDash: 'solid',
     curveCaps: { start: 'none', end: 'arrow' },
     pointMark: 'center',
+    // Od 1.34: sposób rysowania okręgu (ramka, środek i promień, 2 albo 3 punkty) i rodzaj wymiaru narzędzia „Wymiar”.
+    ellipseMode: 'frame',
+    dimMode: 'linear',
     arrayKind: 'linear',
     // Od 1.21: kolor ostatnio dodanej karteczki.
     stickyColor: 'yellow',
@@ -484,6 +488,8 @@ export function cleanToolSettings(raw) {
     shapeDash: SHAPE_DASHES.includes(raw.shapeDash) ? raw.shapeDash : base.shapeDash,
     curveCaps: cleanCaps(raw.curveCaps, base.curveCaps),
     pointMark: POINT_MARKS.includes(raw.pointMark) ? raw.pointMark : base.pointMark,
+    ellipseMode: ELLIPSE_MODES.includes(raw.ellipseMode) ? raw.ellipseMode : base.ellipseMode,
+    dimMode: DIM_MODES.includes(raw.dimMode) ? raw.dimMode : base.dimMode,
     arrayKind: ARRAY_KINDS.includes(raw.arrayKind) ? raw.arrayKind : base.arrayKind,
     stickyColor: STICKY_COLORS.some((color) => color.id === raw.stickyColor) ? raw.stickyColor : base.stickyColor,
     edgeSnap: typeof raw.edgeSnap === 'boolean' ? raw.edgeSnap : base.edgeSnap,

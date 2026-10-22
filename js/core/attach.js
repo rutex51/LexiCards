@@ -8,8 +8,10 @@
 // boku i miejsce na nim 0–1; elipsa – { id, kind: 'edge', angle }: kąt na elipsie w jej układzie).
 // Od 1.22.1 także strzałka ramki tolerancji i trójkąt znaku bazy { leader? } oraz wierzchołek symbolu
 // chropowatości { tip? } – przyklejony wierzchołek przesuwa cały symbol.
+// Od 1.34 środek okręgu (elipsy) i łuku – { id, kind: 'center' }; końce wymiaru przyklejają się jak
+// końce odcinka (wymiar idzie za mierzonym kształtem). Do wymiaru nic się nie przyciąga.
 
-import { isSegment, isShape, shapeOutline, shapePoint } from './shapes.js';
+import { arcGeometry, isMeasure, isSegment, isShape, shapeOutline, shapePoint } from './shapes.js';
 
 const ID_RE = /^[a-z0-9]{6,16}$/;
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
@@ -28,20 +30,26 @@ const plainBox = (stroke) => ({ x: stroke.x, y: stroke.y, width: stroke.width, h
  */
 export function snapGeometry(stroke, boxOf = plainBox) {
   if (isShape(stroke)) {
+    if (isMeasure(stroke)) return null;
     if (isSegment(stroke)) {
       const [a, b] = [shapePoint(stroke, -0.5, 0), shapePoint(stroke, 0.5, 0)];
       return { corners: [a, b, shapePoint(stroke, 0, 0)], edges: [[a, b]] };
     }
     // Punkt (od 1.27) – sam środek; łuk – końce i krzywa (bez narożników w punktach obrysu).
     if (stroke.shape === 'point') return { corners: [{ x: stroke.x, y: stroke.y }], edges: [] };
-    if (stroke.shape === 'curve') {
+    if (stroke.shape === 'curve' || stroke.shape === 'arc') {
       const { points } = shapeOutline(stroke);
       const along = [];
       for (let index = 0; index < points.length; index += 2) along.push({ x: points[index], y: points[index + 1] });
-      return { corners: [along[0], along.at(-1)], edges: along.slice(1).map((point, index) => [along[index], point]) };
+      // Łuk (od 1.34) – także środek jego okręgu.
+      const center = stroke.shape === 'arc' ? arcGeometry(stroke)?.center ?? null : null;
+      return { corners: [along[0], along.at(-1)], edges: along.slice(1).map((point, index) => [along[index], point]), ...(center ? { center } : {}) };
     }
     if (stroke.shape === 'ellipse') {
-      return { corners: [[0.5, 0], [0, 0.5], [-0.5, 0], [0, -0.5]].map(([u, v]) => shapePoint(stroke, u, v)), edges: [], ellipse: stroke };
+      return {
+        corners: [[0.5, 0], [0, 0.5], [-0.5, 0], [0, -0.5]].map(([u, v]) => shapePoint(stroke, u, v)), edges: [], ellipse: stroke,
+        center: { x: stroke.x, y: stroke.y }
+      };
     }
     const { points, closed } = shapeOutline(stroke);
     const corners = [];
@@ -107,6 +115,13 @@ export function findSnap(strokes, point, radius, { exclude = new Set(), boxOf = 
         corner = { x: candidate.x, y: candidate.y, kind: 'corner', target, ref: { kind: 'corner', index }, distance };
       }
     });
+    // Środek okręgu i łuku (od 1.34) – jak narożnik.
+    if (geometry.center) {
+      const distance = Math.hypot(point.x - geometry.center.x, point.y - geometry.center.y);
+      if (distance <= radius * 1.4 && (!corner || distance < corner.distance)) {
+        corner = { x: geometry.center.x, y: geometry.center.y, kind: 'center', target, ref: { kind: 'center' }, distance };
+      }
+    }
     geometry.edges.forEach(([a, b], index) => {
       const near = onSegment(point, a, b);
       if (near.distance <= radius && (!edge || near.distance < edge.distance)) {
@@ -152,6 +167,7 @@ export function attachPoint(target, ref, boxOf = plainBox) {
   const geometry = snapGeometry(target, boxOf);
   if (!geometry) return null;
   if (ref.kind === 'corner') return geometry.corners[ref.index] ?? null;
+  if (ref.kind === 'center') return geometry.center ?? null;
   if (ref.kind !== 'edge') return null;
   if (finite(ref.angle) && geometry.ellipse) return shapePoint(geometry.ellipse, 0.5 * Math.cos(ref.angle), 0.5 * Math.sin(ref.angle));
   const side = geometry.edges[ref.index];
@@ -314,6 +330,7 @@ export function followersOf(strokes, previews, boxOf = plainBox) {
 function cleanRef(raw) {
   if (!raw || typeof raw !== 'object' || !ID_RE.test(raw.id ?? '')) return null;
   if (raw.kind === 'corner' && Number.isInteger(raw.index) && raw.index >= 0 && raw.index < 100) return { id: raw.id, kind: 'corner', index: raw.index };
+  if (raw.kind === 'center') return { id: raw.id, kind: 'center' };
   if (raw.kind !== 'edge') return null;
   if (finite(raw.angle)) return { id: raw.id, kind: 'edge', angle: raw.angle };
   if (Number.isInteger(raw.index) && raw.index >= 0 && raw.index < 100 && finite(raw.t)) {

@@ -145,6 +145,9 @@ const ICONS = {
   shapeXline: [p('M2.5 19.5l19-15'), dot(8.8, 14.5, 1.7), dot(15.2, 9.5, 1.7)],
   shapeCurve: [p('M4 18.5C5.5 10 13 5.8 19.5 7.2'), p('M15.6 4.4l3.9 2.8-3 3.8')],
   shapePoint: [{ tag: 'circle', cx: 12, cy: 12, r: 4.6 }, p('M12 4v16'), p('M4 12h16')],
+  // Od 1.34: łuk przez trzy punkty, wymiar (grupa Wymiary) i jego rodzaje.
+  shapeArc: [p('M4 18A9.5 9.5 0 0 1 20 9.5'), dot(4, 18, 1.8), dot(10.6, 9.4, 1.8), dot(20, 9.5, 1.8)],
+  dimension: [p('M4 5.5v13'), p('M20 5.5v13'), p('M4 12h16'), p('M7.5 9.2L4 12l3.5 2.8'), p('M16.5 9.2L20 12l-3.5 2.8')],
   lineSolid: [p('M3 12h18')],
   lineDashed: [{ d: 'M3 12h18', 'stroke-dasharray': '4 3' }],
   lineCenter: [{ d: 'M3 12h18', 'stroke-dasharray': '7 2.5 0.01 2.5' }],

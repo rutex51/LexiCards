@@ -1,4 +1,4 @@
-# LexiCards 1.33
+# LexiCards 1.34
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -42,8 +42,9 @@ Rysunek: rysunki notatki (i jej zdjęcia) przewracane jak kartki w jednym oknie,
 Dźwięki: szum odlatującej fiszki i szelest przewracanej kartki notatki i rysunku, tak długi jak przewracanie (wersja 1.31); kartka z nagrania prawdziwej kartki, bez dudnienia (1.31.1), bez dudnięcia przy klapnięciu (1.31.2): [docs/RELEASE-1.31.md](docs/RELEASE-1.31.md).
 Rysunek – nowy układ: kółka narzędzi (grupy standardowe po prawej, zestaw Metrologia po lewej), górne menu w dwóch wierszach z wysuwanym wyborem, dolny pasek narzędzi ogólnych, pastylki informacji i zmian, chowanie każdego elementu i całego interfejsu, lewy Alt i prawy przycisk – zaznaczanie, spacja – powiel (wersja 1.32): [docs/RELEASE-1.32.md](docs/RELEASE-1.32.md).
 Rysunek – okno „Grupy narzędzi”: które grupy standardowe są na prawym kółku i w jakiej kolejności, gotowe zestawy (Metrologia, Szkic odręczny, Geometria, Notatki) i własne grupy z wybranymi narzędziami na lewym kółku (wersja 1.33): [docs/RELEASE-1.33.md](docs/RELEASE-1.33.md).
+Rysunek: okrąg ze środka i promienia, z dwóch i z trzech punktów, łuk przez trzy punkty, narzędzie „Wymiar” (liniowy, średnica, promień, kąt – końce przyklejone do kształtu), przyciąganie do środka okręgu (wersja 1.34): [docs/RELEASE-1.34.md](docs/RELEASE-1.34.md).
 
-## Co potrafi wersja 1.33
+## Co potrafi wersja 1.34
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -606,7 +607,19 @@ wskazówek zegara). Kreska zaczęta przy okręgu i prowadzona wzdłuż niego bie
 (w pigułce – długość łuku), przy promieniu i wzdłuż niego – prosto po promieniu; w innym kierunku –
 zwykła kreska. Pigułka: „Promieniowy · okręgi co 2 cm · promienie co 45°”. Ustawienia zostają na urządzeniu.
 **Kształty** (od 1.15): narzędzie **kształty** – Odcinek, Strzałka, Prostokąt, Elipsa, Trójkąt, Romb,
-Trapez, od 1.27 też Prosta, Strzałka po łuku i Punkt (wybór w panelu pod paskiem). Przeciągnięcie tworzy kształt w prostokącie przeciągnięcia
+Trapez, od 1.27 też Prosta, Strzałka po łuku i Punkt, od 1.34 **Łuk** (wybór w panelu pod paskiem, od 1.32 – w menu grupy). **Okrąg i elipsa
+(od 1.34)** – wybór pod menu: **Ramka** (jak dotąd), **Środek i R** (od środka do okręgu), **2 pkt** (średnica od punktu
+do punktu), **3 pkt** (okrąg przez trzy dotknięte punkty; przeciągnięcie stawia dwa pierwsze, mysz nad trzecim – podgląd,
+Esc – od nowa, trzy punkty na jednej prostej – komunikat). **Łuk** – przeciągnij od początku do końca (albo dotknij obu),
+potem dotknij punktu, przez który ma przejść; zaznaczony ma trzy punkty: początek, środek łuku i koniec. Punkty okręgu,
+łuku i wymiaru przyciągają się do narożników, krawędzi i (od 1.34) **środków okręgów i łuków** (znacznik – kółko
+z krzyżykiem). **Wymiar** (od 1.34, grupa „Wymiary” na kółku i zestaw Metrologia) – wybór pod menu: **Liniowy**
+(przeciągnięcie od punktu do punktu albo dotknięcie krawędzi – odcinka, boku kształtu, ramki; linia wymiarowa
+po stronie dalszej od mierzonego kształtu), **⌀ Średnica** i **R Promień** (dotknięcie okręgu albo łuku – linia
+w kierunku dotknięcia), **Kąt** (wierzchołek, punkt na pierwszym i na drugim ramieniu – mniejszy z kątów).
+Przyciągnięte końce wymiaru są przyklejone: wymiar idzie za przesuwanym albo zmienianym kształtem i pokazuje
+nową liczbę. Liczba mierzy rysunek w jego skali (nie wpisuje się jej); **±** – znak i tolerancja, uchwyt przy liczbie –
+odsunięcie linii wymiarowej, także na drugą stronę. Przeciągnięcie tworzy kształt w prostokącie przeciągnięcia
 (prawie równe boki – kwadrat, koło; odcinek co 45° przyciągany), dotknięcie – kształt domyślnej
 wielkości; kolor i grubość – pióra. Punkty konstrukcyjne zaznaczonego kształtu: narożniki
 (szerokość i wysokość), środki boków (jeden wymiar), romb na górnej krawędzi (pochylenie –

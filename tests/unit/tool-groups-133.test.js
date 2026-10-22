@@ -24,7 +24,7 @@ test('grupy 1.33: gotowe zestawy – znane pozycje bez powtórzeń, ikony do wyb
   for (const item of ALL_ITEMS) assert.notEqual(itemLabel(item), item, `nazwa ${item}`);
 });
 
-test('grupy 1.33: dobór z pamięci – kolejność, nowe grupy na końcu, co najmniej jedna grupa standardowa, sprawdzone własne grupy', () => {
+test('grupy 1.33: dobór z pamięci – kolejność, brakujące grupy w miejscu z kolejności domyślnej, co najmniej jedna grupa standardowa, sprawdzone własne grupy', () => {
   assert.deepEqual(cleanToolGroups(null), defaultToolGroups());
   assert.deepEqual(defaultToolGroups().mine.map((group) => group.id), ['metrology'], 'na początek – Metrologia');
   const clean = cleanToolGroups({
@@ -39,7 +39,8 @@ test('grupy 1.33: dobór z pamięci – kolejność, nowe grupy na końcu, co na
       null
     ]
   });
-  assert.deepEqual(clean.order, ['text', 'write', 'shapes', 'construct', 'symbols']);
+  // Brakująca grupa – za tą, która jest przed nią w kolejności domyślnej (od 1.34 Wymiary za Tekstem i wzorami).
+  assert.deepEqual(clean.order, ['text', 'dims', 'symbols', 'write', 'shapes', 'construct']);
   assert.deepEqual(clean.off, ['symbols']);
   assert.deepEqual(clean.mine, [
     { id: 'own-1', label: 'Ulubione', icon: 'star', items: ['pen', 'shape:rect'] },
@@ -70,7 +71,7 @@ test('grupy 1.33: grupy na kółkach i grupa na starcie przy własnym doborze', 
     off: ['write', 'text'],
     mine: [{ id: 'own-1', label: 'Pusta', items: [] }, { id: 'sketch', label: 'Szkic', icon: 'sketch', items: ['pen', 'eraser'] }]
   });
-  assert.deepEqual(groupsOf('right', config).map((group) => group.id), ['symbols', 'shapes', 'construct']);
+  assert.deepEqual(groupsOf('right', config).map((group) => group.id), ['symbols', 'shapes', 'construct', 'dims']);
   assert.deepEqual(groupsOf('left', config).map((group) => group.id), ['sketch'], 'pusta grupa nie jest na kółku');
   assert.equal(findGroup('right', 'write', config), null, 'schowana grupa');
   assert.equal(findGroup('left', 'sketch', config).label, 'Szkic');
