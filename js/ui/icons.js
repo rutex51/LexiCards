@@ -147,6 +147,18 @@ const ICONS = {
   shapePoint: [{ tag: 'circle', cx: 12, cy: 12, r: 4.6 }, p('M12 4v16'), p('M4 12h16')],
   // Od 1.34: łuk przez trzy punkty, wymiar (grupa Wymiary) i jego rodzaje.
   shapeArc: [p('M4 18A9.5 9.5 0 0 1 20 9.5'), dot(4, 18, 1.8), dot(10.6, 9.4, 1.8), dot(20, 9.5, 1.8)],
+  // Od 1.40: wielokąt foremny, półprosta, narożniki prostokąta, kreskowanie i kolejność rysowania.
+  shapeNgon: [p('M20.5 12l-4.25 7.36h-8.5L3.5 12l4.25-7.36h8.5z')],
+  shapeRay: [dot(4.5, 18.5, 2.1), p('M4.5 18.5L21.5 5.5'), dot(12.6, 12.3, 1.6)],
+  cornerNone: [p('M5 19.5V5h14.5')],
+  cornerRound: [p('M5 19.5V12a7 7 0 0 1 7-7h7.5')],
+  cornerChamfer: [p('M5 19.5v-8l6.5-6.5h8')],
+  hatch: [p('M4.5 4.5h15v15h-15z'), { d: 'M4.5 12L12 4.5M4.5 19.5l15-15M12 19.5l7.5-7.5', 'stroke-width': 1.2 }],
+  order: [p('M8.5 8.5h11v11h-11z'), p('M4.5 15.5v-11h11')],
+  orderFront: [p('M4.5 4h15'), p('M12 20V8.5'), p('M8 12.5l4-4 4 4')],
+  orderUp: [p('M12 19V6'), p('M7.5 10.5L12 6l4.5 4.5')],
+  orderDown: [p('M12 5v13'), p('M7.5 13.5L12 18l4.5-4.5')],
+  orderBack: [p('M4.5 20h15'), p('M12 4v11.5'), p('M8 11.5l4 4 4-4')],
   dimension: [p('M4 5.5v13'), p('M20 5.5v13'), p('M4 12h16'), p('M7.5 9.2L4 12l3.5 2.8'), p('M16.5 9.2L20 12l-3.5 2.8')],
   // Od 1.36 rodzaje wymiaru w górnym menu: kąt (łuk między ramionami), promień (od środka do okręgu), średnica (⌀).
   dimAngle: [p('M4 19.5h16.5'), p('M4 19.5L14.5 5'), p('M15.2 19.5a11.2 11.2 0 0 0-4.6-9'), p('M8.6 11.6l2-1.3.2 2.4')],

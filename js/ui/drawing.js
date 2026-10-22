@@ -50,7 +50,8 @@ import {
   DIM_UNITS, DRAWING_VERSION, defaultDimUnit, defaultToolSettings, dimFactor, dimFormat, dimMillimeters, dimUnitLabel, dimUnitNote, dimensionParts, formatTolerance, hasMeasuredContent, elementBox, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
   MAX_STROKES, isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
   hasContent, rulerDegrees, rulerOffset, rulerPoint, scaleUnitLabel, screenScale, screenScaleValue, selectionBounds, smoothPoint, snapRulerAngle,
-  snapToStrokes, splitByPolygon, strokeBounds, strokesAt, strokesInPolygon, strokesInRect, toScaleLength, touchesStroke, translateStroke
+  snapToStrokes, splitByPolygon, strokeBounds, strokesAt, strokesInPolygon, strokesInRect, toScaleLength, touchesStroke, translateStroke,
+  ORDER_LABELS, ORDER_MOVES, lengthText, reorderStrokes, shapeMeasureText
 } from '../core/drawing.js';
 import { layoutMath } from '../core/math-layout.js';
 import { decodeDxf, drawingToDxf, dxfPrimitives, fittingScale, pageUnitMillimeters, parseDxf, primitivesBounds, primitivesToElements } from '../core/dxf.js';
@@ -74,7 +75,8 @@ import {
   nearestRing, rayAngles, resizeShape, ringsIn, stackDimOffset, withDimOffset, withDimTolerance,
   segmentCaps, segmentDegrees, setSegment, shapeContains, shapeFromDrag, shapeHandles, shapePoint, shownDims, skewDegrees, touchesShape,
   withCaps, withDims, ELLIPSE_MODES, ELLIPSE_MODE_LABELS, angleDimFromPoints, arcFromPoints, arcGeometry,
-  angleDimDegrees, circleFromPoints, dimAwayFrom, dimFromPoints, dimMode, isArc, isMeasure
+  angleDimDegrees, circleFromPoints, dimAwayFrom, dimFromPoints, dimMode, isArc, isMeasure,
+  CORNER_LABELS, HATCH_ANGLES, HATCH_GAPS, HATCH_GAP_LABELS, NGON_SIDES, cleanHatch, ngonSides, withCorner, withNgonSides, withShapeFill
 } from '../core/shapes.js';
 import {
   DEFAULT_PAPER_LEVEL, DEFAULT_TEMPLATE_LEVEL, LEVEL_LABELS, PAPER_COLORS, TEMPLATE_ALPHA, TEMPLATE_CORNERS, TEMPLATE_LABELS, centerTemplate,
@@ -159,8 +161,14 @@ const GUIDE_COLOR = 'rgba(0, 88, 190, 0.42)';
 const CAP_ICONS = { none: 'capNone', arrow: 'capArrow', triangle: 'capTriangle', circle: 'capCircle', square: 'capSquare', diamond: 'capDiamond' };
 const SHAPE_ICONS = {
   line: 'shapeLine', arrow: 'shapeArrow', rect: 'shapeRect', ellipse: 'shapeEllipse', triangle: 'shapeTriangle', diamond: 'shapeDiamond', trapezoid: 'shapeTrapezoid',
-  xline: 'shapeXline', curve: 'shapeCurve', point: 'shapePoint', arc: 'shapeArc', dim: 'dimension'
+  xline: 'shapeXline', curve: 'shapeCurve', point: 'shapePoint', arc: 'shapeArc', dim: 'dimension', ngon: 'shapeNgon', ray: 'shapeRay'
 };
+/** Narożniki prostokąta (od 1.40) – ikony wyboru i gotowe wielkości (¼, ½ i 1 kratka). */
+const CORNER_ICONS = { none: 'cornerNone', round: 'cornerRound', chamfer: 'cornerChamfer' };
+const CORNER_CHOICE_LABELS = { none: 'Ostre', ...CORNER_LABELS };
+const CORNER_SIZES = [PAPER_STEP / 4, PAPER_STEP / 2, PAPER_STEP];
+/** Kolejność rysowania (od 1.40) – ikony w menu. */
+const ORDER_ICONS = { front: 'orderFront', up: 'orderUp', down: 'orderDown', back: 'orderBack' };
 /** Rodzaje linii i znaczniki punktu (od 1.27) – ikony wyboru. */
 const DASH_ICONS = { solid: 'lineSolid', dashed: 'lineDashed', center: 'lineCenter', phantom: 'linePhantom', dotted: 'lineDotted' };
 const MARK_ICONS = { center: 'shapePoint', dot: 'markDot', cross: 'markCross', plus: 'markPlus' };
@@ -793,6 +801,10 @@ export function openDrawingEditor({
     const base = h('canvas', { class: 'drawing__canvas', 'aria-hidden': 'true' });
     const live = h('canvas', { class: 'drawing__canvas drawing__canvas--live', role: 'img', 'aria-label': `Płótno rysunku: ${title}`, dataset: { testid: 'drawing-canvas' } });
     const selectionCount = h('span', { class: 'drawing__selection-count', dataset: { testid: 'drawing-selection-count' } });
+    // Od 1.40: pole i obwód zaznaczonego zamkniętego kształtu w jednostkach rysunku.
+    const selectionMeasure = h('span', {
+      class: 'drawing__selection-measure', hidden: true, title: 'Pole i obwód w skali rysunku', dataset: { testid: 'drawing-selection-measure' }
+    });
     // Na wąskim ekranie przyciski zaznaczenia mają same ikony (napis zostaje dla czytnika ekranu).
     const selectionButton = (testID, iconName, label, hint, onClick, danger = false) => h('button', {
       type: 'button', class: danger ? 'drawing__selection-button drawing__selection-button--danger' : 'drawing__selection-button',
@@ -825,6 +837,9 @@ export function openDrawingEditor({
     // Od 1.30: odbicie lustrzane zaznaczenia – w poziomie albo w pionie (menu), obok „Powiel”.
     const mirrorButton = selectionButton('drawing-selection-mirror', 'mirror', 'Odbij', 'Odbicie lustrzane – w poziomie albo w pionie', () => openMirrorMenu());
     mirrorButton.setAttribute('aria-haspopup', 'menu');
+    // Od 1.40: kolejność rysowania – na wierzch, wyżej, niżej, na spód (menu).
+    const orderButton = selectionButton('drawing-selection-order', 'order', 'Kolejność', 'Kolejność rysowania – na wierzch, wyżej, niżej, na spód', () => openOrderMenu());
+    orderButton.setAttribute('aria-haspopup', 'menu');
     const embedButton = selectionButton('drawing-selection-embed', 'embed', 'Osadź', 'Osadź w notatce jako obraz', () => embedSelection());
     const deleteButton = selectionButton('drawing-selection-delete', 'trash', 'Usuń', 'Usuń (Delete)', () => deleteSelection(), true);
     // Od 1.36: warstwy zaznaczonych (sygnatury rzędu 1–3) – panel warstw nad dolnym paskiem.
@@ -841,7 +856,8 @@ export function openDrawingEditor({
     });
     moveButton.setAttribute('aria-pressed', 'false');
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
-      selectionCount, moveButton, editButton, collapseButton, shapeTextButton, magnetButton, layersSelectionButton, copyButton, duplicateButton, mirrorButton, arrayButton, explodeButton, embedButton, deleteButton);
+      selectionCount, selectionMeasure, moveButton, editButton, collapseButton, shapeTextButton, magnetButton, layersSelectionButton, copyButton, duplicateButton,
+      mirrorButton, orderButton, arrayButton, explodeButton, embedButton, deleteButton);
     // Pola wymiarów zaznaczonego kształtu (od 1.17): na liniach ramki konstrukcyjnej, wpisywane z klawiatury.
     const dims = h('div', { class: 'drawing__dims', hidden: true, dataset: { testid: 'drawing-dims' } });
     // Od 1.22: animacja przewracania kartki (zdjęcia stron nad płótnem, tylko w trakcie).
@@ -2270,6 +2286,9 @@ export function openDrawingEditor({
       }
       // Wymiar (od 1.34) – bez tekstu na kształcie.
       shapeTextButton.hidden = !shape || isMeasure(shape);
+      const measure = shape ? shapeMeasureText(shape, drawing.scale, dimFormat(drawing)) : null;
+      selectionMeasure.hidden = !measure;
+      if (measure) selectionMeasure.textContent = `pole ${measure.area} · obwód ${measure.perimeter}`;
       // Magnes (od 1.22): przy odcinku, strzałce i karteczce ze strzałką.
       // Od 1.22.1 także strzałka ramki tolerancji, trójkąt bazy i wierzchołek chropowatości.
       const withEnds = Boolean(shape && isSegment(shape)) || Boolean(sticky?.leader) || (!snip && selection.size === 1 && isSymbol(only));
@@ -2288,6 +2307,7 @@ export function openDrawingEditor({
       explodeButton.hidden = Boolean(snip) || !isArray(only);
       duplicateButton.hidden = Boolean(snip);
       mirrorButton.hidden = Boolean(snip) || !canTurn(items);
+      orderButton.hidden = Boolean(snip) || selectionKind !== 'whole' || items.length === drawing.strokes.length;
       deleteButton.hidden = Boolean(snip);
       embedButton.hidden = !onEmbed;
       copyButton.title = snip ? 'Kopiuj wycinek jako obraz (Ctrl+C) – wkleisz go w notatce albo w innej aplikacji'
@@ -2434,7 +2454,7 @@ export function openDrawingEditor({
       }
     }, icon('marquee', { size: 24 }));
     /** Krótkie napisy rodzajów kształtów w górnym menu. */
-    const SHAPE_SHORT = { curve: 'Po łuku' };
+    const SHAPE_SHORT = { curve: 'Po łuku', ngon: 'Foremny' };
     const kindButtons = new Map(SHAPES.map((kind) => {
       const button = menuButton(`shape:${kind}`, SHAPE_LABELS[kind], SHAPE_ICONS[kind], `drawing-shape-${kind}`, SHAPE_SHORT[kind] ?? SHAPE_LABELS[kind]);
       button.setAttribute('aria-pressed', 'false');
@@ -3732,6 +3752,11 @@ export function openDrawingEditor({
       point: 'Punkt: dotknij strony – znacznik w tym miejscu. Rodzaj znacznika (punkt symetrii, kropka, krzyżyk, środek) – pod menu; '
         + 'zmienia też zaznaczone punkty.',
       xline: 'Prosta: przeciągnij od punktu do punktu – biegnie przez całą stronę przez te dwa punkty. Rodzaj linii (np. osiowa) – pod menu.',
+      // Od 1.40: półprosta, wielokąt foremny, narożniki prostokąta.
+      ray: 'Półprosta: przeciągnij od początku przez drugi punkt – biegnie od początku przez całą stronę. Rodzaj linii (np. osiowa) – pod menu.',
+      ngon: 'Wielokąt foremny: przeciągnij od środka do wierzchołka (z Shift – obrót co 15°), dotknięcie – wielokąt z podstawą u dołu. '
+        + 'Liczba boków (3–12) – pod menu „Boki”; zmienia też zaznaczone. Narożnik ramki zaznaczonego zachowuje foremność, bok – rozciąga.',
+      rect: 'Narożniki – pod menu: ostre, zaokrąglenie R albo faza, wielkość ¼, ½, 1 kratka albo wpisana. Pole i obwód zaznaczonego kształtu – przy jego nazwie.',
       curve: 'Strzałka po łuku: przeciągnij od początku do końca. Zaznaczona ma dwa punkty pośrednie – przeciągnij je, łuk przechodzi przez nie. '
         + 'Rodzaj linii i końce – pod menu.',
       ellipse: 'Okrąg i elipsa – wybór pod menu: Ramka (prostokąt przeciągnięcia), Środek i R (od środka do okręgu), 2 pkt (średnica – od punktu do punktu), '
@@ -3752,7 +3777,7 @@ export function openDrawingEditor({
         // Od 1.34: okrąg z punktów, łuk i wymiar – jak ich używać.
         SHAPE_TIPS[tools.shape] ? h('p', { class: 'field__hint' }, SHAPE_TIPS[tools.shape]) : null,
         // Opis ogólny – przy kształtach z ramką (punkt, prosta i strzałka po łuku mają własny).
-        ['point', 'xline', 'curve', 'arc', 'dim'].includes(tools.shape) ? null : h('p', { class: 'field__hint' },
+        ['point', 'xline', 'ray', 'ngon', 'curve', 'arc', 'dim'].includes(tools.shape) ? null : h('p', { class: 'field__hint' },
           'Przeciągnij po stronie – kształt powstaje w prostokącie przeciągnięcia (odcinek i strzałka – od początku do końca); '
           + 'dotknięcie – kształt w tym miejscu. Kolor i grubość – jak pióra; rodzaj linii, wypełnienie (jasne jest przejrzyste) i końce – pod menu. '
           + 'Punkty zaznaczonego kształtu: narożniki i boki – szerokość i wysokość, romb na górnej krawędzi – pochylenie, kółko nad kształtem – obrót, '
@@ -3767,7 +3792,10 @@ export function openDrawingEditor({
     let styleKey = '';
     /** Narzędzie jest w grupie pokazywanej w górnym menu (od 1.36 – inaczej trzeci pasek tylko w trybie edycji). */
     let toolInMenu = true;
-    const STYLE_LABELS = { mark: 'Znacznik', dash: 'Linia', fill: 'Wypełnienie', caps: 'Końce' };
+    const STYLE_LABELS = { mark: 'Znacznik', dash: 'Linia', fill: 'Wypełnienie', caps: 'Końce', sides: 'Boki', corner: 'Narożniki' };
+    /** Narożniki jako napis do porównań ('none' – ostre, 'round:11'). */
+    const cornerKey = (corner) => (corner ? `${corner.kind}:${corner.size}` : 'none');
+    const cornerOfKey = (key) => (!key || key === 'none' ? null : { kind: key.split(':')[0], size: Number(key.split(':')[1]) });
     const sameValue = (values) => (values.length > 0 && values.every((value) => value === values[0]) ? values[0] : null);
     /**
      * Styl w trzecim menu: zaznaczone kształty (całe) – ich wspólne wartości (null – różne), bez zaznaczenia –
@@ -3793,7 +3821,10 @@ export function openDrawingEditor({
           mark: pick(isPointShape, pointMark, tools.pointMark),
           dash: pick(canDash, shapeDash, own.dash),
           fill: pick(canFill, (shape) => shape.fill ?? 'none', own.fill),
-          caps
+          caps,
+          // Od 1.40: liczba boków wielokąta foremnego i narożniki prostokąta.
+          sides: pick((shape) => shape.shape === 'ngon', ngonSides, tools.ngonSides),
+          corner: pick((shape) => shape.shape === 'rect', (shape) => cornerKey(shape.corner), cornerKey(tools.rectCorner))
         }
       };
     }
@@ -3802,15 +3833,29 @@ export function openDrawingEditor({
       if (key === 'mark') return MARK_ICONS[value ?? 'center'];
       if (key === 'dash') return DASH_ICONS[value ?? 'solid'];
       if (key === 'caps') return CAP_ICONS[value?.end ?? 'none'];
-      return 'fill';
+      if (key === 'sides') return 'shapeNgon';
+      if (key === 'corner') return CORNER_ICONS[cornerOfKey(value)?.kind ?? 'none'];
+      return value === 'hatch' ? 'hatch' : 'fill';
     }
-    /** Kształt z wypełnieniem `fill` (pełne w kolorze tekstu – tekst biały, żeby było go widać). */
+    /** Napis przycisku grupy – przy bokach ich liczba („6 boków”). */
+    const styleLabel = (key, value) => (key === 'sides' && value ? plural(value, 'bok', 'boki', 'boków') : STYLE_LABELS[key]);
+    /** Kreskowanie nowych kształtów rodzaju `kind` (od 1.40). */
+    const toolHatch = (kind) => shapeToolStyle(tools, kind).hatch;
+    /**
+     * Kształt z wypełnieniem `fill` (pełne w kolorze tekstu – tekst biały, żeby było go widać); kreskowanie (od 1.40) –
+     * dotychczasowe kształtu albo ustawione dla jego rodzaju.
+     */
     function withFill(shape, fill) {
-      const next = { ...shape };
-      if (fill === 'none') delete next.fill;
-      else next.fill = fill;
+      const next = withShapeFill(shape, fill, shape.hatch ?? toolHatch(shape.shape));
       if (fill === 'solid' && next.label?.color === next.color) next.label = { ...next.label, color: '#ffffff' };
       return next;
+    }
+    /** Kreskowanie w wyborze wypełnienia: zaznaczonych (wspólne albo null) albo nowych kształtów narzędzia. */
+    function hatchState(state) {
+      if (state.targets.length === 0) return toolHatch(state.kind);
+      const hatched = state.targets.filter((shape) => canFill(shape) && shape.fill === 'hatch').map((shape) => cleanHatch(shape.hatch));
+      if (hatched.length === 0) return null;
+      return hatched.every((hatch) => JSON.stringify(hatch) === JSON.stringify(hatched[0])) ? hatched[0] : null;
     }
     /**
      * Wybór w trzecim menu. Bez zaznaczenia – styl następnych kształtów narzędzia (od 1.35.1 rodzaj linii i wypełnienie
@@ -3823,14 +3868,65 @@ export function openDrawingEditor({
         if (key === 'mark') tools.pointMark = value;
         if (key === 'dash' || key === 'fill') tools.shapeStyles = withShapeToolStyle(tools, state.kind, key, value).shapeStyles;
         if (key === 'caps' && hasCaps({ shape: tools.shape })) tools[CAPS_KEYS[tools.shape]] = { ...segmentDefaultCaps(), [which]: value };
+        if (key === 'hatch') tools.shapeStyles = withShapeToolStyle(tools, state.kind, 'hatch', cleanHatch({ ...toolHatch(state.kind), ...value })).shapeStyles;
+        if (key === 'sides') tools.ngonSides = value;
+        if (key === 'corner') tools.rectCorner = value;
         saveTools(tools);
       }
       if (key === 'mark') restyle(isPointShape, (shape) => ({ ...shape, mark: value }));
       if (key === 'dash') restyle(canDash, (shape) => withDash(shape, value));
       if (key === 'fill') restyle(canFill, (shape) => withFill(shape, value));
       if (key === 'caps') restyle(hasCaps, (shape) => withCaps(shape, { ...segmentCaps(shape), [which]: value }));
+      if (key === 'hatch') restyle((shape) => canFill(shape) && shape.fill === 'hatch', (shape) => ({ ...shape, hatch: cleanHatch({ ...cleanHatch(shape.hatch), ...value }) }));
+      if (key === 'sides') restyle((shape) => shape.shape === 'ngon', (shape) => withNgonSides(shape, value));
+      if (key === 'corner') restyle((shape) => shape.shape === 'rect', (shape) => withCorner(shape, value));
       updateToolbar();
       requestLive();
+    }
+    /** Przycisk wyboru z napisem (segmenty trzeciego menu). */
+    const segmentButton = (label, checked, testID, onClick, extra = {}) => h('button', {
+      type: 'button', role: 'radio', 'aria-checked': String(checked), dataset: { testid: testID }, onClick, ...extra
+    }, label);
+    /** Wybór liczby boków wielokąta foremnego (od 1.40). */
+    function sidesTiles(value) {
+      return h('div', { class: 'drawing__segmented drawing__segmented--wrap', role: 'radiogroup', 'aria-label': 'Liczba boków' }, NGON_SIDES.map((sides) => segmentButton(
+        String(sides), sides === value, `drawing-sides-${sides}`, () => pickStyle('sides', sides), { 'aria-label': plural(sides, 'bok', 'boki', 'boków') })));
+    }
+    /** Narożniki prostokąta (od 1.40): ostre, zaokrąglenie, faza; wielkość – gotowa albo wpisana w jednostkach rysunku. */
+    function cornerTiles(value) {
+      const current = cornerOfKey(value);
+      const kind = value === null ? null : current?.kind ?? 'none';
+      const size = current?.size ?? tools.rectCorner?.size ?? CORNER_SIZES[0];
+      const format = dimFormat(drawing);
+      const kinds = styleChoices(['none', 'round', 'chamfer'], CORNER_ICONS, CORNER_CHOICE_LABELS, kind, 'drawing-corner',
+        (next) => pickStyle('corner', next === 'none' ? null : { kind: next, size }));
+      if (!current) return kinds;
+      const factor = toScaleLength(1, drawing.scale) * dimFactor(drawing.scale, format);
+      const input = h('input', {
+        type: 'text', inputmode: 'decimal', class: 'drawing__corner-size', value: formatNumber(current.size * factor), 'aria-label': `${CORNER_CHOICE_LABELS[current.kind]} – wielkość`,
+        dataset: { testid: 'drawing-corner-size' },
+        onChange: (event) => {
+          const typed = parseDecimal(event.currentTarget.value);
+          if (typed !== null && typed > 0) pickStyle('corner', { kind: current.kind, size: Math.round((typed / factor) * 100) / 100 });
+          else event.currentTarget.value = formatNumber(current.size * factor);
+        }
+      });
+      return h('div', { class: 'drawing__corner' }, kinds,
+        h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Wielkość narożnika' }, CORNER_SIZES.map((preset) => segmentButton(
+          lengthText(preset, drawing.scale, format), Math.abs(preset - current.size) < 0.01, `drawing-corner-${preset}`, () => pickStyle('corner', { kind: current.kind, size: preset })))),
+        h('label', { class: 'drawing__corner-field' }, current.kind === 'round' ? 'R' : 'Faza', input, h('span', {}, dimUnitLabel(drawing.scale, format))));
+    }
+    /** Kreskowanie (od 1.40): kąt linii, odstęp i krzyżowe – pod wyborem wypełnienia. */
+    function hatchTiles(hatch) {
+      return h('div', { class: 'drawing__hatch' },
+        h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Kąt kreskowania' }, HATCH_ANGLES.map((angle) => segmentButton(
+          `${angle}°`, hatch?.angle === angle, `drawing-hatch-angle-${angle}`, () => pickStyle('hatch', { angle })))),
+        h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Odstęp linii' }, HATCH_GAPS.map((gap) => segmentButton(
+          HATCH_GAP_LABELS[gap], hatch?.gap === gap, `drawing-hatch-gap-${gap}`, () => pickStyle('hatch', { gap })))),
+        h('button', {
+          type: 'button', class: 'drawing__chip', 'aria-pressed': String(Boolean(hatch?.cross)), dataset: { testid: 'drawing-hatch-cross' },
+          onClick: () => pickStyle('hatch', { cross: !hatch?.cross })
+        }, 'Krzyżowe'));
     }
     /** Przyciski wyboru jednej grupy stylu (ikony; zakończenia – początek i koniec, wypełnienie – napisy). */
     function styleTiles(key, value) {
@@ -3843,10 +3939,15 @@ export function openDrawingEditor({
           pickStyle('caps', caps[which], which);
         });
       }
-      return h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Wypełnienie' }, SHAPE_FILLS.map((fill) => h('button', {
+      if (key === 'sides') return sidesTiles(value);
+      if (key === 'corner') return cornerTiles(value);
+      const fills = h('div', { class: 'drawing__segmented drawing__segmented--wrap', role: 'radiogroup', 'aria-label': 'Wypełnienie' }, SHAPE_FILLS.map((fill) => h('button', {
         type: 'button', role: 'radio', 'aria-checked': String(fill === value), dataset: { testid: `drawing-fill-default-${fill}` },
         onClick: () => pickStyle('fill', fill)
       }, SHAPE_FILL_LABELS[fill])));
+      if (value !== 'hatch') return fills;
+      const state = styleState();
+      return h('div', { class: 'drawing__fill' }, fills, state ? hatchTiles(hatchState(state)) : null);
     }
     /**
      * Trzecie menu kształtów: jedna grupa (znacznik punktu, rodzaj linii prostej i łuku) – od razu jej przyciski;
@@ -3874,7 +3975,7 @@ export function openDrawingEditor({
           openPicker = next;
           updateToolbar();
         }
-      }, icon(styleIcon(name, state.values[name]), { size: 20 }), h('span', { class: 'drawing__picker-label' }, STYLE_LABELS[name]), icon('chevronDown', { size: 12 })));
+      }, icon(styleIcon(name, state.values[name]), { size: 20 }), h('span', { class: 'drawing__picker-label' }, styleLabel(name, state.values[name])), icon('chevronDown', { size: 12 })));
       replaceChildren(styleRow, parts, info ? h('button', {
         type: 'button', class: 'drawing__mode drawing__style-info', 'aria-expanded': String(!shapePanel.hidden), 'aria-label': 'Więcej – przełączniki i opis', title: 'Więcej',
         dataset: { testid: 'drawing-style-info' }, onClick: () => toggleShapePanel()
@@ -3884,7 +3985,7 @@ export function openDrawingEditor({
     function renderStyleDrop(state) {
       styleDrop.hidden = !openPicker || !state;
       if (styleDrop.hidden) return;
-      replaceChildren(styleDrop, h('p', { class: 'drawing__settings-label' }, STYLE_LABELS[openPicker]), styleTiles(openPicker, state.values[openPicker]));
+      replaceChildren(styleDrop, h('p', { class: 'drawing__settings-label' }, styleLabel(openPicker, state.values[openPicker])), styleTiles(openPicker, state.values[openPicker]));
     }
     /** Przyciąganie końców odcinka i strzałki do krawędzi i narożników (od 1.22) – na urządzeniu; Alt – chwilowo swobodnie. */
     function edgeSnapToggle() {
@@ -4954,6 +5055,26 @@ export function openDrawingEditor({
           label: MIRROR_LABELS[axis], icon: axis === 'horizontal' ? 'mirror' : 'mirrorVertical', testID: `drawing-mirror-${axis}`,
           onSelect: () => mirrorSelection(axis)
         }))
+      });
+    }
+    /** Kolejność rysowania zaznaczonych (od 1.40) – jeden krok cofania; bez zmiany – komunikat. */
+    function orderSelection(move) {
+      if (snip || selectionKind !== 'whole' || selection.size === 0) return;
+      const next = reorderStrokes(drawing.strokes, selection, move);
+      if (next === drawing.strokes) {
+        flash(move === 'front' || move === 'up' ? 'Zaznaczenie jest już nad tym, co zakrywa' : 'Zaznaczenie jest już pod tym, co je zakrywa');
+        return;
+      }
+      history.begin();
+      drawing.strokes.splice(0, drawing.strokes.length, ...next);
+      commitStep();
+      updateToolbar();
+      requestRender();
+    }
+    function openOrderMenu() {
+      openMenu({
+        title: 'Kolejność rysowania',
+        items: ORDER_MOVES.map((move) => ({ label: ORDER_LABELS[move], icon: ORDER_ICONS[move], testID: `drawing-order-${move}`, onSelect: () => orderSelection(move) }))
       });
     }
     function deleteSelection() {
@@ -6372,8 +6493,8 @@ export function openDrawingEditor({
       const own = shapeToolStyle(tools, tools.shape);
       return {
         color: inkHex(tools.penColor), size: Math.round(((width.min + width.max) / 2) * 10) / 10, fill: own.fill, caps: segmentDefaultCaps(),
-        // Od 1.27: rodzaj linii i znacznik punktu.
-        dash: own.dash, mark: tools.pointMark
+        // Od 1.27: rodzaj linii i znacznik punktu; od 1.40 kreskowanie, boki wielokąta foremnego i narożniki prostokąta.
+        dash: own.dash, mark: tools.pointMark, hatch: own.hatch, sides: tools.ngonSides, corner: tools.rectCorner
       };
     };
     /** Styl nowego kształtu z rodzajem wymiaru i wzorem odsunięcia (od 1.34) – dla narzędzia „Wymiar”. */
@@ -6518,7 +6639,7 @@ export function openDrawingEditor({
       const snap = findSnap(shownStrokes(), point, reach, { boxOf: elementBox });
       if (!snap || snap.kind !== 'edge' || !Number.isInteger(snap.ref.index)) return null;
       const { target } = snap;
-      if (isShape(target) && (isArc(target) || target.shape === 'curve' || target.shape === 'xline')) return null;
+      if (isShape(target) && (isArc(target) || target.shape === 'curve' || target.shape === 'xline' || target.shape === 'ray')) return null;
       const geometry = snapGeometry(target, elementBox);
       const [a, b] = geometry.edges[snap.ref.index];
       const ends = isShape(target) && isSegment(target) ? [0, 1] : [snap.ref.index, (snap.ref.index + 1) % geometry.corners.length];

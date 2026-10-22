@@ -40,9 +40,9 @@
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import { DEFAULT_RECENT_FITS, cleanRecentFits } from './fits.js';
 import {
-  DIM_MODES, DIM_OFFSET, DIM_OFFSET_LIMITS, ELLIPSE_MODES, FIT_RE, POINT_MARKS, SEGMENT_CAPS, SHAPES, SHAPE_DASHES, SHAPE_FILLS, angleDimDegrees,
-  capPoints, cleanShape, isLinearDim, isShape, scaleDimTolerances, segmentDegrees, shapeAsStroke, shapeBounds, shapeOutline, skewDegrees,
-  touchesShape
+  CORNER_KINDS, DIM_MODES, DIM_OFFSET, DIM_OFFSET_LIMITS, ELLIPSE_MODES, FIT_RE, NGON_DEFAULT, NGON_SIDES, POINT_MARKS, SEGMENT_CAPS, SHAPES,
+  SHAPE_DASHES, SHAPE_FILLS, angleDimDegrees, capPoints, cleanHatch, cleanShape, isLinearDim, isShape, scaleDimTolerances, segmentDegrees,
+  shapeAsStroke, shapeBounds, shapeMeasure, shapeOutline, skewDegrees, touchesShape
 } from './shapes.js';
 import { keepLinks } from './attach.js';
 import { cleanSymbol, isSymbol, symbolBox, symbolLeaderStart } from './gdt.js';
@@ -57,9 +57,9 @@ import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './la
  * 6 – tabele i karteczki (1.21), 7 – identyfikatory elementów i przyklejone końce odcinków (1.22),
  * 8 – wymiary techniczne (odsunięcia, tolerancje, styl liczb) i symbole metrologiczne (1.22.1), 11 – warstwy (1.36),
  * 12 – wymiary graniczne, rodzaj wymiaru, miejsca po przecinku, ramka z Ⓟ i drugim wierszem, chropowatość
- * z kierunkiem struktury, odnośnik (1.38).
+ * z kierunkiem struktury, odnośnik (1.38), 13 – wielokąt foremny, półprosta, narożniki prostokąta, kreskowanie (1.40).
  */
-export const DRAWING_VERSION = 12;
+export const DRAWING_VERSION = 13;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -429,14 +429,17 @@ export function defaultToolSettings() {
     // brak – wspólne shapeDash i shapeFill (ustawienia sprzed 1.35.1).
     shapeStyles: {},
     // Od 1.39: kółka narzędzi przesunięte ręcznie ({ right: { x, y } | null, left }).
-    ringPositions: cleanRingPositions(null)
+    ringPositions: cleanRingPositions(null),
+    // Od 1.40: liczba boków nowego wielokąta foremnego i narożniki nowego prostokąta (null – ostre).
+    ngonSides: NGON_DEFAULT,
+    rectCorner: null
   };
 }
 
-/** Rodzaj linii i wypełnienie nowych kształtów rodzaju `kind` (od 1.35.1 – osobno dla każdego kształtu). */
+/** Rodzaj linii i wypełnienie nowych kształtów rodzaju `kind` (od 1.35.1 – osobno dla każdego kształtu; od 1.40 z kreskowaniem). */
 export function shapeToolStyle(tools, kind) {
   const own = tools.shapeStyles?.[kind] ?? {};
-  return { dash: own.dash ?? tools.shapeDash, fill: own.fill ?? tools.shapeFill };
+  return { dash: own.dash ?? tools.shapeDash, fill: own.fill ?? tools.shapeFill, hatch: cleanHatch(own.hatch) };
 }
 
 /** Ustawienia narzędzi z rodzajem linii (`key` 'dash') albo wypełnieniem ('fill') kształtu `kind` – tylko tego kształtu. */
@@ -454,9 +457,16 @@ function cleanShapeStyles(raw) {
     const style = {};
     if (SHAPE_DASHES.includes(own.dash)) style.dash = own.dash;
     if (SHAPE_FILLS.includes(own.fill)) style.fill = own.fill;
+    if (own.hatch && typeof own.hatch === 'object') style.hatch = cleanHatch(own.hatch);
     if (Object.keys(style).length > 0) styles[kind] = style;
   }
   return styles;
+}
+
+/** Narożniki nowego prostokąta (od 1.40): { kind, size } albo null – ostre. */
+function cleanToolCorner(raw) {
+  if (!raw || !CORNER_KINDS.includes(raw.kind) || !finite(raw.size) || raw.size <= 0) return null;
+  return { kind: raw.kind, size: clamp(Math.round(raw.size * 100) / 100, 0.5, 2000) };
 }
 
 /** Sprawdzone zakończenia { start, end } albo domyślne. */
@@ -559,7 +569,9 @@ export function cleanToolSettings(raw) {
     uiHidden: cleanUiHidden(raw.uiHidden),
     toolGroups: cleanToolGroups(raw.toolGroups),
     shapeStyles: cleanShapeStyles(raw.shapeStyles),
-    ringPositions: cleanRingPositions(raw.ringPositions)
+    ringPositions: cleanRingPositions(raw.ringPositions),
+    ngonSides: NGON_SIDES.includes(raw.ngonSides) ? raw.ngonSides : base.ngonSides,
+    rectCorner: cleanToolCorner(raw.rectCorner)
   };
 }
 
@@ -813,6 +825,62 @@ function elementCorners(element) {
   for (const point of capPoints(element)) corners.push([point.x, point.y]);
   return corners;
 }
+
+// ---------------------------------------------------------------- kolejność rysowania i pole (od 1.40)
+
+/** Kolejność rysowania zaznaczonych: na wierzch, wyżej, niżej, na spód. */
+export const ORDER_MOVES = Object.freeze(['front', 'up', 'down', 'back']);
+export const ORDER_LABELS = Object.freeze({ front: 'Na wierzch', up: 'Wyżej', down: 'Niżej', back: 'Na spód' });
+const boundsMeet = (a, b) => a.minX <= b.maxX && b.minX <= a.maxX && a.minY <= b.maxY && b.minY <= a.maxY;
+
+/**
+ * Kreski w nowej kolejności rysowania (później – wyżej): wybrane (`chosen` – zbiór) na wierzch albo
+ * na spód (ich kolejność między sobą zostaje); „wyżej” – każda wybrana tuż nad najbliższą wyżej
+ * niewybraną, którą zakrywa (granice się stykają), „niżej” – tuż pod najbliższą niżej. Bez zmian –
+ * ta sama tablica.
+ */
+export function reorderStrokes(strokes, chosen, move, boundsOf = strokeBounds) {
+  const picked = strokes.filter((stroke) => chosen.has(stroke));
+  if (picked.length === 0 || picked.length === strokes.length) return strokes;
+  let next;
+  if (move === 'front' || move === 'back') {
+    const rest = strokes.filter((stroke) => !chosen.has(stroke));
+    next = move === 'front' ? [...rest, ...picked] : [...picked, ...rest];
+  } else {
+    next = [...strokes];
+    const up = move === 'up';
+    // Najpierw te najdalej w kierunku ruchu – nie przeskakują siebie nawzajem.
+    for (const stroke of up ? [...picked].reverse() : picked) {
+      const from = next.indexOf(stroke);
+      const own = boundsOf(stroke);
+      let to = -1;
+      for (let index = from + (up ? 1 : -1); index >= 0 && index < next.length; index += up ? 1 : -1) {
+        if (chosen.has(next[index])) continue;
+        if (boundsMeet(own, boundsOf(next[index]))) {
+          to = index;
+          break;
+        }
+      }
+      if (to < 0) continue;
+      next.splice(from, 1);
+      next.splice(to, 0, stroke);
+    }
+  }
+  return next.every((stroke, index) => stroke === strokes[index]) ? strokes : next;
+}
+
+/**
+ * Pole i obwód zamkniętego kształtu (od 1.40) w jednostce liczb wymiarów rysunku (styl techniczny –
+ * jego jednostka, inaczej jednostka skali): { area: '12,5 cm²', perimeter: '14,3 cm' } albo null.
+ */
+export function shapeMeasureText(shape, scale, format = 'unit') {
+  const measure = shapeMeasure(shape);
+  if (!measure) return null;
+  const factor = toScaleLength(1, scale) * dimFactor(scale, format);
+  return { area: `${formatNumber(measure.area * factor * factor)} ${dimUnitLabel(scale, format)}²`, perimeter: lengthText(measure.perimeter, scale, format) };
+}
+/** Długość w jednostkach strony jako napis w jednostce liczb wymiarów rysunku („2,5 mm”). */
+export const lengthText = (units, scale, format = 'unit') => `${formatNumber(toScaleLength(units, scale) * dimFactor(scale, format))} ${dimUnitLabel(scale, format)}`;
 
 /** Granice kilku kresek (zaznaczenie) albo null. */
 export function selectionBounds(strokes) {

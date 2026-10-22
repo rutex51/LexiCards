@@ -105,7 +105,7 @@ test('warstwy 1.36: nasycenie koloru – szarość tej samej jasności, bez zmia
 });
 
 test('warstwy 1.36: zapis w rysunku (format 11) – warstwy, warstwa nowych elementów, sygnatury; kreski zachowują sygnatury przy przesuwaniu i gumce', () => {
-  assert.equal(DRAWING_VERSION, 12, 'od 1.38 (warstwy – od 11)');
+  assert.equal(DRAWING_VERSION, 13, 'od 1.40 (warstwy – od 11)');
   const empty = emptyDrawing();
   assert.equal('layers' in cleanDrawing(empty), false, 'rysunek bez zmian warstw – bez pola');
   const layers = updateLayer(addLayer(defaultLayers()), 6, { name: 'Konstrukcja', hidden: true });

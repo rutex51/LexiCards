@@ -3162,7 +3162,7 @@ const drawingDialog = (page) => page.locator('dialog[data-testid=drawing-dialog]
 // po dotknięciu kropki koloru. Pomocnicze funkcje dochodzą do przycisku tak, jak zrobiłby to użytkownik.
 const ITEM_GROUPS = {
   'drawing-tool-pen': 'write', 'drawing-tool-highlighter': 'write', 'drawing-tool-eraser': 'write',
-  'drawing-shape-xline': 'construct', 'drawing-shape-point': 'construct',
+  'drawing-shape-xline': 'construct', 'drawing-shape-point': 'construct', 'drawing-shape-ray': 'construct',
   'drawing-insert-text': 'text', 'drawing-insert-math': 'text', 'drawing-insert-table': 'text', 'drawing-insert-sticky': 'text',
   'drawing-symbol-gdt': 'symbols', 'drawing-symbol-datum': 'symbols', 'drawing-symbol-roughness': 'symbols',
   'drawing-measure-linear': 'dims', 'drawing-measure-angle': 'dims', 'drawing-measure-radius': 'dims', 'drawing-measure-diameter': 'dims'
@@ -4298,8 +4298,9 @@ test('rysunek 1.15: kształty – prostokąt przeciągnięciem, punkty konstrukc
   const panel = editor.locator('[data-testid=drawing-shape-panel]');
   await shapeTool(editor);
   await panel.waitFor();
-  // Od 1.32 rodzaje kształtów w górnym menu: 8 w „Kształtach” (od 1.27 ze strzałką po łuku, od 1.34 – 9, z łukiem), prosta i punkt – w „Konstrukcji”.
-  assert.equal(await editor.locator('[data-testid=drawing-tool-row] [data-testid^=drawing-shape-]').count(), 9);
+  // Od 1.32 rodzaje kształtów w górnym menu: 8 w „Kształtach” (od 1.27 ze strzałką po łuku, od 1.34 – 9, z łukiem, od 1.40 – 10,
+  // z wielokątem foremnym), prosta, półprosta i punkt – w „Konstrukcji”.
+  assert.equal(await editor.locator('[data-testid=drawing-tool-row] [data-testid^=drawing-shape-]').count(), 10);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-ksztalty-panel-ipad.png') });
   await press(editor, 'drawing-shape-rect');
   await waitUntil(() => panel.isHidden(), 'Panel kształtów zamknięty po wyborze');
@@ -10199,6 +10200,129 @@ test('rysunek 1.39 na telefonie: rząd 2 i 3 w osobnej pastylce pod menu, kółk
   const last = rects[1];
   assert.ok(last.x + last.w / 2 <= 1600.5 && last.y + last.h / 2 <= 1100.5, `przeciągnięty prostokąt na kartce (${JSON.stringify([last.x, last.y, last.w, last.h])})`);
   assert.equal(strokes.filter((stroke) => stroke.tool === 'pen').length, 1, 'tylko kreska, która weszła na kartkę');
+}, { device: PHONE });
+
+test('rysunek 1.40: wielokąt foremny (boki pod menu), prostokąt z zaokrągleniem R i kreskowaniem, półprosta, pole i obwód, kolejność rysowania; zapis (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Etap D</p>');
+  const { at } = await pageFrame(page);
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const measure = editor.locator('[data-testid=drawing-selection-measure]');
+  const drop = editor.locator('[data-testid=drawing-style-drop]');
+  const deselect = async () => {
+    await page.keyboard.press('Escape');
+    await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  };
+
+  // Prostokąt z zaokrągleniem: „Narożniki” pod menu – R, gotowa wielkość, wpisana (skala: kratka = 1 cm).
+  await pickGroup(editor, 'shapes');
+  await press(editor, 'drawing-shape-rect');
+  await editor.locator('[data-testid=drawing-style-corner]').click();
+  await drop.locator('[data-testid=drawing-corner-round]').click();
+  await drop.locator('[data-testid=drawing-corner-44]').click();
+  await waitUntil(async () => (await drop.locator('[data-testid=drawing-corner-size]').inputValue()) === '1', 'R = 1 cm');
+  await drop.locator('[data-testid=drawing-corner-size]').fill('0,5');
+  await drop.locator('[data-testid=drawing-corner-size]').press('Enter');
+  await waitUntil(async () => (await drop.locator('[data-testid=drawing-corner-22]').getAttribute('aria-checked')) === 'true', 'R = 0,5 cm – jak ½ kratki');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('lexicards-drawing-tools')).rectCorner.size), 22);
+  await editor.locator('[data-testid=drawing-style-corner]').click();
+  await drawStroke(page, segment(at(660, 300), at(1100, 520), 12), { type: 'mouse' });
+  await expectText(count, 'Prostokąt');
+  // Dokładnie 10 × 5 cm (pola wymiarów), R 0,5 cm: pole 50 − (4 − π)·0,25 ≈ 49,8 cm², obwód 30 − 4 + π ≈ 29,1 cm.
+  for (const [key, value] of [['width', '10'], ['height', '5']]) {
+    await editor.locator(`[data-testid=drawing-dim-${key}]`).fill(value);
+    await editor.locator(`[data-testid=drawing-dim-${key}]`).press('Enter');
+  }
+  await expectText(measure, 'pole 49,8 cm² · obwód 29,1 cm');
+  // Kreskowanie zaznaczonego: „Wypełnienie” → Kreskowanie, kąt 135°, krzyżowe.
+  await editor.locator('[data-testid=drawing-style-fill]').click();
+  await drop.locator('[data-testid=drawing-fill-default-hatch]').click();
+  await drop.locator('[data-testid=drawing-hatch-angle-135]').click();
+  await drop.locator('[data-testid=drawing-hatch-cross]').click();
+  await waitUntil(async () => (await drop.locator('[data-testid=drawing-hatch-cross]').getAttribute('aria-pressed')) === 'true', 'Krzyżowe');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-140-kreskowanie-wybor.png') });
+  await editor.locator('[data-testid=drawing-style-fill]').click();
+  await deselect();
+
+  // Wielokąt foremny: pięć boków, od środka do wierzchołka – nad prostokątem.
+  await press(editor, 'drawing-shape-ngon');
+  await editor.locator('[data-testid=drawing-style-sides]').click();
+  await expectText(editor.locator('[data-testid=drawing-style-sides]'), '6 boków');
+  await drop.locator('[data-testid=drawing-sides-5]').click();
+  await expectText(editor.locator('[data-testid=drawing-style-sides]'), '5 boków');
+  await editor.locator('[data-testid=drawing-style-sides]').click();
+  await drawStroke(page, segment(at(1100, 520), at(1100, 360), 12), { type: 'mouse' });
+  await expectText(count, 'Wielokąt foremny');
+  assert.match(await measure.textContent(), /^pole [\d,]+ cm² · obwód [\d,]+ cm$/);
+
+  // Kolejność: wielokąt na spód (pod prostokąt); drugi raz – bez zmian (komunikat).
+  await editor.locator('[data-testid=drawing-selection-order]').click();
+  await page.locator('[data-testid=drawing-order-back]').waitFor();
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-140-kolejnosc-menu.png') });
+  await page.locator('[data-testid=drawing-order-back]').click();
+  await expectText(count, 'Wielokąt foremny');
+  await editor.locator('[data-testid=drawing-selection-order]').click();
+  await page.locator('[data-testid=drawing-order-back]').click();
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Zaznaczenie jest już pod tym, co je zakrywa');
+  await deselect();
+
+  // Półprosta w „Konstrukcji”: od początku przez drugi punkt; bez pola.
+  await press(editor, 'drawing-shape-ray');
+  await drawStroke(page, segment(at(200, 900), at(500, 800), 12), { type: 'mouse' });
+  await expectText(count, 'Półprosta');
+  assert.equal(await measure.isVisible(), false, 'półprosta bez pola i obwodu');
+  await deselect();
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-140-ksztalty.png') });
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const strokes = await savedStrokes(page, ids.statements);
+  assert.deepEqual(strokes.map((stroke) => stroke.shape), ['ngon', 'rect', 'ray'], 'wielokąt pod prostokątem');
+  const [ngon, rect, ray] = strokes;
+  assert.equal(ngon.sides, 5);
+  assert.deepEqual(rect.corner, { kind: 'round', size: 22 });
+  assert.deepEqual([rect.fill, rect.hatch], ['hatch', { angle: 135, gap: 11, cross: true }]);
+  assert.ok(Math.abs(ray.x - 350) < 3 && Math.abs(ray.y - 850) < 3, `półprosta przez oba punkty (dokładność – piksel ekranu) (${ray.x}, ${ray.y})`);
+}, { device: DESKTOP });
+
+test('rysunek 1.40 na telefonie: narożniki i kreskowanie pod menu mieszczą się bez przewijania w bok; pole i obwód w osobnym wierszu', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const { at } = await pageFrame(page);
+  const drop = editor.locator('[data-testid=drawing-style-drop]');
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  await drawStroke(page, segment(at(400, 300), at(1000, 700), 12), { type: 'mouse' });
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Prostokąt');
+  const measure = editor.locator('[data-testid=drawing-selection-measure]');
+  await expectText(measure, 'pole');
+  const [label, bar] = [await measure.boundingBox(), await editor.locator('.drawing__selection').boundingBox()];
+  assert.ok(label.width > bar.width * 0.5, 'pole i obwód – cały wiersz paska');
+  const fits = () => drop.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const inside = [...element.querySelectorAll('button, input')].every((item) => {
+      const part = item.getBoundingClientRect();
+      return part.left >= box.left - 1 && part.right <= box.right + 1 && item.scrollWidth <= item.clientWidth + 1;
+    });
+    return box.left >= 0 && box.right <= window.innerWidth && element.scrollWidth <= element.clientWidth + 1 && inside;
+  });
+  await editor.locator('[data-testid=drawing-style-corner]').click();
+  await drop.locator('[data-testid=drawing-corner-chamfer]').click();
+  await drop.locator('[data-testid=drawing-corner-size]').waitFor();
+  assert.ok(await fits(), 'narożniki – w całości');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-140-narozniki-telefon.png') });
+  await editor.locator('[data-testid=drawing-style-fill]').click();
+  await drop.locator('[data-testid=drawing-fill-default-hatch]').click();
+  await drop.locator('[data-testid=drawing-hatch-gap-6]').waitFor();
+  assert.ok(await fits(), 'kreskowanie – w całości');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-140-kreskowanie-telefon.png') });
 }, { device: PHONE });
 
 // ---------------------------------------------------------------- nauka z fiszkami

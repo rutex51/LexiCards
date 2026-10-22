@@ -1680,6 +1680,43 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   z dołu do góry), `data-face`, `data-turn`. Formularz Nauka (`study-setup.js`): grupa `study-flips`, wybory
   `study-face-<n>`.
 
+## Etap D: wielokąt foremny, półprosta, narożniki, kreskowanie, pole, kolejność (od 1.40)
+
+- **Wielokąt foremny** (`js/core/shapes.js`): kształt `'ngon'` z `sides` (`NGON_SIDES` 3–12, `NGON_DEFAULT` 6).
+  `unitNgon(n)` – wierzchołki na okręgu o promieniu 1 z podstawą u dołu i ich ramka; `ngonNodes` – wierzchołki
+  w układzie własnym (u, v), więc ramka, obrót, pochylenie i uchwyty działają jak przy prostokącie. `ngonFrom` –
+  od środka do wierzchołka: obrót o najmniejszy kąt, przy którym wierzchołek trafia w koniec przeciągnięcia
+  (`snapAngle` – 3° do pełnych 15°, z Shift co 15°). `withNgonSides` – inna liczba boków przy tym samym środku
+  okręgu opisanego i promieniu. Narożnik ramki zachowuje proporcje (jak z Shift).
+- **Półprosta**: `'ray'` – odcinek (`isSegment`), `isXline` obejmuje prostą i półprostą; obrys od pierwszego punktu
+  do `XLINE_REACH` za drugim; bez zakończeń, wymiar – kąt.
+- **Narożniki prostokąta**: `corner: { kind: 'round' | 'chamfer', size }` (`CORNER_KINDS`, `cleanCorner`,
+  `withCorner`, `cornerSize` – najwyżej połowa krótszego boku). `polygonOf` → `cornerPolygon` (faza – 8 wierzchołków,
+  zaokrąglenie – łuki po `CORNER_STEPS` odcinków: zaznaczanie, przyciąganie, kreskowanie); rysowanie –
+  `roundedRectPath` (łuki `arcBeziers` w układzie bez pochylenia, przez `shapePoint`, boki jako proste krzywe).
+- **Kreskowanie**: `fill: 'hatch'` z `hatch: { angle, gap, cross }` (`cleanHatch`, `HATCH_DEFAULT` 45°, co ¼ kratki;
+  `HATCH_ANGLES`, `HATCH_GAPS`). `hatchLines(punkty, kąt, odstęp)` – linie p·n = k·odstęp (zaczepione w (0, 0)
+  strony), przecięcia z bokami (reguła parzystości), bez linii przy samym brzegu; `shapeHatch(kształt)` – z obrysu,
+  krzyżowe – też pod kątem +90°. `withShapeFill` ustawia wypełnienie i kreskowanie. Malowanie (`js/ui/drawing-paint.js`)
+  – odcinki grubości `hatchWidth` pod obrysem. Obrót (`js/core/transform.js` – `turnHatch`) obraca kąt kreskowania,
+  odbicie – 180° − kąt.
+- **Pole i obwód**: `shapeMeasure(kształt)` – `{ area, perimeter }` w jednostkach strony dla kształtów z wypełnieniem
+  (`canFill`); elipsa – z wartości osobliwych macierzy kształtu (pole π·a·b, obwód Ramanujana), zaokrąglony prostokąt –
+  wzorem (pochylony – obwód z gęstego obrysu), reszta – z wierzchołków (`polygonArea`, `ringLength`).
+  `shapeMeasureText` (`js/core/drawing.js`) – napisy w jednostce liczb wymiarów (`dimFactor`, `dimUnitLabel`);
+  w edytorze `drawing-selection-measure` przy nazwie zaznaczonego.
+- **Kolejność rysowania**: `reorderStrokes(kreski, wybrane, ruch, granice)` (`ORDER_MOVES`: front, up, down, back) –
+  na wierzch i na spód z zachowaniem kolejności wybranych; wyżej / niżej – każdy wybrany tuż nad (pod) najbliższy
+  niewybrany, którego granice się stykają z jego granicami; bez zmiany – ta sama tablica (komunikat). Edytor:
+  `drawing-selection-order` → menu `drawing-order-<ruch>`, jeden krok cofania.
+- **Ustawienia narzędzi**: `ngonSides`, `rectCorner` (`cleanToolCorner`), w `shapeStyles[rodzaj].hatch` – kreskowanie
+  nowych kształtów (`shapeToolStyle` zwraca też `hatch`). Trzecie menu: `drawing-style-sides` (`drawing-sides-<n>`),
+  `drawing-style-corner` (`drawing-corner-<rodzaj>`, `drawing-corner-<wielkość>`, pole `drawing-corner-size`),
+  w wyborze wypełnienia `drawing-fill-default-hatch` i `drawing-hatch-angle-<kąt>`, `drawing-hatch-gap-<odstęp>`,
+  `drawing-hatch-cross`.
+- **DXF** (`js/core/dxf.js`): półprosta – LINE od początku przez kartkę; kreskowanie – LINE (linia ciągła);
+  zaokrąglony prostokąt bez pochylenia – POLYLINE z `42` (bulge −tan 22,5° na każdym łuku); wczytany RAY – `'ray'`.
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).
@@ -1763,7 +1800,8 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   oznaczenie „Wymiary w …”, tolerancje w mm i przeliczenie starszych rysunków, odchyłki w ramce
   tolerancji, tabela pasowań i ostatnio użyte; od 1.36 warstwy i sygnatury; od 1.37 pliki DXF – czytanie,
   zamiana na elementy, zapis i odczyt z powrotem, strony kodowe; od 1.38 wymiary graniczne, rodzaj wymiaru, ramka
-  złożona, chropowatość z kierunkiem struktury, odnośnik; od 1.39 kółko przesuwane i obroty fiszki),
+  złożona, chropowatość z kierunkiem struktury, odnośnik; od 1.39 kółko przesuwane i obroty fiszki; od 1.40 wielokąt
+  foremny, półprosta, narożniki, kreskowanie, pole i obwód, kolejność rysowania, DXF z łukami i kreskowaniem),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

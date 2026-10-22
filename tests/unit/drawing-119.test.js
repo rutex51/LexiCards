@@ -211,7 +211,7 @@ test('szyk: parametry w granicach (najwyżej 400 kopii), bez szyku w szyku, dane
     ]
   };
   const cleaned = cleanDrawing(JSON.parse(JSON.stringify(drawing)));
-  assert.equal(DRAWING_VERSION, 12, 'od 1.38 – wymiary graniczne, rodzaj wymiaru, ramka z drugim wierszem, odnośnik (1.36 – warstwy i sygnatury elementów, 1.25 – jednostka liczb wymiarów, tolerancje w mm, odchyłki w ramce, 1.24 – łamana i wielokąt, 1.22.1 – wymiary techniczne i symbole, 1.22 – przyklejone końce, 1.21 – tabele i karteczki)');
+  assert.equal(DRAWING_VERSION, 13, 'od 1.40 – wielokąt foremny, półprosta, narożniki, kreskowanie (1.38 – wymiary graniczne, rodzaj wymiaru, ramka z drugim wierszem, odnośnik (1.36 – warstwy i sygnatury elementów, 1.25 – jednostka liczb wymiarów, tolerancje w mm, odchyłki w ramce, 1.24 – łamana i wielokąt, 1.22.1 – wymiary techniczne i symbole, 1.22 – przyklejone końce, 1.21 – tabele i karteczki)');
   assert.equal(cleaned.version, DRAWING_VERSION);
   assert.equal(cleaned.strokes.length, 2, 'pusty szyk pominięty');
   assert.deepEqual(cleaned.strokes[0].items, [pen], 'zła kreska i szyk w szyku pominięte');

@@ -24,11 +24,12 @@ export const DIM_ITEMS = Object.freeze(['dim:linear', 'dim:angle', 'dim:radius',
 export const TOOL_GROUPS = Object.freeze([
   { id: 'write', label: 'Pisanie', icon: 'pen', items: ['pen', 'highlighter', 'eraser'] },
   {
-    // Od 1.34 także łuk przez trzy punkty.
+    // Od 1.34 także łuk przez trzy punkty, od 1.40 wielokąt foremny.
     id: 'shapes', label: 'Kształty', icon: 'shapeRect',
-    items: ['shape:line', 'shape:arrow', 'shape:rect', 'shape:ellipse', 'shape:arc', 'shape:triangle', 'shape:diamond', 'shape:trapezoid', 'shape:curve']
+    items: ['shape:line', 'shape:arrow', 'shape:rect', 'shape:ngon', 'shape:ellipse', 'shape:arc', 'shape:triangle', 'shape:diamond', 'shape:trapezoid', 'shape:curve']
   },
-  { id: 'construct', label: 'Konstrukcja', icon: 'shapeXline', items: ['shape:xline', 'shape:point'] },
+  // Od 1.40 także półprosta.
+  { id: 'construct', label: 'Konstrukcja', icon: 'shapeXline', items: ['shape:xline', 'shape:ray', 'shape:point'] },
   { id: 'text', label: 'Tekst i wzory', icon: 'textBox', items: ['text', 'math', 'table', 'sticky'] },
   // Od 1.34: narzędzie „Wymiar”; od 1.36 jego rodzaje – osobne pozycje (długość, kąt, promień, średnica).
   { id: 'dims', label: 'Wymiary', icon: 'dimension', items: DIM_ITEMS },

@@ -90,7 +90,13 @@ export function rotateStroke(stroke, cx, cy, angle) {
     return { ...stroke, items, cx: round(center.x), cy: round(center.y) };
   }
   if (isUpright(stroke)) return placeUpright(stroke, spin);
-  return rotateItem(stroke, cx, cy, angle);
+  return turnHatch(rotateItem(stroke, cx, cy, angle), (-angle * 180) / Math.PI);
+}
+
+/** Kreskowanie obrócone razem z kształtem (od 1.40): kąt linii + `degrees` (jak na linijce). */
+function turnHatch(shape, degrees) {
+  if (!shape.hatch) return shape;
+  return { ...shape, hatch: { ...shape.hatch, angle: ((Math.round(shape.hatch.angle + degrees) % 180) + 180) % 180 } };
 }
 
 /** Kształt odbity: `flip` – odbicie punktu strony, horizontal – lewa strona z prawą. */
@@ -106,6 +112,8 @@ function mirrorShape(shape, horizontal, flip) {
   next.angle = normalAngle(horizontal ? -shape.angle : Math.PI - shape.angle);
   if (shape.skew) next.skew = -shape.skew;
   if (shape.shape === 'triangle') next.adjust = round(1 - (shape.adjust ?? 0.5), 4);
+  // Kreskowanie (od 1.40) – linie odbite: kąt a → 180° − a.
+  if (shape.hatch) next.hatch = { ...shape.hatch, angle: (180 - shape.hatch.angle) % 180 };
   if (Array.isArray(shape.nodes)) next.nodes = shape.nodes.map((value, index) => (index % 2 === 0 && value !== 0 ? -value : value));
   return next;
 }

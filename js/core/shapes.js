@@ -34,11 +34,19 @@
 //   wymiar 'length'): mode 'linear' (linia wymiarowa z liniami pomocniczymi, odsunięcie ze znakiem –
 //   strona), 'diameter' (linia przez środek okręgu, ⌀), 'radius' (od środka do okręgu, R);
 //   'angledim' – wymiar kąta: nodes – wierzchołek i po punkcie na każdym ramieniu.
+//   Od 1.40: 'ngon' – wielokąt foremny o sides bokach (NGON_SIDES) wpisany w ramkę (przy proporcjach
+//   ramki jak u foremnego – foremny, podstawa u dołu); 'ray' – półprosta od pierwszego punktu przez
+//   drugi (jak prosta, ale w jedną stronę); prostokąt z corner { kind: 'round' | 'chamfer', size } –
+//   zaokrąglone albo ścięte narożniki (size – promień albo długość fazy w jednostkach strony, najwyżej
+//   połowa krótszego boku); fill 'hatch' – kreskowanie hatch { angle – stopnie (45 – „/”, liczone jak
+//   na linijce), gap – odstęp linii (jednostki strony), cross – krzyżowe }, linie zaczepione w (0, 0)
+//   strony, więc sąsiednie kształty mają ciągłe kreskowanie.
 
-export const SHAPES = Object.freeze(['line', 'arrow', 'rect', 'ellipse', 'triangle', 'diamond', 'trapezoid', 'xline', 'curve', 'point', 'arc', 'dim']);
+export const SHAPES = Object.freeze(['line', 'arrow', 'rect', 'ellipse', 'triangle', 'diamond', 'trapezoid', 'xline', 'curve', 'point', 'arc', 'dim', 'ngon', 'ray']);
 export const SHAPE_LABELS = Object.freeze({
   line: 'Odcinek', arrow: 'Strzałka', rect: 'Prostokąt', ellipse: 'Elipsa', triangle: 'Trójkąt', diamond: 'Romb', trapezoid: 'Trapez',
-  xline: 'Prosta', curve: 'Strzałka po łuku', point: 'Punkt', polyline: 'Łamana', polygon: 'Wielokąt', arc: 'Łuk', dim: 'Wymiar', angledim: 'Wymiar kąta'
+  xline: 'Prosta', curve: 'Strzałka po łuku', point: 'Punkt', polyline: 'Łamana', polygon: 'Wielokąt', arc: 'Łuk', dim: 'Wymiar', angledim: 'Wymiar kąta',
+  ngon: 'Wielokąt foremny', ray: 'Półprosta'
 });
 /** Kształty z wierzchołkami (od 1.24) – tylko z rozpoznania odręcznego kształtu, nie z panelu kształtów. */
 export const POLY_SHAPES = Object.freeze(['polyline', 'polygon']);
@@ -46,9 +54,10 @@ export const POLY_SHAPES = Object.freeze(['polyline', 'polygon']);
 export const isPoly = (shape) => ['polyline', 'polygon', 'curve', 'arc', 'angledim'].includes(shape.shape);
 /** Najwięcej wierzchołków łamanej i wielokąta. */
 export const POLY_NODES_MAX = 24;
-/** Kształty z dwoma końcami (bez wysokości); od 1.27 także prosta, od 1.34 wymiar (mierzone punkty). */
-export const isSegment = (shape) => shape.shape === 'line' || shape.shape === 'arrow' || shape.shape === 'xline' || shape.shape === 'dim';
-export const isXline = (shape) => shape.shape === 'xline';
+/** Kształty z dwoma końcami (bez wysokości); od 1.27 także prosta, od 1.34 wymiar (mierzone punkty), od 1.40 półprosta. */
+export const isSegment = (shape) => ['line', 'arrow', 'xline', 'dim', 'ray'].includes(shape.shape);
+/** Prosta albo (od 1.40) półprosta – linia biegnąca poza swoje punkty. */
+export const isXline = (shape) => shape.shape === 'xline' || shape.shape === 'ray';
 export const isCurve = (shape) => shape.shape === 'curve';
 export const isPointShape = (shape) => shape.shape === 'point';
 export const isArc = (shape) => shape.shape === 'arc';
@@ -70,8 +79,8 @@ export const MIN_SHAPE = 4;
 const LOCK_STEP = Math.PI / 12;
 const DEFAULT_ADJUST = { triangle: 0.5, trapezoid: 0.25 };
 /** Wypełnienie kształtu (od 1.17): brak, jasne (kolor kształtu, przejrzysty) albo pełne. */
-export const SHAPE_FILLS = Object.freeze(['none', 'light', 'solid']);
-export const SHAPE_FILL_LABELS = Object.freeze({ none: 'Brak', light: 'Jasne', solid: 'Pełne' });
+export const SHAPE_FILLS = Object.freeze(['none', 'light', 'solid', 'hatch']);
+export const SHAPE_FILL_LABELS = Object.freeze({ none: 'Brak', light: 'Jasne', solid: 'Pełne', hatch: 'Kreskowanie' });
 export const FILL_ALPHA = Object.freeze({ light: 0.22, solid: 1 });
 export const canFill = (shape) => !isSegment(shape) && !['polyline', 'curve', 'point', 'arc', 'angledim'].includes(shape.shape);
 
@@ -384,7 +393,8 @@ export function toShapeFrame(shape, x, y) {
 /** Wierzchołki wielokąta kształtu w układzie własnym (u, v). */
 function polygonOf(shape) {
   switch (shape.shape) {
-    case 'rect': return [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
+    case 'rect': return shape.corner ? cornerPolygon(shape) : [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
+    case 'ngon': return ngonNodes(ngonSides(shape));
     case 'diamond': return [[0, -0.5], [0.5, 0], [0, 0.5], [-0.5, 0]];
     case 'triangle': return [[shape.adjust - 0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
     case 'trapezoid': return [[-0.5 + shape.adjust, -0.5], [0.5 - shape.adjust, -0.5], [0.5, 0.5], [-0.5, 0.5]];
@@ -397,6 +407,240 @@ function polygonOf(shape) {
 /** Wierzchołki łamanej albo wielokąta: [[u, v], …]. */
 const nodePairs = (shape) => Array.from({ length: shape.nodes.length / 2 }, (_, index) => [shape.nodes[index * 2], shape.nodes[index * 2 + 1]]);
 
+// ---------------------------------------------------------------- wielokąt foremny, narożniki, kreskowanie, pole (od 1.40)
+
+/** Liczby boków wielokąta foremnego do wyboru i domyślna (sześciokąt – łeb śruby, nakrętka). */
+export const NGON_SIDES = Object.freeze([3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+export const NGON_DEFAULT = 6;
+export const ngonSides = (shape) => (NGON_SIDES.includes(shape?.sides) ? shape.sides : NGON_DEFAULT);
+const ngonCache = new Map();
+/** Foremny `sides`-kąt na okręgu o promieniu 1 (środek 0, 0; oś y w dół; podstawa pozioma u dołu): wierzchołki z kątami i ramka. */
+function unitNgon(sides) {
+  if (!ngonCache.has(sides)) {
+    const points = Array.from({ length: sides }, (_, index) => {
+      const angle = Math.PI / 2 + Math.PI / sides + (index * 2 * Math.PI) / sides;
+      return { x: Math.cos(angle), y: Math.sin(angle), angle };
+    });
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    ngonCache.set(sides, { points, w: maxX - minX, h: maxY - minY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 });
+  }
+  return ngonCache.get(sides);
+}
+/** Wierzchołki wielokąta foremnego w układzie własnym (u, v) – wypełniają ramkę. */
+function ngonNodes(sides) {
+  const unit = unitNgon(sides);
+  return unit.points.map((point) => [(point.x - unit.cx) / unit.w, (point.y - unit.cy) / unit.h]);
+}
+const wrapAngle = (angle) => Math.atan2(Math.sin(angle), Math.cos(angle));
+
+/**
+ * Wielokąt foremny z przeciągnięcia od środka (`from`) do wierzchołka (`to`): obrócony o najmniejszy
+ * kąt, przy którym wierzchołek jest w końcu przeciągnięcia (prosto – przyciągany do 3°, z Shift co 15°);
+ * dotknięcie – wielokąt domyślnej wielkości z podstawą u dołu.
+ */
+function ngonFrom(base, from, to, rawSides, { defaultSize, tap, lock }) {
+  const sides = NGON_SIDES.includes(rawSides) ? rawSides : NGON_DEFAULT;
+  const unit = unitNgon(sides);
+  const length = Math.hypot(to.x - from.x, to.y - from.y);
+  const radius = length < tap ? defaultSize / 2 : length;
+  let angle = 0;
+  if (length >= tap) {
+    const toward = Math.atan2(to.y - from.y, to.x - from.x);
+    const turns = unit.points.map((point) => wrapAngle(toward - point.angle));
+    const least = turns.reduce((best, value) => (Math.abs(value) < Math.abs(best) ? value : best));
+    angle = (lock ? snapAngle(least, LOCK_STEP, LOCK_STEP) : snapAngle(least, LOCK_STEP, (3 * Math.PI) / 180)) + 0;
+  }
+  const [cos, sin] = [Math.cos(angle), Math.sin(angle)];
+  const [ox, oy] = [unit.cx * radius, unit.cy * radius];
+  return {
+    ...base, sides, angle,
+    x: round(from.x + ox * cos - oy * sin), y: round(from.y + ox * sin + oy * cos),
+    w: round(Math.max(MIN_SHAPE, unit.w * radius)), h: round(Math.max(MIN_SHAPE, unit.h * radius))
+  };
+}
+
+/** Wielokąt foremny o innej liczbie boków – ten sam środek okręgu opisanego i promień (rozciągnięty – w obu kierunkach). */
+export function withNgonSides(shape, sides) {
+  if (shape.shape !== 'ngon' || !NGON_SIDES.includes(sides) || sides === ngonSides(shape)) return shape;
+  const [before, after] = [unitNgon(ngonSides(shape)), unitNgon(sides)];
+  const [rx, ry] = [shape.w / before.w, shape.h / before.h];
+  const center = shapePoint(shape, -before.cx / before.w, -before.cy / before.h);
+  const next = { ...shape, sides, w: round(Math.max(MIN_SHAPE, after.w * rx)), h: round(Math.max(MIN_SHAPE, after.h * ry)), x: 0, y: 0 };
+  const offset = shapePoint(next, -after.cx / after.w, -after.cy / after.h);
+  return { ...next, x: round(center.x - offset.x), y: round(center.y - offset.y) };
+}
+
+/** Narożniki prostokąta (od 1.40): zaokrąglenie promieniem albo faza (ścięcie pod 45° przy równych bokach). */
+export const CORNER_KINDS = Object.freeze(['round', 'chamfer']);
+export const CORNER_LABELS = Object.freeze({ round: 'Zaokrąglenie R', chamfer: 'Faza' });
+/** Odcinki łuku narożnika w obrysie (zaznaczanie, przyciąganie, kreskowanie); rysowany jest dokładnie. */
+const CORNER_STEPS = 8;
+/** Promień zaokrąglenia albo długość fazy – najwyżej połowa krótszego boku. */
+export const cornerSize = (shape) => (shape.corner ? Math.max(0, Math.min(shape.corner.size, shape.w / 2, shape.h / 2)) : 0);
+/** Wierzchołki prostokąta z narożnikami w układzie własnym (u, v): faza – 8, zaokrąglenie – łuki po `steps` odcinków. */
+function cornerPolygon(shape, steps = CORNER_STEPS) {
+  const size = cornerSize(shape);
+  const [ru, rv] = [size / shape.w, size / shape.h];
+  if (shape.corner.kind === 'chamfer') {
+    return [[-0.5 + ru, -0.5], [0.5 - ru, -0.5], [0.5, -0.5 + rv], [0.5, 0.5 - rv], [0.5 - ru, 0.5], [-0.5 + ru, 0.5], [-0.5, 0.5 - rv], [-0.5, -0.5 + rv]];
+  }
+  const out = [];
+  const corners = [[-0.5 + ru, -0.5 + rv, Math.PI], [0.5 - ru, -0.5 + rv, Math.PI * 1.5], [0.5 - ru, 0.5 - rv, 0], [-0.5 + ru, 0.5 - rv, Math.PI / 2]];
+  for (const [cu, cv, start] of corners) {
+    for (let step = 0; step <= steps; step += 1) {
+      const angle = start + (step / steps) * (Math.PI / 2);
+      out.push([cu + Math.cos(angle) * ru, cv + Math.sin(angle) * rv]);
+    }
+  }
+  return out;
+}
+/** Ścieżka prostokąta z zaokrąglonymi narożnikami: łuki krzywymi Béziera, boki – krzywe proste (przekształcenie kształtu je zachowuje). */
+function roundedRectPath(shape) {
+  const r = cornerSize(shape);
+  const [hw, hh] = [shape.w / 2, shape.h / 2];
+  const at = (lx, ly) => shapePoint(shape, lx / shape.w, ly / shape.h);
+  const straight = (a, b) => [lerp(a, b, 1 / 3), lerp(a, b, 2 / 3), b];
+  const start = at(-hw + r, -hh);
+  const curves = [];
+  let last = start;
+  for (const [cx, cy, from] of [[hw - r, -hh + r, -Math.PI / 2], [hw - r, hh - r, 0], [-hw + r, hh - r, Math.PI / 2], [-hw + r, -hh + r, Math.PI]]) {
+    const begin = at(cx + Math.cos(from) * r, cy + Math.sin(from) * r);
+    if (Math.hypot(begin.x - last.x, begin.y - last.y) > 1e-6) curves.push(straight(last, begin));
+    for (const curve of arcBeziers({ x: cx, y: cy }, r, from, Math.PI / 2)) curves.push(curve.map((point) => at(point.x, point.y)));
+    last = curves[curves.length - 1][2];
+  }
+  if (Math.hypot(start.x - last.x, start.y - last.y) > 1e-6) curves.push(straight(last, start));
+  return { start, curves, closed: true, caps: [] };
+}
+/** Sprawdzone narożniki { kind, size } albo null. */
+function cleanCorner(raw, limit) {
+  if (!raw || !CORNER_KINDS.includes(raw.kind) || !finite(raw.size) || raw.size <= 0) return null;
+  return { kind: raw.kind, size: clamp(round(raw.size), 0.5, limit) };
+}
+/** Prostokąt z narożnikami `corner` (null – ostre) – nowy obiekt. */
+export function withCorner(shape, corner) {
+  const next = { ...shape };
+  delete next.corner;
+  if (shape.shape === 'rect' && corner && CORNER_KINDS.includes(corner.kind) && corner.size > 0) next.corner = { kind: corner.kind, size: round(corner.size) };
+  return next;
+}
+
+/** Wypełnienia rysowane wewnątrz kształtu. */
+const FILLED = ['light', 'solid', 'hatch'];
+/** Kreskowanie domyślne: pod 45° („/”) co ¼ kratki; do wyboru kąty i odstępy (gęste, średnie, rzadkie). */
+export const HATCH_DEFAULT = Object.freeze({ angle: 45, gap: 11, cross: false });
+export const HATCH_ANGLES = Object.freeze([45, 135, 0, 90]);
+export const HATCH_GAPS = Object.freeze([6, 11, 22]);
+export const HATCH_GAP_LABELS = Object.freeze({ 6: 'Gęste', 11: 'Średnie', 22: 'Rzadkie' });
+const HATCH_GAP_LIMITS = { min: 3, max: 120 };
+/** Sprawdzone kreskowanie { angle (0–179°), gap, cross }. */
+export function cleanHatch(raw) {
+  const angle = finite(raw?.angle) ? ((Math.round(raw.angle) % 180) + 180) % 180 : HATCH_DEFAULT.angle;
+  const gap = finite(raw?.gap) ? clamp(Math.round(raw.gap * 10) / 10, HATCH_GAP_LIMITS.min, HATCH_GAP_LIMITS.max) : HATCH_DEFAULT.gap;
+  return { angle, gap, cross: raw?.cross === true };
+}
+/** Kształt z wypełnieniem `fill` ('none' – bez); kreskowanie – z ustawieniami `hatch`. */
+export function withShapeFill(shape, fill, hatch = null) {
+  const next = { ...shape };
+  delete next.fill;
+  delete next.hatch;
+  if (!FILLED.includes(fill) || !canFill(shape)) return next;
+  next.fill = fill;
+  if (fill === 'hatch') next.hatch = cleanHatch(hatch ?? shape.hatch);
+  return next;
+}
+
+/**
+ * Odcinki kreskowania wielokąta `points` ([{ x, y }, …], reguła parzystości): linie pod kątem `angle`
+ * (stopnie jak na linijce) co `gap`, zaczepione w (0, 0) strony; [[a, b], …]. Linia na samym brzegu
+ * (bliżej niż pół jednostki) – pominięta (pokrywałaby się z obrysem).
+ */
+export function hatchLines(points, angle, gap) {
+  if (points.length < 3 || !(gap > 0)) return [];
+  const radians = (angle * Math.PI) / 180;
+  // Kierunek linii (oś y strony w dół) i normalna: linie to p·n = k·gap.
+  const [dx, dy] = [Math.cos(radians), -Math.sin(radians)];
+  const [nx, ny] = [-dy, dx];
+  const local = points.map((point) => ({ s: point.x * dx + point.y * dy, t: point.x * nx + point.y * ny }));
+  const ts = local.map((point) => point.t);
+  const [low, high] = [Math.min(...ts), Math.max(...ts)];
+  const out = [];
+  for (let k = Math.ceil((low + 0.5) / gap); k * gap < high - 0.5; k += 1) {
+    const t = k * gap;
+    const cuts = [];
+    for (let index = 0; index < local.length; index += 1) {
+      const [a, b] = [local[index], local[(index + 1) % local.length]];
+      if ((a.t <= t && b.t > t) || (b.t <= t && a.t > t)) cuts.push(a.s + ((t - a.t) / (b.t - a.t)) * (b.s - a.s));
+    }
+    cuts.sort((m, n) => m - n);
+    for (let index = 0; index + 1 < cuts.length; index += 2) {
+      if (cuts[index + 1] - cuts[index] < 1e-6) continue;
+      const at = (s) => ({ x: s * dx + t * nx, y: s * dy + t * ny });
+      out.push([at(cuts[index]), at(cuts[index + 1])]);
+    }
+  }
+  return out;
+}
+
+/** Grubość linii kreskowania – połowa linii kształtu, co najmniej 0,75. */
+export const hatchWidth = (shape) => Math.max(0.75, shape.size / 2);
+/** Odcinki kreskowania kształtu (pusto bez kreskowania); krzyżowe – także linie prostopadłe. */
+export function shapeHatch(shape) {
+  if (shape.fill !== 'hatch' || !canFill(shape)) return [];
+  const hatch = cleanHatch(shape.hatch);
+  const { points } = shapeOutline(shape);
+  const list = [];
+  for (let index = 0; index + 1 < points.length; index += 2) list.push({ x: points[index], y: points[index + 1] });
+  const lines = hatchLines(list, hatch.angle, hatch.gap);
+  return hatch.cross ? [...lines, ...hatchLines(list, hatch.angle + 90, hatch.gap)] : lines;
+}
+
+/** Pole wielokąta [{ x, y }, …] (wartość bezwzględna) i długość jego obwodu. */
+export function polygonArea(points) {
+  let sum = 0;
+  points.forEach((a, index) => {
+    const b = points[(index + 1) % points.length];
+    sum += a.x * b.y - b.x * a.y;
+  });
+  return Math.abs(sum) / 2;
+}
+export function ringLength(points) {
+  return points.reduce((sum, a, index) => {
+    const b = points[(index + 1) % points.length];
+    return sum + Math.hypot(b.x - a.x, b.y - a.y);
+  }, 0);
+}
+
+/**
+ * Pole i obwód zamkniętego kształtu (od 1.40) w jednostkach strony { area, perimeter } albo null
+ * (odcinek, łamana, łuk, punkt, wymiar). Elipsa – dokładnie (obwód wzorem Ramanujana), prostokąt
+ * z zaokrągleniami – z łuków, reszta – z wierzchołków.
+ */
+export function shapeMeasure(shape) {
+  if (shape?.tool !== 'shape' || !canFill(shape)) return null;
+  if (shape.shape === 'ellipse') {
+    // Elipsa to obraz okręgu o promieniu ½ przez macierz [[w, −skew·h], [0, h]]: półosie – połowy jej wartości osobliwych.
+    const det = shape.w * shape.h;
+    const sum = shape.w ** 2 + (shape.skew * shape.h) ** 2 + shape.h ** 2;
+    const root = Math.sqrt(Math.max(0, sum * sum - 4 * det * det));
+    const [a, b] = [Math.sqrt((sum + root) / 2) / 2, Math.sqrt(Math.max(0, (sum - root) / 2)) / 2];
+    return { area: Math.PI * a * b, perimeter: Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b))) };
+  }
+  if (shape.shape === 'rect' && shape.corner?.kind === 'round' && cornerSize(shape) > 0) {
+    const r = cornerSize(shape);
+    // Pochylenie nie zmienia pola; obwód pochylonego – z gęstego obrysu.
+    const area = shape.w * shape.h - (4 - Math.PI) * r * r;
+    if (!shape.skew) return { area, perimeter: 2 * (shape.w + shape.h) - 8 * r + 2 * Math.PI * r };
+    return { area, perimeter: ringLength(cornerPolygon(shape, 90).map(([u, v]) => shapePoint(shape, u, v))) };
+  }
+  const corners = polygonOf(shape);
+  if (!corners || corners.length < 3) return null;
+  const points = corners.map(([u, v]) => shapePoint(shape, u, v));
+  return { area: polygonArea(points), perimeter: ringLength(points) };
+}
+
 // ---------------------------------------------------------------- zakończenia odcinka (od 1.19)
 
 /** Zakończenia odcinka i strzałki: brak, grot strzałki, trójkąt, koło, kwadrat, romb. */
@@ -408,7 +652,7 @@ export const SEGMENT_CAP_LABELS = Object.freeze({ none: 'Brak', arrow: 'Grot', t
  * z grotem na końcu (jak do 1.18); prosta – bez zakończeń.
  */
 export function segmentCaps(shape) {
-  if (shape.shape === 'xline') return { start: 'none', end: 'none' };
+  if (isXline(shape)) return { start: 'none', end: 'none' };
   const pick = (value, fallback) => (SEGMENT_CAPS.includes(value) ? value : fallback);
   return { start: pick(shape.startCap, 'none'), end: pick(shape.endCap, shape.shape === 'arrow' || shape.shape === 'curve' ? 'arrow' : 'none') };
 }
@@ -511,9 +755,11 @@ export const XLINE_REACH = 20000;
 
 export function shapeOutline(shape) {
   if (isXline(shape)) {
+    // Półprosta (od 1.40) zaczyna się w pierwszym punkcie.
     const [a, b] = [shapePoint(shape, -0.5, 0), shapePoint(shape, 0.5, 0)];
     const [ux, uy] = [Math.cos(shape.angle), Math.sin(shape.angle)];
-    return { points: [a.x - ux * XLINE_REACH, a.y - uy * XLINE_REACH, b.x + ux * XLINE_REACH, b.y + uy * XLINE_REACH], closed: false };
+    const back = shape.shape === 'ray' ? 0 : XLINE_REACH;
+    return { points: [a.x - ux * back, a.y - uy * back, b.x + ux * XLINE_REACH, b.y + uy * XLINE_REACH], closed: false };
   }
   if (isCurve(shape)) return { points: curveSamples(shape).flatMap((point) => [point.x, point.y]), closed: false };
   if (isArc(shape)) return { points: arcSamples(shape).flatMap((point) => [point.x, point.y]), closed: false };
@@ -557,6 +803,8 @@ export function shapePath(shape) {
       curves: quarter.map((curve) => curve.map(([u, v]) => shapePoint(shape, u, v)))
     };
   }
+  // Od 1.40: prostokąt z zaokrąglonymi narożnikami – łuki krzywymi Béziera, boki – krzywe proste.
+  if (shape.shape === 'rect' && shape.corner?.kind === 'round' && cornerSize(shape) > 0) return roundedRectPath(shape);
   if (isCurve(shape)) {
     // Od 1.27: krzywa łuku (przy trójkącie – przycięta pod jego podstawą) i zakończenia.
     const curve = curveControls(shape);
@@ -746,9 +994,12 @@ export function shapeFromDrag(kind, from, to, style, { defaultSize = 176, tap = 
     return arcFromPoints(from, end, through, style);
   }
   let base = { tool: 'shape', shape: kind, color: style.color, size: style.size, angle: 0, skew: 0, adjust: DEFAULT_ADJUST[kind] ?? 0 };
-  if ((style.fill === 'light' || style.fill === 'solid') && canFill(base)) base.fill = style.fill;
+  if (FILLED.includes(style.fill) && canFill(base)) base = withShapeFill(base, style.fill, style.hatch);
   if (hasCaps(base) && style.caps) base = withCaps(base, style.caps);
   base = withDash(base, style.dash);
+  // Od 1.40: wielokąt foremny – od środka do wierzchołka; prostokąt – z narożnikami narzędzia.
+  if (kind === 'ngon') return ngonFrom(base, from, to, style.sides, { defaultSize, tap, lock });
+  if (kind === 'rect' && style.corner) base.corner = { ...style.corner };
   if (Math.hypot(dx, dy) < tap) {
     return isSegment(base)
       ? { ...base, x: from.x, y: from.y, w: defaultSize, h: 0 }
@@ -863,7 +1114,8 @@ export function moveShapeHandle(shape, id, point, { lock = false } = {}) {
   const fixed = { lx: (-su * shape.w + shape.skew * sv * shape.h) / 2, ly: (-sv * shape.h) / 2 };
   let h = sv !== 0 ? Math.max(MIN_SHAPE, sv * (local.ly - fixed.ly)) : shape.h;
   let w = su !== 0 ? Math.max(MIN_SHAPE, su * (local.lx - fixed.lx + shape.skew * sv * h)) : shape.w;
-  if (lock && su !== 0 && sv !== 0) {
+  // Od 1.40 wielokąt foremny zostaje foremny przy przeciąganiu narożnika (bok – rozciąga go).
+  if ((lock || shape.shape === 'ngon') && su !== 0 && sv !== 0) {
     // Narożnik z Shift: większa ze zmian szerokości i wysokości – dla obu (proporcje zostają).
     const scale = Math.max(w / shape.w, h / shape.h);
     [w, h] = [Math.max(MIN_SHAPE, shape.w * scale), Math.max(MIN_SHAPE, shape.h * scale)];
@@ -894,7 +1146,7 @@ export function polyFromPoints(kind, points, frame, style) {
     x: round(frame.x + cx * cos - cy * sin), y: round(frame.y + cx * sin + cy * cos),
     w: round(w), h: round(h), angle: frame.angle, skew: 0, adjust: 0, nodes
   };
-  if (kind === 'polygon' && (style.fill === 'light' || style.fill === 'solid')) shape.fill = style.fill;
+  if (kind === 'polygon' && FILLED.includes(style.fill)) return withShapeFill(shape, style.fill, style.hatch);
   return shape;
 }
 
@@ -991,7 +1243,7 @@ export function setSegment(shape, { length = shape.w, degrees = segmentDegrees(s
 // ---------------------------------------------------------------- wymiary na rysunku (od 1.19)
 
 /** Wymiary kształtu: szerokość, wysokość i kąt pochylenia; odcinka i strzałki – długość i kąt. */
-export const dimKeys = (shape) => (shape.shape === 'xline' || shape.shape === 'angledim' ? ['angle'] : shape.shape === 'dim' ? ['length']
+export const dimKeys = (shape) => (isXline(shape) || shape.shape === 'angledim' ? ['angle'] : shape.shape === 'dim' ? ['length']
   : ['curve', 'point', 'arc'].includes(shape.shape) ? [] : isSegment(shape) ? ['length', 'angle'] : isPoly(shape) ? ['width', 'height'] : ['width', 'height', 'skew']);
 /** Wielkość czcionki stałego wymiaru i jego odstęp od linii ramki (jednostki strony; kratka ma 44). */
 export const DIM_FONT = 22;
@@ -1476,7 +1728,11 @@ export function cleanShape(raw, pageWidth, pageHeight, isColor) {
     skew: segment || poly || point || !finite(raw.skew) ? 0 : clamp(raw.skew, -SKEW_LIMIT, SKEW_LIMIT),
     adjust: raw.shape === 'triangle' ? clamp(finite(raw.adjust) ? raw.adjust : 0.5, 0, 1)
       : raw.shape === 'trapezoid' ? clamp(finite(raw.adjust) ? raw.adjust : 0.25, 0, 0.45) : 0,
-    ...(canFill(raw) && (raw.fill === 'light' || raw.fill === 'solid') ? { fill: raw.fill } : {}),
+    ...(canFill(raw) && FILLED.includes(raw.fill) ? { fill: raw.fill } : {}),
+    // Od 1.40: kreskowanie, liczba boków wielokąta foremnego, narożniki prostokąta.
+    ...(canFill(raw) && raw.fill === 'hatch' ? { hatch: cleanHatch(raw.hatch) } : {}),
+    ...(raw.shape === 'ngon' ? { sides: ngonSides(raw) } : {}),
+    ...(raw.shape === 'rect' && cleanCorner(raw.corner, limit) ? { corner: cleanCorner(raw.corner, limit) } : {}),
     ...(nodes ? { nodes } : {}),
     ...(label ? { label } : {}),
     ...(caps.startCap ? { startCap: caps.startCap } : {}),

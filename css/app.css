@@ -6244,6 +6244,9 @@ svg.icon--note { color: var(--note-icon); }
 }
 
 .drawing__selection-button--danger { color: var(--danger); }
+/* Od 1.40: pole i obwód zaznaczonego zamkniętego kształtu – obok jego nazwy (na telefonie – osobny wiersz). */
+.drawing__selection-measure { padding: 0 8px 0 0; color: var(--text-2); font-size: var(--size-foot); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.drawing__selection-measure[hidden] { display: none; }
 /* Magnes (od 1.22): włączone przyciąganie końców – przycisk wciśnięty. */
 .drawing__selection-button[aria-pressed="true"] { background: var(--accent-soft); }
 .drawing__selection-button:active { background: var(--pressed); }
@@ -6696,6 +6699,7 @@ button.drawing__pill .icon { color: var(--text-2); }
   /* Od 1.30 (przycisk „Odbij”) polecenia, które nie mieszczą się w jednym wierszu, przechodzą do drugiego;
      szerokość nie zależy od miejsca paska (ustawianego po zmierzeniu). */
   .drawing__selection { flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100% - 16px); }
+  .drawing__selection-measure { flex-basis: 100%; order: -1; padding: 2px 8px 0; text-align: center; }
   .drawing__wide-label { display: none; }
   .drawing__narrow-label { display: inline; }
 }
@@ -7482,6 +7486,25 @@ button.drawing__pill .icon { color: var(--text-2); }
 }
 .drawing__style-drop[hidden] { display: none; }
 .drawing__style-drop .drawing__settings-label { margin: 0; }
+/* Od 1.40: boki wielokąta foremnego, narożniki prostokąta (wielkość gotowa albo wpisana), kreskowanie. */
+.drawing__segmented--wrap { flex-wrap: wrap; }
+.drawing__segmented--wrap button { flex: 1 0 auto; padding: 0 10px; }
+.drawing__fill,
+.drawing__hatch,
+.drawing__corner { display: flex; flex-direction: column; gap: 6px; }
+.drawing__hatch .drawing__chip { align-self: flex-start; }
+.drawing__hatch .drawing__chip[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.drawing__corner-field { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: var(--size-sub); }
+.drawing__corner-size {
+  width: 6.5em;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--outline);
+  border-radius: 9px;
+  background: var(--elevated);
+  color: var(--text);
+  font: inherit;
+}
 
 /* Warstwy (od 1.36): panel nad dolnym paskiem – warstwy elementów, poziomy stałe, sygnatury zaznaczonych. */
 .drawing__layers { width: min(420px, calc(100vw - 24px)); }

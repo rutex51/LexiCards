@@ -15,8 +15,8 @@ import { isArray, expandArray } from './arrays.js';
 import { PAPER_STEP, SCALE_UNITS, cleanScale, dimFormat, dimensionParts, dimensionText, leaderStart, stickyColor } from './drawing.js';
 import { drawingLayers, elementLayers, layersOf } from './layers.js';
 import {
-  arcFromPoints, arcGeometry, circleShape, curveSamples, dimGeometry, dimKeys, isMeasure, polyFromPoints, polyPoints, shapeOutline, shownDims,
-  DIM_ARROW, DIM_FONT, POLY_NODES_MAX
+  arcFromPoints, arcGeometry, circleShape, cornerSize, curveSamples, dimGeometry, dimKeys, isMeasure, polyFromPoints, polyPoints, shapeHatch,
+  shapeOutline, shapePoint, shownDims, DIM_ARROW, DIM_FONT, POLY_NODES_MAX
 } from './shapes.js';
 
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
@@ -368,7 +368,8 @@ export function dxfPrimitives(parsed) {
         case 'RAY': {
           const a = p(10, 20);
           const b = transform({ x: (entity.number(10) ?? 0) + (entity.number(11) ?? 1), y: (entity.number(20) ?? 0) + (entity.number(21) ?? 0) });
-          out.push({ ...common, kind: 'xline', a, b });
+          // Od 1.40 półprosta – osobno (do 1.39 jak prosta).
+          out.push({ ...common, kind: entity.type === 'RAY' ? 'ray' : 'xline', a, b });
           break;
         }
         case 'CIRCLE':
@@ -502,7 +503,7 @@ export function primitivesBounds(primitives) {
   const points = [];
   for (const item of primitives) {
     if (item.kind === 'line') points.push(item.a, item.b);
-    else if (item.kind === 'xline' || item.kind === 'point') points.push(item.kind === 'xline' ? item.a : item.p);
+    else if (item.kind === 'xline' || item.kind === 'ray' || item.kind === 'point') points.push(item.kind === 'point' ? item.p : item.a);
     else if (item.kind === 'circle') points.push({ x: item.c.x - item.r, y: item.c.y - item.r }, { x: item.c.x + item.r, y: item.c.y + item.r });
     else if (item.kind === 'arc') points.push(...circlePoints(item.c, item.r, item.start, item.end));
     else if (item.kind === 'ellipse') points.push({ x: item.c.x - item.a, y: item.c.y - item.a }, { x: item.c.x + item.a, y: item.c.y + item.a });
@@ -573,10 +574,11 @@ export function primitivesToElements(primitives, { unitMm, pageUnitMm, origin, b
       case 'line':
         put(segment('line', at(item.a), at(item.b)));
         break;
-      case 'xline': {
+      case 'xline':
+      case 'ray': {
         const [a, b] = [at(item.a), at(item.b)];
         const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-        put(segment('xline', a, { x: a.x + ((b.x - a.x) / length) * 176, y: a.y + ((b.y - a.y) / length) * 176 }));
+        put(segment(item.kind, a, { x: a.x + ((b.x - a.x) / length) * 176, y: a.y + ((b.y - a.y) / length) * 176 }));
         break;
       }
       case 'circle':
@@ -709,7 +711,10 @@ export function drawingToDxf(drawing) {
   const polyline = (stroke, points, closed) => {
     if (points.length < 2) return;
     add([...head('POLYLINE', stroke), [66, 1], [10, 0], [20, 0], [30, 0], [70, closed ? 1 : 0]]);
-    for (const point of points) add([[0, 'VERTEX'], [8, head('VERTEX', stroke)[1][1]], [10, fixed(point.x)], [20, fixed(point.y)], [30, 0]]);
+    // Wierzchołek z bulge (od 1.40 – zaokrąglone narożniki prostokąta): łuk do następnego wierzchołka.
+    for (const point of points) {
+      add([[0, 'VERTEX'], [8, head('VERTEX', stroke)[1][1]], [10, fixed(point.x)], [20, fixed(point.y)], [30, 0], ...(point.bulge ? [[42, fixed(point.bulge)]] : [])]);
+    }
     add([[0, 'SEQEND'], [8, head('SEQEND', stroke)[1][1]]]);
   };
   const text = (stroke, point, height, value) => add([...head('TEXT', stroke), [10, fixed(point.x)], [20, fixed(point.y)], [30, 0], [40, fixed(height)], [1, dxfString(value)]]);
@@ -846,7 +851,33 @@ export function drawingToDxf(drawing) {
     }
     // Stałe wymiary kształtu (od 1.22.1) – jak wymiary narzędzia „Wymiar”.
     for (const key of shownDims(stroke)) writeDim(stroke, key);
+    // Kreskowanie (od 1.40) – odcinki linią ciągłą.
+    for (const [a, b] of shapeHatch(stroke)) line({ ...stroke, dash: 'solid' }, pt(a), pt(b));
     switch (stroke.shape) {
+      case 'ray': {
+        // Półprosta (od 1.40) – od pierwszego punktu do brzegu strony i dalej (DXF R12 nie ma RAY).
+        const reach = Math.hypot(drawing.width, drawing.height);
+        const start = shapePoint(stroke, -0.5, 0);
+        line(stroke, pt(start), pt({ x: start.x + Math.cos(stroke.angle) * reach, y: start.y + Math.sin(stroke.angle) * reach }));
+        return;
+      }
+      case 'rect':
+        if (stroke.corner?.kind === 'round' && !stroke.skew && cornerSize(stroke) > 0) {
+          // Zaokrąglenia – łuki (bulge ćwiartki: −tan 22,5°, zgodnie z ruchem wskazówek zegara).
+          const [r, hw, hh] = [cornerSize(stroke), stroke.w / 2, stroke.h / 2];
+          const at = (lx, ly, bulge = 0) => ({ ...pt(shapePoint(stroke, lx / stroke.w, ly / stroke.h)), bulge });
+          const quarter = -Math.tan(Math.PI / 8);
+          const list = [];
+          for (const point of [at(-hw + r, -hh), at(hw - r, -hh, quarter), at(hw, -hh + r), at(hw, hh - r, quarter), at(hw - r, hh),
+            at(-hw + r, hh, quarter), at(-hw, hh - r), at(-hw, -hh + r, quarter)]) {
+            const last = list.at(-1);
+            if (last && Math.hypot(point.x - last.x, point.y - last.y) < 1e-6) last.bulge = point.bulge;
+            else list.push(point);
+          }
+          polyline(stroke, list, true);
+          return;
+        }
+        break;
       case 'line':
       case 'arrow':
       case 'xline': {

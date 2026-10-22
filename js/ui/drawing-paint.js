@@ -2,7 +2,7 @@
 // z wypełnieniem, od 1.19 z zakończeniami odcinka, od 1.27 z rodzajem linii, prosta, łuk i punkt)
 // i szablon pod kreskami – boisko piłkarskie rysowane liniami albo obraz z pliku (core/templates.js).
 
-import { FILL_ALPHA, dashPattern, isPointShape, pointMarkGeometry, shapePath } from '../core/shapes.js';
+import { FILL_ALPHA, dashPattern, hatchWidth, isPointShape, pointMarkGeometry, shapeHatch, shapePath } from '../core/shapes.js';
 import { PITCH, TEMPLATE_ALPHA } from '../core/templates.js';
 
 /**
@@ -21,6 +21,19 @@ export function paintShape(ctx, shape) {
   ctx.lineWidth = shape.size;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  // Kreskowanie (od 1.40) – cieńsze linie pod obrysem.
+  if (shape.fill === 'hatch' && path.closed) {
+    ctx.lineWidth = hatchWidth(shape);
+    ctx.lineCap = 'butt';
+    ctx.beginPath();
+    for (const [a, b] of shapeHatch(shape)) {
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+    }
+    ctx.stroke();
+    ctx.lineWidth = shape.size;
+    ctx.lineCap = 'round';
+  }
   ctx.beginPath();
   ctx.moveTo(path.start.x, path.start.y);
   if (path.curves) {
@@ -29,7 +42,7 @@ export function paintShape(ctx, shape) {
     for (const point of path.lines) ctx.lineTo(point.x, point.y);
   }
   if (path.closed) ctx.closePath();
-  if (shape.fill && path.closed) {
+  if (shape.fill && shape.fill !== 'hatch' && path.closed) {
     // Krycie względem bieżącego (od 1.36 – przezroczystość warstwy).
     const alpha = ctx.globalAlpha;
     ctx.globalAlpha = alpha * (FILL_ALPHA[shape.fill] ?? 1);

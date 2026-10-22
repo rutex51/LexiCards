@@ -1,4 +1,4 @@
-# LexiCards 1.39
+# LexiCards 1.40
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -48,8 +48,9 @@ Rysunek: warstwy – pięć na start i dodawanie kolejnych, nazwa, ukrycie, kryc
 Rysunek: wczytywanie plików DXF (odcinki, okręgi, łuki, łamane, splajny, teksty, bloki, wymiary; warstwy, kolory i rodzaje linii z pliku, prawdziwe milimetry, skala dopasowana do kartki) i zapis kartki jako DXF (R12, milimetry, warstwy, wymiary z grotami i liczbą) (wersja 1.37): [docs/RELEASE-1.37.md](docs/RELEASE-1.37.md).
 Rysunek: wymiary graniczne, teoretycznie dokładny w ramce, pomocniczy w nawiasie, kontrolny w owalnej ramce, miejsca po przecinku; ramka tolerancji z Ⓟ i wysokością, modyfikatorem przy bazie, drugim wierszem i znakiem „dookoła”; chropowatość z kierunkiem struktury, naddatkiem, metodą i „dookoła”; odnośnik – tekst ze strzałką bez karteczki (wersja 1.38): [docs/RELEASE-1.38.md](docs/RELEASE-1.38.md).
 Rysunek: kółko narzędzi przesuwane przytrzymaniem (w środku ekranu cały okrąg, schowanie – stałe miejsce), kółko od razu wyżej po zwinięciu menu, rząd 2 i 3 menu na iPhonie w osobnej pastylce, kształty tylko na kartce; fiszki: 1, 2 albo 3 obroty z wyborem treści każdej strony (wersja 1.39): [docs/RELEASE-1.39.md](docs/RELEASE-1.39.md).
+Rysunek – etap D, część 1: wielokąt foremny (3–12 boków), półprosta, zaokrąglenie R i faza narożników prostokąta, kreskowanie (kąt, odstęp, krzyżowe), pole i obwód zaznaczonego kształtu, kolejność rysowania (na wierzch, wyżej, niżej, na spód), DXF z łukami narożników i kreskowaniem (wersja 1.40): [docs/RELEASE-1.40.md](docs/RELEASE-1.40.md).
 
-## Co potrafi wersja 1.39
+## Co potrafi wersja 1.40
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -147,7 +148,10 @@ Rysunek: kółko narzędzi przesuwane przytrzymaniem (w środku ekranu cały okr
   i chropowatość (ISO 1302) ze strzałką przyklejoną do krawędzi. Od 1.24: **figury z odręcznych
   kształtów** – narysuj kształt i na końcu przytrzymaj pióro, a zamieni się w odcinek, strzałkę, łamaną,
   trójkąt, prostokąt, romb, równoległobok, trapez, okrąg, elipsę albo wielokąt („Cofnij” przywraca
-  kreskę); łamana i wielokąt mają punkt w każdym wierzchołku. Od 1.24.1 kartka w edytorze wygląda
+  kreskę); łamana i wielokąt mają punkt w każdym wierzchołku. Od 1.40 (etap D): **wielokąt foremny** (3–12 boków,
+  od środka do wierzchołka), **półprosta**, prostokąt z **zaokrągleniem R** albo **fazą**, **kreskowanie** (kąt,
+  odstęp, krzyżowe), **pole i obwód** zaznaczonego kształtu i **kolejność rysowania** (na wierzch, wyżej, niżej,
+  na spód). Od 1.24.1 kartka w edytorze wygląda
   jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
@@ -516,7 +520,7 @@ czytają go słowami w języku notatki. Zapis trafia bez zmian do eksportu, kopi
 **Rysunki:** w sekcji obrazów edytora kafelek **Narysuj** otwiera edytor rysunku na cały ekran.
 **Układ od 1.32:** po prawej u góry **kółko narzędzi standardowych** – duże kółko pokazuje wybrane
 narzędzie w jego kolorze (wypełnienie w kolorze, biała obwódka; narzędzie bez koloru – kolor aplikacji),
-a małe kółka wokół niego to **grupy**: Pisanie, Kształty, Konstrukcja (prosta, punkt), Tekst i wzory
+a małe kółka wokół niego to **grupy**: Pisanie, Kształty, Konstrukcja (prosta, od 1.40 półprosta, punkt), Tekst i wzory
 (pole tekstowe, wzór, tabela, karteczka), Symbole metrologiczne. Widać wycinek okręgu skierowany do
 środka ekranu; przeciągnięcie po małych kółkach albo kółko myszy obraca je (dalsze i te przy krawędzi
 ekranu płynnie znikają), dotknięcie wybiera grupę. Po lewej – lustrzane **kółko moich narzędzi**,
@@ -639,7 +643,7 @@ wskazówek zegara). Kreska zaczęta przy okręgu i prowadzona wzdłuż niego bie
 (w pigułce – długość łuku), przy promieniu i wzdłuż niego – prosto po promieniu; w innym kierunku –
 zwykła kreska. Pigułka: „Promieniowy · okręgi co 2 cm · promienie co 45°”. Ustawienia zostają na urządzeniu.
 **Kształty** (od 1.15): narzędzie **kształty** – Odcinek, Strzałka, Prostokąt, Elipsa, Trójkąt, Romb,
-Trapez, od 1.27 też Prosta, Strzałka po łuku i Punkt, od 1.34 **Łuk** (wybór w panelu pod paskiem, od 1.32 – w menu grupy). **Okrąg i elipsa
+Trapez, od 1.27 też Prosta, Strzałka po łuku i Punkt, od 1.34 **Łuk**, od 1.40 **Wielokąt foremny** i **Półprosta** (wybór w panelu pod paskiem, od 1.32 – w menu grupy). **Okrąg i elipsa
 (od 1.34)** – wybór pod menu: **Ramka** (jak dotąd), **Środek i R** (od środka do okręgu), **2 pkt** (średnica od punktu
 do punktu), **3 pkt** (okrąg przez trzy dotknięte punkty; przeciągnięcie stawia dwa pierwsze, mysz nad trzecim – podgląd,
 Esc – od nowa, trzy punkty na jednej prostej – komunikat). **Łuk** – przeciągnij od początku do końca (albo dotknij obu),
@@ -835,6 +839,23 @@ kolor – najbliższy z palety AutoCAD-a, rodzaj linii; kreski pióra i zakreśl
 łuki, punkty i łamane, prosta – długi odcinek przez kartkę, tekst i wzór – tekst (każdy wiersz osobno, wzór jako zapis),
 wymiary (także stałe wymiary kształtów) – linie pomocnicze, linia wymiarowa albo łuk, groty i ta sama liczba co na kartce.
 Element trafia na warstwę swojej sygnatury rzędu 1. Pomijane: tabele, karteczki, symbole metrologiczne i zdjęcie.
+Od 1.40: półprosta – odcinek od początku przez kartkę, kreskowanie – odcinki, zaokrąglenia prostokąta – łuki łamanej
+(bulge), a RAY z pliku wczytuje się jako półprosta.
+**Kształty jak w CAD** (od 1.40): w grupie **Kształty** – **Wielokąt foremny**: przeciągnij od środka do wierzchołka
+(wierzchołek trafia w koniec przeciągnięcia; prawie prosto – przyciągany, z Shift albo „Proporcjami” – obrót co 15°),
+dotknięcie – wielokąt z podstawą u dołu. Liczba boków (3–12, na start 6) – **Boki** pod menu; zmienia też zaznaczone
+(środek i promień zostają). Narożnik ramki zaznaczonego zachowuje foremność, środek boku – rozciąga. W grupie
+**Konstrukcja** – **Półprosta**: od pierwszego punktu przez drugi do brzegu kartki (jak prosta, ale w jedną stronę;
+rodzaj linii – pod menu). **Prostokąt** – **Narożniki** pod menu: ostre, **zaokrąglenie R** albo **faza**, wielkość
+¼, ½ albo 1 kratka albo wpisana w jednostkach rysunku (najwyżej połowa krótszego boku) – dla nowych prostokątów
+i zaznaczonych. **Kreskowanie** – czwarta pozycja **Wypełnienia** każdego zamkniętego kształtu: kąt linii 45°, 135°, 0°
+albo 90°, odstęp **Gęste**, **Średnie** albo **Rzadkie** i **Krzyżowe**; linie są zaczepione w rogu kartki, więc
+sąsiednie kształty mają ciągłe kreskowanie; obrót kształtu obraca kreskowanie, odbicie – odbija. **Pole i obwód** –
+przy nazwie zaznaczonego zamkniętego kształtu (prostokąt, wielokąt, elipsa, trójkąt, romb, trapez, wielokąt
+z rozpoznania), w jednostce liczb wymiarów, np. „pole 49,8 cm² · obwód 29,1 cm” (styl techniczny – mm² i mm); elipsa
+i zaokrąglenia – dokładnie. **Kolejność** nad zaznaczeniem: **Na wierzch**, **Wyżej**, **Niżej**, **Na spód**; „wyżej”
+i „niżej” przesuwają zaznaczenie nad (pod) najbliższy element, z którym się styka – jeden krok cofania; gdy nic go nie
+zakrywa – komunikat.
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę
