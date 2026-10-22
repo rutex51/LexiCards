@@ -12,7 +12,7 @@
 // Bez przeglądarki – testy w Node.js.
 
 import { isArray, expandArray } from './arrays.js';
-import { PAPER_STEP, SCALE_UNITS, cleanScale, dimFormat, dimensionText } from './drawing.js';
+import { PAPER_STEP, SCALE_UNITS, cleanScale, dimFormat, dimensionParts, dimensionText, leaderStart, stickyColor } from './drawing.js';
 import { drawingLayers, elementLayers, layersOf } from './layers.js';
 import {
   arcFromPoints, arcGeometry, circleShape, curveSamples, dimGeometry, dimKeys, isMeasure, polyFromPoints, polyPoints, shapeOutline, shownDims,
@@ -766,9 +766,42 @@ export function drawingToDxf(drawing) {
         tip(start + sweep, (sign > 0) === inside);
       }
     }
-    const at = pt(geometry.text);
-    add([...head('TEXT', stroke), [10, fixed(at.x)], [20, fixed(at.y)], [30, 0], [40, fixed(DIM_FONT * 0.7 * mm)],
-      [1, dxfString(dimensionText(stroke, key, drawing.scale, format))], [50, degrees(-geometry.text.angle)], [72, 1], [11, fixed(at.x)], [21, fixed(at.y)], [31, 0], [73, 2]]);
+    // Liczba: TEXT wyśrodkowany; od 1.38 graniczne – dwa wiersze, dokładny – w prostokącie, kontrolny – w owalu.
+    const { angle } = geometry.text;
+    const parts = dimensionParts(stroke, key, drawing.scale, format);
+    const limits = parts.tolerance?.kind === 'limits';
+    const framed = parts.frame === 'basic' || parts.frame === 'inspection';
+    const local = (dx, dy) => ({
+      x: geometry.text.x + dx * Math.cos(angle) - dy * Math.sin(angle), y: geometry.text.y + dx * Math.sin(angle) + dy * Math.cos(angle)
+    });
+    const lift = geometry.kind === 'linear' ? (limits ? DIM_FONT * 0.42 : framed ? DIM_FONT * 0.15 : 0) : 0;
+    const label = (value, dy) => {
+      const at = pt(local(0, dy - lift));
+      add([...head('TEXT', stroke), [10, fixed(at.x)], [20, fixed(at.y)], [30, 0], [40, fixed(DIM_FONT * 0.7 * mm)],
+        [1, dxfString(value)], [50, degrees(-angle)], [72, 1], [11, fixed(at.x)], [21, fixed(at.y)], [31, 0], [73, 2]]);
+    };
+    const value = dimensionText(stroke, key, drawing.scale, format);
+    if (limits) {
+      label(`${parts.main}${parts.tolerance.upper}`, -DIM_FONT * 0.45);
+      label(`${parts.main}${parts.tolerance.lower}`, DIM_FONT * 0.45);
+    } else {
+      label(value, 0);
+    }
+    if (framed) {
+      const tall = DIM_FONT * (limits ? 0.95 : 0.62);
+      const half = (Math.max(...(limits ? [parts.tolerance.upper, parts.tolerance.lower].map((text) => parts.main.length + text.length) : [value.length])) * DIM_FONT * 0.42) / 2
+        + (parts.frame === 'basic' ? DIM_FONT * 0.3 : tall * 0.9);
+      const outline = parts.frame === 'basic'
+        ? [local(-half, -tall - lift), local(half, -tall - lift), local(half, tall - lift), local(-half, tall - lift)]
+        : [...Array.from({ length: 9 }, (_, index) => {
+          const turn = -Math.PI / 2 + (Math.PI * index) / 8;
+          return local(half - tall + Math.cos(turn) * tall, Math.sin(turn) * tall - lift);
+        }), ...Array.from({ length: 9 }, (_, index) => {
+          const turn = Math.PI / 2 + (Math.PI * index) / 8;
+          return local(-half + tall + Math.cos(turn) * tall, Math.sin(turn) * tall - lift);
+        })];
+      polyline(stroke, outline.map(pt), true);
+    }
   };
   const writeStroke = (stroke) => {
     if (isArray(stroke)) {
@@ -787,6 +820,20 @@ export function drawingToDxf(drawing) {
       rows.forEach((row, index) => {
         if (row.trim()) text(stroke, pt({ x: stroke.x + 1, y: stroke.y + stroke.size * (0.95 + index * 1.25) }), stroke.size * mm * 0.7, row);
       });
+      return;
+    }
+    if (stroke.tool === 'sticky' && stickyColor(stroke.color).clear && !stroke.collapsed) {
+      // Odnośnik bez kartki (od 1.38): tekst (wiersze jak wpisane) i strzałka z grotem.
+      const ink = { ...stroke, color: stickyColor(stroke.color).ink };
+      const pad = Math.round(stroke.size * 0.65);
+      stroke.text.split('\n').forEach((row, index) => {
+        if (row.trim()) text(ink, pt({ x: stroke.x + pad, y: stroke.y + pad + stroke.size * (0.95 + index * 1.25) }), stroke.size * mm * 0.7, row);
+      });
+      if (stroke.leader) {
+        const start = leaderStart(stroke);
+        line(ink, pt(start), pt(stroke.leader));
+        arrowHead(ink, stroke.leader, Math.atan2(stroke.leader.y - start.y, stroke.leader.x - start.x));
+      }
       return;
     }
     if (stroke.tool !== 'shape') {

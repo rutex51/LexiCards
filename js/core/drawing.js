@@ -55,9 +55,11 @@ import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './la
  * 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13), 3 – kształty, jasność tła, szablon (1.15),
  * 4 – wypełnienie i tekst kształtu (1.17), 5 – zakończenia odcinka, stałe wymiary i szyki (1.19),
  * 6 – tabele i karteczki (1.21), 7 – identyfikatory elementów i przyklejone końce odcinków (1.22),
- * 8 – wymiary techniczne (odsunięcia, tolerancje, styl liczb) i symbole metrologiczne (1.22.1).
+ * 8 – wymiary techniczne (odsunięcia, tolerancje, styl liczb) i symbole metrologiczne (1.22.1), 11 – warstwy (1.36),
+ * 12 – wymiary graniczne, rodzaj wymiaru, miejsca po przecinku, ramka z Ⓟ i drugim wierszem, chropowatość
+ * z kierunkiem struktury, odnośnik (1.38).
  */
-export const DRAWING_VERSION = 11;
+export const DRAWING_VERSION = 12;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -115,26 +117,45 @@ export function dimensionParts(shape, key, scale, format = 'unit') {
   const degrees = key === 'skew' ? skewDegrees(shape) : key === 'angle' ? (shape.shape === 'angledim' ? angleDimDegrees(shape) : segmentDegrees(shape)) : null;
   const units = key === 'height' ? shape.h : shape.w;
   const technical = formatOf(format).style === 'technical';
-  let main = degrees !== null ? `${formatNumber(degrees)}°`
-    : technical ? formatNumber(toScaleLength(units, scale) * dimFactor(scale, format)) : formatLength(units, scale);
-  if (marks?.prefix && isLinearDim(key)) main = `${marks.prefix}${main}`;
+  // Od 1.38 stała liczba miejsc po przecinku (0–3) zamiast samoczynnej.
+  const places = Number.isInteger(marks?.places) ? marks.places : null;
+  const value = degrees ?? toScaleLength(units, scale) * (technical ? dimFactor(scale, format) : 1);
+  const after = degrees !== null ? '°' : technical ? '' : ` ${unitOf(cleanScale(scale).unit).label}`;
+  const prefix = marks?.prefix && isLinearDim(key) ? marks.prefix : '';
+  let main = `${prefix}${places === null ? formatNumber(value) : fixedNumber(value, places)}${after}`;
   const suffix = degrees !== null ? '°' : '';
   // Tolerancja długości: z milimetrów do jednostki liczby wymiaru; kąta – w stopniach.
   const per = degrees !== null ? 1 : dimMillimeters(scale, format);
-  const shown = (value) => formatTolerance(value / per);
-  const signed = (value) => `${value > 0 ? `+${shown(value)}` : value < 0 ? `−${shown(-value)}` : '0'}${suffix}`;
+  const shown = (deviation) => formatTolerance(deviation / per);
+  const signed = (deviation) => `${deviation > 0 ? `+${shown(deviation)}` : deviation < 0 ? `−${shown(-deviation)}` : '0'}${suffix}`;
+  const frame = ['basic', 'reference', 'inspection'].includes(marks?.style) ? marks.style : null;
   let tolerance = null;
-  if (marks?.kind === 'sym') tolerance = { kind: 'sym', text: `±${shown(marks.value)}${suffix}` };
+  if (frame === 'basic' || frame === 'reference') tolerance = null;
+  else if (marks?.kind === 'sym') tolerance = { kind: 'sym', text: `±${shown(marks.value)}${suffix}` };
   else if (marks?.kind === 'dev') tolerance = { kind: 'dev', upper: signed(marks.upper), lower: signed(marks.lower) };
   else if (marks?.kind === 'fit') tolerance = { kind: 'fit', text: marks.fit };
-  return { main, tolerance };
+  else if (marks?.kind === 'limits') {
+    // Wymiary graniczne (od 1.38): wymiar nominalny z odchyłkami, tyle miejsc, ile ma dokładniejsza liczba.
+    const decimals = places ?? Math.max(...[formatNumber(value), shown(Math.abs(marks.upper)), shown(Math.abs(marks.lower))].map((text) => text.split(',')[1]?.length ?? 0));
+    const bound = (deviation) => `${fixedNumber(value + deviation / per, decimals)}${after}`;
+    tolerance = { kind: 'limits', upper: bound(marks.upper), lower: bound(marks.lower) };
+    main = prefix;
+  }
+  return { main, tolerance, ...(frame ? { frame } : {}) };
 }
-/** Wymiar jako jeden napis („⌀20 H7”, „50±0,1”, „30 +0,1/−0,05”). */
+/** Liczba z `places` miejscami po przecinku („40,00”). */
+const fixedNumber = (value, places) => (Math.abs(value) < 0.5 * 10 ** -places ? 0 : value).toFixed(places).replace('.', ',');
+/**
+ * Wymiar jako jeden napis („⌀20 H7”, „50±0,1”, „30 +0,1/−0,05”; od 1.38 graniczne „40,05/39,98”,
+ * pomocniczy w nawiasie „(40)”; ramka wymiaru dokładnego i kontrolnego – tylko na rysunku).
+ */
 export function dimensionText(shape, key, scale, format = 'unit') {
-  const { main, tolerance } = dimensionParts(shape, key, scale, format);
-  if (!tolerance) return main;
-  if (tolerance.kind === 'dev') return `${main} ${tolerance.upper}/${tolerance.lower}`;
-  return tolerance.kind === 'sym' ? `${main}${tolerance.text}` : `${main} ${tolerance.text}`;
+  const { main, tolerance, frame } = dimensionParts(shape, key, scale, format);
+  let text = main;
+  if (tolerance?.kind === 'limits') text = `${main}${tolerance.upper}/${tolerance.lower}`;
+  else if (tolerance?.kind === 'dev') text = `${main} ${tolerance.upper}/${tolerance.lower}`;
+  else if (tolerance) text = tolerance.kind === 'sym' ? `${main}${tolerance.text}` : `${main} ${tolerance.text}`;
+  return frame === 'reference' ? `(${text})` : text;
 }
 
 /** Skala rysunku (od 1.14): jedna kratka = value jednostek – SI albo imperialnych; meters – długość jednostki. */
@@ -315,7 +336,9 @@ export const STICKY_COLORS = Object.freeze([
   { id: 'pink', fill: '#ffc2d4', ink: '#c2386a', label: 'Różowa' },
   { id: 'green', fill: '#c4f0b0', ink: '#3f8a2a', label: 'Zielona' },
   { id: 'blue', fill: '#b9e0ff', ink: '#2a74b8', label: 'Niebieska' },
-  { id: 'orange', fill: '#ffd2a6', ink: '#c2620f', label: 'Pomarańczowa' }
+  { id: 'orange', fill: '#ffd2a6', ink: '#c2620f', label: 'Pomarańczowa' },
+  // Od 1.38: odnośnik – sam tekst ze strzałką, bez kartki (clear).
+  { id: 'clear', fill: '#ffffff', ink: '#1d1d1f', label: 'Bez tła – odnośnik', clear: true }
 ]);
 export const STICKY_TEXT_SIZES = Object.freeze([24, 30, 38]);
 export const STICKY_ICON = 60;

@@ -1,4 +1,4 @@
-# LexiCards 1.37
+# LexiCards 1.38
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -46,8 +46,9 @@ Rysunek: okrąg ze środka i promienia, z dwóch i z trzech punktów, łuk przez
 Rysunek: trzecie menu kształtów (znacznik punktu, rodzaj linii, wypełnienie, końce i ⓘ – rozwijane w dół zamiast okna „Styl”), zmiana zaznaczonego elementu z menu (kolor, grubość, styl), „Przesuń” nad zaznaczeniem, wybór zaznaczania nad dolnym paskiem, duże kółko zaznaczonego punktu, kółko narzędzi bez obracania przy samym najechaniu myszą, spirala kończy się w ostatniej dziurce (wersja 1.35); każdy kształt pamięta swój rodzaj linii i wypełnienie, tryb edycji zmienia tylko zaznaczone (1.35.1): [docs/RELEASE-1.35.md](docs/RELEASE-1.35.md).
 Rysunek: warstwy – pięć na start i dodawanie kolejnych, nazwa, ukrycie, krycie i nasycenie, poziomy tło i obraz, do trzech sygnatur elementu (rząd 1–3, kaskadowo); rodzaje wymiaru jako osobne narzędzia w górnym menu (długość, kąt, promień, średnica); trzeci pasek tylko przy narzędziu z pokazanej grupy (wersja 1.36): [docs/RELEASE-1.36.md](docs/RELEASE-1.36.md).
 Rysunek: wczytywanie plików DXF (odcinki, okręgi, łuki, łamane, splajny, teksty, bloki, wymiary; warstwy, kolory i rodzaje linii z pliku, prawdziwe milimetry, skala dopasowana do kartki) i zapis kartki jako DXF (R12, milimetry, warstwy, wymiary z grotami i liczbą) (wersja 1.37): [docs/RELEASE-1.37.md](docs/RELEASE-1.37.md).
+Rysunek: wymiary graniczne, teoretycznie dokładny w ramce, pomocniczy w nawiasie, kontrolny w owalnej ramce, miejsca po przecinku; ramka tolerancji z Ⓟ i wysokością, modyfikatorem przy bazie, drugim wierszem i znakiem „dookoła”; chropowatość z kierunkiem struktury, naddatkiem, metodą i „dookoła”; odnośnik – tekst ze strzałką bez karteczki (wersja 1.38): [docs/RELEASE-1.38.md](docs/RELEASE-1.38.md).
 
-## Co potrafi wersja 1.37
+## Co potrafi wersja 1.38
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -742,6 +743,12 @@ albo ramki tolerancji). Pierwsza tolerancja albo ramka tolerancji na rysunku „
 bez jednostki (Anuluj w oknie tolerancji – zostaje jak było); jednostkę zmienisz też w oknie tolerancji.
 Tolerancje długości są zapisane w mm, więc zmiana jednostki ich nie zmienia (0,1 mm to w cm 0,01).
 Znaki ⌀ i □ są rysowane kreską – tak samo na iPadzie i w Windows.
+Od 1.38 w tym samym oknie: **Wymiar** – **Zwykły**, **Dokładny** (teoretycznie dokładny – liczba w prostokątnej
+ramce, bez tolerancji), **Pomocniczy** (w nawiasie „(40)”, bez tolerancji) albo **Kontrolny** (w owalnej ramce,
+z tolerancją lub bez); tolerancja **Graniczne** – wpisujesz odchyłki jak przy „Odchyłkach”, a na rysunku są dwa
+wymiary graniczne jeden nad drugim („50,05” nad „49,98”; tyle miejsc po przecinku, ile ma dokładniejsza liczba,
+linia wymiarowa odsuwa się od kształtu, żeby się zmieściły); **Miejsca po przecinku** – Auto albo 0–3 („20,00”).
+Pod podglądem tekstowym jest podgląd narysowany jak na kartce. Na wąskim ekranie wybory przechodzą do drugiego wiersza.
 **Symbole metrologiczne** (od 1.22.1; od 1.32 w grupie „Symbole metrologiczne” na kółku i w zestawie Metrologia) – **Ramka tolerancji**, **Baza**,
 **Chropowatość**. Okno ramki: **14 symboli ISO 1101** (prostoliniowość, płaskość, okrągłość, walcowość,
 kształt wyznaczonego zarysu i powierzchni, równoległość, prostopadłość, nachylenie, pozycja,
@@ -756,6 +763,12 @@ strzałka ramki, zaczerniony trójkąt bazy albo wierzchołek chropowatości **p
 bazy stają obok, prostopadle do krawędzi (przeciągniesz je w inne miejsce, a koniec strzałki zostaje).
 Esc – bez wstawiania. Zaznaczony symbol: kółko – koniec strzałki (chropowatość – wierzchołek, przesuwa
 cały symbol), dotknięcie albo **Edytuj** – okno poprawki, magnes jak przy strzałkach.
+Od 1.38 ramka tolerancji ma też **strefę rzutowaną Ⓟ** z wysokością (za tolerancją: „⌀0,1 Ⓜ Ⓟ12”),
+**modyfikator przy bazie** (przycisk obok pola bazy: –, Ⓜ, Ⓛ), **drugi wiersz** (ramka złożona – własna tolerancja
+z ⌀ i do trzech baz, pole symbolu na oba wiersze) i znak **„dookoła”** (kółko na strzałce przy ramce – tolerancja
+na całym obwodzie). Chropowatość od 1.38: **kierunek struktury** (=, ⊥, X, M, C, R, P – przy wierzchołku, z nazwą
+w oknie), **naddatek** na obróbkę (z lewej strony symbolu), **metoda wytwarzania** (nad poziomą kreską, np.
+„szlifowane”), **dookoła** (kółko na załamaniu) i podgląd w oknie – układ jak w ISO 1302.
 **Szyk** (od 1.19): polecenie **Szyk** nad zaznaczeniem – **liniowy** (obiektów w rzędzie, odstęp,
 rzędów, odstęp rzędów; w skali rysunku) albo **kołowy** (obiektów, kąt wypełnienia, promień, pierścienie,
 obracanie obiektów). Szyk to jeden element: przeciągnięcie przesuwa wszystkie kopie, dotknięcie albo
@@ -877,6 +890,9 @@ na miejscu (zaznaczona razem z innymi elementami – strzałka przesuwa się z n
 zaznaczona pokazuje obok treść z nagłówkiem „Karteczka 2 · 20.10.2026” (data dodania). Nad
 zaznaczoną karteczką – **Zwiń** / **Rozwiń**. Karteczka **niewidoczna na obrazie** jest tylko
 w edytorze (z przerywaną obwódką) – obraz rysunku w notatce jej nie ma, ale zostaje do poprawy.
+**Odnośnik** (od 1.38): kolor karteczki **Bez tła – odnośnik** (krążek z przerywaną obwódką) – sam tekst
+z cienką strzałką i mniejszym grotem, bez kartki i cienia (wybranie go włącza strzałkę). Pole odnośnika
+dopasowuje się do tekstu, więc strzałka zaczyna się przy nim; w pliku DXF – tekst i strzałka.
 
 ### Postęp i lekcje utrwalone
 

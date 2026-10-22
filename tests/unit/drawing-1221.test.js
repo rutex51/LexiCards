@@ -138,7 +138,7 @@ test('wymiary techniczne 1.22.1: styl „50” (mm) i „5 cm”, znak ⌀ R □
   // Rysunek: styl liczb i wersja formatu; ustawienia – wzór odsunięcia.
   const drawing = cleanDrawing({ width: 1600, height: 1100, strokes: [cleaned], dimStyle: 'technical' });
   assert.equal(drawing.version, DRAWING_VERSION);
-  assert.equal(DRAWING_VERSION, 11, 'od 1.36 – warstwy');
+  assert.equal(DRAWING_VERSION, 12, 'od 1.38 – uzupełnienia tolerancji i symboli');
   assert.equal(drawing.dimStyle, 'technical');
   assert.equal('dimStyle' in cleanDrawing({ width: 1600, height: 1100, strokes: [], dimStyle: 'mm' }), false);
   assert.equal(defaultToolSettings().dimOffset, DIM_OFFSET);

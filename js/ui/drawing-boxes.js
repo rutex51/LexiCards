@@ -109,12 +109,20 @@ export function paintTable(ctx, table) {
 
 const stickyPad = (sticky) => Math.round(sticky.size * 0.65);
 
-/** Wysokość karteczki: ustawiona, a gdy tekst się nie mieści – większa. */
+/** Wysokość karteczki: ustawiona, a gdy tekst się nie mieści – większa; odnośnik (od 1.38) – dokładnie z tekstu. */
 export function measureSticky(sticky) {
   const pad = stickyPad(sticky);
   const lines = textLines(sticky.text, sticky.size, Math.max(sticky.size, sticky.width - pad * 2));
   const needed = Math.ceil(lines.length * sticky.size * TEXT_LINE + pad * 2);
+  if (stickyColor(sticky.color).clear) return { height: needed };
   return { height: Math.max(sticky.height, STICKY_MIN.height, needed) };
+}
+/** Szerokość odnośnika (od 1.38): najdłuższy wiersz tekstu bez łamania, najwyżej `limit` – strzałka zaczyna się przy tekście. */
+export function fitStickyWidth(sticky, limit = 480) {
+  const pad = stickyPad(sticky);
+  const font = textFont(sticky.size);
+  const widest = Math.max(sticky.size, ...sticky.text.split('\n').map((line) => measureText(line, font)));
+  return Math.round(Math.min(limit, widest + pad * 2 + 2));
 }
 
 /** Data dodania karteczki „20.10.2026” (zapis rrrr-mm-dd). */
@@ -122,15 +130,16 @@ export const stickyDate = (sticky) => sticky.created.split('-').reverse().join('
 
 /** Strzałka od brzegu karteczki do punktu strony, w ciemniejszym odcieniu karteczki. */
 function paintLeader(ctx, sticky) {
-  const { ink } = stickyColor(sticky.color);
+  const { ink, clear } = stickyColor(sticky.color);
   const start = leaderStart(sticky);
   const { x, y } = sticky.leader;
   const angle = Math.atan2(y - start.y, x - start.x);
-  const head = 28;
+  // Odnośnik bez kartki (od 1.38) – cienka linia z mniejszym grotem, jak na rysunku technicznym.
+  const head = clear ? 18 : 28;
   ctx.save();
   ctx.strokeStyle = ink;
   ctx.fillStyle = ink;
-  ctx.lineWidth = 4;
+  ctx.lineWidth = clear ? 2.2 : 4;
   ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(start.x, start.y);
@@ -209,7 +218,8 @@ export function paintSticky(ctx, sticky, { number = null, editor = false } = {})
     }
     ctx.restore();
   } else {
-    paintCard(ctx, box.x, box.y, box.width, box.height, color, Math.min(36, box.width * 0.14));
+    // Odnośnik (od 1.38) – sam tekst, bez kartki.
+    if (!color.clear) paintCard(ctx, box.x, box.y, box.width, box.height, color, Math.min(36, box.width * 0.14));
     paintStickyText(ctx, sticky, box.x, box.y);
   }
   if (editor && sticky.hidden) {

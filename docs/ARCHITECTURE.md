@@ -1651,6 +1651,38 @@ kartki). `placeDxf` – skala, warstwy z pliku („0” – warstwa 1, ta sama n
 widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kartki obok krótszych pastylek
 (`pointer-events: none` na pojemniku).
 
+## Tolerancje i symbole – uzupełnienia (od 1.38)
+
+Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).
+
+- **Wymiar** (`js/core/shapes.js`, `cleanDimTolerance`): `dimTols[klucz]` ma też `kind: 'limits'` (graniczne – `upper`,
+  `lower` w mm jak odchyłki), `style` z `DIM_STYLES` (`basic` – teoretycznie dokładny, `reference` – pomocniczy,
+  `inspection` – kontrolny; dokładny i pomocniczy bez tolerancji) i `places` (0–`DIM_PLACES_MAX`). `dimensionParts`
+  (`js/core/drawing.js`): liczba ze stałą liczbą miejsc (`fixedNumber`), graniczne – `tolerance: { kind: 'limits',
+  upper, lower }` z całymi liczbami (miejsca – z dokładniejszej z liczby nominalnej i odchyłek), `main` – sam znak
+  przed liczbą; `frame` – rodzaj wymiaru. `dimensionText`: graniczne „50,05/49,98”, pomocniczy „(40)”.
+  Rysowanie (`paintDimText` w `js/ui/drawing-gdt.js`): graniczne – dwie liczby (`limitsFont`), nawias, prostokątna
+  albo owalna ramka na białym tle (`frameHeight`, `framePad`, szerokość w `dimTextWidth`); `dimTextLift` – wyższy napis
+  dalej od linii wymiarowej. Okno tolerancji: wybory `Wymiar` (`.drawing__dim-style-field`), `Tolerancja`
+  (`.drawing__dim-tol-kinds`, z „Graniczne”), `Miejsca po przecinku`, podgląd na płótnie `drawing-dim-tol-look`;
+  po zapisie granicznych odsunięcie linii wymiarowej co najmniej `LIMITS_DIM_OFFSET` (54). Wąski ekran – wybory
+  w dwóch wierszach (`flex-wrap`), słowa w całości.
+- **Ramka tolerancji** (`js/core/gdt.js`, `cleanSymbol`): `projected` (Ⓟ z wysokością – tekst), `datumMods`
+  (`cleanDatumPairs` – baza z modyfikatorem razem, złe pomijane parami), `row2: { value, diameter?, datums }` z `cells2`
+  i wysokością dwóch wierszy, `allAround`. `measureGdt` mierzy oba wiersze (`toleranceWidth`, `datumWidth`), `paintGdt` –
+  pole symbolu na oba wiersze, `paintToleranceCell` (⌀, wartość, odchyłki, Ⓜ/Ⓛ, Ⓟ), kółko „dookoła” w `paintSymbolLeader`.
+  Okno: `drawing-gdt-projected`, `-projected-height`, `-datum-mod-1…3` (–, Ⓜ, Ⓛ), `-row2`, `-row2-diameter`,
+  `-row2-value`, `-row2-datum-1…3`, `-all-around`.
+- **Chropowatość**: `lay` (`ROUGHNESS_LAYS`; ⊥ rysowany kreską), `allowance`, `method` (szerokość symbolu – dłuższy
+  z dwóch tekstów, `measureRoughness`), `allAround`; `roughnessLayout` – punkty `method`, `lay`, `allowance`, `around`
+  i obrys z nimi. Okno: wybór kierunku (segmenty) z nazwą `drawing-roughness-lay-name`, `drawing-roughness-allowance`, `-method`,
+  `-all-around`, podgląd `-preview`.
+- **Odnośnik**: kolor karteczki `clear` w `STICKY_COLORS` (`clear: true`) – bez kartki i cienia (`paintSticky`), cienka
+  strzałka (`paintLeader`), wysokość z tekstu (`measureSticky`), szerokość z najdłuższego wiersza (`fitStickyWidth`;
+  przy nowym, zmienionym tekście albo wielkości); `toneStroke` zachowuje `clear`.
+- **DXF** (`drawingToDxf`): graniczne – dwa TEXT, dokładny – prostokątna, kontrolny – owalna POLYLINE wokół liczby
+  (szerokość szacowana z liczby znaków), pomocniczy – w nawiasie; odnośnik – TEXT na wiersz, LINE i grot SOLID.
+
 ## Dźwięki (od 1.31)
 
 `js/core/sounds.js` – bez przeglądarki (testy w Node.js):
@@ -1701,7 +1733,8 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   i wielokąt: wierzchołki, punkty, przesuwanie wierzchołka, dane; od 1.25 jednostki liczb wymiarów,
   oznaczenie „Wymiary w …”, tolerancje w mm i przeliczenie starszych rysunków, odchyłki w ramce
   tolerancji, tabela pasowań i ostatnio użyte; od 1.36 warstwy i sygnatury; od 1.37 pliki DXF – czytanie,
-  zamiana na elementy, zapis i odczyt z powrotem, strony kodowe),
+  zamiana na elementy, zapis i odczyt z powrotem, strony kodowe; od 1.38 wymiary graniczne, rodzaj wymiaru, ramka
+  złożona, chropowatość z kierunkiem struktury, odnośnik),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

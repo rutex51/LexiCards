@@ -7,12 +7,17 @@
 //   value – tolerancja jako tekst („0,05”), diameter – znak ⌀ przed nią, modifier – 'M' (Ⓜ) albo 'L' (Ⓛ),
 //   datums – do trzech baz („A”, „B”, „A-B”), cells – szerokości pól zmierzone w edytorze, leader –
 //   koniec strzałki (punkt na krawędzi); od 1.25 upper i lower – odchyłki po tolerancji (liczby jak
-//   wpisane, w jednostce liczb wymiarów; obie albo żadna).
+//   wpisane, w jednostce liczb wymiarów; obie albo żadna). Od 1.38: projected – strefa rzutowana Ⓟ z wysokością
+//   (tekst, może być pusty), datumMods – modyfikatory przy bazach ('' | 'M' | 'L', tyle co baz), row2 – drugi
+//   wiersz ramki złożonej { value, diameter?, datums } (pole symbolu wspólne dla obu wierszy), cells2 –
+//   szerokości jego pól, allAround – znak „dookoła” (kółko na strzałce).
 // Znak bazy { tool: 'datum', x, y, width, height, size, color, letter, leader }: kwadrat z literą,
 //   leader – środek podstawy zaczernionego trójkąta na krawędzi.
 // Chropowatość { tool: 'roughness', x, y, size, color, text, kind, width }: (x, y) – wierzchołek symbolu
 //   na powierzchni, kind – 'any' (dowolna obróbka), 'removal' (z usunięciem materiału), 'noremoval'
 //   (bez usunięcia materiału), text – wymaganie („Ra 1,6”) pod poziomą kreską, width – szerokość tekstu.
+//   Od 1.38: lay – kierunek struktury (ROUGHNESS_LAYS), allowance – naddatek na obróbkę (z lewej), method –
+//   metoda wytwarzania (nad kreską; width – szersza z dwóch), allAround – kółko „dookoła” na załamaniu.
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
@@ -45,6 +50,13 @@ export const GDT_VALUE_MAX = 16;
 export const ROUGHNESS_TEXT_MAX = 24;
 export const ROUGHNESS_KINDS = Object.freeze(['any', 'removal', 'noremoval']);
 export const ROUGHNESS_KIND_LABELS = Object.freeze({ any: 'Dowolna obróbka', removal: 'Z usunięciem materiału', noremoval: 'Bez usunięcia materiału' });
+/** Kierunek struktury powierzchni (ISO 1302, od 1.38): równoległy, prostopadły, skrzyżowany, wielokierunkowy, kołowy, promieniowy, punktowy. */
+export const ROUGHNESS_LAYS = Object.freeze(['=', '⊥', 'X', 'M', 'C', 'R', 'P']);
+export const ROUGHNESS_LAY_LABELS = Object.freeze({
+  '=': 'Równoległy do rzutni', '⊥': 'Prostopadły do rzutni', X: 'Skrzyżowany', M: 'Wielokierunkowy', C: 'Kołowy', R: 'Promieniowy', P: 'Punktowy (bez kierunku)'
+});
+export const ROUGHNESS_ALLOWANCE_MAX = 8;
+export const ROUGHNESS_METHOD_MAX = 24;
 /** Wielkości tekstu symboli (jednostki strony; kratka ma 44): mała, średnia, duża. */
 export const SYMBOL_TEXT_SIZES = Object.freeze([20, 26, 34]);
 
@@ -67,12 +79,22 @@ export function roughnessLayout(element) {
   const bar = { x: long.x + Math.max(h, (element.width ?? 0) + h * 0.45), y: long.y };
   const text = { x: long.x + h * 0.22, y: long.y + h * 1.05 };
   const line = Math.max(1.5, h * 0.07);
+  // Od 1.38 (ISO 1302): metoda nad kreską, kierunek struktury na prawo od wierzchołka, naddatek z lewej,
+  // kółko „dookoła” na załamaniu (koniec długiego ramienia).
+  const method = { x: long.x + h * 0.22, y: long.y - h * 0.3 };
+  const lay = { x: tip.x + h * 0.75, y: tip.y - h * 0.25 };
+  const allowance = { x: tip.x - h * 0.62, y: tip.y - h * 0.3 };
+  const allowanceWidth = element.allowance ? element.allowance.length * h * 0.62 : 0;
+  const left = Math.min(short.x, allowance.x - allowanceWidth) - line;
+  const top = (element.method ? method.y - h * 0.95 : long.y - (element.allAround ? h * 0.4 : 0)) - line;
+  const right = Math.max(bar.x, element.lay ? lay.x + h * 0.9 : 0) + line;
   return {
-    tip, short, long, bar, text, line,
+    tip, short, long, bar, text, line, method, lay, allowance,
     // Zamknięcie (z usunięciem materiału) – na wysokości krótkiego ramienia; koło (bez usunięcia) – wpisane w ramiona.
     closing: { from: short, to: { x: tip.x + (h * 1.4) / slope, y: short.y } },
     circle: { x: tip.x, y: tip.y - (h * 1.4 * 2) / 3, r: (h * 1.4) / 3 },
-    box: { x: short.x - line, y: long.y - line, width: bar.x - short.x + line * 2, height: tip.y - long.y + line * 2 }
+    around: { x: long.x, y: long.y, r: h * 0.36 },
+    box: { x: left, y: top, width: right - left, height: tip.y + line - top }
   };
 }
 
@@ -136,9 +158,21 @@ export const cleanGdtValue = (value) => String(value ?? '').trim().replace(/\s+/
 
 /** Sprawdzone bazy ramki: wielkie litery, puste pominięte, najwyżej trzy. */
 export function cleanDatums(raw) {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((item) => String(item ?? '').trim().toUpperCase()).filter((item) => DATUM_RE.test(item)).slice(0, GDT_DATUMS_MAX);
+  return cleanDatumPairs(raw, null).datums;
 }
+/**
+ * Bazy z modyfikatorami (od 1.38): { datums, mods } – złe i puste bazy pominięte razem z ich modyfikatorem,
+ * modyfikator 'M', 'L' albo '' (bez).
+ */
+export function cleanDatumPairs(raw, rawMods) {
+  if (!Array.isArray(raw)) return { datums: [], mods: [] };
+  const pairs = raw.map((item, index) => [String(item ?? '').trim().toUpperCase(), Array.isArray(rawMods) && GDT_MODIFIERS.includes(rawMods[index]) ? rawMods[index] : ''])
+    .filter(([item]) => DATUM_RE.test(item)).slice(0, GDT_DATUMS_MAX);
+  return { datums: pairs.map(([item]) => item), mods: pairs.map(([, mod]) => mod) };
+}
+/** Szacunek szerokości pola tolerancji (bez pomiaru czcionki): znaki × wielkość tekstu. */
+const toleranceCell = (row, size, height) => Math.max(height, ((row.value?.length ?? 0) + (row.diameter ? 1.5 : 0) + (row.modifier ? 1.5 : 0)
+  + (row.deviations ? 4 : 0) + (row.projected !== undefined ? 1.6 + row.projected.length : 0)) * size * 0.62 + size);
 
 /** Sprawdzony symbol metrologiczny (zapis, kopia zapasowa) albo null. */
 export function cleanSymbol(raw, pageWidth, pageHeight) {
@@ -148,11 +182,17 @@ export function cleanSymbol(raw, pageWidth, pageHeight) {
   const leader = raw.leader && finite(raw.leader.x) && finite(raw.leader.y) ? point(raw.leader) : null;
   if (raw.tool === 'roughness') {
     if (typeof raw.text !== 'string') return null;
+    const allowance = typeof raw.allowance === 'string' ? cleanGdtValue(raw.allowance).slice(0, ROUGHNESS_ALLOWANCE_MAX) : '';
+    const method = typeof raw.method === 'string' ? raw.method.trim().replace(/\s+/g, ' ').slice(0, ROUGHNESS_METHOD_MAX) : '';
     return {
       ...common,
       text: raw.text.trim().slice(0, ROUGHNESS_TEXT_MAX),
       kind: ROUGHNESS_KINDS.includes(raw.kind) ? raw.kind : 'any',
-      width: finite(raw.width) ? clamp(raw.width, 0, pageWidth * 3) : 0
+      width: finite(raw.width) ? clamp(raw.width, 0, pageWidth * 3) : 0,
+      ...(ROUGHNESS_LAYS.includes(raw.lay) ? { lay: raw.lay } : {}),
+      ...(allowance ? { allowance } : {}),
+      ...(method ? { method } : {}),
+      ...(raw.allAround === true ? { allAround: true } : {})
     };
   }
   if (raw.tool === 'datum') {
@@ -162,16 +202,25 @@ export function cleanSymbol(raw, pageWidth, pageHeight) {
     return { ...common, letter, width: side, height: side, leader: leader ?? { x: common.x + side / 2, y: common.y + side * 2.5 } };
   }
   if (!GDT_SYMBOLS.some((symbol) => symbol.id === raw.symbol)) return null;
-  const datums = gdtSymbol(raw.symbol).form ? [] : cleanDatums(raw.datums);
+  const form = gdtSymbol(raw.symbol).form;
+  const { datums, mods } = form ? { datums: [], mods: [] } : cleanDatumPairs(raw.datums, raw.datumMods);
   const value = cleanGdtValue(raw.value);
   const exact = (number) => clamp(Math.round(number * 1e6) / 1e6, -1e6, 1e6);
   const deviations = finite(raw.upper) && finite(raw.lower) && raw.upper >= raw.lower ? { upper: exact(raw.upper), lower: exact(raw.lower) } : null;
-  const height = gdtHeight(common.size);
+  const projected = typeof raw.projected === 'string' ? cleanGdtValue(raw.projected) : undefined;
+  // Drugi wiersz (od 1.38) – tolerancja (z ⌀) i bazy; bez tolerancji – bez drugiego wiersza.
+  const row2Value = raw.row2 && typeof raw.row2 === 'object' ? cleanGdtValue(raw.row2.value) : '';
+  const row2 = row2Value ? { value: row2Value, ...(raw.row2.diameter === true ? { diameter: true } : {}), datums: form ? [] : cleanDatums(raw.row2.datums) } : null;
+  const rowHeight = gdtHeight(common.size);
   // Szerokości pól: symbol, tolerancja, bazy – zmierzone w edytorze; brak albo złe – szacunek.
-  const count = 2 + datums.length;
-  const cells = Array.isArray(raw.cells) && raw.cells.length === count && raw.cells.every((cell) => finite(cell) && cell > 0)
-    ? raw.cells.map((cell) => clamp(Math.round(cell * 10) / 10, height * 0.5, pageWidth * 2))
-    : [height, Math.max(height, (value.length + (raw.diameter === true ? 1.5 : 0) + (raw.modifier ? 1.5 : 0) + (deviations ? 4 : 0)) * common.size * 0.62 + common.size), ...datums.map(() => height)];
+  const measured = (list, count) => Array.isArray(list) && list.length === count && list.every((cell) => finite(cell) && cell > 0)
+    ? list.map((cell) => clamp(Math.round(cell * 10) / 10, rowHeight * 0.5, pageWidth * 2)) : null;
+  const cells = measured(raw.cells, 2 + datums.length)
+    ?? [rowHeight, toleranceCell({ value, diameter: raw.diameter === true, modifier: raw.modifier, deviations, projected }, common.size, rowHeight),
+      ...datums.map((datum, index) => rowHeight + (mods[index] ? common.size * 0.9 : 0) + Math.max(0, datum.length - 1) * common.size * 0.62)];
+  const cells2 = row2 ? measured(raw.cells2, 1 + row2.datums.length)
+    ?? [toleranceCell(row2, common.size, rowHeight), ...row2.datums.map((datum) => rowHeight + Math.max(0, datum.length - 1) * common.size * 0.62)] : null;
+  const sum = (list) => list.reduce((total, cell) => total + cell, 0);
   return {
     ...common,
     symbol: raw.symbol,
@@ -179,10 +228,14 @@ export function cleanSymbol(raw, pageWidth, pageHeight) {
     ...(raw.diameter === true ? { diameter: true } : {}),
     ...(GDT_MODIFIERS.includes(raw.modifier) ? { modifier: raw.modifier } : {}),
     ...(deviations ?? {}),
+    ...(projected !== undefined ? { projected } : {}),
     datums,
+    ...(mods.some(Boolean) ? { datumMods: mods } : {}),
     cells,
-    width: cells.reduce((sum, cell) => sum + cell, 0),
-    height,
+    ...(row2 ? { row2, cells2 } : {}),
+    ...(raw.allAround === true ? { allAround: true } : {}),
+    width: Math.max(sum(cells), row2 ? cells[0] + sum(cells2) : 0),
+    height: rowHeight * (row2 ? 2 : 1),
     ...(leader ? { leader } : {})
   };
 }

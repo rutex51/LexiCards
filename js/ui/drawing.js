@@ -68,7 +68,7 @@ import { RING_SIDES, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPa
 import { openToolGroups } from './drawing-groups.js';
 import { createRing } from './drawing-ring.js';
 import {
-  DIM_PREFIXES, FIT_RE, LABEL_TEXT_MAX, POINT_MARKS, POINT_MARK_LABELS, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_DASHES, SHAPE_DASH_LABELS,
+  DIM_FONT, DIM_PREFIXES, FIT_RE, LABEL_TEXT_MAX, POINT_MARKS, POINT_MARK_LABELS, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_DASHES, SHAPE_DASH_LABELS,
   SHAPE_FILLS, SHAPE_FILL_LABELS, SHAPE_LABELS, SKEW_DEGREES_LIMIT, canDash, hasCaps, isPointShape, pointMark, shapeDash, withDash,
   canFill, dimCenter, dimGeometry, dimOffset, dimOffsetAt, dimPlaces, guideLinesIn, isLinearDim, isSegment, isShape, labelFrame, labelMaxWidth, moveShapeHandle, nearestGuideLine, nearestRay,
   nearestRing, rayAngles, resizeShape, ringsIn, stackDimOffset, withDimOffset, withDimTolerance,
@@ -89,18 +89,19 @@ import { h, replaceChildren } from './dom.js';
 import { hintsToggle } from './hints.js';
 import { icon } from './icons.js';
 import {
-  DATUM_LETTER_RE, DATUM_RE, GDT_DATUMS_MAX, GDT_SYMBOLS, ROUGHNESS_KINDS, ROUGHNESS_KIND_LABELS, ROUGHNESS_TEXT_MAX, SYMBOL_TEXT_SIZES, cleanGdtValue,
-  datumSide, gdtSymbol, isSymbol, nextDatumLetter
+  DATUM_LETTER_RE, DATUM_RE, GDT_DATUMS_MAX, GDT_SYMBOLS, ROUGHNESS_ALLOWANCE_MAX, ROUGHNESS_KINDS, ROUGHNESS_KIND_LABELS, ROUGHNESS_LAYS, ROUGHNESS_LAY_LABELS,
+  ROUGHNESS_METHOD_MAX, ROUGHNESS_TEXT_MAX, SYMBOL_TEXT_SIZES, cleanGdtValue,
+  datumSide, gdtSymbol, isSymbol, nextDatumLetter, roughnessLayout
 } from '../core/gdt.js';
 import {
-  gdtGlyphCanvas, measureGdt, measureRoughness, paintDatum, paintGdt, paintRoughness, paintTechnicalDim
+  dimTextWidth, gdtGlyphCanvas, measureGdt, measureRoughness, paintDatum, paintDimText, paintGdt, paintRoughness, paintTechnicalDim
 } from './drawing-gdt.js';
 import { openMathHelp } from './math.js';
 import { paintShape, paintTemplate } from './drawing-paint.js';
 import { prepareImage } from './images.js';
 import { symbolField } from './symbols.js';
 import { TEXT_FONT, TEXT_LINE, measureText, textFont, textLines } from './canvas-text.js';
-import { measureSticky, measureTable, naturalTableWidth, paintSticky, paintStickyPopover, paintTable, stickyDate, stickyPopoverBox, tableColumnWidths } from './drawing-boxes.js';
+import { fitStickyWidth, measureSticky, measureTable, naturalTableWidth, paintSticky, paintStickyPopover, paintTable, stickyDate, stickyPopoverBox, tableColumnWidths } from './drawing-boxes.js';
 import { openTableEditor } from './table-editor.js';
 import { playPage } from './sounds.js';
 
@@ -1760,6 +1761,8 @@ export function openDrawingEditor({
         }
       };
     }
+    /** Najmniejsze odsunięcie linii wymiarowej z dwiema liczbami granicznymi nad nią (od 1.38). */
+    const LIMITS_DIM_OFFSET = 54;
     /** Komunikat po pierwszym tolerowaniu na rysunku z liczbami „5 cm”. */
     const announceTechnical = () => flash(`${dimUnitNote(dimFormat(drawing))} – liczby bez jednostki, oznaczenie w lewym dolnym rogu rysunku. Inna jednostka – panel linijki.`);
 
@@ -1767,7 +1770,9 @@ export function openDrawingEditor({
      * Znak przed liczbą (⌀, R, □) i tolerancja wymiaru (od 1.22.1): ±, odchyłki albo pasowanie, z podglądem.
      * Od 1.25: przy długości rysunek przechodzi na liczby bez jednostki (domyślnie mm; „Anuluj” – wraca),
      * jednostkę wybierasz tu albo w panelu linijki; odchyłki ze znakiem z przycisku +/−; pasowania –
-     * ostatnio użyte i cała tabela ISO 286. Tolerancje długości zapisywane w mm.
+     * ostatnio użyte i cała tabela ISO 286. Tolerancje długości zapisywane w mm. Od 1.38: wymiary graniczne
+     * (z odchyłek), rodzaj wymiaru (dokładny w ramce i pomocniczy w nawiasie – bez tolerancji, kontrolny
+     * w owalnej ramce), miejsca po przecinku i podgląd rysowany jak na kartce.
      */
     function editDimMarks(key) {
       const shape = editedShape();
@@ -1776,7 +1781,7 @@ export function openDrawingEditor({
       const linear = isLinearDim(key);
       const technical = linear ? technicalForTolerancing() : { switched: false, restore: () => {} };
       const current = shape.dimTols?.[key] ?? {};
-      const choice = { prefix: current.prefix ?? '', kind: current.kind ?? 'none' };
+      const choice = { prefix: current.prefix ?? '', kind: current.kind ?? 'none', style: current.style ?? 'normal', places: String(current.places ?? 'auto') };
       const unitLabel = () => (linear ? dimUnitLabel(drawing.scale, dimFormat(drawing)) : '°');
       // Tolerancje długości: zapis w mm, pola – w jednostce liczby wymiaru.
       const per = () => (linear ? dimMillimeters(drawing.scale, dimFormat(drawing)) : 1);
@@ -1808,6 +1813,8 @@ export function openDrawingEditor({
         chip('Tabela pasowań…', 'drawing-dim-fit-table', () => openFitTable({ value: fit.value.trim(), onPick: (value) => setFit(value) }), ' drawing__chip--accent'));
       renderRecent();
       const preview = h('p', { class: 'drawing__dim-preview', dataset: { testid: 'drawing-dim-tol-preview' } });
+      const look = h('canvas', { class: 'drawing__gdt-preview', dataset: { testid: 'drawing-dim-tol-look' } });
+      const plainHint = h('p', { class: 'field__hint', hidden: true }, 'Wymiar teoretycznie dokładny i pomocniczy są bez tolerancji.');
       const blocks = {
         sym: field('Tolerancja ±', h('div', { class: 'drawing__dim-tol-row' }, symmetric, unitSpan())),
         dev: h('div', { class: 'drawing__dim-tol-pair' },
@@ -1833,16 +1840,19 @@ export function openDrawingEditor({
       /** Oznaczenie z pól (tolerancje długości w mm) albo { error }. */
       function read() {
         const marks = { prefix: choice.prefix };
+        if (choice.style !== 'normal') marks.style = choice.style;
+        if (choice.places !== 'auto') marks.places = Number(choice.places);
         const stored = (value) => Number((value * per()).toPrecision(12));
+        if (choice.style === 'basic' || choice.style === 'reference') return { marks };
         if (choice.kind === 'sym') {
           const value = parseDecimal(symmetric.value);
           if (value === null || value === 0) return { error: 'Wpisz tolerancję, np. 0,1.' };
           Object.assign(marks, { kind: 'sym', value: stored(Math.abs(value)) });
-        } else if (choice.kind === 'dev') {
+        } else if (choice.kind === 'dev' || choice.kind === 'limits') {
           const [high, low] = [upper.read(), lower.read()];
           if (high === null || low === null) return { error: 'Wpisz obie odchyłki, np. +0,1 i −0,05 (znak – przycisk przed polem).' };
           if (high < low) return { error: 'Odchyłka górna nie może być mniejsza od dolnej.' };
-          Object.assign(marks, { kind: 'dev', upper: stored(high), lower: stored(low) });
+          Object.assign(marks, { kind: choice.kind, upper: stored(high), lower: stored(low) });
         } else if (choice.kind === 'fit') {
           if (!FIT_RE.test(fit.value.trim())) return { error: 'Wpisz pasowanie, np. H7, g6 albo H7/g6.' };
           Object.assign(marks, { kind: 'fit', fit: fit.value.trim() });
@@ -1850,12 +1860,42 @@ export function openDrawingEditor({
         return { marks };
       }
       function refresh() {
-        for (const [kind, block] of Object.entries(blocks)) block.hidden = choice.kind !== kind;
+        const plain = choice.style === 'basic' || choice.style === 'reference';
+        for (const [kind, block] of Object.entries(blocks)) block.hidden = plain || !(choice.kind === kind || (kind === 'dev' && choice.kind === 'limits'));
+        toleranceField.hidden = plain;
+        plainHint.hidden = !plain;
         for (const span of units) span.textContent = unitLabel();
         const { marks } = read();
-        const sample = withDimTolerance(shape, key, marks ?? { prefix: choice.prefix });
+        const sample = withDimTolerance(shape, key, marks ?? { prefix: choice.prefix, style: choice.style, places: choice.places === 'auto' ? undefined : Number(choice.places) });
         preview.textContent = `Na rysunku: ${dimensionTextOf(sample, key)}`;
+        // Podgląd (od 1.38) – liczba narysowana jak na kartce: graniczne jedna nad drugą, ramka, owal.
+        const parts = dimensionParts(sample, key, drawing.scale, dimFormat(drawing));
+        const size = DIM_FONT * 1.2;
+        const [width, height] = [dimTextWidth(parts, size) + 16, size * 2.6];
+        const ratio = window.devicePixelRatio || 1;
+        look.width = Math.round(width * ratio);
+        look.height = Math.round(height * ratio);
+        look.style.width = `${Math.round(width)}px`;
+        look.style.height = `${Math.round(height)}px`;
+        const ctx = look.getContext('2d');
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        paintDimText(ctx, width / 2, height / 2, 0, parts, sample.color ?? '#1d1d1f', size);
       }
+      const toleranceField = field('Tolerancja', segmented({
+        name: `drawing-dim-tol-${Date.now()}`, label: 'Tolerancja', value: choice.kind,
+        options: [{ value: 'none', label: 'Brak' }, { value: 'sym', label: '±' }, { value: 'dev', label: 'Odchyłki' }, { value: 'limits', label: 'Graniczne' },
+          ...(linear ? [{ value: 'fit', label: 'Pasowanie' }] : [])],
+        onChange: (value) => {
+          choice.kind = value;
+          refresh();
+        }
+      }));
+      toleranceField.classList.add('drawing__dim-tol-kinds');
+      const styleField = (control) => {
+        const element = field('Wymiar', control, { hint: 'Dokładny – w ramce (teoretycznie dokładny), pomocniczy – w nawiasie, kontrolny – w owalnej ramce.' });
+        element.classList.add('drawing__dim-style-field');
+        return element;
+      };
       let pending = null;
       openFormSheet({
         title: `${dimField.label} – tolerancja`,
@@ -1869,16 +1909,25 @@ export function openDrawingEditor({
               refresh();
             }
           })) : null,
-          field('Tolerancja', segmented({
-            name: `drawing-dim-tol-${Date.now()}`, label: 'Tolerancja', value: choice.kind,
-            options: [{ value: 'none', label: 'Brak' }, { value: 'sym', label: '±' }, { value: 'dev', label: 'Odchyłki' }, ...(linear ? [{ value: 'fit', label: 'Pasowanie' }] : [])],
+          styleField(segmented({
+            name: `drawing-dim-style-${Date.now()}`, label: 'Wymiar', value: choice.style,
+            options: [{ value: 'normal', label: 'Zwykły' }, { value: 'basic', label: 'Dokładny' }, { value: 'reference', label: 'Pomocniczy' }, { value: 'inspection', label: 'Kontrolny' }],
             onChange: (value) => {
-              choice.kind = value;
+              choice.style = value;
               refresh();
             }
           })),
+          toleranceField, plainHint,
           blocks.sym, blocks.dev, blocks.fit,
-          preview,
+          field('Miejsca po przecinku', segmented({
+            name: `drawing-dim-places-${Date.now()}`, label: 'Miejsca po przecinku', value: choice.places,
+            options: [{ value: 'auto', label: 'Auto' }, ...[0, 1, 2, 3].map((places) => ({ value: String(places), label: String(places) }))],
+            onChange: (value) => {
+              choice.places = value;
+              refresh();
+            }
+          })),
+          preview, look,
           unitControl ? field('Jednostka liczb wymiarów (cały rysunek)', unitControl, {
             hint: 'Liczby bez jednostki – jednostka jest w oznaczeniu „Wymiary w …” w lewym dolnym rogu rysunku. Liczby „5 cm” z jednostką – w panelu linijki.'
           }) : h('p', { class: 'field__hint' }, 'Wartości w stopniach. Wymiar z tolerancją jest widoczny na rysunku.')
@@ -1905,6 +1954,11 @@ export function openDrawingEditor({
           }
           let next = withDimTolerance(shape, key, pending);
           if (!shownDims(next).includes(key)) next = showDim(next, key);
+          // Wymiary graniczne (od 1.38) – dwie liczby nad linią: linia wymiarowa za blisko kształtu – dalej.
+          if (pending.kind === 'limits' && linear && !(next.shape === 'dim' && next.mode)) {
+            const offset = dimOffset(next, key);
+            if (Math.abs(offset) < LIMITS_DIM_OFFSET) next = withDimOffset(next, key, (offset < 0 ? -1 : 1) * LIMITS_DIM_OFFSET);
+          }
           replaceShape(shape, next);
           if (technical.switched) announceTechnical();
           updateToolbar();
@@ -1915,9 +1969,11 @@ export function openDrawingEditor({
     }
     /** Napis wymiaru w bieżącym stylu rysunku (podgląd w oknie). */
     const dimensionTextOf = (shape, key) => {
-      const { main, tolerance } = dimensionParts(shape, key, drawing.scale, dimFormat(drawing));
-      if (!tolerance) return main;
-      return tolerance.kind === 'dev' ? `${main} ${tolerance.upper} / ${tolerance.lower}` : tolerance.kind === 'sym' ? `${main}${tolerance.text}` : `${main} ${tolerance.text}`;
+      const { main, tolerance, frame } = dimensionParts(shape, key, drawing.scale, dimFormat(drawing));
+      const framed = (text) => (frame === 'reference' ? `(${text})` : frame === 'basic' ? `${text} w ramce` : frame === 'inspection' ? `${text} w owalnej ramce` : text);
+      if (!tolerance) return framed(main);
+      if (tolerance.kind === 'limits') return framed(`${main}${tolerance.upper} / ${tolerance.lower}`);
+      return framed(tolerance.kind === 'dev' ? `${main} ${tolerance.upper} / ${tolerance.lower}` : tolerance.kind === 'sym' ? `${main}${tolerance.text}` : `${main} ${tolerance.text}`);
     };
 
     // ---- liniuszek (od 1.15): równoległe linie przez całą stronę, poprzeczne, kółko do przesuwania;
@@ -5472,6 +5528,11 @@ export function openDrawingEditor({
         onClick: () => {
           choice.color = color.id;
           for (const button of swatches) button.setAttribute('aria-pressed', String(button.dataset.color === color.id));
+          // Odnośnik (od 1.38) – od razu ze strzałką.
+          if (color.clear && !choice.leader) {
+            choice.leader = true;
+            leaderOption.querySelector('input').checked = true;
+          }
         }
       }));
       const option = (label, key, testID) => {
@@ -5479,6 +5540,7 @@ export function openDrawingEditor({
         row.querySelector('input').dataset.testid = testID;
         return row;
       };
+      const leaderOption = option('Strzałka do miejsca', 'leader', 'drawing-sticky-leader');
       openFormSheet({
         title: element ? `Karteczka ${stickyNumber(drawing, element)}` : 'Nowa karteczka',
         submitLabel: element ? 'Zapisz' : 'Wstaw',
@@ -5495,10 +5557,10 @@ export function openDrawingEditor({
           })),
           h('div', { class: 'drawing__sticky-options' },
             option('Zwinięta – tylko ikona', 'collapsed', 'drawing-sticky-collapsed'),
-            option('Strzałka do miejsca', 'leader', 'drawing-sticky-leader'),
+            leaderOption,
             option('Widoczna na obrazie w notatce', 'visible', 'drawing-sticky-visible')),
           h('p', { class: 'field__hint' }, 'Zwinięta karteczka to ikona z numerem – dotknięcie pokazuje jej treść. Koniec strzałki przeciągniesz na rysunku. '
-            + 'Karteczka niewidoczna na obrazie jest tylko w edytorze (z przerywaną obwódką).')
+            + 'Karteczka niewidoczna na obrazie jest tylko w edytorze (z przerywaną obwódką). Kolor „Bez tła” – odnośnik: sam tekst ze strzałką.')
         ],
         onSubmit: () => { pending = value; },
         onClose: () => {
@@ -5512,6 +5574,10 @@ export function openDrawingEditor({
       saveTools(tools);
       const next = element ? { ...element } : { tool: 'sticky', x: 0, y: 0, width: 360, height: 260, created: today() };
       Object.assign(next, { text: text.slice(0, STICKY_TEXT_MAX), color: choice.color, size: STICKY_TEXT_SIZES[choice.size] });
+      // Odnośnik (od 1.38): pole dopasowane do tekstu – nowy, zmieniony na odnośnik albo z innym tekstem lub wielkością.
+      if (stickyColor(next.color).clear && !(element && stickyColor(element.color).clear && element.text === next.text && element.size === next.size)) {
+        next.width = fitStickyWidth(next);
+      }
       delete next.collapsed;
       delete next.hidden;
       if (choice.collapsed) next.collapsed = true;
@@ -5611,7 +5677,10 @@ export function openDrawingEditor({
       if (!element) clearSelection();
       const choice = {
         ...symbolChoice(element), symbol: element?.symbol ?? 'perpendicularity', diameter: element?.diameter === true,
-        modifier: element?.modifier ?? '', deviations: Number.isFinite(element?.upper) && Number.isFinite(element?.lower)
+        modifier: element?.modifier ?? '', deviations: Number.isFinite(element?.upper) && Number.isFinite(element?.lower),
+        // Od 1.38: Ⓟ, modyfikatory przy bazach, drugi wiersz, „dookoła”.
+        projected: element?.projected !== undefined && element?.projected !== null, datumMods: Array.from({ length: GDT_DATUMS_MAX }, (_, index) => element?.datumMods?.[index] ?? ''),
+        row2: Boolean(element?.row2), row2Diameter: element?.row2?.diameter === true, allAround: element?.allAround === true
       };
       // Od 1.25: odchyłki po tolerancji (jak przy wymiarze – znak z przycisku), w jednostce liczb wymiarów.
       const upper = signedInput({ testID: 'drawing-gdt-upper', label: 'Odchyłka górna', value: element?.upper, sign: 1, onChange: () => refresh() });
@@ -5655,6 +5724,56 @@ export function openDrawingEditor({
           refresh();
         }
       }));
+      // Modyfikator przy bazie (od 1.38): kolejne dotknięcia – brak, Ⓜ, Ⓛ.
+      const modLabel = (mod) => (mod === 'M' ? 'Ⓜ' : mod === 'L' ? 'Ⓛ' : '–');
+      const datumMods = datums.map((_, index) => {
+        const button = toggleButton(modLabel(choice.datumMods[index]), `drawing-gdt-datum-mod-${index + 1}`, () => {
+          choice.datumMods[index] = choice.datumMods[index] === '' ? 'M' : choice.datumMods[index] === 'M' ? 'L' : '';
+          refresh();
+        });
+        button.setAttribute('aria-label', `Modyfikator przy bazie ${index + 1}`);
+        return button;
+      });
+      const projected = toggleButton('Ⓟ', 'drawing-gdt-projected', () => {
+        choice.projected = !choice.projected;
+        refresh();
+      });
+      projected.setAttribute('aria-label', 'Strefa rzutowana (Ⓟ)');
+      const projectedHeight = h('input', {
+        class: 'input', type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', placeholder: 'wysokość, np. 12', maxLength: 16,
+        'aria-label': 'Wysokość strefy rzutowanej', value: element?.projected ?? '', dataset: { testid: 'drawing-gdt-projected-height' }, onInput: () => refresh()
+      });
+      const row2Diameter = toggleButton('⌀', 'drawing-gdt-row2-diameter', () => {
+        choice.row2Diameter = !choice.row2Diameter;
+        refresh();
+      });
+      row2Diameter.setAttribute('aria-label', 'Drugi wiersz – strefa tolerancji średnica (⌀)');
+      const row2Value = h('input', {
+        class: 'input', type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', placeholder: '0,02', maxLength: 16,
+        'aria-label': 'Tolerancja drugiego wiersza', value: element?.row2?.value ?? '', dataset: { testid: 'drawing-gdt-row2-value' }, onInput: () => refresh()
+      });
+      const row2Datums = Array.from({ length: GDT_DATUMS_MAX }, (_, index) => h('input', {
+        class: 'input drawing__gdt-datum', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'characters', maxLength: 5,
+        'aria-label': `Drugi wiersz – baza ${index + 1}`, value: element?.row2?.datums?.[index] ?? '', dataset: { testid: `drawing-gdt-row2-datum-${index + 1}` },
+        onInput: (event) => {
+          event.target.value = event.target.value.toUpperCase();
+          refresh();
+        }
+      }));
+      const switchOf = (label, testID, key) => {
+        const element = toggle({
+          checked: choice[key], label,
+          onChange: (checked) => {
+            choice[key] = checked;
+            refresh();
+          }
+        });
+        element.querySelector('input').dataset.testid = testID;
+        return element;
+      };
+      const row2Box = h('div', null,
+        field('Drugi wiersz – tolerancja', h('div', { class: 'drawing__gdt-row' }, row2Diameter, row2Value)),
+        field('Drugi wiersz – bazy', h('div', { class: 'drawing__gdt-row' }, row2Datums)));
       const datumHint = h('p', { class: 'field__hint' });
       const symbolName = h('p', { class: 'drawing__gdt-name', dataset: { testid: 'drawing-gdt-name' } });
       const preview = h('canvas', { class: 'drawing__gdt-preview', dataset: { testid: 'drawing-gdt-preview' } });
@@ -5662,11 +5781,21 @@ export function openDrawingEditor({
       /** Ramka z pól okna (bez położenia). */
       const build = () => {
         const form = gdtSymbol(choice.symbol).form;
+        const pairs = form ? [] : datums.map((input, index) => [input.value.trim().toUpperCase(), choice.datumMods[index]]).filter(([datum]) => datum);
         const next = {
           tool: 'gdt', x: element?.x ?? 0, y: element?.y ?? 0, size: SYMBOL_TEXT_SIZES[choice.size], color: inkHex(choice.color),
           symbol: choice.symbol, value: cleanGdtValue(value.value),
-          datums: form ? [] : datums.map((input) => input.value.trim().toUpperCase()).filter(Boolean),
+          datums: pairs.map(([datum]) => datum),
+          ...(pairs.some(([, mod]) => mod) ? { datumMods: pairs.map(([, mod]) => mod) } : {}),
           ...(choice.diameter ? { diameter: true } : {}), ...(choice.modifier ? { modifier: choice.modifier } : {}),
+          ...(choice.projected ? { projected: cleanGdtValue(projectedHeight.value) } : {}),
+          ...(choice.row2 && cleanGdtValue(row2Value.value) ? {
+            row2: {
+              value: cleanGdtValue(row2Value.value), ...(choice.row2Diameter ? { diameter: true } : {}),
+              datums: form ? [] : row2Datums.map((input) => input.value.trim().toUpperCase()).filter(Boolean)
+            }
+          } : {}),
+          ...(choice.allAround ? { allAround: true } : {}),
           ...(element?.leader ? { leader: element.leader } : {})
         };
         const [high, low] = [upper.read(), lower.read()];
@@ -5678,7 +5807,16 @@ export function openDrawingEditor({
         symbolName.textContent = gdtSymbol(choice.symbol).label;
         diameter.setAttribute('aria-pressed', String(choice.diameter));
         for (const button of modifiers) button.setAttribute('aria-pressed', String(button.dataset.letter === choice.modifier));
-        for (const input of datums) input.disabled = form;
+        for (const input of [...datums, ...row2Datums]) input.disabled = form;
+        datumMods.forEach((button, index) => {
+          button.textContent = modLabel(choice.datumMods[index]);
+          button.setAttribute('aria-pressed', String(choice.datumMods[index] !== ''));
+          button.disabled = form;
+        });
+        projected.setAttribute('aria-pressed', String(choice.projected));
+        projectedHeight.hidden = !choice.projected;
+        row2Diameter.setAttribute('aria-pressed', String(choice.row2Diameter));
+        row2Box.hidden = !choice.row2;
         deviationsBox.hidden = !choice.deviations;
         datumHint.textContent = form ? 'Tolerancja kształtu – bez baz.' : 'Wielka litera, np. A; wspólna baza – A-B. Puste pola pomijam.';
         const sample = build();
@@ -5701,7 +5839,12 @@ export function openDrawingEditor({
           field(`Tolerancja (${unit})`, h('div', { class: 'drawing__gdt-row' }, diameter, value, ...modifiers)),
           h('div', { class: 'drawing__settings-switch' }, deviationsToggle),
           deviationsBox,
-          field('Bazy', h('div', null, h('div', { class: 'drawing__gdt-row' }, datums), datumHint)),
+          field('Strefa rzutowana', h('div', { class: 'drawing__gdt-row' }, projected, projectedHeight), { hint: 'Ⓟ z wysokością strefy (w jednostce liczb wymiarów).' }),
+          field('Bazy (z modyfikatorem)', h('div', null, h('div', { class: 'drawing__gdt-row drawing__gdt-datums' },
+            datums.map((input, index) => h('span', { class: 'drawing__gdt-datum-pair' }, input, datumMods[index]))), datumHint)),
+          h('div', { class: 'drawing__settings-switch' }, switchOf('Drugi wiersz (ramka złożona)', 'drawing-gdt-row2', 'row2')),
+          row2Box,
+          h('div', { class: 'drawing__settings-switch' }, switchOf('Dookoła – tolerancja na całym obwodzie', 'drawing-gdt-all-around', 'allAround')),
           field('Podgląd', preview),
           options,
           h('p', { class: 'field__hint' }, element ? 'Koniec strzałki przeciągniesz na rysunku (kółko) – przyciąga się do krawędzi i narożników.'
@@ -5724,7 +5867,11 @@ export function openDrawingEditor({
               return false;
             }
           }
-          const typed = datums.map((input) => input.value.trim().toUpperCase()).filter(Boolean);
+          if (choice.row2 && !cleanGdtValue(row2Value.value)) {
+            api.setError('Wpisz tolerancję drugiego wiersza, np. 0,02 (albo wyłącz drugi wiersz).');
+            return false;
+          }
+          const typed = [...datums, ...(choice.row2 ? row2Datums : [])].map((input) => input.value.trim().toUpperCase()).filter(Boolean);
           if (!gdtSymbol(choice.symbol).form && typed.some((datum) => !DATUM_RE.test(datum))) {
             api.setError('Baza to wielka litera, np. A (wspólna – A-B).');
             return false;
@@ -5781,14 +5928,61 @@ export function openDrawingEditor({
       });
       requestAnimationFrame(() => letter.focus());
     }
-    /** Chropowatość (ISO 1302): rodzaj obróbki, wymaganie („Ra 1,6”), wielkość i kolor. */
+    /**
+     * Chropowatość (ISO 1302): rodzaj obróbki, wymaganie („Ra 1,6”), wielkość i kolor; od 1.38 kierunek
+     * struktury, naddatek na obróbkę, metoda wytwarzania, „dookoła” i podgląd.
+     */
     function editRoughness(element = null) {
       if (!element) clearSelection();
-      const choice = { ...symbolChoice(element), kind: element?.kind ?? 'removal' };
+      const choice = { ...symbolChoice(element), kind: element?.kind ?? 'removal', lay: element?.lay ?? '', allAround: element?.allAround === true };
+      const preview = h('canvas', { class: 'drawing__gdt-preview', dataset: { testid: 'drawing-roughness-preview' } });
       const text = h('input', {
         class: 'input', type: 'text', autocomplete: 'off', spellcheck: 'false', maxLength: ROUGHNESS_TEXT_MAX, 'aria-label': 'Wymaganie',
-        value: element?.text ?? 'Ra 1,6', dataset: { testid: 'drawing-roughness-text' }
+        value: element?.text ?? 'Ra 1,6', dataset: { testid: 'drawing-roughness-text' }, onInput: () => refresh()
       });
+      const allowance = h('input', {
+        class: 'input drawing__roughness-allowance', type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', maxLength: ROUGHNESS_ALLOWANCE_MAX,
+        placeholder: 'naddatek', 'aria-label': 'Naddatek na obróbkę', value: element?.allowance ?? '', dataset: { testid: 'drawing-roughness-allowance' }, onInput: () => refresh()
+      });
+      const method = h('input', {
+        class: 'input', type: 'text', autocomplete: 'off', spellcheck: 'false', maxLength: ROUGHNESS_METHOD_MAX, placeholder: 'metoda, np. szlifowane',
+        'aria-label': 'Metoda wytwarzania', value: element?.method ?? '', dataset: { testid: 'drawing-roughness-method' }, onInput: () => refresh()
+      });
+      const aroundToggle = toggle({
+        checked: choice.allAround, label: 'Dookoła (cały obwód)',
+        onChange: (checked) => {
+          choice.allAround = checked;
+          refresh();
+        }
+      });
+      aroundToggle.querySelector('input').dataset.testid = 'drawing-roughness-all-around';
+      const layName = h('p', { class: 'field__hint', dataset: { testid: 'drawing-roughness-lay-name' } });
+      /** Symbol z pól okna (bez położenia). */
+      const build = () => {
+        const next = {
+          tool: 'roughness', x: element?.x ?? 0, y: element?.y ?? 0, size: SYMBOL_TEXT_SIZES[choice.size], color: inkHex(choice.color),
+          text: text.value.trim().replace(/(\d)\.(\d)/g, '$1,$2').slice(0, ROUGHNESS_TEXT_MAX), kind: choice.kind,
+          ...(choice.lay ? { lay: choice.lay } : {}),
+          ...(cleanGdtValue(allowance.value) ? { allowance: cleanGdtValue(allowance.value).slice(0, ROUGHNESS_ALLOWANCE_MAX) } : {}),
+          ...(method.value.trim() ? { method: method.value.trim().replace(/\s+/g, ' ').slice(0, ROUGHNESS_METHOD_MAX) } : {}),
+          ...(choice.allAround ? { allAround: true } : {})
+        };
+        return { ...next, ...measureRoughness(next) };
+      };
+      function refresh() {
+        layName.textContent = choice.lay ? `Kierunek struktury: ${ROUGHNESS_LAY_LABELS[choice.lay].toLowerCase()}.` : 'Bez oznaczenia kierunku struktury.';
+        const sample = build();
+        const box = roughnessLayout(sample).box;
+        const ratio = window.devicePixelRatio || 1;
+        const scale = Math.min(1.6, 300 / Math.max(1, box.width + 12));
+        preview.width = Math.round((box.width + 12) * scale * ratio);
+        preview.height = Math.round((box.height + 12) * scale * ratio);
+        preview.style.width = `${Math.round((box.width + 12) * scale)}px`;
+        preview.style.height = `${Math.round((box.height + 12) * scale)}px`;
+        const ctx = preview.getContext('2d');
+        ctx.setTransform(ratio * scale, 0, 0, ratio * scale, 0, 0);
+        paintRoughness(ctx, { ...sample, x: sample.x - box.x + 6, y: sample.y - box.y + 6 });
+      }
       let pending = null;
       openFormSheet({
         title: element ? 'Chropowatość' : 'Nowy symbol chropowatości',
@@ -5797,28 +5991,40 @@ export function openDrawingEditor({
           field('Obróbka', segmented({
             name: `drawing-roughness-kind-${Date.now()}`, label: 'Obróbka', value: choice.kind,
             options: ROUGHNESS_KINDS.map((kind) => ({ value: kind, label: ROUGHNESS_KIND_LABELS[kind] })),
-            onChange: (kind) => { choice.kind = kind; }
+            onChange: (kind) => {
+              choice.kind = kind;
+              refresh();
+            }
           })),
           field('Wymaganie', h('div', null, text, h('div', { class: 'drawing__quick' },
             ['Ra 0,4', 'Ra 0,8', 'Ra 1,6', 'Ra 3,2', 'Ra 6,3', 'Ra 12,5', 'Rz 6,3', 'Rz 25'].map((item) => chip(item, `drawing-roughness-${item.replace(/[\s,]/g, '')}`, () => {
               text.value = item;
+              refresh();
             })))), { hint: 'Pod poziomą kreską symbolu (ISO 1302); puste – sam symbol.' }),
+          field('Kierunek struktury', h('div', null, segmented({
+            name: `drawing-roughness-lay-${Date.now()}`, label: 'Kierunek struktury', value: choice.lay,
+            options: [{ value: '', label: '–' }, ...ROUGHNESS_LAYS.map((lay) => ({ value: lay, label: lay }))],
+            onChange: (lay) => {
+              choice.lay = lay;
+              refresh();
+            }
+          }), layName)),
+          field('Naddatek i metoda wytwarzania', h('div', { class: 'drawing__gdt-row' }, allowance, method), { hint: 'Naddatek (mm) – z lewej strony symbolu, metoda – nad kreską.' }),
+          h('div', { class: 'drawing__settings-switch' }, aroundToggle),
+          field('Podgląd', preview),
           symbolOptions(choice),
           h('p', { class: 'field__hint' }, element ? 'Wierzchołek przeciągniesz na rysunku (kółko) – przyciąga się do krawędzi i przesuwa cały symbol.'
             : 'Po „Wstaw” dotknij krawędzi – tam stanie wierzchołek symbolu (zostaje przy krawędzi, gdy przesuwasz kształt).')
         ],
         onSubmit: () => {
-          const next = {
-            tool: 'roughness', x: element?.x ?? 0, y: element?.y ?? 0, size: SYMBOL_TEXT_SIZES[choice.size], color: inkHex(choice.color),
-            text: text.value.trim().replace(/(\d)\.(\d)/g, '$1,$2').slice(0, ROUGHNESS_TEXT_MAX), kind: choice.kind
-          };
-          pending = { ...next, ...measureRoughness(next) };
+          pending = build();
           return true;
         },
         onClose: () => {
           if (pending) putSymbol(element, pending);
         }
       });
+      refresh();
     }
     function toggleCollapsed() {
       const [only] = selection;
@@ -5909,7 +6115,7 @@ export function openDrawingEditor({
       }
       const next = {
         ...original,
-        width: Math.round(Math.max(STICKY_MIN.width, point.x - original.x)),
+        width: Math.round(Math.max(stickyColor(original.color).clear ? 60 : STICKY_MIN.width, point.x - original.x)),
         height: Math.round(Math.max(STICKY_MIN.height, point.y - original.y))
       };
       return { ...next, ...measureSticky(next) };

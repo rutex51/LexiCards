@@ -139,7 +139,7 @@ export function toneStroke(stroke, factor, stickyTones = null) {
   const next = { ...stroke };
   if (stroke.tool === 'sticky') {
     const tones = stickyTones?.(stroke.color);
-    if (tones) next.color = { fill: saturateHex(tones.fill, factor), ink: saturateHex(tones.ink, factor) };
+    if (tones) next.color = { fill: saturateHex(tones.fill, factor), ink: saturateHex(tones.ink, factor), ...(tones.clear ? { clear: true } : {}) };
     return next;
   }
   if (typeof stroke.color === 'string') next.color = saturateHex(stroke.color, factor);

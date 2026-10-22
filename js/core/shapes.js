@@ -1061,7 +1061,14 @@ export const DIM_LINE = 1.5;
 export const DIM_OFFSET_LIMITS = Object.freeze({ min: 12, max: 600 });
 /** Znak przed liczbą wymiaru (średnica, promień, kwadrat) i rodzaje tolerancji: ±, odchyłki, pasowanie. */
 export const DIM_PREFIXES = Object.freeze(['', '⌀', 'R', '□']);
-export const DIM_TOLERANCES = Object.freeze(['sym', 'dev', 'fit']);
+export const DIM_TOLERANCES = Object.freeze(['sym', 'dev', 'limits', 'fit']);
+/**
+ * Rodzaje wymiaru (od 1.38): teoretycznie dokładny (w prostokątnej ramce), pomocniczy (w nawiasie)
+ * i kontrolny (w owalnej ramce); zwykły – bez pola. Dokładny i pomocniczy są bez tolerancji.
+ */
+export const DIM_STYLES = Object.freeze(['basic', 'reference', 'inspection']);
+/** Najwięcej miejsc po przecinku liczby wymiaru (od 1.38; bez pola – samoczynnie). */
+export const DIM_PLACES_MAX = 3;
 export const isLinearDim = (key) => key === 'width' || key === 'height' || key === 'length';
 
 /** Domyślny promień łuku kąta: połowa ramienia (boku albo odcinka; wymiar kąta – krótszego ramienia), od 36 do 140. */
@@ -1349,15 +1356,21 @@ export const FIT_RE = /^[A-Za-z]{1,3}\d{1,2}(\/[A-Za-z]{1,3}\d{1,2})?$/;
 
 /**
  * Sprawdzone oznaczenie wymiaru albo null: { prefix?: '⌀' | 'R' | '□' (tylko długości), kind?: 'sym' |
- * 'dev' | 'fit', value? (±), upper?, lower? (odchyłki), fit? (pasowanie) }.
+ * 'dev' | 'limits' | 'fit', value? (±), upper?, lower? (odchyłki; 'limits' – wymiary graniczne z tych
+ * odchyłek), fit? (pasowanie), style?: 'basic' | 'reference' | 'inspection', places?: 0–3 } (od 1.38
+ * wymiary graniczne, rodzaj wymiaru i miejsca po przecinku).
  */
 export function cleanDimTolerance(raw, linear = true) {
   if (!raw || typeof raw !== 'object') return null;
   const result = {};
   if (linear && DIM_PREFIXES.includes(raw.prefix) && raw.prefix) result.prefix = raw.prefix;
+  if (DIM_STYLES.includes(raw.style)) result.style = raw.style;
+  if (Number.isInteger(raw.places) && raw.places >= 0 && raw.places <= DIM_PLACES_MAX) result.places = raw.places;
   const limit = (value) => clamp(Math.round(value * 1e6) / 1e6, -1e6, 1e6);
+  // Wymiar teoretycznie dokładny i pomocniczy – bez tolerancji.
+  if (result.style === 'basic' || result.style === 'reference') return Object.keys(result).length > 0 ? result : null;
   if (raw.kind === 'sym' && finite(raw.value) && raw.value !== 0) Object.assign(result, { kind: 'sym', value: Math.abs(limit(raw.value)) });
-  else if (raw.kind === 'dev' && finite(raw.upper) && finite(raw.lower)) Object.assign(result, { kind: 'dev', upper: limit(raw.upper), lower: limit(raw.lower) });
+  else if ((raw.kind === 'dev' || raw.kind === 'limits') && finite(raw.upper) && finite(raw.lower)) Object.assign(result, { kind: raw.kind, upper: limit(raw.upper), lower: limit(raw.lower) });
   else if (raw.kind === 'fit' && linear && typeof raw.fit === 'string' && FIT_RE.test(raw.fit.trim())) Object.assign(result, { kind: 'fit', fit: raw.fit.trim() });
   return Object.keys(result).length > 0 ? result : null;
 }
