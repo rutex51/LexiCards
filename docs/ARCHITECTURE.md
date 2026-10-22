@@ -1651,6 +1651,35 @@ kartki). `placeDxf` – skala, warstwy z pliku („0” – warstwa 1, ta sama n
 widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kartki obok krótszych pastylek
 (`pointer-events: none` na pojemniku).
 
+## Kółko przesuwane, menu na telefonie, elementy na kartce, obroty fiszki (od 1.39)
+
+- **Kółko przesuwane** (`js/ui/drawing-ring.js`): przytrzymanie dużego kółka `LONG_PRESS` (450 ms) bez ruchu
+  (`MOVE_SLOP`) – tryb przesuwania (`drawing-ring--moving`), przeciągnięcie ustawia `position` – środek jako część
+  obszaru edytora (0–1); puszczenie – `onMove` zapisuje `tools.ringPositions[strona]` (`cleanRingPositions`
+  w `js/core/tool-ring.js`, ustawienia narzędzi na urządzeniu). Kółko przesunięte (`drawing-ring--placed`): `left`/`top`
+  w px (duże kółko w całości w obszarze), `ringItems({ …, free: { angle, room } })` – środek wycinka w stronę środka
+  obszaru (`ringFacing`), szerokość wycinka rośnie z odległością od najbliższego brzegu (`open` 0–1: od `RING_FULL`
+  do całego okręgu), zanikanie przy każdym z czterech brzegów. Schowanie kółka (`setHidden` w `js/ui/drawing.js`)
+  zeruje jego miejsce.
+- **Kółko po zwinięciu menu**: `placeRingTop` przy schowanym menu (`uiPartHidden(…, 'top')` albo oko) od razu ustawia
+  `--drawing-ring-top` na 10 px – bez mierzenia menu w trakcie animacji; po `transitionend` paska – ponownie.
+- **Menu na telefonie**: `.drawing__choices` – osobna zaokrąglona pastylka (bez ujemnego marginesu), trzecie menu
+  (`.drawing__style-row` za widocznym wyborem) w pełnej szerokości z kreską u góry.
+- **Elementy na kartce**: `offPage(punkt)`, `onPage(punkt)` – `startShape` przesuwa początek spoza strony na jej
+  brzeg (`offStart`), ruch po stronie ustawia `onSheet`; przy zakończeniu kształt powstaje tylko po przeciągnięciu,
+  które weszło na stronę. Koniec przeciąganego kształtu i punkty kształtów z punktów – przycięte do strony
+  (`onPage`); punkt kształtu z punktów poza stroną – `startOffPage` (zdjęcie zaznaczenia, palcem – przesuwanie
+  strony); kreska pióra bez żadnego punktu na stronie (`onSheet`) nie trafia do rysunku; wstawianie
+  symbolu poza stroną (z zapasem `HANDLE_HIT`) – komunikat, czekanie dalej.
+- **Obroty fiszki** (`js/core/study.js`): `FLIP_COUNTS`, `FLIP_FACES` (answer, description, example, details, all),
+  `DEFAULT_FLIP_FACES`, `FLIP_TURNS` (`left`, `up`, `right`), `flipFaces(liczba, zapis)`, `sessionFlipFaces(config,
+  ustawienia)`. Ustawienia: `flashcardFlips`, `flashcardFaces` (`{ 2: […], 3: […] }`); konfiguracja sesji: `flips`,
+  `faces`. Ekran sesji (`js/ui/screens/study-session.js`): `this.face` (0 – pytanie), strony `card-front`,
+  `card-back` (strona 2), `card-face-3`, `card-face-4`, przyciski `card-flip`, `card-next-<n>`, `card-unflip`
+  (`card-unflip-<n>`), numer `card-page-<n>`; `#flipTo` – animacja `TURN_FRAMES` (rotateY ±90°, rotateX dla obrotu
+  z dołu do góry), `data-face`, `data-turn`. Formularz Nauka (`study-setup.js`): grupa `study-flips`, wybory
+  `study-face-<n>`.
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).
@@ -1734,7 +1763,7 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   oznaczenie „Wymiary w …”, tolerancje w mm i przeliczenie starszych rysunków, odchyłki w ramce
   tolerancji, tabela pasowań i ostatnio użyte; od 1.36 warstwy i sygnatury; od 1.37 pliki DXF – czytanie,
   zamiana na elementy, zapis i odczyt z powrotem, strony kodowe; od 1.38 wymiary graniczne, rodzaj wymiaru, ramka
-  złożona, chropowatość z kierunkiem struktury, odnośnik),
+  złożona, chropowatość z kierunkiem struktury, odnośnik; od 1.39 kółko przesuwane i obroty fiszki),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

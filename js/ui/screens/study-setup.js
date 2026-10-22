@@ -1,9 +1,10 @@
-// Przygotowanie sesji nauki: materiał, kierunek, zakres, liczba fiszek, kolejność, pierwsza strona.
+// Przygotowanie sesji nauki: materiał, kierunek, zakres, liczba fiszek, kolejność, pierwsza strona,
+// od 1.39 obroty fiszki (1–3) i treść stron po kolejnych obrotach.
 
 import { pluralCards } from '../../core/text.js';
 import {
-  DIRECTION_NAMES, MIXED, STUDY_COUNTS, STUDY_DIRECTIONS, STUDY_FRONTS, STUDY_SCOPES, buildQueue, describeStudyMaterial,
-  isSessionFinished, scopeCounts
+  DIRECTION_NAMES, FLIP_COUNTS, FLIP_FACES, MIXED, STUDY_COUNTS, STUDY_DIRECTIONS, STUDY_FRONTS, STUDY_SCOPES, buildQueue, describeStudyMaterial,
+  flipFaces, isSessionFinished, scopeCounts
 } from '../../core/study.js';
 import { startTodaysReview, todaysReviewQueue } from '../actions.js';
 import { initialSelection, lessonsGroup, materialGroup, sanitizeSelection, selectionConfig } from '../material.js';
@@ -32,6 +33,9 @@ export class StudySetupScreen {
     this.count = known(STUDY_COUNTS, settings.studyCount, 20);
     this.shuffle = settings.shuffleCards !== false;
     this.front = known(STUDY_FRONTS, settings.preferredFlashcardFront, 'term');
+    // Obroty fiszki (od 1.39) i treść stron po nich – osobno zapamiętana dla 2 i 3 obrotów.
+    this.flips = FLIP_COUNTS.includes(settings.flashcardFlips) ? settings.flashcardFlips : 1;
+    this.faces = { 2: flipFaces(2, settings.flashcardFaces), 3: flipFaces(3, settings.flashcardFaces) };
     this.starting = false;
 
     // Sesja doprowadzona do końca, ale niezamknięta (np. po zamknięciu karty na podsumowaniu).
@@ -46,7 +50,9 @@ export class StudySetupScreen {
       scope: this.scope,
       count: this.count,
       shuffle: this.shuffle,
-      front: this.front
+      front: this.front,
+      flips: this.flips,
+      ...(this.flips > 1 ? { faces: [...this.faces[this.flips]] } : {})
     };
   }
 
@@ -64,6 +70,8 @@ export class StudySetupScreen {
         studyCount: this.count,
         shuffleCards: this.shuffle,
         preferredFlashcardFront: this.front,
+        flashcardFlips: this.flips,
+        flashcardFaces: { 2: [...this.faces[2]], 3: [...this.faces[3]] },
         studySelection: { domainID: config.domainID, moduleID: config.moduleID, lessonIDs: config.lessonIDs }
       });
       await library.startStudy(config, queue);
@@ -73,6 +81,35 @@ export class StudySetupScreen {
     } finally {
       this.starting = false;
     }
+  }
+
+  /**
+   * Obroty fiszki (od 1.39): 1, 2 albo 3; przy 2 i 3 – co pokazuje każda następna strona (pierwszy obrót
+   * od lewej do prawej, drugi z dołu do góry, trzeci od prawej do lewej).
+   */
+  #flipsGroup() {
+    const { ctx } = this;
+    const turns = ['od lewej do prawej', 'z dołu do góry', 'od prawej do lewej'];
+    const faces = this.flips > 1 ? this.faces[this.flips] : [];
+    return h('section', { class: 'group study-flips', dataset: { testid: 'study-flips' } },
+      h('h2', { class: 'form-group__title' }, 'Obroty fiszki'),
+      segmented({
+        name: 'study-flips', label: 'Obroty fiszki', value: String(this.flips),
+        options: FLIP_COUNTS.map((count) => ({ value: String(count), label: count === 1 ? '1 obrót' : `${count} obroty` })),
+        onChange: (value) => { this.flips = Number(value); ctx.refresh(); }
+      }),
+      faces.map((face, index) => field(`Po ${index + 1}. obrocie (${turns[index]})`, selectInput({
+        value: face, testID: `study-face-${index + 1}`,
+        options: FLIP_FACES.map((item) => ({ value: item.id, label: item.label })),
+        onChange: (value) => {
+          this.faces[this.flips] = this.faces[this.flips].map((item, at) => (at === index ? value : item));
+          ctx.refresh();
+        }
+      }))),
+      h('p', { class: 'group__footer' }, this.flips === 1
+        ? 'Na odwrocie: tłumaczenie, definicja i przykład. 2 albo 3 obroty – każda następna strona pokazuje wybraną część, po ostatniej fiszka wraca do pytania.'
+        : 'Dotknięcie fiszki obraca ją na następną stronę; po ostatniej wraca do pytania.')
+    );
   }
 
   /**
@@ -281,7 +318,8 @@ export class StudySetupScreen {
           }),
           this.front === 'term' ? null : h('p', { class: 'group__footer' },
             'Gdy pojęcie nie ma takiej treści w języku pytania, na pierwszej stronie zobaczysz samo pojęcie.')
-        )
+        ),
+        this.#flipsGroup()
       ],
       bottomBar: h('div', { class: `bottombar__inner ${startButton ? 'bottombar__inner--bubble' : 'bottombar__inner--note'}` },
         h('span', { class: 'bottombar__note', role: 'status', dataset: { testid: 'study-planned' } },

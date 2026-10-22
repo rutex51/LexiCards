@@ -10092,6 +10092,115 @@ test('rysunek 1.38 na telefonie: okno tolerancji wymiaru z nowymi wyborami mieś
   assert.deepEqual(lays, [], 'napisy wyborów w całości');
 }, { device: PHONE });
 
+// ---------------------------------------------------------------- 1.39: kółko przesuwane, menu, elementy na kartce
+
+test('rysunek 1.39: kółko przesuwane przytrzymaniem dużego kółka – w środku ekranu cały okrąg, przy brzegu część; zapamiętane; schowanie przywraca stałe miejsce (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Kółko</p>');
+  const ring = editor.locator('[data-testid=drawing-ring-right]');
+  const groups = ring.locator('.drawing-ring__group');
+  const visible = () => groups.evaluateAll((buttons) => buttons.filter((button) => Number(button.style.opacity) > 0.9).length);
+  const total = await groups.count();
+  const base = await ringMain(editor, 'right').boundingBox();
+  assert.ok(await visible() < total, 'przy krawędzi – wycinek okręgu');
+  const drag = async (from, to, hold = 650) => {
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.waitForTimeout(hold);
+    await page.mouse.move(to.x, to.y, { steps: 10 });
+    await page.mouse.up();
+  };
+  // Przytrzymanie i przeciągnięcie na środek ekranu – całe kółko tam, widać wszystkie małe kółka.
+  await drag({ x: base.x + base.width / 2, y: base.y + base.height / 2 }, { x: 640, y: 440 });
+  await waitUntil(() => ring.evaluate((element) => element.classList.contains('drawing-ring--placed')), 'Kółko przesunięte');
+  const moved = await ringMain(editor, 'right').boundingBox();
+  assert.ok(Math.abs(moved.x + moved.width / 2 - 640) < 4 && Math.abs(moved.y + moved.height / 2 - 440) < 4, `środek kółka w miejscu puszczenia (${Math.round(moved.x + moved.width / 2)}, ${Math.round(moved.y + moved.height / 2)})`);
+  await waitUntil(async () => (await visible()) === total, 'W środku ekranu – cały okrąg');
+  assert.equal(await editor.locator('[data-testid=drawing-shape-panel]').isHidden(), true, 'przesuwanie to nie dotknięcie');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-139-kolko-na-srodku.png') });
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('lexicards-drawing-tools')).ringPositions.right);
+  assert.ok(saved && saved.x > 0.4 && saved.x < 0.6, `zapamiętane miejsce (${JSON.stringify(saved)})`);
+  // Krótkie przeciągnięcie bez przytrzymania nie przesuwa kółka.
+  await drag({ x: 640, y: 440 }, { x: 600, y: 470 }, 0);
+  const still = await ringMain(editor, 'right').boundingBox();
+  assert.ok(Math.abs(still.x + still.width / 2 - 640) < 4, 'bez przytrzymania – kółko na miejscu');
+  // Przy lewym dolnym rogu – część małych kółek znika.
+  await drag({ x: 640, y: 440 }, { x: 70, y: 660 });
+  await waitUntil(async () => (await visible()) < total, 'Przy brzegu – wycinek');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-139-kolko-przy-rogu.png') });
+  // Zakładka chowa kółko – po pokazaniu jest w stałym miejscu przy prawej krawędzi.
+  await editor.locator('[data-testid=drawing-ring-right-tab]').click();
+  await waitUntil(() => ring.evaluate((element) => element.classList.contains('drawing-ring--hidden')), 'Schowane');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('lexicards-drawing-tools')).ringPositions.right), null);
+  await editor.locator('[data-testid=drawing-ring-right-tab]').click();
+  await waitUntil(async () => {
+    const box = await ringMain(editor, 'right').boundingBox();
+    return Math.abs(box.x - base.x) < 2 && Math.abs(box.y - base.y) < 2;
+  }, 'Stałe miejsce po schowaniu');
+}, { device: DESKTOP });
+
+test('rysunek 1.39 na telefonie: rząd 2 i 3 w osobnej pastylce pod menu, kółko od razu wyżej po zwinięciu menu, kształty tylko na kartce, kreska poza kartką przepada', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-ellipse');
+  const choices = editor.locator('[data-testid=drawing-choices]');
+  await choices.waitFor();
+  const [bar, pill] = [await editor.locator('.drawing__toolbar').boundingBox(), await choices.boundingBox()];
+  assert.ok(pill.y >= bar.y + bar.height + 2, `pastylka osobno pod menu (${Math.round(bar.y + bar.height)} → ${Math.round(pill.y)})`);
+  assert.equal(await choices.evaluate((element) => getComputedStyle(element).borderTopLeftRadius), '18px', 'zaokrąglona także u góry');
+  const [modes, styles] = [await choices.locator('.drawing__modes:not([hidden])').boundingBox(), await editor.locator('[data-testid=drawing-style-row]').boundingBox()];
+  assert.ok(styles.y >= modes.y + modes.height - 1, 'trzecie menu w drugim wierszu tej samej pastylki');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-139-pastylka-telefon.png') });
+  // Zwinięcie menu – kółko od razu wyżej (bez czekania na koniec animacji).
+  const before = await ringMain(editor, 'right').boundingBox();
+  await editor.locator('[data-testid=drawing-hide-top]').click();
+  await page.waitForTimeout(60);
+  const during = await ringMain(editor, 'right').boundingBox();
+  assert.ok(during.y < before.y - 40, `kółko wyżej zaraz po zwinięciu (${Math.round(before.y)} → ${Math.round(during.y)})`);
+  await waitUntil(() => isAway(editor.locator('.drawing__top')), 'Menu schowane');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-139-menu-zwiniete-telefon.png') });
+  await editor.locator('[data-testid=drawing-show-top]').click();
+  await waitUntil(async () => {
+    const [ringBox, pillBox] = [await ringMain(editor, 'right').boundingBox(), await choices.boundingBox()];
+    return ringBox.y > pillBox.y + pillBox.height;
+  }, 'Po rozwinięciu – kółko znowu pod menu');
+
+  // Prostokąt: dotknięcie pod kartką – nic nie powstaje; na kartce – prostokąt; przeciągnięcie poza kartkę – koniec na jej brzegu.
+  const frame = await pageFrame(page);
+  const { at } = frame;
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  await press(editor, 'drawing-shape-rect');
+  await drawStroke(page, [[...at(800, 1250), 0.5]], { type: 'mouse' });
+  await page.waitForTimeout(150);
+  assert.equal(await count.isVisible(), false, 'pod kartką – bez kształtu');
+  await drawStroke(page, [[...at(400, 400), 0.5]], { type: 'mouse' });
+  await expectText(count, 'Prostokąt');
+  await drawStroke(page, [[...at(800, 1250), 0.5]], { type: 'mouse' });
+  await waitUntil(async () => !(await count.isVisible()), 'Dotknięcie obok kartki zdejmuje zaznaczenie');
+  await drawStroke(page, segment(at(1300, 700), at(1900, 1300), 10), { type: 'mouse' });
+  await expectText(count, 'Prostokąt');
+  // Pióro: kreska w całości pod kartką przepada, kreska zaczęta obok kartki i wchodząca na nią – zostaje.
+  await pickGroup(editor, 'write');
+  await editor.locator('[data-testid=drawing-tool-pen]').click();
+  await drawStroke(page, segment(at(300, 1200), at(700, 1300), 10), { type: 'mouse' });
+  await drawStroke(page, segment(at(200, 1250), at(200, 900), 10), { type: 'mouse' });
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const strokes = await savedStrokes(page, ids.statements);
+  const rects = strokes.filter((stroke) => stroke.shape === 'rect');
+  assert.equal(rects.length, 2, 'dwa prostokąty – dotknięcia obok kartki nic nie dodały');
+  const last = rects[1];
+  assert.ok(last.x + last.w / 2 <= 1600.5 && last.y + last.h / 2 <= 1100.5, `przeciągnięty prostokąt na kartce (${JSON.stringify([last.x, last.y, last.w, last.h])})`);
+  assert.equal(strokes.filter((stroke) => stroke.tool === 'pen').length, 1, 'tylko kreska, która weszła na kartkę');
+}, { device: PHONE });
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');
@@ -10393,6 +10502,65 @@ test('fiszki: obrót, trzy kafelki, wynik, decyzje, podsumowanie i runda powtór
   assert.equal(again.reviewCount, 2);
   assert.equal(again.lastStatus, 'mastered');
 });
+
+test('fiszki 1.39: trzy obroty – wybór treści stron, kolejne strony (od lewej, z dołu do góry, od prawej), powrót do pytania; zapamiętane ustawienie (telefon)', async ({ open }) => {
+  const page = await open();
+  await seedStudy(page);
+  await openStudySetup(page);
+  const flips = page.locator('[data-testid=study-flips]');
+  // Domyślnie 1 obrót – bez wyboru stron.
+  assert.equal(await flips.locator('select').count(), 0);
+  await choose(page, 'Obroty fiszki', '3 obroty');
+  await waitUntil(async () => (await flips.locator('select').count()) === 3, 'Trzy wybory stron');
+  assert.deepEqual(await flips.locator('select').evaluateAll((selects) => selects.map((select) => select.value)), ['answer', 'description', 'example']);
+  // Druga strona: przykład zamiast definicji, trzecia – definicja.
+  await page.locator('[data-testid=study-face-2]').selectOption('example');
+  await page.locator('[data-testid=study-face-3]').selectOption('description');
+  await flips.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-139-obroty-ustawienia.png') });
+  await startStudy(page);
+  const card = flashcard(page);
+  assert.equal(await card.getAttribute('data-faces'), '4');
+  await expectText(page.locator('[data-testid=card-flip]'), 'Pokaż odpowiedź');
+  // 1. obrót (od lewej do prawej): tłumaczenie, strona 2/4.
+  await page.locator('[data-testid=card-flip]').click();
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '1', 'Strona 2');
+  assert.equal(await card.getAttribute('data-turn'), 'left');
+  await expectText(page.locator('[data-testid=card-back] .flashcard__text--answer'), 'assets');
+  await expectText(page.locator('[data-testid=card-page-1]'), '2/4');
+  assert.equal(await page.locator('[data-testid=card-back] [data-section]').count(), 0, 'na stronie z tłumaczeniem bez definicji i przykładu');
+  assert.equal(await tile(page, 'term').isDisabled(), false, 'po pierwszym obrocie można oceniać');
+  await expectText(page.locator('[data-testid=card-next-1]'), 'Pokaż przykład');
+  // 2. obrót (z dołu do góry): przykład.
+  await page.locator('[data-testid=card-next-1]').click();
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '2', 'Strona 3');
+  assert.equal(await card.getAttribute('data-turn'), 'up');
+  const third = page.locator('[data-testid=card-face-2]');
+  await expectText(third, 'The assets of the company increased.');
+  assert.equal(await third.locator('[data-section=description]').count(), 0);
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-139-strona-przyklad.png') });
+  // 3. obrót (od prawej do lewej) – dotknięcie fiszki (tekstu przykładu; nagłówek sekcji jest tu ukryty): definicja;
+  // ostatnia strona bez przycisku „dalej”.
+  await third.getByText('The assets of the company increased.').click();
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '3', 'Strona 4');
+  assert.equal(await card.getAttribute('data-turn'), 'right');
+  const fourth = page.locator('[data-testid=card-face-3]');
+  await expectText(fourth, 'Resources owned by a company.');
+  assert.equal(await fourth.locator('.flashcard__flip').count(), 0);
+  // Po ostatniej stronie – powrót do pytania; z dowolnej strony „Pokaż pytanie” też wraca.
+  await fourth.getByText('Resources owned by a company.').click();
+  await waitUntil(async () => (await side(page)) === 'front', 'Powrót do pytania');
+  await page.locator('[data-testid=card-flip]').click();
+  await page.locator('[data-testid=card-next-1]').click();
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '2', 'Strona 3 znowu');
+  await page.locator('[data-testid=card-unflip-2]').click();
+  await waitUntil(async () => (await side(page)) === 'front', 'Pokaż pytanie');
+  // Ustawienie zapamiętane.
+  const settings = await page.evaluate(() => window.lexicards.library.getSettings());
+  assert.equal(settings.flashcardFlips, 3);
+  assert.deepEqual(settings.flashcardFaces[3], ['answer', 'example', 'description']);
+}, { device: PHONE });
 
 test('fiszki: gesty – w lewo „Umiem”, w prawo „Powtórz”, krótki ruch wraca', async ({ open, context }) => {
   const page = await open();

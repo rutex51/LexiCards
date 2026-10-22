@@ -2071,6 +2071,10 @@ a.row__main:active,
   color: var(--text-2);
 }
 
+/* Od 1.39: strona z samą definicją albo samym przykładem – podpis jest już w nagłówku. */
+:is(.flashcard__face--description, .flashcard__face--example) .flashcard__section-title { display: none; }
+.flashcard__page { font-weight: 500; }
+
 .flashcard__speak { margin-right: -10px; }
 
 .flashcard__tools {
@@ -7696,6 +7700,11 @@ button.drawing__pill--gray { color: var(--text-2); font-weight: 500; }
 
 .drawing-ring__main:active { cursor: grabbing; }
 
+/* Przesuwanie kółka (od 1.39): przytrzymane duże kółko lekko podniesione, kółko nad resztą interfejsu. */
+.drawing-ring--moving { z-index: 6; }
+.drawing-ring--moving .drawing-ring__main { transform: scale(1.08); box-shadow: 0 0 0 4px var(--bar-solid), 0 14px 26px -8px rgba(0, 0, 0, 0.5); cursor: grabbing; }
+.drawing-ring--ready.drawing-ring--moving .drawing-ring__group { transition: opacity 0.2s ease; }
+
 .drawing-ring--hidden { opacity: 0; visibility: hidden; transition: transform 0.3s ease, opacity 0.3s ease, visibility 0s 0.3s; }
 .drawing-ring--hidden.drawing-ring--right { transform: translateX(calc(50% + 40px)); }
 .drawing-ring--hidden.drawing-ring--left { transform: translateX(calc(-50% - 40px)); }
@@ -7832,7 +7841,11 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   .drawing__row--tools { max-width: calc(100vw - 72px); justify-content: flex-start; }
   .drawing__tool--labeled { width: 42px; height: 44px; border-radius: 13px; }
   .drawing__tool-label { display: none; }
-  .drawing__choices { margin-top: -6px; padding-top: 8px; border-radius: 0 0 16px 16px; }
+  /* Od 1.39 wybór (rząd 2) i trzecie menu (rząd 3) – osobna zaokrąglona pastylka tuż pod menu, oba razem w jednej; trzecie menu we własnym wierszu. */
+  .drawing__choices { padding: 4px 6px; border-radius: 18px; }
+  .drawing__choices:not(.drawing__choices--dock) .drawing__group:not([hidden]) ~ .drawing__style-row:not([hidden]) {
+    flex-basis: 100%; margin: 2px 0 0; padding: 4px 0 0; border-left: 0; border-top: 1px solid var(--separator);
+  }
   .drawing__choices--dock { margin: 0 0 2px; padding-top: 4px; border-radius: 18px; row-gap: 2px; }
   /* Dwa wiersze: obszar i „Wszystko”, pod nimi tryby. */
   .drawing__choices--dock::after { content: ''; flex-basis: 100%; order: 1; }

@@ -189,12 +189,19 @@ const EDGE_FADE = 26;
 /**
  * Małe kółka: { index, angle, x, y, opacity } – x i y względem środka dużego kółka (px), angle w stopniach
  * ekranu (0 – w prawo, 90 – w dół). edge – odległość środka dużego kółka od krawędzi ekranu po jego
- * stronie (px), size – średnica małego kółka.
+ * stronie (px), size – średnica małego kółka. Od 1.39 kółko przesunięte ręcznie – free: { angle – środek
+ * wycinka (w stronę środka ekranu), room: { left, right, top, bottom } – odległość środka dużego kółka od
+ * brzegów }: im dalej od brzegów, tym szerszy wycinek, z dala od nich – cały okrąg; kółka przy którymkolwiek
+ * brzegu znikają.
  */
-export function ringItems({ count, rotation, side, radius, edge, size }) {
+export function ringItems({ count, rotation, side, radius, edge, size, free = null }) {
   const { step, wrap } = ringStep(count);
-  const center = RING_CENTER[side] ?? RING_CENTER.right;
+  const center = free ? free.angle : RING_CENTER[side] ?? RING_CENTER.right;
   const right = side !== 'left';
+  const clearance = free ? Math.min(free.room.left, free.room.right, free.room.top, free.room.bottom) : 0;
+  const open = free ? clamp((clearance - radius * 0.6) / (radius * 0.9), 0, 1) : 0;
+  const full = RING_FULL + (180 - RING_FULL) * open;
+  const fadeEnd = RING_FADE_END + (181 - RING_FADE_END) * open;
   return Array.from({ length: count }, (_, index) => {
     const raw = index * step - rotation;
     const offset = wrap ? wrapAngle(raw) : raw;
@@ -202,13 +209,35 @@ export function ringItems({ count, rotation, side, radius, edge, size }) {
     const rad = (angle * Math.PI) / 180;
     const x = radius * Math.cos(rad);
     const y = radius * Math.sin(rad);
-    const distance = Math.abs(offset);
-    let opacity = distance <= RING_FULL ? 1 : distance >= RING_FADE_END ? 0 : 1 - (distance - RING_FULL) / (RING_FADE_END - RING_FULL);
-    // Odległość brzegu kółka od krawędzi ekranu po stronie dużego kółka.
-    const room = edge - (right ? x : -x) - size / 2;
+    const distance = Math.abs(free ? wrapAngle(offset) : offset);
+    let opacity = distance <= full ? 1 : distance >= fadeEnd ? 0 : 1 - (distance - full) / (fadeEnd - full);
+    // Odległość brzegu kółka od krawędzi ekranu: po stronie dużego kółka, a przesuniętego – od najbliższego brzegu.
+    const room = free
+      ? Math.min(free.room.left + x, free.room.right - x, free.room.top + y, free.room.bottom - y) - size / 2
+      : edge - (right ? x : -x) - size / 2;
     opacity *= clamp((room - EDGE_GAP) / EDGE_FADE, 0, 1);
     return { index, angle, x, y, opacity: Math.round(opacity * 1000) / 1000 };
   });
+}
+
+/**
+ * Położenie kółek przesuniętych ręcznie (od 1.39): { right, left } – środek dużego kółka jako część szerokości
+ * i wysokości obszaru edytora (0–1); null – stałe miejsce przy krawędzi (także po schowaniu kółka).
+ */
+export function cleanRingPositions(raw) {
+  const result = {};
+  for (const side of RING_SIDES) {
+    const value = raw && typeof raw === 'object' ? raw[side] : null;
+    result[side] = value && Number.isFinite(value.x) && Number.isFinite(value.y)
+      ? { x: Math.round(clamp(value.x, 0, 1) * 10000) / 10000, y: Math.round(clamp(value.y, 0, 1) * 10000) / 10000 } : null;
+  }
+  return result;
+}
+
+/** Kierunek wycinka kółka przesuniętego do (x, y) w obszarze width × height: w stronę środka obszaru (stopnie ekranu). */
+export function ringFacing(x, y, width, height) {
+  const [dx, dy] = [width / 2 - x, height / 2 - y];
+  return Math.hypot(dx, dy) < 1 ? 90 : (Math.atan2(dy, dx) * 180) / Math.PI;
 }
 
 /** Ukryte elementy interfejsu (od 1.32): kółka, górne menu, dolny pasek, pastylki informacji i zmian. */

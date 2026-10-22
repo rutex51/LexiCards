@@ -5,9 +5,11 @@
 // puszczeniu – dociągnięcie do najbliższej). Dotknięcie małego kółka wybiera grupę. Duże kółko:
 // dotknięcie – ustawienia narzędzia, przesunięcie do krawędzi ekranu – chowa kółko. Zakładka przy
 // krawędzi chowa i przywraca kółko. Od 1.33 ostatnie małe kółko („Grupy narzędzi”) otwiera dobór grup,
-// a grupy można wymienić (setGroups) bez budowania kółka od nowa.
+// a grupy można wymienić (setGroups) bez budowania kółka od nowa. Od 1.39 przytrzymanie dużego kółka
+// i przeciągnięcie przesuwa całe kółko w dowolne miejsce (wycinek małych kółek obraca się w stronę
+// środka ekranu, z dala od brzegów – cały okrąg); schowanie przywraca stałe miejsce przy krawędzi.
 
-import { clampRotation, ringItems, ringStep, rotationFor, snapRotation } from '../core/tool-ring.js';
+import { clampRotation, ringFacing, ringItems, ringStep, rotationFor, snapRotation } from '../core/tool-ring.js';
 import { h } from './dom.js';
 import { icon } from './icons.js';
 
@@ -19,6 +21,8 @@ const SIZES = Object.freeze({
 /** Przesunięcie (px), po którym gest przestaje być dotknięciem; po ilu px przesunięcia do krawędzi kółko się chowa. */
 const MOVE_SLOP = 8;
 const HIDE_DISTANCE = 40;
+/** Przytrzymanie dużego kółka (ms), po którym przeciągnięcie przesuwa całe kółko (od 1.39). */
+const LONG_PRESS = 450;
 /** Kółko myszy: tyle jednostek przewinięcia obraca o jedną grupę. */
 const WHEEL_STEP = 40;
 
@@ -26,10 +30,11 @@ const wrap = (angle) => ((((angle + 180) % 360) + 360) % 360) - 180;
 
 /**
  * side: 'right' | 'left'; groups: [{ id, label, icon }]; onPick(id) – wybór grupy; onMain() – dotknięcie
- * dużego kółka; onHide(hidden) – schowanie albo przywrócenie; onEdit() – ostatnie małe kółko (dobór grup).
+ * dużego kółka; onHide(hidden) – schowanie albo przywrócenie; onEdit() – ostatnie małe kółko (dobór grup);
+ * od 1.39 onMove({ x, y }) – kółko przesunięte (środek jako część obszaru edytora).
  * Zwraca { element, tab, update(state), setGroups(list, active), groupButton(id), editButton }.
  */
-export function createRing({ side, groups: initial, label, onPick, onMain, onHide, onEdit }) {
+export function createRing({ side, groups: initial, label, onPick, onMain, onHide, onEdit, onMove = () => {} }) {
   const right = side !== 'left';
   let groups = initial;
   let sizes = SIZES.wide;
@@ -40,6 +45,11 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
   let suppressClick = false;
   let wheelSum = 0;
   let wheelTime = 0;
+  /** Położenie przesuniętego kółka ({ x, y } – część obszaru edytora) albo null – stałe miejsce. */
+  let position = null;
+  /** Przesuwanie kółka (od 1.39): { id, grabX, grabY } – przesunięcie wskaźnika względem środka. */
+  let moving = null;
+  let pressTimer = 0;
 
   const makeGroupButton = (group) => h('button', {
     type: 'button', class: 'drawing-ring__group', 'aria-label': group.label, title: group.label, 'aria-pressed': 'false',
@@ -77,17 +87,42 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
   }
   const angleAt = (event, origin) => (Math.atan2(event.clientY - origin.y, event.clientX - origin.x) * 180) / Math.PI;
 
+  /** Obszar edytora (rodzic kółka): szerokość i wysokość w px. */
+  function area() {
+    const parent = element.offsetParent ?? element.parentElement;
+    return { width: parent?.clientWidth ?? window.innerWidth, height: parent?.clientHeight ?? window.innerHeight };
+  }
+  /** Środek przesuniętego kółka w px – duże kółko zawsze w całości w obszarze. */
+  function placedCenter(space) {
+    const margin = sizes.main / 2 + 4;
+    return {
+      x: Math.min(space.width - margin, Math.max(margin, position.x * space.width)),
+      y: Math.min(space.height - margin, Math.max(margin, position.y * space.height))
+    };
+  }
   function layout() {
     const box = 2 * (sizes.radius + sizes.small / 2 + 4);
     element.style.width = `${box}px`;
     element.style.height = `${box}px`;
-    element.style[right ? 'right' : 'left'] = `${sizes.edge - box / 2}px`;
-    element.style[right ? 'left' : 'right'] = '';
-    element.style.top = `calc(var(--drawing-ring-top, 10px) + ${sizes.main / 2 - box / 2}px)`;
     element.style.setProperty('--ring-main', `${sizes.main}px`);
     element.style.setProperty('--ring-small', `${sizes.small}px`);
     tab.style.top = `calc(var(--drawing-ring-top, 10px) + ${sizes.main / 2 - 26}px)`;
-    const items = ringItems({ count: buttons.length, rotation, side, radius: sizes.radius, edge: sizes.edge, size: sizes.small });
+    let free = null;
+    if (position && !hidden) {
+      // Kółko przesunięte (od 1.39): środek w wybranym miejscu, wycinek – w stronę środka obszaru.
+      const space = area();
+      const at = placedCenter(space);
+      element.style.left = `${at.x - box / 2}px`;
+      element.style.right = '';
+      element.style.top = `${at.y - box / 2}px`;
+      free = { angle: ringFacing(at.x, at.y, space.width, space.height), room: { left: at.x, right: space.width - at.x, top: at.y, bottom: space.height - at.y } };
+    } else {
+      element.style[right ? 'right' : 'left'] = `${sizes.edge - box / 2}px`;
+      element.style[right ? 'left' : 'right'] = '';
+      element.style.top = `calc(var(--drawing-ring-top, 10px) + ${sizes.main / 2 - box / 2}px)`;
+    }
+    element.classList.toggle('drawing-ring--placed', Boolean(free));
+    const items = ringItems({ count: buttons.length, rotation, side, radius: sizes.radius, edge: sizes.edge, size: sizes.small, free });
     for (const item of items) {
       const button = buttons[item.index];
       button.style.left = `${box / 2 + item.x - sizes.small / 2}px`;
@@ -197,18 +232,67 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
     if (!wheelAt(event)) event.preventDefault();
   }, { passive: false });
 
-  // ---- duże kółko: dotknięcie – ustawienia, przesunięcie do krawędzi – schowanie
+  // ---- duże kółko: dotknięcie – ustawienia, przesunięcie do krawędzi – schowanie, przytrzymanie – przesuwanie
+  const clearPress = () => {
+    clearTimeout(pressTimer);
+    pressTimer = 0;
+  };
+  /** Przytrzymane duże kółko (od 1.39): od teraz przeciągnięcie przesuwa całe kółko. */
+  function startMoving(event) {
+    swipe = null;
+    main.style.transform = '';
+    const origin = center();
+    moving = { id: event.pointerId, grabX: event.clientX - origin.x, grabY: event.clientY - origin.y };
+    element.classList.add('drawing-ring--moving');
+    try {
+      main.setPointerCapture(event.pointerId);
+    } catch {
+      // bez przechwycenia przesuwanie też działa
+    }
+    try {
+      navigator.vibrate?.(12);
+    } catch {
+      // drgnięcie jest dodatkiem
+    }
+  }
+  function moveTo(event) {
+    const parent = (element.offsetParent ?? element.parentElement).getBoundingClientRect();
+    const space = area();
+    position = {
+      x: Math.min(1, Math.max(0, (event.clientX - moving.grabX - parent.left) / Math.max(1, space.width))),
+      y: Math.min(1, Math.max(0, (event.clientY - moving.grabY - parent.top) / Math.max(1, space.height)))
+    };
+    layout();
+  }
   main.addEventListener('pointerdown', (event) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     swipe = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+    clearPress();
+    const pressed = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY };
+    pressTimer = setTimeout(() => {
+      pressTimer = 0;
+      if (swipe && swipe.id === pressed.pointerId && !swipe.moved) startMoving(pressed);
+    }, LONG_PRESS);
   });
   main.addEventListener('pointermove', (event) => {
+    if (moving && moving.id === event.pointerId) {
+      if (event.pointerType === 'mouse' && event.buttons === 0) {
+        endMoving();
+        return;
+      }
+      event.preventDefault();
+      moveTo(event);
+      return;
+    }
     if (!swipe || swipe.id !== event.pointerId) return;
     if (event.pointerType === 'mouse' && event.buttons === 0) {
+      clearPress();
       swipe = null;
       main.style.transform = '';
       return;
     }
+    // Ruch przed przytrzymaniem – to nie przesuwanie kółka.
+    if (Math.hypot(event.clientX - swipe.x, event.clientY - swipe.y) >= MOVE_SLOP) clearPress();
     const dx = event.clientX - swipe.x;
     const dy = event.clientY - swipe.y;
     if (!swipe.moved) {
@@ -223,7 +307,21 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
     const outward = right ? Math.max(0, dx) : Math.min(0, dx);
     main.style.transform = `translateX(${outward}px)`;
   });
+  /** Koniec przesuwania: miejsce zapamiętane (onMove), „kliknięcie” po puszczeniu nie otwiera ustawień. */
+  function endMoving() {
+    if (!moving) return;
+    moving = null;
+    element.classList.remove('drawing-ring--moving');
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 0);
+    if (position) onMove({ ...position });
+  }
   const endSwipe = (event, cancelled) => {
+    clearPress();
+    if (moving && moving.id === event.pointerId) {
+      endMoving();
+      return;
+    }
     if (!swipe || swipe.id !== event.pointerId) return;
     const { moved, x } = swipe;
     swipe = null;
@@ -242,9 +340,11 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
 
   /**
    * state: { active – id pokazanej grupy z tego kółka albo null, main: { icon, fill, ink, label },
-   * hidden, all – cały interfejs schowany, narrow – wąski ekran }.
+   * hidden, all – cały interfejs schowany, narrow – wąski ekran, position – od 1.39 miejsce przesuniętego
+   * kółka ({ x, y }) albo null }.
    */
   function update(state) {
+    if (!moving) position = state.position ?? null;
     const nextSizes = state.narrow ? SIZES.narrow : SIZES.wide;
     const resized = nextSizes !== sizes;
     sizes = nextSizes;
@@ -253,7 +353,7 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
     main.style.setProperty('--ring-fill', state.main.fill);
     main.style.setProperty('--ring-ink', state.main.ink);
     main.setAttribute('aria-label', state.main.label);
-    main.title = state.main.label;
+    main.title = `${state.main.label} · przytrzymaj i przeciągnij – przesuń kółko`;
     hidden = Boolean(state.hidden);
     element.classList.toggle('drawing-ring--hidden', hidden || state.all);
     element.inert = hidden || state.all;
@@ -264,6 +364,7 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
     tab.title = tabLabel;
     tab.setAttribute('aria-expanded', String(!hidden));
     if (resized || !element.style.width) placeAtOnce();
+    else layout();
   }
 
   return {

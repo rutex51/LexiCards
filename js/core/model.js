@@ -97,6 +97,8 @@ export function defaultSettings() {
     accentColor: 'blue',           // kolor aplikacji: blue | graphite | orange | green | red
     preferredDirection: 'pl_en',   // pl_en | en_pl | mixed
     preferredFlashcardFront: 'term',
+    flashcardFlips: 1,             // obroty fiszki (od 1.39): 1 | 2 | 3
+    flashcardFaces: { 2: ['answer', 'details'], 3: ['answer', 'description', 'example'] }, // treść stron po obrotach
     preferredQuizLength: 10,       // liczba pytań quizu (0 = wszystkie pojęcia materiału)
     quizType: 'choice',            // choice | matching | mixed
     quizDirection: 'pl_en',        // pl_en | en_pl | mixed

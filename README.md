@@ -1,4 +1,4 @@
-# LexiCards 1.38
+# LexiCards 1.39
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -47,8 +47,9 @@ Rysunek: trzecie menu kształtów (znacznik punktu, rodzaj linii, wypełnienie, 
 Rysunek: warstwy – pięć na start i dodawanie kolejnych, nazwa, ukrycie, krycie i nasycenie, poziomy tło i obraz, do trzech sygnatur elementu (rząd 1–3, kaskadowo); rodzaje wymiaru jako osobne narzędzia w górnym menu (długość, kąt, promień, średnica); trzeci pasek tylko przy narzędziu z pokazanej grupy (wersja 1.36): [docs/RELEASE-1.36.md](docs/RELEASE-1.36.md).
 Rysunek: wczytywanie plików DXF (odcinki, okręgi, łuki, łamane, splajny, teksty, bloki, wymiary; warstwy, kolory i rodzaje linii z pliku, prawdziwe milimetry, skala dopasowana do kartki) i zapis kartki jako DXF (R12, milimetry, warstwy, wymiary z grotami i liczbą) (wersja 1.37): [docs/RELEASE-1.37.md](docs/RELEASE-1.37.md).
 Rysunek: wymiary graniczne, teoretycznie dokładny w ramce, pomocniczy w nawiasie, kontrolny w owalnej ramce, miejsca po przecinku; ramka tolerancji z Ⓟ i wysokością, modyfikatorem przy bazie, drugim wierszem i znakiem „dookoła”; chropowatość z kierunkiem struktury, naddatkiem, metodą i „dookoła”; odnośnik – tekst ze strzałką bez karteczki (wersja 1.38): [docs/RELEASE-1.38.md](docs/RELEASE-1.38.md).
+Rysunek: kółko narzędzi przesuwane przytrzymaniem (w środku ekranu cały okrąg, schowanie – stałe miejsce), kółko od razu wyżej po zwinięciu menu, rząd 2 i 3 menu na iPhonie w osobnej pastylce, kształty tylko na kartce; fiszki: 1, 2 albo 3 obroty z wyborem treści każdej strony (wersja 1.39): [docs/RELEASE-1.39.md](docs/RELEASE-1.39.md).
 
-## Co potrafi wersja 1.38
+## Co potrafi wersja 1.39
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -538,7 +539,17 @@ informacji (kratka w skali rysunku, powiększenie), w prawym – białe pastylki
 i palec, liniuszek, linijka). **Chowanie:** duże kółko przesunięte do krawędzi ekranu, menu w górę,
 dolny pasek w dół, pastylki na boki – element się chowa, zakładka przy krawędzi go przywraca (wybór
 zapamiętany na urządzeniu; na iPhonie lewe kółko jest na początku schowane); **oko** w nagłówku chowa
-cały interfejs. **Skróty:** samo naciśnięcie **lewego Alt** – zaznaczanie na stałe, ponownie – poprzednie
+cały interfejs. **Przesuwanie kółka (od 1.39):** przytrzymaj duże kółko (ok. pół sekundy – lekko się podniesie)
+i przeciągnij całe kółko w dowolne miejsce; małe kółka układają się w wycinku skierowanym do środka ekranu,
+a z dala od brzegów widać cały okrąg (kółka przy brzegu znikają). Miejsce jest zapamiętane na urządzeniu;
+schowanie kółka (zakładka albo przesunięcie do krawędzi) przywraca jego stałe miejsce. Po zwinięciu górnego
+menu kółko od razu przesuwa się wyżej (a po rozwinięciu – znowu pod menu). Na iPhonie wybór pod menu (rząd 2)
+i trzecie menu (rząd 3) są w osobnej zaokrąglonej pastylce tuż pod menu – oba razem w jednej, trzecie menu
+w drugim wierszu. **Tylko na kartce (od 1.39):** dotknięcie obok kartki przy kształcie albo wymiarze nic
+nie tworzy (zdejmuje zaznaczenie), przeciągnięcie zaczęte obok kartki tworzy kształt tylko wtedy, gdy wejdzie
+na kartkę (początek przesuwa się na jej brzeg), a koniec przeciąganego kształtu zatrzymuje się na brzegu
+kartki; punkty okręgu i łuku z trzech punktów – tylko na kartce; kreska pióra może zacząć się obok kartki, ale kreska, która w ogóle na nią
+nie weszła, przepada; symbol metrologiczny wstawisz tylko na kartce. **Skróty:** samo naciśnięcie **lewego Alt** – zaznaczanie na stałe, ponownie – poprzednie
 narzędzie (Alt z przeciąganiem to dalej swobodne końce, prawy Alt – polskie litery – nic nie zmienia);
 **prawy przycisk myszy** (albo przycisk na rysiku) – zaznaczanie przy każdym narzędziu; **spacja** –
 powiel zaznaczenie.
@@ -978,6 +989,15 @@ działa też dla dowolnego materiału. Formularz sesji pamięta ostatnio wybrany
 Grupy „Powtórka na dziś” i „Ostatnia sesja” na ekranie Nauka można ukryć (od 1.20): **Ustawienia →
 Ekran Nauka** – na Starcie te przyciski zostają zawsze.
 Na komputerze działa klawiatura: spacja odwraca, 1 2 3 przełączają kafelki, ← i → zatwierdzają, Z cofa.
+
+**Obroty fiszki** (od 1.39, Nauka – grupa **Obroty fiszki**): **1 obrót** – jak dotąd, na odwrocie
+tłumaczenie, definicja i przykład. **2 obroty** albo **3 obroty** – fiszka ma więcej stron, a dla każdej
+wybierasz treść: tłumaczenie, definicję, przykład, definicję i przykład albo wszystko (domyślnie: 2 obroty –
+tłumaczenie, potem definicja i przykład; 3 obroty – tłumaczenie, definicja, przykład). Pierwszy obrót idzie
+od lewej do prawej, drugi z dołu do góry, trzeci od prawej do lewej; na dole strony przycisk następnej
+(np. „Pokaż przykład”), w nagłówku numer strony („3/4”), po ostatniej stronie dotknięcie wraca do pytania,
+a przycisk obrotu w nagłówku – od razu do pytania. Oceniać można już po pierwszym obrocie. Wybór jest
+zapamiętany (osobno dla 2 i 3 obrotów).
 
 **Nauka w kalendarzu** (od 1.23): w zakładce **Nauka**, po wyborze materiału, **Zaplanuj naukę
 w kalendarzu** otwiera okno planu: tytuł wydarzenia, **pierwszy dzień** (kalendarz), **godzina**

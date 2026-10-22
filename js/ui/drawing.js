@@ -2973,7 +2973,12 @@ export function openDrawingEditor({
       onPick: (id) => showGroup(side, id),
       onMain: () => onRingMain(side),
       onHide: (hiddenNow) => setHidden(side, hiddenNow),
-      onEdit: () => editGroups(side)
+      onEdit: () => editGroups(side),
+      // Od 1.39: kółko przesunięte ręcznie – miejsce zapamiętane na urządzeniu.
+      onMove: (position) => {
+        tools.ringPositions = { ...tools.ringPositions, [side]: position };
+        saveTools(tools);
+      }
     })]));
     /**
      * Kółka narzędzi: na szerokim ekranie obok górnego menu, na węższym – pod nim, od 1.35 także pod wyborem
@@ -2983,8 +2988,11 @@ export function openDrawingEditor({
     function placeRingTop() {
       const box = stage.getBoundingClientRect();
       if (box.width === 0) return;
-      const below = Math.max(toolbar.getBoundingClientRect().bottom, choices.hidden ? 0 : choices.getBoundingClientRect().bottom);
-      const top = box.width >= 1100 ? 10 : Math.max(10, Math.round(below - box.top + 14));
+      // Schowane górne menu (od 1.39): kółko od razu na górze – bez czekania na koniec animacji chowania
+      // (w jej trakcie menu ma jeszcze dawne położenie).
+      const topAway = uiAll || uiPartHidden(uiHidden, 'top', isNarrow());
+      const below = topAway ? 0 : Math.max(toolbar.getBoundingClientRect().bottom, choices.hidden ? 0 : choices.getBoundingClientRect().bottom);
+      const top = box.width >= 1100 || topAway ? 10 : Math.max(10, Math.round(below - box.top + 14));
       if (top === ringTop) return;
       ringTop = top;
       body.style.setProperty('--drawing-ring-top', `${top}px`);
@@ -3004,7 +3012,8 @@ export function openDrawingEditor({
           main: own ? mainLook() : { ...idle, fill: 'var(--accent-fill)', ink: 'var(--on-accent)' },
           hidden: uiPartHidden(uiHidden, side, narrow),
           all: uiAll,
-          narrow
+          narrow,
+          position: tools.ringPositions?.[side] ?? null
         });
       }
     }
@@ -3038,6 +3047,8 @@ export function openDrawingEditor({
     let uiAll = false;
     function setHidden(part, value) {
       uiHidden[part] = value;
+      // Schowanie kółka (od 1.39) przywraca jego stałe miejsce przy krawędzi.
+      if (value && RING_SIDES.includes(part)) tools.ringPositions = { ...tools.ringPositions, [part]: null };
       tools.uiHidden = uiHidden;
       saveTools(tools);
       if (value && (part === 'top' || part === 'bottom')) closeSettings();
@@ -4071,6 +4082,10 @@ export function openDrawingEditor({
     }
 
     const topBar = h('div', { class: 'drawing__top' }, toolbar, choices, styleDrop, topHandle, settings, colorPanel, shapePanel);
+    // Kółka pod menu – położenie jeszcze raz po animacji chowania i pokazywania menu (od 1.39).
+    topBar.addEventListener('transitionend', (event) => {
+      if (event.target === topBar) placeRingTop();
+    });
     // Od 1.35 panele narzędzi ogólnych (linijka i skala, tło, liniuszek) – nad dolnym paskiem.
     dock.prepend(rulerPanel, paperPanel, guidePanel, layersPanel);
     function toggleSettings() {
@@ -6365,9 +6380,34 @@ export function openDrawingEditor({
     const newShapeStyle = () => ({ ...shapeStyle(), mode: tools.dimMode, offset: tools.dimOffset });
     const dragShape = (from, to, event) => shapeFromDrag(tools.shape, from, to, newShapeStyle(), { tap: 0, lock: locked(event), mode: tools.ellipseMode });
     const common = (event, point) => ({ id: event.pointerId, touch: event.pointerType === 'touch', start: point, client: local(event) });
+    /** Punkt poza kartką (od 1.39 nowe elementy powstają tylko na niej); `margin` – zapas w jednostkach strony. */
+    const offPage = (point, margin = 0) => point.x < -margin || point.y < -margin || point.x > drawing.width + margin || point.y > drawing.height + margin;
+    /** Kreska z co najmniej jednym punktem na kartce (od 1.39 kreska w całości obok kartki przepada). */
+    const onSheet = (stroke) => {
+      for (let index = 0; index + 1 < stroke.points.length; index += 3) {
+        if (!offPage({ x: stroke.points[index], y: stroke.points[index + 1] })) return true;
+      }
+      return false;
+    };
+    /** Punkt przesunięty na kartkę (koniec przeciąganego kształtu nie wychodzi poza nią). */
+    const onPage = (point) => ({ x: Math.min(drawing.width, Math.max(0, point.x)), y: Math.min(drawing.height, Math.max(0, point.y)) });
+    /** Dotknięcie obok kartki przy kształcie z punktów (od 1.39): bez punktu – zdjęte zaznaczenie, palec przesuwa stronę. */
+    function startOffPage(event) {
+      if (selection.size > 0) clearSelection();
+      if (event.pointerType === 'touch') {
+        touches.set(event.pointerId, local(event));
+        startGesture('page');
+      }
+      updateToolbar();
+      requestRender();
+    }
     /** Kształty: przeciągnięcie zaznaczonego kształtu przesuwa go, gdzie indziej – nowy kształt. */
     function startShape(event) {
-      const point = toDrawing(event);
+      // Od 1.39 kształt powstaje tylko na kartce: początek obok niej – na jej brzegu (przeciągnięcie, które
+      // wchodzi na kartkę), samo dotknięcie obok kartki tylko zdejmuje zaznaczenie.
+      const raw = toDrawing(event);
+      const off = offPage(raw);
+      const point = off ? onPage(raw) : raw;
       const [only] = selection;
       // Wymiar i kształty z punktów (od 1.34) zaczynają się tam, gdzie wskaźnik – także na zaznaczonym (np. wspólny narożnik).
       const measuring = tools.shape === 'dim' || multiKind() !== null;
@@ -6378,12 +6418,13 @@ export function openDrawingEditor({
       }
       const hadSelection = selection.size > 0;
       clearSelection();
-      // Od 1.34: okrąg przez 3 punkty, łuk i wymiar kąta – punkt po punkcie.
+      // Od 1.34: okrąg przez 3 punkty, łuk i wymiar kąta – punkt po punkcie (od 1.39 – punkty tylko na kartce).
       if (multiKind()) {
-        startPoints(event, point, hadSelection);
+        if (off) startOffPage(event);
+        else startPoints(event, point, hadSelection);
         return;
       }
-      active = { kind: 'shape-new', ...common(event, point), shape: null, moved: false, hadSelection };
+      active = { kind: 'shape-new', ...common(event, point), shape: null, moved: false, hadSelection, offStart: off, onSheet: !off };
       // Odcinek i strzałka (od 1.22), wymiar i okrąg ze środka albo z dwóch punktów (od 1.34): początek przyciągnięty.
       const snap = snapsPoints() ? edgeSnapAt(point, event) : null;
       if (snap) {
@@ -6702,7 +6743,7 @@ export function openDrawingEditor({
       selectionKind = 'whole';
     }
     function moveActive(event) {
-      const point = toDrawing(event);
+      let point = toDrawing(event);
       switch (active.kind) {
         case 'stroke':
           extendStroke(event);
@@ -6758,6 +6799,9 @@ export function openDrawingEditor({
           requestLive();
           break;
         case 'shape-new':
+          // Koniec kształtu (od 1.39) – na kartce; zaczęty obok niej musi na nią wejść.
+          if (!offPage(point)) active.onSheet = true;
+          point = onPage(point);
           active.point = point;
           if (Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale >= TAP_SLOP) active.moved = true;
           if (active.moved) active.shape = dragShape(active.start, point, event);
@@ -6770,7 +6814,8 @@ export function openDrawingEditor({
           requestLive();
           break;
         case 'points': {
-          // Od 1.34: punkt kształtu z kilku punktów – przyciągany.
+          // Od 1.34: punkt kształtu z kilku punktów – przyciągany; od 1.39 – na kartce.
+          point = onPage(point);
           active.snap = edgeSnapAt(point, event);
           active.point = active.snap ? { x: active.snap.x, y: active.snap.y } : point;
           if (Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale >= TAP_SLOP) active.moved = true;
@@ -6901,7 +6946,7 @@ export function openDrawingEditor({
           if (index >= 0) drawing.strokes[index] = onActiveLayer(done.recognized.links.length > 0 ? linkEnds(done.recognized.shape, done.recognized.links) : done.recognized.shape);
           commitStep();
           changed = true;
-        } else if (!cancelled && done.stroke.points.length >= 3) {
+        } else if (!cancelled && done.stroke.points.length >= 3 && onSheet(done.stroke)) {
           history.add(onActiveLayer(done.stroke));
           changed = true;
         } else if (done.edge) {
@@ -6919,6 +6964,9 @@ export function openDrawingEditor({
         finishOutline({ kind: 'marquee', start: done.start, rect: { x0: done.start.x, y0: done.start.y, x1: done.start.x, y1: done.start.y } });
       } else if (done.kind === 'points' && !cancelled) {
         finishPoints(done);
+      } else if (done.kind === 'shape-new' && done.offStart && (!done.moved || !done.onSheet)) {
+        // Od 1.39: dotknięcie albo przeciągnięcie obok kartki – bez kształtu (zaznaczenie już zdjęte).
+        updateToolbar();
       } else if (done.kind === 'shape-new' && !cancelled && tools.shape === 'dim') {
         finishDim(done);
       } else if (done.kind === 'shape-new' && !cancelled) {
@@ -7092,7 +7140,9 @@ export function openDrawingEditor({
       // Wstawianie symbolu metrologicznego (od 1.22.1): dotknięcie – miejsce strzałki, trójkąta albo wierzchołka.
       // Gdy aplikacja zna już rysik, palec (i dłoń) przesuwa stronę – symbol wstawia rysik albo mysz.
       if (symbolPlacing && !active && !gesture && touches.size === 0 && !(fingerPans() && event.pointerType === 'touch')) {
-        placeSymbol(point, event);
+        // Od 1.39 symbol tylko na kartce – dotknięcie obok niej czeka dalej na miejsce.
+        if (offPage(point, HANDLE_HIT / view.scale)) flash('Dotknij krawędzi na kartce – poza nią symbol nie powstaje (Esc – bez wstawiania).');
+        else placeSymbol(point, event);
         return;
       }
       if (event.pointerType === 'touch') {

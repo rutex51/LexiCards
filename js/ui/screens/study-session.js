@@ -1,5 +1,7 @@
 // Sesja nauki: fiszka z obrotem, trzy kafelki oceny, zatwierdzanie gestem lub przyciskiem,
-// cofanie ostatniej decyzji i podsumowanie.
+// cofanie ostatniej decyzji i podsumowanie. Od 1.39 fiszka może mieć 1–3 obroty: po każdym kolejna
+// strona z wybraną treścią (pierwszy obrót od lewej do prawej, drugi z dołu do góry, trzeci od prawej
+// do lewej), po ostatniej – powrót do pytania.
 //
 // Ekran sam aktualizuje kafelki i stronę fiszki (bez przebudowy całego widoku), żeby
 // animacje nie zaczynały się od nowa. Pełna przebudowa następuje po zmianie danych,
@@ -7,7 +9,8 @@
 
 import { ASSESSMENT_STATUS_NAMES } from '../../core/model.js';
 import {
-  DECISIONS, TILES, cardContent, emptyTiles, formatInterval, isSessionFinished, scoreTiles, setAllTiles, summarizeSession
+  DECISIONS, FLIP_FACES, FLIP_TURNS, TILES, cardContent, emptyTiles, formatInterval, isSessionFinished, scoreTiles, sessionFlipFaces, setAllTiles,
+  summarizeSession
 } from '../../core/study.js';
 import { emptyState, iconButton, navButton } from '../components.js';
 import { openLessonNote } from '../notes.js';
@@ -29,6 +32,19 @@ const REPEAT_TEST_IDS = {
   repeat: 'summary-repeat', partial: 'summary-repeat-partial', unknown: 'summary-repeat-unknown', all: 'summary-repeat-all'
 };
 const LANGUAGE_NAMES = { pl: 'Polski', en: 'Angielski' };
+/** Przycisk przejścia na stronę z daną treścią (od 1.39). */
+const FACE_ACTIONS = {
+  answer: 'Pokaż odpowiedź', all: 'Pokaż odpowiedź', description: 'Pokaż definicję', example: 'Pokaż przykład', details: 'Pokaż definicję i przykład'
+};
+/**
+ * Animacja obrotu (połowa przed zamianą strony i połowa po niej): od lewej do prawej, z dołu do góry,
+ * od prawej do lewej.
+ */
+const TURN_FRAMES = {
+  left: { axis: 'Y', out: 90, in: -90 },
+  up: { axis: 'X', out: 90, in: -90 },
+  right: { axis: 'Y', out: -90, in: 90 }
+};
 const LANGUAGE_LOCATIVE = { pl: 'po polsku', en: 'po angielsku' };
 const SWIPE_START = 12;
 const STATUS_ORDER = ['mastered', 'partiallyMastered', 'inProgress', 'toLearn'];
@@ -78,6 +94,8 @@ export class StudySessionScreen {
     this.cardKey = null;
     this.revealed = false;
     this.showingBack = false;
+    /** Pokazana strona fiszki: 0 – pytanie, 1… – strony po kolejnych obrotach (od 1.39). */
+    this.face = 0;
     this.tiles = null;
     this.busy = false;
     this.flipping = false;
@@ -180,34 +198,46 @@ export class StudySessionScreen {
     this.#updateTiles();
   }
 
-  /** Obraca fiszkę: połowa obrotu, zamiana strony, druga połowa. */
-  async #flip() {
-    const { card, front, back } = this.elements;
-    if (!card || this.flipping || this.busy) return;
+  /** Obraca fiszkę na następną stronę (po ostatniej – do pytania). */
+  #flip() {
+    const faces = this.elements.faces ?? [];
+    return this.#flipTo(faces.length > 0 ? (this.face + 1) % faces.length : 0);
+  }
+
+  /**
+   * Obraca fiszkę na stronę `target`: połowa obrotu, zamiana strony, druga połowa. Kierunek – według obrotu,
+   * który prowadzi na następną stronę (FLIP_TURNS); powrót do pytania – jak pierwszy obrót.
+   */
+  async #flipTo(target) {
+    const { card, faces } = this.elements;
+    if (!card || !faces || this.flipping || this.busy || target === this.face) return;
     this.flipping = true;
-    const showBack = !this.showingBack;
+    const turnName = target === this.face + 1 ? FLIP_TURNS[this.face] ?? 'left' : 'left';
     const hadFocus = card.contains(document.activeElement);
     const swap = () => {
-      this.showingBack = showBack;
-      if (showBack) this.revealed = true;
-      front.hidden = showBack;
-      back.hidden = !showBack;
-      card.dataset.side = showBack ? 'back' : 'front';
+      this.face = target;
+      this.showingBack = target > 0;
+      if (target > 0) this.revealed = true;
+      faces.forEach((face, index) => { face.hidden = index !== target; });
+      card.dataset.side = target > 0 ? 'back' : 'front';
+      card.dataset.face = String(target);
       this.#updateTiles();
       // Przycisk, który miał fokus, właśnie zniknął – przenosimy fokus na jego odpowiednik.
-      if (hadFocus) (showBack ? back : front).querySelector('[data-flip]')?.focus({ preventScroll: true });
+      if (hadFocus) faces[target].querySelector('[data-flip]')?.focus({ preventScroll: true });
     };
     try {
       if (reducedMotion() || typeof card.animate !== 'function') {
         swap();
       } else {
+        const { axis, out, in: back } = TURN_FRAMES[turnName];
         const turn = (from, to, easing) => card.animate(
-          [{ transform: `perspective(1100px) rotateY(${from}deg)` }, { transform: `perspective(1100px) rotateY(${to}deg)` }],
+          [{ transform: `perspective(1100px) rotate${axis}(${from}deg)` }, { transform: `perspective(1100px) rotate${axis}(${to}deg)` }],
           { duration: 170, easing }
         ).finished;
-        await turn(0, 90, 'ease-in');
+        card.dataset.turn = turnName;
+        await turn(0, out, 'ease-in');
         swap();
-        await turn(-90, 0, 'ease-out');
+        await turn(back, 0, 'ease-out');
       }
     } catch {
       // Przerwana animacja (np. przebudowa widoku): stan i tak jest spójny po swap().
@@ -451,6 +481,10 @@ export class StudySessionScreen {
     const { library } = this.ctx;
     const content = cardContent(term, card.direction, front);
     const frontLabel = frontLabelOf(content);
+    // Strony po obrotach (od 1.39): 1 obrót – jedna strona z całą odpowiedzią.
+    const session = library.getStudySession();
+    const kinds = sessionFlipFaces(session?.config, this.#settings());
+    const total = kinds.length + 1;
 
     // Każdą linię opisu i przykładu można odsłuchać osobno, w jej języku.
     const section = (id, title, items, speakLabel) => h('div', { class: 'flashcard__section', dataset: { section: id } },
@@ -462,55 +496,69 @@ export class StudySessionScreen {
             this.#speakerButton(item.text, item.lang, `${speakLabel} ${LANGUAGE_LOCATIVE[item.lang]}`)
           ))
     );
+    /** Przycisk na dole strony: obrót na następną stronę. */
+    const nextButton = (label, testID) => h('button', {
+      type: 'button', class: 'flashcard__flip', dataset: { testid: testID, flip: '' },
+      onClick: (event) => { event.stopPropagation(); this.#flip(); }
+    }, icon('flip', { size: 18 }), h('span', null, label));
 
-    const frontFace = h('div', { class: 'flashcard__face', hidden: this.showingBack, dataset: { testid: 'card-front' } },
+    const frontFace = h('div', { class: 'flashcard__face', hidden: this.face !== 0, dataset: { testid: 'card-front' } },
       h('div', { class: 'flashcard__top' },
         h('span', { class: 'flashcard__label' }, frontLabel),
         this.#speakerButton(content.front.text, content.front.lang, 'Odtwórz wymowę')
       ),
       h('p', { class: `flashcard__text ${sizeClass(content.front.text)}`, lang: content.front.lang }, content.front.text),
-      h('button', { type: 'button', class: 'flashcard__flip', dataset: { testid: 'card-flip', flip: '' }, onClick: (event) => { event.stopPropagation(); this.#flip(); } },
-        icon('flip', { size: 18 }), h('span', null, 'Pokaż odpowiedź'))
+      nextButton(FACE_ACTIONS[kinds[0]], 'card-flip')
     );
 
-    const backFace = h('div', { class: 'flashcard__face flashcard__face--back', hidden: !this.showingBack, dataset: { testid: 'card-back' } },
-      // Odwrót mieści dużo treści, więc powrót do pytania to mały przycisk w nagłówku
-      // (fiszkę można też po prostu dotknąć).
-      h('div', { class: 'flashcard__top' },
-        h('span', { class: 'flashcard__label' }, LANGUAGE_NAMES[content.target]),
-        h('span', { class: 'flashcard__tools' },
-          h('button', {
-            type: 'button', class: 'icon-button flashcard__turn', 'aria-label': 'Pokaż pytanie', title: 'Pokaż pytanie',
-            dataset: { testid: 'card-unflip', flip: '' },
-            onClick: (event) => { event.stopPropagation(); this.#flip(); }
-          }, icon('flip', { size: 22 })),
-          this.#speakerButton(content.back.answer.text, content.back.answer.lang, 'Odtwórz wymowę tłumaczenia')
-        )
-      ),
-      h('p', { class: `flashcard__text flashcard__text--answer ${sizeClass(content.back.answer.text)}`, lang: content.back.answer.lang },
-        content.back.answer.text),
-      h('p', { class: 'flashcard__question', lang: content.back.question.lang }, content.back.question.text),
-      section('description', 'Definicja', content.back.descriptions, 'Odtwórz definicję'),
-      section('example', 'Przykład', content.back.examples, 'Odtwórz przykład'),
-      h('span', { class: 'flashcard__fade', 'aria-hidden': 'true' })
-    );
+    /** Strona po obrocie `index` (1…) z treścią `kind`. */
+    const backFace = (kind, index) => {
+      const answer = kind === 'all' || kind === 'answer';
+      const label = answer ? LANGUAGE_NAMES[content.target] : FLIP_FACES.find((face) => face.id === kind).label;
+      return h('div', {
+        class: `flashcard__face flashcard__face--back flashcard__face--${kind}`, hidden: this.face !== index,
+        dataset: { testid: index === 1 ? 'card-back' : `card-face-${index}`, kind }
+      },
+        // Odwrót mieści dużo treści, więc powrót do pytania to mały przycisk w nagłówku
+        // (fiszkę można też po prostu dotknąć).
+        h('div', { class: 'flashcard__top' },
+          h('span', { class: 'flashcard__label' }, label,
+            total > 2 ? h('span', { class: 'flashcard__page', dataset: { testid: `card-page-${index}` } }, ` · ${index + 1}/${total}`) : null),
+          h('span', { class: 'flashcard__tools' },
+            h('button', {
+              type: 'button', class: 'icon-button flashcard__turn', 'aria-label': 'Pokaż pytanie', title: 'Pokaż pytanie',
+              dataset: { testid: index === 1 ? 'card-unflip' : `card-unflip-${index}`, flip: '' },
+              onClick: (event) => { event.stopPropagation(); this.#flipTo(0); }
+            }, icon('flip', { size: 22 })),
+            answer ? this.#speakerButton(content.back.answer.text, content.back.answer.lang, 'Odtwórz wymowę tłumaczenia') : null
+          )
+        ),
+        answer ? h('p', { class: `flashcard__text flashcard__text--answer ${sizeClass(content.back.answer.text)}`, lang: content.back.answer.lang },
+          content.back.answer.text) : null,
+        answer ? h('p', { class: 'flashcard__question', lang: content.back.question.lang }, content.back.question.text) : null,
+        kind === 'all' || kind === 'description' || kind === 'details' ? section('description', 'Definicja', content.back.descriptions, 'Odtwórz definicję') : null,
+        kind === 'all' || kind === 'example' || kind === 'details' ? section('example', 'Przykład', content.back.examples, 'Odtwórz przykład') : null,
+        index < kinds.length ? nextButton(FACE_ACTIONS[kinds[index]], `card-next-${index}`) : null,
+        h('span', { class: 'flashcard__fade', 'aria-hidden': 'true' })
+      );
+    };
+    const backFaces = kinds.map((kind, index) => backFace(kind, index + 1));
 
     const cardElement = h('div', {
       class: 'flashcard',
       dataset: {
-        testid: 'flashcard', side: this.showingBack ? 'back' : 'front', swipe: '', direction: card.direction,
+        testid: 'flashcard', side: this.face > 0 ? 'back' : 'front', face: String(this.face), faces: String(total), swipe: '', direction: card.direction,
         enter: this.enterStack ? 'stack' : null
       }
     },
       frontFace,
-      backFace,
+      ...backFaces,
       h('span', { class: 'flashcard__stamp flashcard__stamp--know', 'aria-hidden': 'true' }, 'Umiem'),
       h('span', { class: 'flashcard__stamp flashcard__stamp--repeat', 'aria-hidden': 'true' }, 'Powtórz')
     );
     this.#attachSwipe(cardElement);
     this.elements.card = cardElement;
-    this.elements.front = frontFace;
-    this.elements.back = backFace;
+    this.elements.faces = [frontFace, ...backFaces];
     // Nad fiszką cała ścieżka (od 1.20): dziedzina › moduł › lekcja.
     this.elements.lessonPath = library.lessonPath(term.lessonID).split(' › ').filter(Boolean);
     return cardElement;
@@ -659,6 +707,7 @@ export class StudySessionScreen {
       this.cardKey = key;
       this.revealed = false;
       this.showingBack = false;
+      this.face = 0;
       this.tiles = emptyTiles(term);
       this.drag = null;
       this.fuzz = Math.random();

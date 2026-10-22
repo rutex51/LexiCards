@@ -48,7 +48,7 @@ import { keepLinks } from './attach.js';
 import { cleanSymbol, isSymbol, symbolBox, symbolLeaderStart } from './gdt.js';
 import { cleanTable } from './tables.js';
 import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
-import { cleanToolGroups, cleanUiHidden, defaultToolGroups } from './tool-ring.js';
+import { cleanRingPositions, cleanToolGroups, cleanUiHidden, defaultToolGroups } from './tool-ring.js';
 import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './layers.js';
 
 /**
@@ -427,7 +427,9 @@ export function defaultToolSettings() {
     toolGroups: defaultToolGroups(),
     // Od 1.35.1: rodzaj linii i wypełnienie zapamiętane osobno dla każdego kształtu ({ xline: { dash: 'center' } });
     // brak – wspólne shapeDash i shapeFill (ustawienia sprzed 1.35.1).
-    shapeStyles: {}
+    shapeStyles: {},
+    // Od 1.39: kółka narzędzi przesunięte ręcznie ({ right: { x, y } | null, left }).
+    ringPositions: cleanRingPositions(null)
   };
 }
 
@@ -556,7 +558,8 @@ export function cleanToolSettings(raw) {
     toolGroup: typeof raw.toolGroup === 'string' && raw.toolGroup.length <= 40 ? raw.toolGroup : base.toolGroup,
     uiHidden: cleanUiHidden(raw.uiHidden),
     toolGroups: cleanToolGroups(raw.toolGroups),
-    shapeStyles: cleanShapeStyles(raw.shapeStyles)
+    shapeStyles: cleanShapeStyles(raw.shapeStyles),
+    ringPositions: cleanRingPositions(raw.ringPositions)
   };
 }
 
