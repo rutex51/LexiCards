@@ -61,3 +61,15 @@ ekran telefonu) – 180 zaliczone w dwóch pełnych przebiegach (nagranie gra od
 od środka po puszczeniu kartki, 135 ms później w rysunku; plik w pamięci offline; test aktualizacji wydania kopiuje teraz także katalog `sounds` – bez niego
 nowy service worker nie mógł się zainstalować i test stał); lint bez błędów.
 Nie sprawdzono w Safari na iPhonie ani nie słuchano na urządzeniu.
+
+## 1.31.2 – klapnięcie kartki bez dudnięcia
+
+Wersja 1.31.2, 22 października 2026. Szelest kartki bez zmian; wygłuszone dudnięcie na końcu, gdy kartka
+kładzie się na drugą stronę: od tej chwili w nagraniu nie ma tonów poniżej ok. 450 Hz (płynne przejście
+w 40 ms, w cichym miejscu nagrania), a samo uderzenie jest o 4 dB ciszej. Udział niskich tonów w końcówce
+spadł z ok. 4% do 0,3% energii; klapnięcie jest nadal w tej samej chwili (0,765 s), więc wyczucie czasu
+z animacją się nie zmienia.
+
+Testy: logika – 385 zaliczone (nowe sprawdzenie: niskie tony przy klapnięciu – poniżej 5%, było 7%);
+przeglądarka (Chromium, ekran telefonu) – 180 zaliczone w dwóch pełnych przebiegach; lint bez błędów.
+Nie sprawdzono w Safari na iPhonie ani nie słuchano na urządzeniu.

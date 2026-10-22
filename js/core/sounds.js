@@ -5,7 +5,8 @@
 // - Fiszka odlatuje po decyzji: „miękki obrót” – krótki świst z pasmem w górę, trzask krawędzi
 //   i stuknięcie; przechodzi w stronę, w którą leci fiszka.
 // - Kartka notatki i rysunku: nagranie przycięte do samej kartki (1,14 s), bez dudnienia – filtr
-//   górnoprzepustowy 170 Hz (24 dB/okt.), mono, 32 kHz, bez metadanych. Klapnięcie kartki (najgłośniejsza
+//   górnoprzepustowy 170 Hz (24 dB/okt.), od 0,68 s (klapnięcie) – 450 Hz i uderzenie ciszej o 4 dB
+//   (od 1.31.2, bez dudnięcia), mono, 32 kHz, bez metadanych. Klapnięcie kartki (najgłośniejsza
 //   chwila) jest po PAGE_FILE_LAND sekundach; pageTiming przesuwa nagranie tak, by wypadło z końcem animacji.
 
 /** Nagranie kartki (adres względem strony) i chwila klapnięcia w nagraniu (s). */

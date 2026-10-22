@@ -39,7 +39,7 @@ Rysunek: rodzaj linii kształtów (przerywana, osiowa, dwupunktowa, kropkowa), p
 Plik PDF notatki tworzony w aplikacji – prawdziwy tekst, strona A4, wybór jakości obrazów, „Udostępnij…” na iPhonie (wersja 1.28): [docs/RELEASE-1.28.md](docs/RELEASE-1.28.md).
 Notatki: osobne okno tekstu na cały ekran i okno „Obrazy i załączniki”, ołówek na miniaturze, oczko (obiekt ukryty w notatce), usunięcie obiektu usuwa jego odwołania, ⓘ chowa podpowiedzi w oknach (wersja 1.29): [docs/RELEASE-1.29.md](docs/RELEASE-1.29.md).
 Rysunek: rysunki notatki (i jej zdjęcia) przewracane jak kartki w jednym oknie, palec też rysuje (przełącznik), obrót zaznaczenia uchwytem, odbicie lustrzane, Shift – kilka elementów kliknięciami (wersja 1.30); okno „Obrazy i załączniki” w układzie okien – białe, sekcje w ramkach (1.30.1); wydzielony magazyn danych – przygotowanie pod plik danych w OneDrive (1.30.2): [docs/RELEASE-1.30.md](docs/RELEASE-1.30.md).
-Dźwięki: szum odlatującej fiszki i szelest przewracanej kartki notatki i rysunku, tak długi jak przewracanie (wersja 1.31); kartka z nagrania prawdziwej kartki, bez dudnienia (1.31.1): [docs/RELEASE-1.31.md](docs/RELEASE-1.31.md).
+Dźwięki: szum odlatującej fiszki i szelest przewracanej kartki notatki i rysunku, tak długi jak przewracanie (wersja 1.31); kartka z nagrania prawdziwej kartki, bez dudnienia (1.31.1), bez dudnięcia przy klapnięciu (1.31.2): [docs/RELEASE-1.31.md](docs/RELEASE-1.31.md).
 
 ## Co potrafi wersja 1.31
 

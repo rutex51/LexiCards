@@ -1399,7 +1399,9 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
   (RBJ) – świst z pasmem 700 → 3000 Hz, trzask krawędzi po 40%, stuknięcie 170 Hz po 72%; stereo w stronę
   lotu (`direction` −1 – „Umiem”, w lewo); `seed` – ta sama próbka przy tym samym ziarnie.
 - Kartka (od 1.31.1) – **nagranie** `sounds/kartka.wav` (`PAGE_FILE`): prawdziwa kartka przycięta do
-  1,14 s, filtr górnoprzepustowy 170 Hz (dwa razy po 12 dB/okt. – bez dudnienia), szczyt −3 dBFS, mono
+  1,14 s, filtr górnoprzepustowy 170 Hz (dwa razy po 12 dB/okt. – bez dudnienia), od 1.31.2 przy klapnięciu
+  (od 0,68 s, przejście 40 ms) – 450 Hz i uderzenie 0,745–0,83 s ciszej o 4 dB (bez dudnięcia na końcu),
+  głośność szelestu jak dotąd, mono
   PCM 16 bit 32 kHz (73 kB), bez metadanych nagrania. Klapnięcie (najgłośniejsze 10 ms) po
   `PAGE_FILE_LAND = 0.765` s. `pageTiming(land)` → `{ delay, offset }`: klapnięcie po `land` s bez
   zmiany wysokości – krótsza animacja zaczyna nagranie od `offset`, dłuższa czeka `delay`. Synteza

@@ -62,8 +62,18 @@ test('dźwięki 1.31.1: nagranie kartki – mono 32 kHz, 1,14 s, bez metadanych,
     all += value ** 2;
   }
   assert.ok(lowSum / all < 0.02, `udział niskich tonów ${(lowSum / all).toFixed(4)}`);
+  // Od 1.31.2 bez dudnięcia przy klapnięciu: od 0,7 s tonów poniżej ok. 300 Hz prawie nie ma (było 7%).
+  const k300 = Math.exp(-2 * Math.PI * 300 / wav.rate);
+  let low300 = 0, endLow = 0, endAll = 0;
+  wav.samples.forEach((value, index) => {
+    low300 = (1 - k300) * value + k300 * low300;
+    if (index < 0.7 * wav.rate) return;
+    endLow += low300 ** 2;
+    endAll += value ** 2;
+  });
+  assert.ok(endLow / endAll < 0.05, `niskie tony przy klapnięciu ${(endLow / endAll).toFixed(4)}`);
   const peak = wav.samples.reduce((max, value) => Math.max(max, Math.abs(value)), 0);
-  assert.ok(peak > 0.6 && peak < 0.75, `szczyt ${peak}`);
+  assert.ok(peak > 0.5 && peak < 0.75, `szczyt ${peak}`);
 });
 
 test('dźwięki 1.31.1: wyczucie czasu – klapnięcie nagrania z końcem animacji, bez zmiany wysokości', () => {
