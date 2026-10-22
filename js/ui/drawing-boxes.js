@@ -164,7 +164,7 @@ function paintCard(ctx, x, y, width, height, color, fold) {
   // Zagięty róg.
   ctx.save();
   ctx.fillStyle = color.ink;
-  ctx.globalAlpha = 0.45;
+  ctx.globalAlpha *= 0.45;
   ctx.beginPath();
   ctx.moveTo(x + width, y + height - fold);
   ctx.lineTo(x + width - fold, y + height - fold);

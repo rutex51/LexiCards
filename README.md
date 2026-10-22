@@ -1,4 +1,4 @@
-# LexiCards 1.35
+# LexiCards 1.36
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -44,8 +44,9 @@ Rysunek – nowy układ: kółka narzędzi (grupy standardowe po prawej, zestaw 
 Rysunek – okno „Grupy narzędzi”: które grupy standardowe są na prawym kółku i w jakiej kolejności, gotowe zestawy (Metrologia, Szkic odręczny, Geometria, Notatki) i własne grupy z wybranymi narzędziami na lewym kółku (wersja 1.33): [docs/RELEASE-1.33.md](docs/RELEASE-1.33.md).
 Rysunek: okrąg ze środka i promienia, z dwóch i z trzech punktów, łuk przez trzy punkty, narzędzie „Wymiar” (liniowy, średnica, promień, kąt – końce przyklejone do kształtu), przyciąganie do środka okręgu (wersja 1.34): [docs/RELEASE-1.34.md](docs/RELEASE-1.34.md).
 Rysunek: trzecie menu kształtów (znacznik punktu, rodzaj linii, wypełnienie, końce i ⓘ – rozwijane w dół zamiast okna „Styl”), zmiana zaznaczonego elementu z menu (kolor, grubość, styl), „Przesuń” nad zaznaczeniem, wybór zaznaczania nad dolnym paskiem, duże kółko zaznaczonego punktu, kółko narzędzi bez obracania przy samym najechaniu myszą, spirala kończy się w ostatniej dziurce (wersja 1.35); każdy kształt pamięta swój rodzaj linii i wypełnienie, tryb edycji zmienia tylko zaznaczone (1.35.1): [docs/RELEASE-1.35.md](docs/RELEASE-1.35.md).
+Rysunek: warstwy – pięć na start i dodawanie kolejnych, nazwa, ukrycie, krycie i nasycenie, poziomy tło i obraz, do trzech sygnatur elementu (rząd 1–3, kaskadowo); rodzaje wymiaru jako osobne narzędzia w górnym menu (długość, kąt, promień, średnica); trzeci pasek tylko przy narzędziu z pokazanej grupy (wersja 1.36): [docs/RELEASE-1.36.md](docs/RELEASE-1.36.md).
 
-## Co potrafi wersja 1.35
+## Co potrafi wersja 1.36
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -526,7 +527,8 @@ grupa** tworzy własną: nazwa, ikona i narzędzia w kolejności dotknięć (to 
 do 8 grup po 12 narzędzi). Zmiany obowiązują po „Gotowe” i są zapamiętane na urządzeniu; lewe kółko
 bez grup ma duże kółko z plusem, które otwiera to okno.
 **Górne menu** pokazuje grupę: w pierwszym wierszu jej narzędzia, w drugim kolor i grubość, pod spodem
-wysuwa się wybór bez osobnego okna (tryb gumki, obszar i tryb zaznaczania); na iPhonie menu ma jeden
+wysuwa się wybór bez osobnego okna (tryb gumki, obszar i tryb zaznaczania; od 1.36 tylko wtedy, gdy wybrane narzędzie
+jest w pokazanej grupie – np. przy wymiarze i grupie Symbole w menu wyboru nie ma); na iPhonie menu ma jeden
 wiersz, a kolor i grubość otwiera kropka koloru. Drugie dotknięcie wybranego narzędzia albo dotknięcie
 dużego kółka – ustawienia narzędzia (pióra, zakreślacza, kształtu). Na dole na środku **narzędzia
 ogólne**: zaznaczanie, linijka, liniuszek, tło, cofnij, ponów; w lewym dolnym rogu szare pastylki
@@ -630,7 +632,8 @@ do punktu), **3 pkt** (okrąg przez trzy dotknięte punkty; przeciągnięcie sta
 Esc – od nowa, trzy punkty na jednej prostej – komunikat). **Łuk** – przeciągnij od początku do końca (albo dotknij obu),
 potem dotknij punktu, przez który ma przejść; zaznaczony ma trzy punkty: początek, środek łuku i koniec. Punkty okręgu,
 łuku i wymiaru przyciągają się do narożników, krawędzi i (od 1.34) **środków okręgów i łuków** (znacznik – kółko
-z krzyżykiem). **Wymiar** (od 1.34, grupa „Wymiary” na kółku i zestaw Metrologia) – wybór pod menu: **Liniowy**
+z krzyżykiem). **Wymiar** (od 1.34, grupa „Wymiary” na kółku i zestaw Metrologia; od 1.36 rodzaje to osobne narzędzia
+w górnym menu – **Długość**, **Kąt**, **Promień**, **Średnica** – zamiast wyboru pod menu): **Liniowy**
 (przeciągnięcie od punktu do punktu albo dotknięcie krawędzi – odcinka, boku kształtu, ramki; linia wymiarowa
 po stronie dalszej od mierzonego kształtu), **⌀ Średnica** i **R Promień** (dotknięcie okręgu albo łuku – linia
 w kierunku dotknięcia), **Kąt** (wierzchołek, punkt na pierwszym i na drugim ramieniu – mniejszy z kątów).
@@ -774,6 +777,17 @@ PageDown i menu kartek) ma animację – od 1.24 jak w notatkach: kartka zagina 
 rogu** i przewraca w lewo (grzbiet z lewej, na odwrocie lekko prześwituje rysunek, pod spodem już
 następna kartka); poprzednia wraca tą samą drogą nad bieżącą. Trwa ok. 0,9 s; powiększona kartka wraca
 najpierw do widoku całej strony (bez animacji, gdy system prosi o ograniczenie ruchu).
+**Warstwy** (od 1.36): przycisk z ikoną warstw na dolnym pasku otwiera panel nad paskiem. Na początek pięć warstw
+elementów (**+ Dodaj warstwę** – kolejne, do 32), każda z nazwą do zmiany, liczbą elementów, okiem (ukryj / pokaż)
+i suwakami **Krycie** i **Nasycenie** (0–100%); kółko przy warstwie wybiera warstwę nowych elementów, kosz usuwa pustą
+warstwę (oprócz warstwy 1). Niżej poziomy stałe: **Tło** (papier, kratka i szablon) i – na stronie ze zdjęciem –
+**Obraz** (zdjęcie) z tymi samymi ustawieniami. Element ma do trzech **sygnatur** – warstw rzędu 1 (główna), 2 i 3:
+przy zaznaczonych elementach polecenie **Warstwy** otwiera panel z trzema wyborami „Rząd 1–3”. Działają kaskadowo:
+ukryta którakolwiek z warstw elementu – element znika, krycie i nasycenie wszystkich jego warstw się mnożą (np. pięć
+prostokątów w warstwie 1 z kryciem 50%, trzy z nich także w warstwie 2, jeden – w warstwie 3 z nasyceniem 0% – ten
+jeden jest szary). Elementów ukrytych warstw nie da się zaznaczyć, zetrzeć ani do nich przyciągnąć. Obraz w notatce
+i plik PDF wyglądają tak samo jak edytor. Elementy sprzed 1.36 są na warstwie 1. Rysunek z warstwami ma format 11 –
+starsza wersja aplikacji otworzy go w edytorze bez warstw (wszystko widoczne) i tak go zapisze; obraz w notatce się nie zmienia.
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę

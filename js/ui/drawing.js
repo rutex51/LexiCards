@@ -46,13 +46,17 @@ import {
 import {
   DrawingHistory, ELEMENT_TEXT_MAX, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA,
   HIGHLIGHTER_COLORS, HIGHLIGHTER_RANGE, INK_COLORS, RAY_STEPS, WIDTH_LIMITS, STICKY_COLORS, STICKY_MIN, STICKY_TEXT_MAX, STICKY_TEXT_SIZES, TABLE_TEXT_SIZES, isBox, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
-  SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings, shapeToolStyle, withShapeToolStyle,
+  SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings, shapeToolStyle, stickyColor, withShapeToolStyle,
   DIM_UNITS, DRAWING_VERSION, defaultDimUnit, defaultToolSettings, dimFactor, dimFormat, dimMillimeters, dimUnitLabel, dimUnitNote, dimensionParts, formatTolerance, hasMeasuredContent, elementBox, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
   isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
   hasContent, rulerDegrees, rulerOffset, rulerPoint, scaleUnitLabel, screenScale, screenScaleValue, selectionBounds, smoothPoint, snapRulerAngle,
   snapToStrokes, splitByPolygon, strokeBounds, strokesAt, strokesInPolygon, strokesInRect, toScaleLength, touchesStroke, translateStroke
 } from '../core/drawing.js';
 import { layoutMath } from '../core/math-layout.js';
+import {
+  BACKGROUND_LAYER, LAYER_LIMIT, LAYER_NAME_MAX, PHOTO_LAYER, SIGNATURE_LIMIT, addLayer, drawingLayers, elementLayers, layerUse, layersActive, layersOf,
+  levelEffect, removeLayer, saturateHex, strokeEffect, toneStroke, updateLayer, withSignatures
+} from '../core/layers.js';
 import { constrainCorner, cornerOf, cornerPath, foldGeometry } from '../core/page-curl.js';
 import { recognizeStroke } from '../core/recognize.js';
 import { rememberFit } from '../core/fits.js';
@@ -68,7 +72,7 @@ import {
   canFill, dimCenter, dimGeometry, dimOffset, dimOffsetAt, dimPlaces, guideLinesIn, isLinearDim, isSegment, isShape, labelFrame, labelMaxWidth, moveShapeHandle, nearestGuideLine, nearestRay,
   nearestRing, rayAngles, resizeShape, ringsIn, stackDimOffset, withDimOffset, withDimTolerance,
   segmentCaps, segmentDegrees, setSegment, shapeContains, shapeFromDrag, shapeHandles, shapePoint, shownDims, skewDegrees, touchesShape,
-  withCaps, withDims, DIM_MODES, DIM_MODE_LABELS, ELLIPSE_MODES, ELLIPSE_MODE_LABELS, angleDimFromPoints, arcFromPoints, arcGeometry,
+  withCaps, withDims, ELLIPSE_MODES, ELLIPSE_MODE_LABELS, angleDimFromPoints, arcFromPoints, arcGeometry,
   angleDimDegrees, circleFromPoints, dimAwayFrom, dimFromPoints, dimMode, isArc, isMeasure
 } from '../core/shapes.js';
 import {
@@ -249,12 +253,14 @@ async function loadPicture(photo) {
 // ---------------------------------------------------------------- rysowanie na płótnie
 
 /** Tło strony: białe, w linie albo w kratkę (w jednostkach rysunku); jasność linii – od 1.15. */
-export function paintPaper(ctx, drawing) {
+export function paintPaper(ctx, drawing, effect = null) {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, drawing.width, drawing.height);
-  if (drawing.paper === 'plain' || drawing.photo) return;
+  // Od 1.36 poziom „Tło”: ukryty – sama biała strona, przezroczystość i nasycenie – linii papieru.
+  if (drawing.paper === 'plain' || drawing.photo || effect?.hidden) return;
   ctx.save();
-  ctx.strokeStyle = PAPER_COLORS[drawing.paper][drawing.paperLevel ?? DEFAULT_PAPER_LEVEL];
+  if (effect) ctx.globalAlpha = effect.opacity;
+  ctx.strokeStyle = saturateHex(PAPER_COLORS[drawing.paper][drawing.paperLevel ?? DEFAULT_PAPER_LEVEL], effect?.saturation ?? 1);
   ctx.lineWidth = 1.2;
   ctx.beginPath();
   for (let y = PAPER_STEP; y < drawing.height; y += PAPER_STEP) {
@@ -429,7 +435,7 @@ export function paintStroke(ctx, stroke, options = {}) {
   ctx.fillStyle = stroke.color;
   if (stroke.tool === 'highlighter') {
     ctx.globalCompositeOperation = 'multiply';
-    ctx.globalAlpha = HIGHLIGHTER_ALPHA;
+    ctx.globalAlpha *= HIGHLIGHTER_ALPHA;
     ctx.lineWidth = points[2];
     ctx.beginPath();
     ctx.moveTo(points[0], points[1]);
@@ -477,18 +483,58 @@ export function paintStroke(ctx, stroke, options = {}) {
  */
 export function paintDrawing(ctx, drawing, media = {}, skip = null, plain = null, { editor = false, image = false } = {}) {
   const format = dimFormat(drawing);
-  paintPaper(ctx, drawing);
-  if (media.photo) ctx.drawImage(media.photo, 0, 0, drawing.width, drawing.height);
-  paintTemplate(ctx, drawing.template, media.template);
+  // Warstwy (od 1.36): tło, obraz i elementy – ukryte, przezroczyste, mniej nasycone.
+  const layers = drawingLayers(drawing);
+  const active = layersActive(layers);
+  const background = active ? levelEffect(layers, BACKGROUND_LAYER) : null;
+  paintPaper(ctx, drawing, background);
+  if (media.photo) paintPhoto(ctx, drawing, media.photo, active ? levelEffect(layers, PHOTO_LAYER) : null);
+  if (drawing.template && !background?.hidden) {
+    ctx.save();
+    if (background) ctx.globalAlpha = background.opacity;
+    paintTemplate(ctx, drawing.template, media.template);
+    ctx.restore();
+    if (background && background.saturation < 1) desaturate(ctx, drawing.template, background.saturation);
+  }
   let number = 0;
   for (const stroke of drawing.strokes) {
     // Karteczki mają numery w kolejności na rysunku (od 1.21).
     if (stroke.tool === 'sticky') number += 1;
-    if (!skip?.has(stroke)) {
-      paintStroke(ctx, stroke, { scale: drawing.scale, dimFormat: format, dims: stroke !== plain, number: stroke.tool === 'sticky' ? number : null, editor, image });
+    if (skip?.has(stroke)) continue;
+    const effect = active ? strokeEffect(layers, stroke) : null;
+    if (effect?.hidden) continue;
+    const painted = effect && effect.saturation < 1 ? toneStroke(stroke, effect.saturation, stickyColor) : stroke;
+    const options = { scale: drawing.scale, dimFormat: format, dims: stroke !== plain, number: stroke.tool === 'sticky' ? number : null, editor, image };
+    if (effect && effect.opacity < 1) {
+      ctx.save();
+      ctx.globalAlpha = effect.opacity;
+      paintStroke(ctx, painted, options);
+      ctx.restore();
+    } else {
+      paintStroke(ctx, painted, options);
     }
   }
   paintUnitNote(ctx, drawing, format);
+}
+
+/** Zdjęcie pod rysunkiem (poziom „Obraz”, od 1.36 z ukryciem, przezroczystością i nasyceniem). */
+function paintPhoto(ctx, drawing, photo, effect) {
+  if (effect?.hidden) return;
+  ctx.save();
+  if (effect) ctx.globalAlpha = effect.opacity;
+  ctx.drawImage(photo, 0, 0, drawing.width, drawing.height);
+  ctx.restore();
+  if (effect && effect.saturation < 1) desaturate(ctx, { x: 0, y: 0, w: drawing.width, h: drawing.height }, effect.saturation);
+}
+
+/** Mniejsze nasycenie prostokąta już narysowanego (tryb mieszania „nasycenie” z szarym, bez dodatkowego płótna). */
+function desaturate(ctx, rect, saturation) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'saturation';
+  ctx.globalAlpha = 1 - saturation;
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.restore();
 }
 
 /**
@@ -607,14 +653,24 @@ function areaCanvas(area, paint) {
   return canvas;
 }
 
-/** Zaznaczone kreski i elementy na białym tle z marginesem (Kopiuj – obraz w schowku systemu, Osadź); scale – skala rysunku (wymiary). */
-function strokesCanvas(strokes, scale) {
+/**
+ * Zaznaczone kreski i elementy na białym tle z marginesem (Kopiuj – obraz w schowku systemu, Osadź); scale – skala rysunku
+ * (wymiary), layers – warstwy rysunku (od 1.36 krycie i nasycenie jak na stronie).
+ */
+function strokesCanvas(strokes, scale, layers = null) {
   const bounds = selectionBounds(strokes);
   const area = { minX: bounds.minX - EXPORT_PAD, minY: bounds.minY - EXPORT_PAD, maxX: bounds.maxX + EXPORT_PAD, maxY: bounds.maxY + EXPORT_PAD };
   return areaCanvas(area, (ctx) => {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(area.minX, area.minY, area.maxX - area.minX, area.maxY - area.minY);
-    for (const stroke of strokes) paintStroke(ctx, stroke, { scale });
+    for (const stroke of strokes) {
+      const effect = layers && layersActive(layers) ? strokeEffect(layers, stroke) : null;
+      if (effect?.hidden) continue;
+      ctx.save();
+      if (effect) ctx.globalAlpha = effect.opacity;
+      paintStroke(ctx, effect && effect.saturation < 1 ? toneStroke(stroke, effect.saturation, stickyColor) : stroke, { scale });
+      ctx.restore();
+    }
   });
 }
 
@@ -768,6 +824,8 @@ export function openDrawingEditor({
     mirrorButton.setAttribute('aria-haspopup', 'menu');
     const embedButton = selectionButton('drawing-selection-embed', 'embed', 'Osadź', 'Osadź w notatce jako obraz', () => embedSelection());
     const deleteButton = selectionButton('drawing-selection-delete', 'trash', 'Usuń', 'Usuń (Delete)', () => deleteSelection(), true);
+    // Od 1.36: warstwy zaznaczonych (sygnatury rzędu 1–3) – panel warstw nad dolnym paskiem.
+    const layersSelectionButton = selectionButton('drawing-selection-layers', 'stack', 'Warstwy', 'Warstwy zaznaczonych (sygnatury)', () => openLayersPanel());
     // Od 1.35: „Przesuń” – przeciągnięcie w dowolnym miejscu strony przesuwa zaznaczenie (na ekranie dotykowym
     // trudno trafić w cienką kreskę); ponowne dotknięcie przycisku albo zdjęcie zaznaczenia – koniec.
     let moveMode = false;
@@ -780,7 +838,7 @@ export function openDrawingEditor({
     });
     moveButton.setAttribute('aria-pressed', 'false');
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
-      selectionCount, moveButton, editButton, collapseButton, shapeTextButton, magnetButton, copyButton, duplicateButton, mirrorButton, arrayButton, explodeButton, embedButton, deleteButton);
+      selectionCount, moveButton, editButton, collapseButton, shapeTextButton, magnetButton, layersSelectionButton, copyButton, duplicateButton, mirrorButton, arrayButton, explodeButton, embedButton, deleteButton);
     // Pola wymiarów zaznaczonego kształtu (od 1.17): na liniach ramki konstrukcyjnej, wpisywane z klawiatury.
     const dims = h('div', { class: 'drawing__dims', hidden: true, dataset: { testid: 'drawing-dims' } });
     // Od 1.22: animacja przewracania kartki (zdjęcia stron nad płótnem, tylko w trakcie).
@@ -983,7 +1041,7 @@ export function openDrawingEditor({
       if (tools.rulerSnap) {
         for (const side of [-1, 1]) {
           const zero = rulerPoint(next, 0, side * half);
-          const found = snapToStrokes(drawing.strokes, zero.x, zero.y, ZERO_SNAP / view.scale);
+          const found = snapToStrokes(shownStrokes(), zero.x, zero.y, ZERO_SNAP / view.scale);
           if (!found) continue;
           const distance = Math.hypot(found.x - zero.x, found.y - zero.y);
           if (!snap || rank(found) < rank(snap) || (rank(found) === rank(snap) && distance < snap.distance)) snap = { ...found, side, distance };
@@ -2324,6 +2382,13 @@ export function openDrawingEditor({
       button.setAttribute('aria-pressed', 'false');
       return [kind, button];
     }));
+    // Od 1.36 rodzaje wymiaru – osobne narzędzia w górnym menu (do 1.35 wybór pod menu).
+    const DIM_TOOLS = { linear: ['Długość', 'dimension'], angle: ['Kąt', 'dimAngle'], radius: ['Promień', 'dimRadius'], diameter: ['Średnica', 'dimDiameter'] };
+    const dimButtons = new Map(Object.entries(DIM_TOOLS).map(([mode, [label, iconName]]) => {
+      const button = menuButton(`dim:${mode}`, `Wymiar – ${label.toLowerCase()}`, iconName, `drawing-measure-${mode}`, label);
+      button.setAttribute('aria-pressed', 'false');
+      return [mode, button];
+    }));
     const textButton = menuButton('text', 'Pole tekstowe', 'textBox', 'drawing-insert-text', 'Tekst');
     const mathButton = menuButton('math', 'Wzór', 'sigma', 'drawing-insert-math');
     mathButton.title = 'Wzór (zapis jak w notatce)';
@@ -2339,6 +2404,7 @@ export function openDrawingEditor({
     const itemButtons = new Map([
       ['pen', penButton], ['highlighter', highlighterButton], ['eraser', eraserButton],
       ...[...kindButtons].map(([kind, button]) => [`shape:${kind}`, button]),
+      ...[...dimButtons].map(([mode, button]) => [`dim:${mode}`, button]),
       ['text', textButton], ['math', mathButton], ['table', tableButton], ['sticky', stickyButton],
       ['gdt', gdtButton], ['datum', datumButton], ['roughness', roughnessButton]
     ]);
@@ -2421,7 +2487,6 @@ export function openDrawingEditor({
     // Od 1.34: sposób rysowania okręgu i rodzaj wymiaru – wybór pod menu (makieta: „Ramka / Środek i R / 2 pkt / 3 pkt”).
     // Na telefonie – krótsze napisy (wybór mieści się obok kółka).
     const ELLIPSE_SHORT = { frame: ['Ramka', 'Ramka'], center: ['Środek i R', 'Środek'], two: ['2 pkt', '2 pkt'], three: ['3 pkt', '3 pkt'] };
-    const DIM_SHORT = { linear: ['Liniowy', 'Liniowy'], diameter: ['⌀ Średnica', '⌀'], radius: ['R Promień', 'R'], angle: ['Kąt', 'Kąt'] };
     const modeChoices = (modes, labels, short, label, testID, key) => h('div', { class: 'drawing__group drawing__modes', role: 'radiogroup', 'aria-label': label },
       modes.map((mode) => h('button', {
         type: 'button', class: 'drawing__mode', role: 'radio', 'aria-label': labels[mode], title: labels[mode], dataset: { mode, testid: `${testID}-${mode}` },
@@ -2435,12 +2500,11 @@ export function openDrawingEditor({
       }, short[mode][0] === short[mode][1] ? short[mode][0]
         : [h('span', { class: 'drawing__wide-label' }, short[mode][0]), h('span', { class: 'drawing__narrow-label' }, short[mode][1])])));
     const ellipseModes = modeChoices(ELLIPSE_MODES, ELLIPSE_MODE_LABELS, ELLIPSE_SHORT, 'Okrąg i elipsa', 'drawing-ellipse', 'ellipseMode');
-    const dimModes = modeChoices(DIM_MODES, DIM_MODE_LABELS, DIM_SHORT, 'Rodzaj wymiaru', 'drawing-dim-mode', 'dimMode');
     // Od 1.35 trzecie menu kształtów: styl nowych kształtów (i zaznaczonych) – znacznik punktu, rodzaj linii,
     // wypełnienie, zakończenia; kilka grup – przyciski z rozwijanym wyborem; ⓘ rozwija w dół resztę (przełączniki, opis).
     const styleRow = h('div', { class: 'drawing__group drawing__style-row', hidden: true, dataset: { testid: 'drawing-style-row' } });
     const styleDrop = h('div', { class: 'drawing__style-drop', hidden: true, dataset: { testid: 'drawing-style-drop' } });
-    const choices = h('div', { class: 'drawing__choices', dataset: { testid: 'drawing-choices' } }, eraserModes, ellipseModes, dimModes, styleRow);
+    const choices = h('div', { class: 'drawing__choices', dataset: { testid: 'drawing-choices' } }, eraserModes, ellipseModes, styleRow);
     // Od 1.35 wybór narzędzi ogólnych (zaznaczanie: obszar, tryb, „Wklej”, „Zaznacz wszystko”) – nad dolnym paskiem.
     const dockChoices = h('div', { class: 'drawing__choices drawing__choices--dock', hidden: true, dataset: { testid: 'drawing-dock-choices' } }, selectShapes, selectModes, selectGroup);
     const topHandle = h('button', {
@@ -2452,9 +2516,14 @@ export function openDrawingEditor({
       type: 'button', class: 'drawing__handle', 'aria-label': 'Schowaj dolny pasek', title: 'Schowaj dolny pasek (przesuń w dół)',
       dataset: { testid: 'drawing-hide-bottom' }, onClick: () => setHidden('bottom', true)
     }, h('span'));
+    // Warstwy (od 1.36) – na dolnym pasku obok tła.
+    const layersButton = h('button', {
+      type: 'button', class: 'drawing__tool', 'aria-label': 'Warstwy', title: 'Warstwy – widoczność, przezroczystość, nasycenie, warstwy zaznaczonych',
+      'aria-haspopup': 'dialog', 'aria-expanded': 'false', dataset: { testid: 'drawing-layers' }, onClick: () => toggleLayersPanel()
+    }, icon('stack', { size: 24 }));
     const dock = h('div', { class: 'drawing__dock' }, dockChoices, dockHandle,
       h('div', { class: 'drawing__dock-bar', role: 'toolbar', 'aria-label': 'Narzędzia ogólne' },
-        selectButton, rulerButton, guideButton, paperButton, h('span', { class: 'drawing__dock-gap', 'aria-hidden': 'true' }), undoButton, redoButton));
+        selectButton, rulerButton, guideButton, paperButton, layersButton, h('span', { class: 'drawing__dock-gap', 'aria-hidden': 'true' }), undoButton, redoButton));
 
     const zoomButton = h('button', {
       type: 'button', class: 'drawing__pill drawing__pill--gray', title: 'Powiększenie – dotknij: cała strona', dataset: { testid: 'drawing-zoom' },
@@ -2581,8 +2650,8 @@ export function openDrawingEditor({
       return { ...stroke, points };
     }
     /** Zmiana zaznaczonych elementów spełniających `test` – jeden krok cofania; zaznaczenie zostaje (nowe obiekty). */
-    function changeSelection(test, change) {
-      const targets = editedSelection().filter(test);
+    function changeSelection(test, change, from = editedSelection()) {
+      const targets = from.filter(test);
       const pairs = targets.map((stroke) => [stroke, change(stroke)]).filter(([stroke, next]) => JSON.stringify(stroke) !== JSON.stringify(next));
       if (pairs.length === 0) return;
       history.begin();
@@ -2599,6 +2668,9 @@ export function openDrawingEditor({
       }
       for (const [kind, button] of kindButtons) button.setAttribute('aria-pressed', String(tool === 'shape' && tools.shape === kind));
       updateMenu();
+      // Od 1.36: wybór pod menu (trzeci pasek) należy do narzędzia z pokazywanej grupy – inna grupa w menu (np. symbole
+      // przy wymiarze) – bez niego; styl zaznaczonych (tryb edycji) zostaje.
+      toolInMenu = Boolean(findGroup(shownGroup.side, shownGroup.id, tools.toolGroups)?.items.includes(toolItem(tool, tools.shape, tools.dimMode)));
       // Kształty (od 1.15) mają kolor i grubość pióra. Od 1.35 zaznaczone elementy: kolor i grubość w menu
       // zmieniają je; od 1.35.1 tylko je (tryb edycji) – kolor i grubość narzędzia zmienia wybór bez zaznaczenia.
       const inking = tool === 'pen' || tool === 'highlighter' || tool === 'shape';
@@ -2651,7 +2723,7 @@ export function openDrawingEditor({
         }
       }, h('span', { style: { width: `${Math.max(3, Math.min(14, size))}px`, height: `${Math.max(3, Math.min(14, size))}px` } }))));
       widths.hidden = !inking && sized.length === 0;
-      eraserModes.hidden = tool !== 'eraser';
+      eraserModes.hidden = tool !== 'eraser' || !toolInMenu;
       for (const button of eraserModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.eraserMode));
       eraserSizes.hidden = tool !== 'eraser' || tools.eraserMode !== 'pixel';
       for (const button of eraserSizes.children) button.setAttribute('aria-checked', String(Number(button.dataset.size) === tools.eraserSize));
@@ -2661,12 +2733,11 @@ export function openDrawingEditor({
       optionRow.hidden = [swatches, widths, eraserSizes].every((group) => group.hidden);
       optionsButton.hidden = optionRow.hidden;
       if (optionRow.hidden) setOptionsOpen(false);
-      ellipseModes.hidden = !(tool === 'shape' && tools.shape === 'ellipse');
+      ellipseModes.hidden = !(tool === 'shape' && tools.shape === 'ellipse') || !toolInMenu;
       for (const button of ellipseModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.ellipseMode));
-      dimModes.hidden = !(tool === 'shape' && tools.shape === 'dim');
-      for (const button of dimModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.dimMode));
+      for (const [mode, button] of dimButtons) button.setAttribute('aria-pressed', String(tool === 'shape' && tools.shape === 'dim' && tools.dimMode === mode));
       renderStyleRow();
-      choices.hidden = [eraserModes, ellipseModes, dimModes, styleRow].every((group) => group.hidden);
+      choices.hidden = [eraserModes, ellipseModes, styleRow].every((group) => group.hidden);
       dockChoices.hidden = [selectShapes, selectModes, selectGroup].every((group) => group.hidden);
       updateShapeHint();
       for (const button of selectShapes.children) button.setAttribute('aria-checked', String(button.dataset.shape === tools.selectShape));
@@ -2691,13 +2762,16 @@ export function openDrawingEditor({
       paperButton.setAttribute('aria-label', `Tło strony: ${PAPER_LABELS[drawing.paper].toLowerCase()}${drawing.template ? ' i szablon' : ''} – zmień`);
       paperButton.title = paperLabel.textContent;
       paperButton.setAttribute('aria-expanded', String(!paperPanel.hidden));
+      layersButton.setAttribute('aria-expanded', String(!layersPanel.hidden));
+      const activeName = layersNow().find((layer) => layer.id === (drawing.activeLayer ?? 1))?.name ?? 'Warstwa 1';
+      layersButton.title = `Warstwy – nowe elementy: ${activeName}`;
       scalePill.textContent = `Kratka: ${formatLength(PAPER_STEP, drawing.scale)}`;
       updateRings();
     }
 
     // ---- kółka narzędzi (od 1.32): grupy standardowe po prawej, użytkownika po lewej; od 1.33 – dobór grup
     /** Pokazywana grupa: { side, id } – jej narzędzia są w pierwszym wierszu górnego menu. */
-    let shownGroup = startGroup(tools.toolGroup, toolItem(tool, tools.shape), tools.toolGroups);
+    let shownGroup = startGroup(tools.toolGroup, toolItem(tool, tools.shape, tools.dimMode), tools.toolGroups);
     /** Ostatnio użyte narzędzie każdej grupy – wybór grupy wraca do niego. */
     const groupTools = new Map();
     let menuGroup = null;
@@ -2719,7 +2793,7 @@ export function openDrawingEditor({
       tools.toolGroup = `${side}:${id}`;
       saveTools(tools);
       ctrlHold = null;
-      const current = toolItem(tool, tools.shape);
+      const current = toolItem(tool, tools.shape, tools.dimMode);
       // Otwarte ustawienia kształtów: grupa tylko się pokazuje – kształt zmienia dopiero dotknięcie (jak w panelu do 1.31).
       const browsing = tool === 'shape' && !shapePanel.hidden;
       if (!group.items.includes(current) && !browsing) {
@@ -2740,12 +2814,12 @@ export function openDrawingEditor({
     /** Narzędzie albo polecenie z menu; drugie dotknięcie wybranego narzędzia – jego ustawienia. */
     function activateItem(item) {
       ctrlHold = null;
-      const current = toolItem(tool, tools.shape);
+      const current = toolItem(tool, tools.shape, tools.dimMode);
       if (item === current && (item === 'pen' || item === 'highlighter')) {
         toggleSettings();
         return;
       }
-      if (item === current && item.startsWith('shape:')) {
+      if (item === current && (item.startsWith('shape:') || item.startsWith('dim:'))) {
         toggleShapePanel();
         return;
       }
@@ -2753,6 +2827,21 @@ export function openDrawingEditor({
     }
     function applyItem(item) {
       if (isModeItem(item)) groupTools.set(`${shownGroup.side}:${shownGroup.id}`, item);
+      // Od 1.36 rodzaj wymiaru – kształt „Wymiar” z tym rodzajem.
+      if (item.startsWith('dim:')) {
+        tools.shape = 'dim';
+        tools.dimMode = item.slice(4);
+        saveTools(tools);
+        pending = null;
+        if (tool !== 'shape') {
+          setTool('shape');
+          return;
+        }
+        if (!shapePanel.hidden) renderShapePanel();
+        updateToolbar();
+        requestLive();
+        return;
+      }
       if (item.startsWith('shape:')) {
         const panelWasOpen = !shapePanel.hidden;
         // Otwarte „Więcej” (ⓘ) zostaje przy odcinku, strzałkach i punkcie – jak do 1.34, gdy były w nim zakończenia i znacznik.
@@ -2785,9 +2874,11 @@ export function openDrawingEditor({
     /** Wygląd dużego kółka (wariant C): wypełnienie w kolorze narzędzia, obwódka biała; narzędzie bez koloru – kolor aplikacji. */
     function mainLook() {
       const shape = tool === 'shape' ? tools.shape : null;
+      const measure = shape === 'dim' ? DIM_TOOLS[tools.dimMode] ?? DIM_TOOLS.linear : null;
       const iconName = tool === 'select' ? (tools.selectShape === 'lasso' ? 'lasso' : 'marquee')
-        : shape ? SHAPE_ICONS[shape] : tool === 'highlighter' ? 'highlighter' : tool === 'eraser' ? 'eraser' : 'pen';
-      const name = tool === 'select' ? 'Zaznaczanie' : shape ? SHAPE_LABELS[shape] : { pen: 'Pióro', highlighter: 'Zakreślacz', eraser: 'Gumka' }[tool] ?? 'Pióro';
+        : measure ? measure[1] : shape ? SHAPE_ICONS[shape] : tool === 'highlighter' ? 'highlighter' : tool === 'eraser' ? 'eraser' : 'pen';
+      const name = tool === 'select' ? 'Zaznaczanie' : measure ? `Wymiar – ${measure[0].toLowerCase()}` : shape ? SHAPE_LABELS[shape]
+        : { pen: 'Pióro', highlighter: 'Zakreślacz', eraser: 'Gumka' }[tool] ?? 'Pióro';
       const hex = tool === 'highlighter' ? highlighterHex(tools.highlighterColor) : tool === 'pen' || tool === 'shape' ? inkHex(tools.penColor) : null;
       return {
         icon: iconName,
@@ -2869,7 +2960,7 @@ export function openDrawingEditor({
     function applyGroups(config) {
       tools.toolGroups = config;
       if (!findGroup(shownGroup.side, shownGroup.id, config)) {
-        shownGroup = startGroup(null, toolItem(tool, tools.shape), config);
+        shownGroup = startGroup(null, toolItem(tool, tools.shape, tools.dimMode), config);
         tools.toolGroup = `${shownGroup.side}:${shownGroup.id}`;
       }
       saveTools(tools);
@@ -3345,6 +3436,8 @@ export function openDrawingEditor({
 
     // ---- tło strony (od 1.15): rodzaj, jasność linii, szablon pod kreskami (kalka) i jego ustawianie
     const paperPanel = h('div', { class: 'drawing__settings', hidden: true, role: 'dialog', 'aria-label': 'Tło strony', dataset: { testid: 'drawing-paper-panel' } });
+    // Warstwy (od 1.36) – panel nad dolnym paskiem (treść niżej, przy sygnaturach).
+    const layersPanel = h('div', { class: 'drawing__settings drawing__layers', hidden: true, role: 'dialog', 'aria-label': 'Warstwy', dataset: { testid: 'drawing-layers-panel' } });
     const templateInput = h('input', {
       type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', hidden: true, dataset: { testid: 'drawing-template-input' },
       onChange: (event) => {
@@ -3603,6 +3696,8 @@ export function openDrawingEditor({
     /** Otwarty wybór pod trzecim menu: 'mark' | 'dash' | 'fill' | 'caps' | null. */
     let openPicker = null;
     let styleKey = '';
+    /** Narzędzie jest w grupie pokazywanej w górnym menu (od 1.36 – inaczej trzeci pasek tylko w trybie edycji). */
+    let toolInMenu = true;
     const STYLE_LABELS = { mark: 'Znacznik', dash: 'Linia', fill: 'Wypełnienie', caps: 'Końce' };
     const sameValue = (values) => (values.length > 0 && values.every((value) => value === values[0]) ? values[0] : null);
     /**
@@ -3690,12 +3785,14 @@ export function openDrawingEditor({
      */
     function renderStyleRow() {
       const state = styleState();
-      const keys = state ? Object.keys(state.values).filter((key) => state.values[key] !== undefined) : [];
-      const info = tool === 'shape';
-      const key = JSON.stringify([keys, state?.values ?? null, openPicker, info, tools.shape, shapePanel.hidden]);
+      const editing = Boolean(state?.targets.length);
+      const shown = state && (editing || toolInMenu) ? state : null;
+      const keys = shown ? Object.keys(shown.values).filter((key) => shown.values[key] !== undefined) : [];
+      const info = tool === 'shape' && toolInMenu;
+      const key = JSON.stringify([keys, shown?.values ?? null, openPicker, info, tools.shape, shapePanel.hidden]);
       styleRow.hidden = keys.length === 0 && !info;
       if (openPicker && !keys.includes(openPicker)) openPicker = null;
-      renderStyleDrop(state);
+      renderStyleDrop(shown);
       if (key === styleKey) return;
       styleKey = key;
       const inline = keys.length === 1 && (keys[0] === 'mark' || keys[0] === 'dash');
@@ -3917,7 +4014,7 @@ export function openDrawingEditor({
 
     const topBar = h('div', { class: 'drawing__top' }, toolbar, choices, styleDrop, topHandle, settings, colorPanel, shapePanel);
     // Od 1.35 panele narzędzi ogólnych (linijka i skala, tło, liniuszek) – nad dolnym paskiem.
-    dock.prepend(rulerPanel, paperPanel, guidePanel);
+    dock.prepend(rulerPanel, paperPanel, guidePanel, layersPanel);
     function toggleSettings() {
       const open = settings.hidden;
       closeSettings();
@@ -3925,6 +4022,150 @@ export function openDrawingEditor({
       renderSettings();
     }
     /** Zamyka panele pod paskiem: ustawienia pióra, własny kolor (i pipetkę), linijkę i skalę. */
+    // ---- warstwy (od 1.36): tło, obraz i warstwy elementów; sygnatury zaznaczonych (rząd 1–3)
+    const layersNow = () => drawingLayers(drawing);
+    /** Element poza ukrytymi warstwami – tylko takie można zaznaczyć, zetrzeć i do nich przyciągać. */
+    const isShown = (stroke) => !strokeEffect(layersNow(), stroke).hidden;
+    const someHidden = () => layersNow().some((layer) => layer.hidden && layer.id > PHOTO_LAYER);
+    const shownStrokes = () => (someHidden() ? drawing.strokes.filter(isShown) : drawing.strokes);
+    const shownIndexes = (indexes) => (someHidden() ? indexes.filter((index) => isShown(drawing.strokes[index])) : indexes);
+    /** Nowy element – na warstwie, na której się rysuje (warstwa 1 – bez sygnatur). */
+    function onActiveLayer(stroke) {
+      const id = drawing.activeLayer ?? 1;
+      if (stroke && id !== 1 && !stroke.layers) stroke.layers = [id];
+      return stroke;
+    }
+    function toggleLayersPanel() {
+      const open = layersPanel.hidden;
+      closeSettings();
+      if (open) {
+        layersPanel.hidden = false;
+        renderLayersPanel();
+      }
+      updateToolbar();
+    }
+    function openLayersPanel() {
+      if (layersPanel.hidden) toggleLayersPanel();
+    }
+    /** Zaznaczone całe elementy – im nadaje się sygnatury. */
+    const layerTargets = () => (snip || selectionKind !== 'whole' ? [] : [...selection].filter((stroke) => drawing.strokes.includes(stroke)));
+    /** Nowe warstwy rysunku; `quiet` – bez przebudowy panelu (suwak w trakcie przeciągania). */
+    function setLayers(next, quiet = false) {
+      drawing.layers = next;
+      changed = true;
+      // Zaznaczone elementy na ukrytej warstwie przestają być zaznaczone.
+      if (selection.size > 0 && someHidden()) {
+        const kept = [...selection].filter(isShown);
+        if (kept.length !== selection.size) selection = new Set(kept);
+      }
+      requestRender();
+      updateToolbar();
+      if (!quiet) renderLayersPanel();
+    }
+    /** Sygnatury zaznaczonych: rząd `rank` (0–2) – warstwa `id` albo (rząd 2 i 3) null – bez niej. */
+    function signSelection(rank, id) {
+      changeSelection(() => true, (stroke) => {
+        const ids = [...layersOf(stroke)];
+        if (id === null) ids.splice(rank, 1);
+        else if (rank < ids.length) ids[rank] = id;
+        else ids.push(id);
+        return withSignatures(stroke, ids);
+      }, layerTargets());
+      changed = true;
+      renderLayersPanel();
+    }
+    /** Suwak 0–100 % (krycie, nasycenie) z wartością obok. */
+    function percentSlider(label, value, testID, onInput) {
+      const output = h('span', { class: 'drawing__layer-value' }, `${value}%`);
+      const input = h('input', {
+        type: 'range', class: 'drawing__range', min: 0, max: 100, step: 5, value: String(value), 'aria-label': label, dataset: { testid: testID },
+        onInput: (event) => {
+          output.textContent = `${event.target.value}%`;
+          onInput(Number(event.target.value), true);
+        },
+        onChange: (event) => onInput(Number(event.target.value), false)
+      });
+      return h('label', { class: 'drawing__layer-slider' }, h('span', { class: 'drawing__layer-label' }, label), input, output);
+    }
+    function layerRow(layer) {
+      const fixed = layer.id <= PHOTO_LAYER;
+      const change = (fields, quiet = false) => setLayers(updateLayer(layersNow(), layer.id, fields), quiet);
+      const count = fixed ? null : layerUse(drawing.strokes, layer.id);
+      const activeId = drawing.activeLayer ?? 1;
+      const head = h('div', { class: 'drawing__layer-head' },
+        fixed ? h('span', { class: 'drawing__layer-mark', 'aria-hidden': 'true' }, icon(layer.id === BACKGROUND_LAYER ? 'paper' : 'image', { size: 16 }))
+          : h('button', {
+            type: 'button', class: 'drawing__layer-active', role: 'radio', 'aria-checked': String(layer.id === activeId),
+            'aria-label': `Rysuj na warstwie „${layer.name}”`, title: 'Nowe elementy na tej warstwie', dataset: { testid: `drawing-layer-active-${layer.id}` },
+            onClick: () => {
+              if (layer.id === 1) delete drawing.activeLayer;
+              else drawing.activeLayer = layer.id;
+              changed = true;
+              updateToolbar();
+              renderLayersPanel();
+            }
+          }),
+        h('button', {
+          type: 'button', class: 'drawing__layer-eye', 'aria-pressed': String(!layer.hidden), 'aria-label': `${layer.hidden ? 'Pokaż' : 'Ukryj'} „${layer.name}”`,
+          title: layer.hidden ? 'Pokaż' : 'Ukryj', dataset: { testid: `drawing-layer-eye-${layer.id}` }, onClick: () => change({ hidden: !layer.hidden })
+        }, icon(layer.hidden ? 'eyeOff' : 'eye', { size: 18 })),
+        fixed ? h('span', { class: 'drawing__layer-name' }, layer.name)
+          : h('input', {
+            type: 'text', class: 'drawing__layer-name', value: layer.name, maxLength: LAYER_NAME_MAX, 'aria-label': `Nazwa warstwy ${layer.id}`,
+            dataset: { testid: `drawing-layer-name-${layer.id}` }, onChange: (event) => change({ name: event.target.value })
+          }),
+        count === null ? null : h('span', { class: 'drawing__layer-count', title: 'Elementy z tą warstwą', dataset: { testid: `drawing-layer-count-${layer.id}` } }, String(count)),
+        !fixed && layer.id > 1 && count === 0 ? h('button', {
+          type: 'button', class: 'drawing__layer-remove', 'aria-label': `Usuń warstwę „${layer.name}”`, title: 'Usuń pustą warstwę',
+          dataset: { testid: `drawing-layer-remove-${layer.id}` },
+          onClick: () => {
+            if (drawing.activeLayer === layer.id) delete drawing.activeLayer;
+            setLayers(removeLayer(layersNow(), drawing.strokes, layer.id));
+          }
+        }, icon('trash', { size: 16 })) : null);
+      return h('div', { class: `drawing__layer${layer.hidden ? ' drawing__layer--hidden' : ''}`, dataset: { testid: `drawing-layer-${layer.id}` } }, head,
+        h('div', { class: 'drawing__layer-sliders' },
+          percentSlider('Krycie', layer.opacity, `drawing-layer-opacity-${layer.id}`, (value, quiet) => change({ opacity: value }, quiet)),
+          percentSlider('Nasycenie', layer.saturation, `drawing-layer-saturation-${layer.id}`, (value, quiet) => change({ saturation: value }, quiet))));
+    }
+    /** Wybór warstwy jednego rzędu sygnatur zaznaczonych (różne – „różne”). */
+    function signatureSelect(rank, targets, layers) {
+      const values = targets.map((stroke) => layersOf(stroke)[rank] ?? null);
+      const same = values.every((value) => value === values[0]) ? values[0] : undefined;
+      const options = [
+        ...(same === undefined ? [h('option', { value: 'mixed', disabled: true, selected: true }, 'różne')] : []),
+        ...(rank > 0 ? [h('option', { value: '', selected: same === null }, '—')] : []),
+        ...layers.map((layer) => h('option', { value: String(layer.id), selected: same === layer.id }, layer.name))
+      ];
+      return h('label', { class: 'drawing__sign' }, h('span', { class: 'drawing__layer-label' }, `Rząd ${rank + 1}`),
+        h('select', {
+          class: 'drawing__sign-select', 'aria-label': `Warstwa rzędu ${rank + 1}`, dataset: { testid: `drawing-sign-${rank + 1}` },
+          onChange: (event) => signSelection(rank, event.target.value === '' ? null : Number(event.target.value))
+        }, options));
+    }
+    function renderLayersPanel() {
+      if (layersPanel.hidden) return;
+      const layers = layersNow();
+      const elements = elementLayers(layers);
+      const targets = layerTargets();
+      const parts = [panelTitle('Warstwy')];
+      if (targets.length > 0) {
+        parts.push(h('div', { class: 'drawing__signs', dataset: { testid: 'drawing-signs' } },
+          h('p', { class: 'drawing__settings-label' }, `Zaznaczone (${targets.length}) – sygnatury`),
+          h('div', { class: 'drawing__sign-row' }, Array.from({ length: SIGNATURE_LIMIT }, (_, rank) => signatureSelect(rank, targets, elements)))));
+      }
+      parts.push(h('div', { class: 'drawing__layer-list', role: 'radiogroup', 'aria-label': 'Warstwa nowych elementów' }, elements.map(layerRow)));
+      parts.push(h('button', {
+        type: 'button', class: 'drawing__chip drawing__layer-add', disabled: elements.length >= LAYER_LIMIT, dataset: { testid: 'drawing-layer-add' },
+        onClick: () => setLayers(addLayer(layersNow()))
+      }, '+ Dodaj warstwę'));
+      parts.push(h('p', { class: 'drawing__settings-label' }, 'Poziomy stałe'));
+      parts.push(h('div', { class: 'drawing__layer-list' }, layers.filter((layer) => layer.id === BACKGROUND_LAYER || (layer.id === PHOTO_LAYER && drawing.photo)).map(layerRow)));
+      parts.push(h('p', { class: 'field__hint' }, 'Kółko – warstwa nowych elementów. Element ma do trzech warstw (sygnatur): rząd 1 – główna, rząd 2 i 3 – '
+        + 'dodatkowe. Działają kaskadowo: ukryta którakolwiek – element ukryty, krycie i nasycenie się mnożą. Tło – papier, kratka i szablon; '
+        + 'obraz – zdjęcie pod rysunkiem. Obraz w notatce i plik PDF wyglądają tak samo.'));
+      replaceChildren(layersPanel, parts);
+    }
     function closeSettings() {
       openPicker = null;
       styleDrop.hidden = true;
@@ -3942,8 +4183,9 @@ export function openDrawingEditor({
       // Zamknięcie panelu tła w trakcie ustawiania szablonu – szablon zostaje tam, gdzie jest.
       if (placing) finishPlacement(true);
       paperPanel.hidden = true;
+      layersPanel.hidden = true;
     }
-    const panelOpen = () => [settings, colorPanel, rulerPanel, paperPanel, shapePanel, guidePanel].some((panel) => !panel.hidden);
+    const panelOpen = () => [settings, colorPanel, rulerPanel, paperPanel, shapePanel, guidePanel, layersPanel].some((panel) => !panel.hidden);
     /**
      * Tytuł panelu pod paskiem z przyciskiem zamknięcia (od 1.25) – na telefonie panel zakrywa stronę,
      * a dotknięcie obok niego wymagało celowania w odsłonięty skrawek strony.
@@ -4362,7 +4604,7 @@ export function openDrawingEditor({
       for (const side of [-1, 1]) {
         const zero = rulerPoint(ruler, 0, side * half);
         // Każda kreska osobno – na przecięciu liczy się najbliższa linia, nie punkt przecięcia.
-        for (const stroke of drawing.strokes) {
+        for (const stroke of shownStrokes()) {
           const found = snapToStrokes([stroke], zero.x, zero.y, radius);
           if (found?.kind !== 'line') continue;
           const distance = Math.hypot(found.x - zero.x, found.y - zero.y);
@@ -4435,6 +4677,7 @@ export function openDrawingEditor({
       let cut = false;
       for (let index = drawing.strokes.length - 1; index >= 0; index -= 1) {
         const stroke = drawing.strokes[index];
+        if (!isShown(stroke)) continue;
         const bounds = strokeBounds(stroke);
         if (bounds.maxX < area.minX || bounds.minX > area.maxX || bounds.maxY < area.minY || bounds.minY > area.maxY) continue;
         const parts = splitByPolygon(stroke, polygon);
@@ -4548,7 +4791,7 @@ export function openDrawingEditor({
       const items = orderedSelection();
       if (items.length === 0) return false;
       writeClipboard(items);
-      copyImage(canvasBlob(strokesCanvas(items, drawing.scale)));
+      copyImage(canvasBlob(strokesCanvas(items, drawing.scale, drawingLayers(drawing))));
       pasteCount = 0;
       updateToolbar();
       flash(`${done} – „Wklej” na pasku zaznaczania albo Ctrl+V, także w innym rysunku.`);
@@ -4596,7 +4839,7 @@ export function openDrawingEditor({
       embedButton.disabled = true;
       try {
         await mediaReady();
-        const canvas = area ? snipCanvas(area) : strokesCanvas(items, drawing.scale);
+        const canvas = area ? snipCanvas(area) : strokesCanvas(items, drawing.scale, drawingLayers(drawing));
         const blob = await canvasBlob(canvas, area && drawing.photo && area.kind === 'rect' ? 'image/jpeg' : 'image/png');
         const label = await onEmbed({ blob, width: canvas.width, height: canvas.height, sheet: pageIndex });
         flash(`Osadzono w notatce jako „${label}”.`);
@@ -4934,7 +5177,7 @@ export function openDrawingEditor({
           replaceElement(element, next);
         } else {
           placeElement(next);
-          history.add(next);
+          history.add(onActiveLayer(next));
           changed = true;
         }
         // Nowe albo poprawione pole jest zaznaczone – od razu można je przesunąć.
@@ -5042,7 +5285,7 @@ export function openDrawingEditor({
       } else {
         placeElement(next);
         if (next.leader) next.leader = defaultLeader(next);
-        history.add(next);
+        history.add(onActiveLayer(next));
         changed = true;
       }
       selectOnly(next);
@@ -5213,7 +5456,7 @@ export function openDrawingEditor({
         element.y = fit(end.y + dy * reach - element.height / 2, element.height, drawing.height);
       }
       history.begin();
-      drawing.strokes.push(element);
+      drawing.strokes.push(onActiveLayer(element));
       const index = drawing.strokes.length - 1;
       drawing.strokes[index] = linkEnds(element, [[element.tool === 'roughness' ? 'tip' : 'leader', snap]]);
       commitStep();
@@ -5554,7 +5797,7 @@ export function openDrawingEditor({
     function selectAll() {
       if (tool !== 'select') setTool('select');
       clearSelection();
-      selection = new Set(drawing.strokes);
+      selection = new Set(shownStrokes());
       requestLive();
     }
 
@@ -5731,8 +5974,8 @@ export function openDrawingEditor({
       for (let step = 1; step <= steps; step += 1) {
         const x = from.x + ((point.x - from.x) * step) / steps;
         const y = from.y + ((point.y - from.y) * step) / steps;
-        if (active.mode === 'pixel') erased = eraseAt(drawing.strokes, x, y, radius) || erased;
-        else erased = history.remove(strokesAt(drawing.strokes, x, y, radius)) || erased;
+        if (active.mode === 'pixel') erased = eraseAt(drawing.strokes, x, y, radius, someHidden() ? isShown : null) || erased;
+        else erased = history.remove(shownIndexes(strokesAt(drawing.strokes, x, y, radius))) || erased;
       }
       active.last = point;
       if (erased) {
@@ -5859,7 +6102,7 @@ export function openDrawingEditor({
           flash(pending.kind === 'angle' ? 'Ramię kąta bez długości – dotknij innego punktu.' : 'Trzy punkty na jednej prostej – dotknij innego trzeciego punktu.');
         } else {
           pending = null;
-          history.add(shape);
+          history.add(onActiveLayer(shape));
           changed = true;
           selection = new Set([shape]);
           selectionKind = 'whole';
@@ -5891,7 +6134,7 @@ export function openDrawingEditor({
       const reach = HANDLE_HIT / view.scale;
       const style = newShapeStyle();
       if (tools.dimMode === 'diameter' || tools.dimMode === 'radius') {
-        const target = [...drawing.strokes].reverse().find((stroke) => isShape(stroke) && (isArc(stroke) || isCircle(stroke)) && touchesShape(stroke, point.x, point.y, reach));
+        const target = [...shownStrokes()].reverse().find((stroke) => isShape(stroke) && (isArc(stroke) || isCircle(stroke)) && touchesShape(stroke, point.x, point.y, reach));
         const circle = target ? (isArc(target) ? arcGeometry(target) : { center: { x: target.x, y: target.y }, radius: target.w / 2 }) : null;
         if (!circle) return null;
         const { center, radius } = circle;
@@ -5904,7 +6147,7 @@ export function openDrawingEditor({
         // Średnica łuku – bez przyklejenia (drugi koniec nie leży na łuku).
         return { shape: dimFromPoints('diameter', edge(-1), edge(1), style), links: isArc(target) ? [] : [['start', snapOn(target, edge(-1))], ['end', snapOn(target, edge(1))]] };
       }
-      const snap = findSnap(drawing.strokes, point, reach, { boxOf: elementBox });
+      const snap = findSnap(shownStrokes(), point, reach, { boxOf: elementBox });
       if (!snap || snap.kind !== 'edge' || !Number.isInteger(snap.ref.index)) return null;
       const { target } = snap;
       if (isShape(target) && (isArc(target) || target.shape === 'curve' || target.shape === 'xline')) return null;
@@ -5934,7 +6177,7 @@ export function openDrawingEditor({
       if (!made) return;
       const links = made.links.filter(([, snap]) => snap);
       history.begin();
-      const added = links.length > 0 ? linkEnds(made.shape, links) : made.shape;
+      const added = onActiveLayer(links.length > 0 ? linkEnds(made.shape, links) : made.shape);
       drawing.strokes.push(added);
       commitStep();
       changed = true;
@@ -5996,7 +6239,7 @@ export function openDrawingEditor({
     /** Miejsce przyciągnięcia końca w punkcie (null – bez przyciągania albo nic w pobliżu). */
     function edgeSnapAt(point, event, exclude = new Set()) {
       if (!snapsEdges(event)) return null;
-      return findSnap(drawing.strokes, point, EDGE_SNAP / view.scale, { exclude, boxOf: elementBox });
+      return findSnap(shownStrokes(), point, EDGE_SNAP / view.scale, { exclude, boxOf: elementBox });
     }
     /** Identyfikator elementu – nadany w bieżącym kroku cofania, gdy go nie miał (ids – już nadane w tym kroku). */
     function ensureId(target, ids) {
@@ -6286,9 +6529,9 @@ export function openDrawingEditor({
       const ys = polygon.filter((_, index) => index % 2 === 1);
       if ((Math.max(...xs) - Math.min(...xs)) * view.scale < TAP_SLOP && (Math.max(...ys) - Math.min(...ys)) * view.scale < TAP_SLOP) {
         // Dotknięcie kreski zaznacza ją (najwyższą w tym miejscu).
-        const [top] = strokesAt(drawing.strokes, done.start.x, done.start.y, SELECTION_PAD / view.scale);
+        const [top] = shownIndexes(strokesAt(drawing.strokes, done.start.x, done.start.y, SELECTION_PAD / view.scale));
         // Dotknięcie pustego środka kształtu też go zaznacza (najwyższego).
-        const inside = drawing.strokes.findLastIndex((stroke) => isShape(stroke) && shapeContains(stroke, done.start.x, done.start.y));
+        const inside = drawing.strokes.findLastIndex((stroke) => isShape(stroke) && isShown(stroke) && shapeContains(stroke, done.start.x, done.start.y));
         const index = top ?? (inside >= 0 ? inside : undefined);
         const target = index === undefined ? null : drawing.strokes[index];
         if (done.add) {
@@ -6312,7 +6555,7 @@ export function openDrawingEditor({
         selectRegion(polygon);
         return;
       }
-      const found = done.kind === 'lasso' ? strokesInPolygon(drawing.strokes, polygon) : strokesInRect(drawing.strokes, done.rect);
+      const found = shownIndexes(done.kind === 'lasso' ? strokesInPolygon(drawing.strokes, polygon) : strokesInRect(drawing.strokes, done.rect));
       selection = new Set([...(done.add ? selection : []), ...found.map((index) => drawing.strokes[index])]);
       selectionKind = 'whole';
     }
@@ -6325,14 +6568,14 @@ export function openDrawingEditor({
         clearTimeout(done.hold?.timer);
         if (!cancelled && done.recognized) {
           // Dwa kroki cofania (od 1.24): odręczna kreska, potem figura – „Cofnij” przywraca kreskę.
-          history.add(done.stroke);
+          history.add(onActiveLayer(done.stroke));
           history.begin();
           const index = drawing.strokes.indexOf(done.stroke);
-          if (index >= 0) drawing.strokes[index] = done.recognized.links.length > 0 ? linkEnds(done.recognized.shape, done.recognized.links) : done.recognized.shape;
+          if (index >= 0) drawing.strokes[index] = onActiveLayer(done.recognized.links.length > 0 ? linkEnds(done.recognized.shape, done.recognized.links) : done.recognized.shape);
           commitStep();
           changed = true;
         } else if (!cancelled && done.stroke.points.length >= 3) {
-          history.add(done.stroke);
+          history.add(onActiveLayer(done.stroke));
           changed = true;
         } else if (done.edge) {
           measured = null;
@@ -6360,11 +6603,11 @@ export function openDrawingEditor({
           let added = shape;
           if (links.length > 0) {
             history.begin();
-            added = linkEnds(shape, links);
+            added = onActiveLayer(linkEnds(shape, links));
             drawing.strokes.push(added);
             commitStep();
           } else {
-            history.add(shape);
+            history.add(onActiveLayer(shape));
           }
           changed = true;
           selection = new Set([added]);

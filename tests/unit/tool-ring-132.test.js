@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { cleanToolSettings, defaultToolSettings } from '../../js/core/drawing.js';
-import { SHAPES } from '../../js/core/shapes.js';
+import { DIM_MODES, SHAPES } from '../../js/core/shapes.js';
 import {
   RING_CENTER, TOOL_GROUPS, USER_GROUPS, clampRotation, cleanUiHidden, findGroup, isModeItem, ringItems, ringStep, rotationFor,
   snapRotation, startGroup, toolItem, uiPartHidden
@@ -18,10 +18,13 @@ test('kółka 1.32: grupy – każdy kształt i polecenie w grupie standardowej,
   assert.deepEqual(TOOL_GROUPS.map((group) => group.id), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols']);
   const items = TOOL_GROUPS.flatMap((group) => group.items);
   assert.equal(new Set(items).size, items.length, 'pozycja w jednej grupie standardowej');
-  const panelShapes = SHAPES.filter((kind) => kind !== 'polyline' && kind !== 'polygon');
+  // Od 1.36 wymiar – cztery pozycje 'dim:<rodzaj>' zamiast 'shape:dim'.
+  const panelShapes = SHAPES.filter((kind) => kind !== 'polyline' && kind !== 'polygon' && kind !== 'dim');
   for (const kind of panelShapes) assert.ok(items.includes(`shape:${kind}`), `kształt ${kind} w grupie`);
+  for (const mode of DIM_MODES) assert.ok(items.includes(`dim:${mode}`), `wymiar ${mode} w grupie`);
   for (const item of [...items, ...USER_GROUPS.flatMap((group) => group.items)]) {
-    assert.ok(isModeItem(item) ? ['pen', 'highlighter', 'eraser'].includes(item) || SHAPES.includes(item.slice(6)) : COMMANDS.includes(item), item);
+    const known = item.startsWith('dim:') ? DIM_MODES.includes(item.slice(4)) : ['pen', 'highlighter', 'eraser'].includes(item) || SHAPES.includes(item.slice(6));
+    assert.ok(isModeItem(item) ? known : COMMANDS.includes(item), item);
   }
   const metrology = findGroup('left', 'metrology');
   assert.equal(metrology.label, 'Metrologia');
@@ -29,6 +32,8 @@ test('kółka 1.32: grupy – każdy kształt i polecenie w grupie standardowej,
   assert.equal(findGroup('right', 'metrology'), null, 'Metrologia jest po lewej');
   assert.equal(toolItem('shape', 'ellipse'), 'shape:ellipse');
   assert.equal(toolItem('pen', 'rect'), 'pen');
+  assert.equal(toolItem('shape', 'dim', 'angle'), 'dim:angle');
+  assert.equal(toolItem('shape', 'dim'), 'dim:linear');
 });
 
 test('kółka 1.32: grupa na starcie – zapamiętana, inaczej z bieżącym narzędziem, inaczej „Pisanie”', () => {

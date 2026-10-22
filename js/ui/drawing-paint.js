@@ -30,10 +30,12 @@ export function paintShape(ctx, shape) {
   }
   if (path.closed) ctx.closePath();
   if (shape.fill && path.closed) {
-    ctx.globalAlpha = FILL_ALPHA[shape.fill] ?? 1;
+    // Krycie względem bieżącego (od 1.36 – przezroczystość warstwy).
+    const alpha = ctx.globalAlpha;
+    ctx.globalAlpha = alpha * (FILL_ALPHA[shape.fill] ?? 1);
     ctx.fillStyle = shape.color;
     ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = alpha;
   }
   // Od 1.27 rodzaj linii (przerywana, osiowa…) – tylko linia kształtu; groty i zakończenia – ciągłe.
   ctx.setLineDash(dashPattern(shape));
@@ -129,7 +131,7 @@ function paintPitch(ctx, template) {
 export function paintTemplate(ctx, template, image) {
   if (!template) return;
   ctx.save();
-  ctx.globalAlpha = TEMPLATE_ALPHA[template.level];
+  ctx.globalAlpha *= TEMPLATE_ALPHA[template.level];
   if (template.source === 'pitch') {
     paintPitch(ctx, template);
   } else if (image) {

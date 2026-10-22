@@ -64,7 +64,7 @@ export function translateItem(stroke, dx, dy) {
     points[index] = round(points[index] + dx, 1);
     points[index + 1] = round(points[index + 1] + dy, 1);
   }
-  return { tool: stroke.tool, color: stroke.color, points };
+  return { ...stroke, points };
 }
 
 /**
@@ -84,7 +84,7 @@ export function rotateItem(stroke, cx, cy, angle, turn = true) {
       points[index] = round(point.x, 1);
       points[index + 1] = round(point.y, 1);
     }
-    return { tool: stroke.tool, color: stroke.color, points };
+    return { ...stroke, points };
   }
   if (isShape(stroke)) {
     const center = spin(stroke.x, stroke.y);

@@ -34,6 +34,8 @@
 //   odręcznego kształtu (core/recognize.js); od 1.25 (format 10) dimUnit – jednostka liczb technicznych
 //   ('mm' | 'cm' | 'm' | 'in'; brak – mm albo cale przy skali imperialnej), tolerancje długości kształtów
 //   w milimetrach (starsze rysunki – przeliczane przy wczytaniu), ramka tolerancji może mieć odchyłki.
+//   Od 1.36 (format 11) layers – warstwy rysunku (core/layers.js; brak – tło, obraz i warstwy 1–5),
+//   activeLayer – warstwa nowych elementów (brak – 1), w elementach layers – sygnatury (warstwy rzędu 1–3).
 
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import { DEFAULT_RECENT_FITS, cleanRecentFits } from './fits.js';
@@ -47,6 +49,7 @@ import { cleanSymbol, isSymbol, symbolBox, symbolLeaderStart } from './gdt.js';
 import { cleanTable } from './tables.js';
 import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
 import { cleanToolGroups, cleanUiHidden, defaultToolGroups } from './tool-ring.js';
+import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './layers.js';
 
 /**
  * 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13), 3 – kształty, jasność tła, szablon (1.15),
@@ -54,7 +57,7 @@ import { cleanToolGroups, cleanUiHidden, defaultToolGroups } from './tool-ring.j
  * 6 – tabele i karteczki (1.21), 7 – identyfikatory elementów i przyklejone końce odcinków (1.22),
  * 8 – wymiary techniczne (odsunięcia, tolerancje, styl liczb) i symbole metrologiczne (1.22.1).
  */
-export const DRAWING_VERSION = 10;
+export const DRAWING_VERSION = 11;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -318,7 +321,8 @@ export const STICKY_TEXT_SIZES = Object.freeze([24, 30, 38]);
 export const STICKY_ICON = 60;
 export const STICKY_MIN = Object.freeze({ width: 160, height: 120 });
 export const STICKY_TEXT_MAX = 1000;
-export const stickyColor = (id) => STICKY_COLORS.find((color) => color.id === id) ?? STICKY_COLORS[0];
+/** Kolory karteczki { fill, ink } – według koloru karteczki; od 1.36 także gotowe kolory (karteczka z nasyceniem warstwy). */
+export const stickyColor = (id) => (id && typeof id === 'object' ? id : STICKY_COLORS.find((color) => color.id === id) ?? STICKY_COLORS[0]);
 /** Tabela, karteczka i (od 1.22.1) symbol metrologiczny – element z oknem poprawki i uchwytami. */
 export const isBox = (stroke) => stroke?.tool === 'table' || stroke?.tool === 'sticky' || isSymbol(stroke);
 
@@ -663,7 +667,8 @@ export function strokeBounds(stroke) {
 
 /** Nowa kreska z punktów [x, y, w, …] – zaokrąglonych i bez powtórzeń, jak przy rysowaniu. */
 function strokeFrom(source, points) {
-  const stroke = { tool: source.tool, color: source.color, points: [] };
+  // Od 1.36 z sygnaturami kreski (kawałki po gumce zostają na jej warstwach).
+  const stroke = { ...source, points: [] };
   for (let index = 0; index < points.length; index += 3) addPoint(stroke, { x: points[index], y: points[index + 1], w: points[index + 2] });
   return stroke;
 }
@@ -726,9 +731,11 @@ export function eraseFromStroke(stroke, x, y, radius) {
 }
 
 /** Gumka fragmentów na całym rysunku: zmienia listę kresek w miejscu; zwraca, czy coś starła. */
-export function eraseAt(strokes, x, y, radius) {
+export function eraseAt(strokes, x, y, radius, canErase = null) {
   let changed = false;
   for (let index = strokes.length - 1; index >= 0; index -= 1) {
+    // Od 1.36 – bez elementów ukrytych warstw (`canErase`).
+    if (canErase && !canErase(strokes[index])) continue;
     const pieces = eraseFromStroke(strokes[index], x, y, radius);
     if (!pieces) continue;
     strokes.splice(index, 1, ...pieces);
@@ -804,7 +811,7 @@ export function translateStroke(stroke, dx, dy) {
     points[index] = round(points[index] + dx, 1);
     points[index + 1] = round(points[index + 1] + dy, 1);
   }
-  return { tool: stroke.tool, color: stroke.color, points };
+  return { ...stroke, points };
 }
 
 // ---------------------------------------------------------------- linijka
@@ -1162,8 +1169,11 @@ export function cleanDrawing(raw) {
   const scale = cleanScale(raw.scale);
   const legacy = !(finite(raw.version) && raw.version >= 10);
   const toMillimeters = !legacy ? 1 : raw.dimStyle === 'technical' ? dimMillimeters(scale, { style: 'technical', unit: defaultDimUnit(scale) }) : dimMillimeters(scale, 'unit');
+  // Od 1.36 (format 11) warstwy rysunku i sygnatury elementów – tylko istniejących warstw.
+  const layers = Array.isArray(raw.layers) ? cleanLayers(raw.layers) : null;
+  const known = new Set(elementLayers(layers ?? defaultLayers()).map((layer) => layer.id));
   for (const stroke of Array.isArray(raw.strokes) ? raw.strokes.slice(0, MAX_STROKES) : []) {
-    const clean = cleanStroke(stroke, width, height, true);
+    const clean = cleanStroke(stroke, width, height, true, known);
     if (clean) strokes.push(toMillimeters === 1 ? clean : tolerancesInMillimeters(clean, toMillimeters));
   }
   const template = cleanTemplate(raw.template, width, height, photoBytes);
@@ -1187,7 +1197,9 @@ export function cleanDrawing(raw) {
     scale,
     ...(raw.dimStyle === 'technical' ? { dimStyle: 'technical', ...(dimUnitOf(raw.dimUnit) ? { dimUnit: raw.dimUnit } : {}) } : {}),
     ...(template ? { template } : {}),
-    ...(photo ? { photo } : {})
+    ...(photo ? { photo } : {}),
+    ...(layers ? { layers } : {}),
+    ...(Number.isInteger(raw.activeLayer) && raw.activeLayer !== 1 && known.has(raw.activeLayer) ? { activeLayer: raw.activeLayer } : {})
   };
 }
 
@@ -1201,10 +1213,20 @@ function tolerancesInMillimeters(stroke, factor) {
  * Sprawdzona kreska, pole, wzór, kształt albo (od 1.19, gdy `arrays`) szyk – albo null. Elementy szyku
  * sprawdzane tak samo (bez szyków w szyku).
  */
-function cleanStroke(stroke, width, height, arrays) {
+function cleanStroke(stroke, width, height, arrays, known = null) {
+  const clean = cleanStrokeData(stroke, width, height, arrays, known);
+  if (!clean) return null;
+  // Od 1.36 sygnatury (warstwy rzędu 1–3); sama warstwa 1 – bez pola.
+  const signatures = cleanSignatures(stroke.layers, known);
+  if (signatures) clean.layers = signatures;
+  else delete clean.layers;
+  return clean;
+}
+
+function cleanStrokeData(stroke, width, height, arrays, known) {
   if (isArray(stroke)) {
     if (!arrays || !Array.isArray(stroke.items)) return null;
-    const items = stroke.items.slice(0, ARRAY_ITEMS_MAX).map((item) => cleanStroke(item, width, height, false)).filter(Boolean);
+    const items = stroke.items.slice(0, ARRAY_ITEMS_MAX).map((item) => cleanStroke(item, width, height, false, known)).filter(Boolean);
     return makeArray(items, stroke, Math.max(width, height) * 4);
   }
   if (isElement(stroke)) return cleanElement(stroke, width, height);

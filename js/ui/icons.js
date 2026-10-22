@@ -148,6 +148,10 @@ const ICONS = {
   // Od 1.34: łuk przez trzy punkty, wymiar (grupa Wymiary) i jego rodzaje.
   shapeArc: [p('M4 18A9.5 9.5 0 0 1 20 9.5'), dot(4, 18, 1.8), dot(10.6, 9.4, 1.8), dot(20, 9.5, 1.8)],
   dimension: [p('M4 5.5v13'), p('M20 5.5v13'), p('M4 12h16'), p('M7.5 9.2L4 12l3.5 2.8'), p('M16.5 9.2L20 12l-3.5 2.8')],
+  // Od 1.36 rodzaje wymiaru w górnym menu: kąt (łuk między ramionami), promień (od środka do okręgu), średnica (⌀).
+  dimAngle: [p('M4 19.5h16.5'), p('M4 19.5L14.5 5'), p('M15.2 19.5a11.2 11.2 0 0 0-4.6-9'), p('M8.6 11.6l2-1.3.2 2.4')],
+  dimRadius: [p('M12 3.5a8.5 8.5 0 1 1 0 17a8.5 8.5 0 1 1 0-17'), dot(12, 12, 1.5), p('M12 12l5.4-5.4'), p('M14.4 6.9l3-.3-.3 3')],
+  dimDiameter: [p('M12 4.5a7.5 7.5 0 1 1 0 15a7.5 7.5 0 1 1 0-15'), p('M5 19L19 5')],
   lineSolid: [p('M3 12h18')],
   lineDashed: [{ d: 'M3 12h18', 'stroke-dasharray': '4 3' }],
   lineCenter: [{ d: 'M3 12h18', 'stroke-dasharray': '7 2.5 0.01 2.5' }],

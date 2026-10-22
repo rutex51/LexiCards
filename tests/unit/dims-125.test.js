@@ -51,13 +51,13 @@ test('jednostki 1.25: liczby bez jednostki w mm, cm, m i calach, oznaczenie „W
 });
 
 test('jednostki 1.25: zapis jednostki z rysunkiem i przeliczenie tolerancji starszych rysunków do mm (format 10)', () => {
-  assert.equal(DRAWING_VERSION, 10);
+  assert.equal(DRAWING_VERSION, 11, 'od 1.36 – warstwy');
   const tolerated = withDimTolerance(withDimTolerance(rect({ dims: ['width', 'skew'] }), 'width', { kind: 'dev', upper: 0.01, lower: -0.005 }), 'skew', { kind: 'sym', value: 1 });
   const base = { width: 1600, height: 1100, strokes: [tolerated] };
   // Liczby „5 cm” (format 9): tolerancja w cm – ×10; kąt bez zmian.
   const fromCm = cleanDrawing({ ...base, version: 9, scale: CM });
   assert.deepEqual(fromCm.strokes[0].dimTols, { width: { kind: 'dev', upper: 0.1, lower: -0.05 }, skew: { kind: 'sym', value: 1 } });
-  assert.equal(fromCm.version, 10);
+  assert.equal(fromCm.version, 11);
   // Styl „50” (format 8) – w mm, bez zmian; przy skali imperialnej – w calach (×25,4).
   assert.deepEqual(cleanDrawing({ ...base, version: 8, scale: CM, dimStyle: 'technical' }).strokes[0].dimTols.width, { kind: 'dev', upper: 0.01, lower: -0.005 });
   assert.deepEqual(cleanDrawing({ ...base, version: 8, scale: { value: 1, unit: 'in' }, dimStyle: 'technical' }).strokes[0].dimTols.width, { kind: 'dev', upper: 0.254, lower: -0.127 });

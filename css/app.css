@@ -7464,6 +7464,46 @@ button.drawing__pill .icon { color: var(--text-2); }
 .drawing__style-drop[hidden] { display: none; }
 .drawing__style-drop .drawing__settings-label { margin: 0; }
 
+/* Warstwy (od 1.36): panel nad dolnym paskiem – warstwy elementów, poziomy stałe, sygnatury zaznaczonych. */
+.drawing__layers { width: min(420px, calc(100vw - 24px)); }
+.drawing__layer-list { display: grid; gap: 8px; margin: 6px 0 10px; }
+.drawing__layer { display: grid; gap: 2px; padding: 6px 10px 4px; border: 1px solid var(--outline); border-radius: 12px; }
+.drawing__layer--hidden .drawing__layer-name,
+.drawing__layer--hidden .drawing__layer-sliders { opacity: 0.55; }
+.drawing__layer-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.drawing__layer-active {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid var(--text-3);
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.drawing__layer-active[aria-checked="true"] { border-color: var(--tone-blue); background: radial-gradient(circle, var(--tone-blue) 0 45%, transparent 50%); }
+.drawing__layer-mark { flex: none; display: grid; place-items: center; width: 22px; color: var(--text-2); }
+.drawing__layer-eye,
+.drawing__layer-remove { flex: none; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 10px; background: none; color: var(--text-2); cursor: pointer; }
+.drawing__layer-eye[aria-pressed="false"] { color: var(--tone-red); }
+.drawing__layer-eye:hover,
+.drawing__layer-remove:hover { background: var(--hover); }
+.drawing__layer-name { flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--text); font: inherit; font-weight: 600; }
+input.drawing__layer-name:hover { border-color: var(--outline); }
+input.drawing__layer-name:focus { border-color: var(--tone-blue); outline: none; }
+.drawing__layer-count { flex: none; min-width: 2.2ch; color: var(--text-2); font-size: 0.8rem; text-align: right; font-variant-numeric: tabular-nums; }
+.drawing__layer-sliders { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; }
+.drawing__layer-slider { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px; color: var(--text-2); font-size: 0.8rem; }
+.drawing__layer-value { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+.drawing__layer-add { justify-self: start; }
+.drawing__layers .drawing__layer-add { display: block; margin-bottom: 4px; }
+.drawing__signs { margin-bottom: 8px; padding: 8px 10px 10px; border-radius: 12px; background: var(--fill); }
+.drawing__signs .drawing__settings-label { margin-top: 0; }
+.drawing__sign-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.drawing__sign { display: grid; gap: 3px; min-width: 0; }
+.drawing__layer-label { color: var(--text-2); font-size: 0.8rem; }
+.drawing__sign-select { min-width: 0; padding: 6px 8px; border: 1px solid var(--outline); border-radius: 9px; background: var(--elevated); color: var(--text); font: inherit; font-size: 0.85rem; }
+
 /* Uchwyt pod menu i nad dolnym paskiem – dotknięcie albo przesunięcie chowa. */
 .drawing__handle {
   display: grid;
@@ -7781,6 +7821,7 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   .drawing__choices--dock::after { content: ''; flex-basis: 100%; order: 1; }
   .drawing__choices--dock > .drawing__modes { order: 2; }
   .drawing__picker-label { display: none; }
+  .drawing__layer-sliders { grid-template-columns: minmax(0, 1fr); }
   .drawing__dock-bar .drawing__tool { width: 44px; }
   .drawing__info,
   .drawing__status { bottom: calc(78px + env(safe-area-inset-bottom)); }

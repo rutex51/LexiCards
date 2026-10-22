@@ -139,7 +139,7 @@ export function mirrorStroke(stroke, axis, at) {
   const points = stroke.points.slice();
   const offset = horizontal ? 0 : 1;
   for (let index = offset; index < points.length; index += 3) points[index] = round(2 * at - points[index], 1);
-  return { tool: stroke.tool, color: stroke.color, points };
+  return { ...stroke, points };
 }
 
 /**

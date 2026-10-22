@@ -62,6 +62,7 @@ sounds/kartka.wav          nagranie przewracanej kartki (od 1.31.1)
 js/core/backup.js          kopia zapasowa: plik danych i plik obrazów i załączników – tworzenie, walidacja, przywracanie
 js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (PDF, Word, Excel, PowerPoint…)
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
+js/core/layers.js          warstwy rysunku (od 1.36): lista warstw, sygnatury elementów, wygląd kaskadowo, nasycenie koloru
 js/core/tool-ring.js       kółka narzędzi (od 1.32): grupy (standardowe, zestaw Metrologia), grupa na starcie, układ i widoczność małych kółek, obrót i dociąganie, schowane elementy interfejsu
 js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, skala, przyciąganie linijki, obszar zaznaczania, tabele i karteczki (prostokąt, strzałka), sprawdzanie danych rysunku
 js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
@@ -1566,6 +1567,48 @@ Wszystko w `js/ui/drawing.js` (bez zmian w `js/core`, format rysunku bez zmian):
   ramki; wymiar – bez ramki.
 - **Spirala:** przednie zwoje dla `holes.slice(0, -1)` – drut kończy się w ostatniej dziurce; połysk
   (`WIRE_SHINE`) – sześć warstw coraz cieńszych i jaśniejszych kresek przesuniętych ku światłu.
+
+## Warstwy, rodzaje wymiaru w menu i trzeci pasek (od 1.36)
+
+`js/core/layers.js` (bez przeglądarki, testy w Node.js):
+
+- **Warstwy rysunku** `drawing.layers` (format 11; brak – `defaultLayers()`): poziomy stałe `-1` „Tło” (papier, kratka,
+  szablon) i `0` „Obraz” (zdjęcie) oraz warstwy elementów `1…` (na początek 5, `addLayer` – następny numer, najwyżej
+  `LAYER_LIMIT` = 32). Każda: `{ id, name, hidden, opacity, saturation }` (0–100). `cleanLayers` – poziomy stałe zawsze
+  na początku z nazwą stałą, warstwa 1 zawsze, nazwy do 30 znaków. `removeLayer` – tylko pustej warstwy innej niż 1.
+  `drawing.activeLayer` – warstwa nowych elementów (brak – 1).
+- **Sygnatury elementu** `stroke.layers` – do `SIGNATURE_LIMIT` = 3 numerów warstw (rząd 1 – główna, 2 i 3 – dodatkowe),
+  bez powtórzeń; sama warstwa 1 – bez pola (`cleanSignatures`, `withSignatures`, `layersOf`). `cleanDrawing` zostawia tylko
+  istniejące warstwy (także w elementach szyku); kreska pióra przebudowywana przy przesuwaniu, obrocie, odbiciu i gumce
+  (`strokeFrom`, `translateStroke`, `translateItem`, `rotateItem`, `mirrorStroke`) zachowuje wszystkie pola, więc kawałki zostają
+  na swoich warstwach.
+- **Wygląd** `strokeEffect(layers, stroke)` – kaskadowo przez sygnatury: `hidden` – którakolwiek ukryta, `opacity`
+  i `saturation` (0–1) – iloczyny; `levelEffect` – tło i obraz; `layersActive` – czy coś się zmienia (bez tego rysowanie
+  i dotyk jak do 1.35). `saturateHex` – kolor o nasyceniu × współczynnik (HSL, jasność bez zmian), `toneStroke` – kopia
+  elementu z kolorami po zmianie (kolor, tekst kształtu, karteczka – kolory `{ fill, ink }`, szyk).
+
+Rysowanie (`paintDrawing` w `js/ui/drawing.js` – edytor, obraz w notatce, wycinek i „Osadź”): tło – `paintPaper` z kryciem
+i nasyceniem linii (ukryte – sama biała strona), szablon z kryciem tła; zdjęcie – `paintPhoto` z kryciem; nasycenie tła
+i zdjęcia – `desaturate`: szary prostokąt w trybie mieszania `saturation` z kryciem `1 − nasycenie` (bez dodatkowego płótna);
+elementy – pominięte (ukryte), `toneStroke` (nasycenie) i `globalAlpha` (krycie). Dlatego malarze ustawiają krycie
+względem bieżącego (`*=`: wypełnienie kształtu, zakreślacz, róg karteczki, szablon). Edytor: `isShown`, `shownStrokes`,
+`shownIndexes` – elementów ukrytych warstw nie dotyka zaznaczanie (stuknięcie, prostokąt, lasso, fragmenty,
+„Zaznacz wszystko”), gumka (`eraseAt(…, canErase)`, całe kreski), przyciąganie i linijka; ukrycie warstwy zdejmuje ich
+zaznaczenie. `onActiveLayer` – nowy element (kreska, figura z rozpoznania, kształt, wymiar, pole, tabela, karteczka,
+symbol) dostaje sygnaturę warstwy aktywnej. Panel `drawing-layers-panel` (przycisk `drawing-layers` na dolnym pasku,
+polecenie `drawing-selection-layers` nad zaznaczeniem): wybory `drawing-sign-1…3` (rząd; „—” usuwa rząd 2 albo 3,
+„różne” przy różnych wartościach), wiersze `drawing-layer-<id>` – `-active-`, `-eye-`, `-name-`, `-count-`, `-remove-`,
+suwaki `-opacity-` i `-saturation-` (przeciąganie – bez przebudowy panelu), `drawing-layer-add`. Sygnatury zmienia
+`changeSelection` (jeden krok cofania); ustawienia warstw – bez cofania, jak tło strony.
+
+Rodzaje wymiaru (`js/core/tool-ring.js`): pozycje `dim:linear`, `dim:angle`, `dim:radius`, `dim:diameter` (`DIM_ITEMS`) w grupie
+Wymiary i zestawie Metrologia zamiast `shape:dim`; `toolItem(tool, shape, dimMode)` – przy kształcie `dim` pozycja
+z rodzajem; zapisane grupy z `shape:dim` dostają w tym miejscu cztery rodzaje. W edytorze przyciski `drawing-measure-<rodzaj>`
+(„Długość”, „Kąt”, „Promień”, „Średnica”, ikony `dimension`, `dimAngle`, `dimRadius`, `dimDiameter`) ustawiają kształt `dim`
+i `tools.dimMode`; wybór pod menu (`dimModes`) usunięty.
+
+Trzeci pasek: `toolInMenu` (w `updateToolbar`) – pozycja narzędzia jest w grupie pokazanej w menu; bez tego tryby gumki,
+sposób rysowania okręgu i trzecie menu kształtów są schowane, a trzecie menu zostaje tylko dla zaznaczonych (tryb edycji).
 
 ## Dźwięki (od 1.31)
 

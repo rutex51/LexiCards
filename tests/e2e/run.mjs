@@ -3164,7 +3164,7 @@ const ITEM_GROUPS = {
   'drawing-shape-xline': 'construct', 'drawing-shape-point': 'construct',
   'drawing-insert-text': 'text', 'drawing-insert-math': 'text', 'drawing-insert-table': 'text', 'drawing-insert-sticky': 'text',
   'drawing-symbol-gdt': 'symbols', 'drawing-symbol-datum': 'symbols', 'drawing-symbol-roughness': 'symbols',
-  'drawing-shape-dim': 'dims'
+  'drawing-measure-linear': 'dims', 'drawing-measure-angle': 'dims', 'drawing-measure-radius': 'dims', 'drawing-measure-diameter': 'dims'
 };
 const groupOfItem = (testID) => ITEM_GROUPS[testID] ?? (testID.startsWith('drawing-shape-') ? 'shapes' : null);
 const OPTION_IDS = /^drawing-(color-|width-|eraser-size-|select-all$|paste$)/;
@@ -8743,8 +8743,8 @@ test('rysunek 1.32: kółka narzędzi – grupy w górnym menu, obrót kółkiem
   // Metrologia (lewe kółko): od 1.34 wymiar, odcinek, prosta, punkt i symbole; lewe duże kółko – wybrane narzędzie, prawe – ikona grupy.
   await pickGroup(editor, 'metrology');
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Metrologia');
-  assert.deepEqual(await rowLabels(editor), ['Wymiar', 'Odcinek', 'Prosta', 'Punkt', 'Ramka tolerancji', 'Baza', 'Chropowatość']);
-  assert.equal(await editor.locator('[data-testid=drawing-shape-dim]').getAttribute('aria-pressed'), 'true', 'pierwsze narzędzie zestawu');
+  assert.deepEqual(await rowLabels(editor), ['Wymiar – długość', 'Wymiar – kąt', 'Wymiar – promień', 'Wymiar – średnica', 'Odcinek', 'Prosta', 'Punkt', 'Ramka tolerancji', 'Baza', 'Chropowatość']);
+  assert.equal(await editor.locator('[data-testid=drawing-measure-linear]').getAttribute('aria-pressed'), 'true', 'pierwsze narzędzie zestawu');
   assert.match(await ringMain(editor, 'left').getAttribute('aria-label'), /^Wymiar/);
   assert.equal(await ringMain(editor, 'right').getAttribute('aria-label'), 'Narzędzia standardowe: Pisanie');
   await editor.locator('[data-testid=drawing-shape-line]').click();
@@ -9182,11 +9182,11 @@ test('rysunek 1.34: narzędzie „Wymiar” – krawędź dotknięciem, od punkt
   await press(editor, 'drawing-shape-ellipse');
   await editor.locator('[data-testid=drawing-ellipse-center]').click();
   await mouse.drag([1000, 466], [1088, 466]);
-  // Grupa Wymiary: narzędzie „Wymiar”, wybór rodzaju pod menu.
+  // Grupa Wymiary: od 1.36 rodzaje wymiaru – osobne narzędzia w górnym menu (Długość, Kąt, Promień, Średnica).
   await pickGroup(editor, 'dims');
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Wymiary');
-  assert.equal(await editor.locator('[data-testid=drawing-shape-dim]').getAttribute('aria-pressed'), 'true');
-  assert.equal(await editor.locator('[data-testid=drawing-dim-mode-linear]').getAttribute('aria-checked'), 'true');
+  assert.equal(await editor.locator('[data-testid=drawing-measure-linear]').getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(await editor.locator('[data-testid=drawing-tool-row] .drawing__tool-label').allTextContents(), ['Długość', 'Kąt', 'Promień', 'Średnica']);
   await expectText(hint, 'Wymiar: przeciągnij od punktu do punktu albo dotknij krawędzi');
   // Dotknięcie dolnej krawędzi prostokąta (pierwsze zdejmuje zaznaczenie): wymiar pod prostokątem, 4 cm.
   await mouse.tap([300, 300]);
@@ -9208,7 +9208,8 @@ test('rysunek 1.34: narzędzie „Wymiar” – krawędź dotknięciem, od punkt
   await mouse.drag([576, 400], [576, 532]);
   await nearValue(value('length'), 3);
   // Średnica: dotknięcie okręgu; promień – dotknięcie okręgu u góry.
-  await editor.locator('[data-testid=drawing-dim-mode-diameter]').click();
+  await press(editor, 'drawing-measure-diameter');
+  assert.equal(await editor.locator('[data-testid=drawing-measure-diameter]').getAttribute('aria-pressed'), 'true');
   await expectText(hint, 'Średnica: dotknij okręgu albo łuku');
   await mouse.tap([700, 700]);
   await count.waitFor({ state: 'hidden' });
@@ -9216,13 +9217,13 @@ test('rysunek 1.34: narzędzie „Wymiar” – krawędź dotknięciem, od punkt
   await expectText(count, 'Wymiar');
   await nearValue(value('length'), 4);
   assert.equal(await editor.locator('[data-testid=drawing-dim-marks-length]').getAttribute('aria-pressed'), 'true', 'znak ⌀');
-  await editor.locator('[data-testid=drawing-dim-mode-radius]').click();
+  await press(editor, 'drawing-measure-radius');
   await mouse.tap([700, 700]);
   await count.waitFor({ state: 'hidden' });
   await mouse.tap([1000, 378]);
   await nearValue(value('length'), 2);
   // Kąt: wierzchołek w lewym dolnym narożniku, ramię wzdłuż dolnej krawędzi, drugie – lewa krawędź; 90°.
-  await editor.locator('[data-testid=drawing-dim-mode-angle]').click();
+  await press(editor, 'drawing-measure-angle');
   await expectText(hint, 'Kąt: przeciągnij od wierzchołka wzdłuż pierwszego ramienia');
   await mouse.tap([700, 700]);
   await count.waitFor({ state: 'hidden' });
@@ -9271,7 +9272,7 @@ test('rysunek 1.34: narzędzie „Wymiar” – krawędź dotknięciem, od punkt
   assert.deepEqual(angle.dims, ['angle']);
 }, { device: DESKTOP });
 
-test('rysunek 1.34 na telefonie: grupa Wymiary – rodzaje wymiaru pod menu bez przewijania strony w bok, wymiar okręgu dotknięciem', async ({ open }) => {
+test('rysunek 1.34 na telefonie: grupa Wymiary – rodzaje wymiaru (od 1.36 w górnym menu) bez przewijania strony w bok, wymiar okręgu dotknięciem', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
   const ids = await sampleLessons(page);
@@ -9280,8 +9281,10 @@ test('rysunek 1.34 na telefonie: grupa Wymiary – rodzaje wymiaru pod menu bez 
   await editor.locator('[data-testid=drawing-ellipse-center]').click();
   await drawStroke(page, segment([0.5, 0.6], [0.62, 0.6], 6), { type: 'touch' });
   await pickGroup(editor, 'dims');
-  await editor.locator('[data-testid=drawing-dim-mode-radius]').click();
-  assert.equal(await editor.locator('[data-testid=drawing-choices]').isVisible(), true);
+  // Od 1.36 rodzaje wymiaru w górnym menu (jeden wiersz na telefonie).
+  await press(editor, 'drawing-measure-radius');
+  const radius = await editor.locator('[data-testid=drawing-measure-radius]').boundingBox();
+  assert.ok(radius.x >= 0 && radius.x + radius.width <= 390, 'promień w szerokości ekranu');
   assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
   await drawStroke(page, [[0.2, 0.9, 0.5]], { type: 'touch' });
   await drawStroke(page, [[0.62, 0.6, 0.5]], { type: 'touch' });
@@ -9594,6 +9597,182 @@ test('rysunek 1.35.1: trzecie menu – każdy kształt pamięta swój rodzaj lin
   const arcs = (await savedStrokes(page, ids.statements)).filter((stroke) => stroke.shape === 'arc');
   assert.deepEqual(arcs.map((arc) => [arc.dash, arc.color]), [['dashed', '#d70015'], ['dotted', '#1d1d1f']]);
 }, { device: DESKTOP });
+
+/** Piksele [r, g, b, a] obrazu rysunku w notatce w punktach strony. */
+const imagePixels = (page, lessonID, points, index = 0) => page.evaluate(async ([id, list, at]) => {
+  const image = (await window.lexicards.library.noteImages(id))[at];
+  const bitmap = await createImageBitmap(new Blob([image.bytes], { type: image.type }));
+  const canvas = Object.assign(document.createElement('canvas'), { width: bitmap.width, height: bitmap.height });
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0);
+  return list.map(([x, y]) => [...ctx.getImageData(x, y, 1, 1).data]);
+}, [lessonID, points, index]);
+const greyish = ([r, g, b]) => Math.max(r, g, b) - Math.min(r, g, b) < 12;
+
+test('rysunek 1.36: trzeci pasek tylko przy narzędziu z grupy pokazanej w menu (styl zaznaczonego zostaje); rodzaje wymiaru – osobne narzędzia w górnym menu (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Menu</p>');
+  const frame = await pageFrame(page);
+  const mouse = pageMouse(page, frame);
+  const choices = editor.locator('[data-testid=drawing-choices]');
+  // Elipsa: wybór sposobu pod menu; grupa Symbole w menu – trzeci pasek znika, powrót do Kształtów – wraca.
+  await press(editor, 'drawing-shape-ellipse');
+  await editor.locator('[data-testid=drawing-ellipse-frame]').waitFor();
+  await pickGroup(editor, 'symbols');
+  await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Symbole metrologiczne');
+  await choices.waitFor({ state: 'hidden' });
+  assert.equal(await editor.locator('[data-testid=drawing-shape-ellipse]').isHidden(), true);
+  await pickGroup(editor, 'shapes');
+  await editor.locator('[data-testid=drawing-ellipse-frame]').waitFor();
+  // Wymiary: Długość, Kąt, Promień, Średnica w górnym menu (do 1.35 – wybór pod menu); Symbole – bez trzeciego paska.
+  await pickGroup(editor, 'dims');
+  assert.deepEqual(await editor.locator('[data-testid=drawing-tool-row] .drawing__tool-label').allTextContents(), ['Długość', 'Kąt', 'Promień', 'Średnica']);
+  await press(editor, 'drawing-measure-angle');
+  assert.equal(await editor.locator('[data-testid=drawing-measure-angle]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await editor.locator('[data-testid=drawing-measure-linear]').getAttribute('aria-pressed'), 'false');
+  assert.equal(await editor.locator('[data-testid=drawing-dim-mode-angle]').count(), 0, 'bez dawnego wyboru pod menu');
+  await expectText(editor.locator('[data-testid=drawing-shape-hint]'), 'Kąt: przeciągnij od wierzchołka wzdłuż pierwszego ramienia');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-136-wymiary-w-menu.png') });
+  await pickGroup(editor, 'symbols');
+  await choices.waitFor({ state: 'hidden' });
+  // Zaznaczony prostokąt przy zaznaczaniu – jego styl w trzecim menu, także przy innej grupie w menu.
+  await pickGroup(editor, 'shapes');
+  await press(editor, 'drawing-shape-rect');
+  await mouse.drag([300, 300], [500, 450]);
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await pickGroup(editor, 'symbols');
+  await editor.locator('[data-testid=drawing-style-dash]').waitFor();
+  assert.equal(await editor.locator('[data-testid=drawing-style-info]').count(), 0, 'ⓘ tylko przy narzędziu kształtów');
+}, { device: DESKTOP });
+
+test('rysunek 1.36: warstwy – pięć na start, sygnatury rzędu 1–3 zaznaczonych, krycie i nasycenie kaskadowo, ukrycie (bez zaznaczania), nowa warstwa z nazwą jako warstwa nowych elementów, usunięcie pustej; zapis i obraz w notatce (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Warstwy</p>');
+  const frame = await pageFrame(page);
+  const { at } = frame;
+  const mouse = pageMouse(page, frame);
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const panel = editor.locator('[data-testid=drawing-layers-panel]');
+  const layerCount = (id) => panel.locator(`[data-testid=drawing-layer-count-${id}]`).textContent();
+  // Pięć czerwonych prostokątów z pełnym wypełnieniem.
+  await press(editor, 'drawing-color-red');
+  await press(editor, 'drawing-shape-rect');
+  await editor.locator('[data-testid=drawing-style-fill]').click();
+  await editor.locator('[data-testid=drawing-style-drop] [data-testid=drawing-fill-default-solid]').click();
+  await editor.locator('[data-testid=drawing-style-fill]').click();
+  const xs = [200, 420, 640, 860, 1080];
+  for (const x of xs) {
+    await mouse.drag([x, 300], [x + 176, 476]);
+    await expectText(count, 'Prostokąt');
+  }
+  const centers = xs.map((x) => [x + 88, 388]);
+  // Panel warstw z dolnego paska: pięć warstw, nowe elementy na warstwie 1.
+  await editor.locator('[data-testid=drawing-layers]').click();
+  await panel.waitFor();
+  assert.equal(await panel.locator('.drawing__layer-list').first().locator('.drawing__layer').count(), 5);
+  assert.equal(await panel.locator('[data-testid=drawing-layer-active-1]').getAttribute('aria-checked'), 'true');
+  assert.equal(await layerCount(1), '5');
+  // Wszystkie – rząd 1: Warstwa 2; trzy pierwsze – rząd 2: Warstwa 3; ostatni – rząd 2: Warstwa 4.
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await editor.locator('[data-testid=drawing-select-all]').click();
+  await expectText(count, '5 elementów');
+  await editor.locator('[data-testid=drawing-selection-layers]').click();
+  await panel.locator('[data-testid=drawing-sign-1]').selectOption('2');
+  await waitUntil(async () => (await layerCount(2)) === '5' && (await layerCount(1)) === '0', 'Pięć na warstwie 2');
+  await mouse.tap([1400, 1000]);
+  await count.waitFor({ state: 'hidden' });
+  await mouse.drag([180, 280], [830, 500]);
+  await expectText(count, '3 elementy');
+  await editor.locator('[data-testid=drawing-selection-layers]').click();
+  await panel.locator('[data-testid=drawing-sign-2]').selectOption('3');
+  await waitUntil(async () => (await layerCount(3)) === '3', 'Trzy z sygnaturą rzędu 2');
+  await mouse.tap([1400, 1000]);
+  await mouse.tap([1168, 388]);
+  await expectText(count, 'Prostokąt');
+  await editor.locator('[data-testid=drawing-selection-layers]').click();
+  assert.equal(await panel.locator('[data-testid=drawing-sign-1]').inputValue(), '2');
+  await panel.locator('[data-testid=drawing-sign-2]').selectOption('4');
+  await waitUntil(async () => (await layerCount(4)) === '1', 'Jeden z warstwą 4');
+  await mouse.tap([1400, 1000]);
+  await count.waitFor({ state: 'hidden' });
+  // Warstwa 2 – krycie 50%, warstwa 4 – nasycenie 0%: wszystkie jaśniejsze, ostatni szary.
+  await editor.locator('[data-testid=drawing-layers]').click();
+  await panel.locator('[data-testid=drawing-layer-opacity-2]').fill('50');
+  await panel.locator('[data-testid=drawing-layer-saturation-4]').fill('0');
+  await waitUntil(async () => {
+    const [first, last] = [await pixelAt(page, ...at(...centers[0])), await pixelAt(page, ...at(...centers[4]))];
+    return first[0] > 200 && first[1] > 90 && first[1] < 170 && greyish(last) && last[0] > 120 && last[0] < 220;
+  }, 'Krycie 50%, ostatni szary');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-136-warstwy.png') });
+  // Ukryta warstwa 3 – trzy prostokąty znikają i nie da się ich zaznaczyć.
+  await panel.locator('[data-testid=drawing-layer-eye-3]').click();
+  await waitUntil(async () => (await pixelAt(page, ...at(...centers[1]))).every((value) => value > 235), 'Ukryte');
+  const fourth = await pixelAt(page, ...at(...centers[3]));
+  assert.ok(fourth[0] > 200 && fourth[1] < 170, `czwarty widoczny (${fourth})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-136-warstwa-ukryta.png') });
+  await panel.locator('[data-testid=drawing-panel-close]').click();
+  await mouse.tap([508, 388]);
+  assert.equal(await count.isHidden(), true, 'ukrytego nie da się zaznaczyć');
+  await editor.locator('[data-testid=drawing-select-all]').click();
+  await expectText(count, '2 elementy');
+  await mouse.tap([1400, 1000]);
+  // Nowa warstwa „Osie” – warstwa nowych elementów; odcinek trafia na nią; pusta warstwa 5 – usunięta.
+  await editor.locator('[data-testid=drawing-layers]').click();
+  await panel.locator('[data-testid=drawing-layer-add]').click();
+  await panel.locator('[data-testid=drawing-layer-name-6]').fill('Osie');
+  await panel.locator('[data-testid=drawing-layer-name-6]').press('Enter');
+  await panel.locator('[data-testid=drawing-layer-active-6]').click();
+  assert.equal(await panel.locator('[data-testid=drawing-layer-active-6]').getAttribute('aria-checked'), 'true');
+  await panel.locator('[data-testid=drawing-layer-remove-5]').click();
+  await panel.locator('[data-testid=drawing-layer-5]').waitFor({ state: 'detached' });
+  assert.equal(await panel.locator('[data-testid=drawing-layer-remove-2]').count(), 0, 'używanej nie można usunąć');
+  await panel.locator('[data-testid=drawing-panel-close]').click();
+  await press(editor, 'drawing-shape-line');
+  await mouse.drag([200, 700], [900, 700]);
+  await expectText(count, 'Odcinek');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  const saved = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  assert.deepEqual(saved.layers.map((layer) => [layer.id, layer.name]),
+    [[-1, 'Tło'], [0, 'Obraz'], [1, 'Warstwa 1'], [2, 'Warstwa 2'], [3, 'Warstwa 3'], [4, 'Warstwa 4'], [6, 'Osie']]);
+  assert.deepEqual(saved.layers.filter((layer) => layer.hidden).map((layer) => layer.id), [3]);
+  assert.equal(saved.activeLayer, 6);
+  assert.deepEqual(saved.strokes.map((stroke) => stroke.layers), [[2, 3], [2, 3], [2, 3], [2], [2, 4], [6]]);
+  // Obraz w notatce: ukryte prostokąty – puste, czwarty jaśniejszy czerwony, ostatni szary.
+  const [hidden, fourthImage, last] = await imagePixels(page, ids.statements, [centers[1], centers[3], centers[4]]);
+  assert.ok(hidden.slice(0, 3).every((value) => value > 235), `ukryty – pusto (${hidden})`);
+  assert.ok(fourthImage[0] > 200 && fourthImage[1] > 90 && fourthImage[1] < 170, `krycie 50% (${fourthImage})`);
+  assert.ok(greyish(last), `szary (${last})`);
+}, { device: DESKTOP });
+
+test('rysunek 1.36 na telefonie: panel warstw w szerokości ekranu, bez przewijania w bok; rodzaje wymiaru w górnym menu', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  await editor.locator('[data-testid=drawing-layers]').click();
+  const panel = editor.locator('[data-testid=drawing-layers-panel]');
+  await panel.waitFor();
+  const box = await panel.boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 390, `panel w szerokości ekranu (${Math.round(box.x)}–${Math.round(box.x + box.width)})`);
+  assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
+  await settled(panel);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-136-warstwy-telefon.png') });
+  await panel.locator('[data-testid=drawing-panel-close]').click();
+  await pickGroup(editor, 'dims');
+  for (const mode of ['linear', 'angle', 'radius', 'diameter']) {
+    const button = await editor.locator(`[data-testid=drawing-measure-${mode}]`).boundingBox();
+    assert.ok(button && button.x >= 0 && button.x + button.width <= 390, `${mode} w szerokości ekranu`);
+  }
+  assert.equal(await overflowX(page), 0);
+});
 
 // ---------------------------------------------------------------- nauka z fiszkami
 

@@ -8,14 +8,18 @@
 // obraca kółka – zatrzymują się na najbliższej grupie.
 //
 // Pozycje narzędzi w grupach: 'pen', 'highlighter', 'eraser' (narzędzia), 'shape:<rodzaj>' (kształt
-// – narzędzie „Kształty” z wybranym rodzajem) oraz polecenia otwierające okno: 'text', 'math',
-// 'table', 'sticky', 'gdt', 'datum', 'roughness' (narzędzie się nie zmienia).
+// – narzędzie „Kształty” z wybranym rodzajem), od 1.36 'dim:<rodzaj>' (wymiar: długość, kąt, promień,
+// średnica – kształt 'dim' z rodzajem) oraz polecenia otwierające okno: 'text', 'math', 'table',
+// 'sticky', 'gdt', 'datum', 'roughness' (narzędzie się nie zmienia).
 //
 // Od 1.33 grupy można dobrać (okno „Grupy narzędzi”, ustawienia narzędzi na urządzeniu): grupy
 // standardowe – które są na prawym kółku i w jakiej kolejności; lewe kółko – gotowe zestawy i własne
 // grupy z wybranymi narzędziami.
 
-import { SHAPE_LABELS } from './shapes.js';
+import { DIM_MODES, SHAPE_LABELS } from './shapes.js';
+
+/** Od 1.36 rodzaje wymiaru to osobne pozycje grupy Wymiary (do 1.35 jedna pozycja 'shape:dim' z wyborem pod menu). */
+export const DIM_ITEMS = Object.freeze(['dim:linear', 'dim:angle', 'dim:radius', 'dim:diameter']);
 
 export const TOOL_GROUPS = Object.freeze([
   { id: 'write', label: 'Pisanie', icon: 'pen', items: ['pen', 'highlighter', 'eraser'] },
@@ -26,14 +30,14 @@ export const TOOL_GROUPS = Object.freeze([
   },
   { id: 'construct', label: 'Konstrukcja', icon: 'shapeXline', items: ['shape:xline', 'shape:point'] },
   { id: 'text', label: 'Tekst i wzory', icon: 'textBox', items: ['text', 'math', 'table', 'sticky'] },
-  // Od 1.34: narzędzie „Wymiar” (liniowy, średnica, promień, kąt).
-  { id: 'dims', label: 'Wymiary', icon: 'dimension', items: ['shape:dim'] },
+  // Od 1.34: narzędzie „Wymiar”; od 1.36 jego rodzaje – osobne pozycje (długość, kąt, promień, średnica).
+  { id: 'dims', label: 'Wymiary', icon: 'dimension', items: DIM_ITEMS },
   { id: 'symbols', label: 'Symbole metrologiczne', icon: 'gdtFrame', items: ['gdt', 'datum', 'roughness'] }
 ].map((group) => Object.freeze({ ...group, items: Object.freeze(group.items) })));
 
 /** Gotowe zestawy (od 1.33): w oknie „Grupy narzędzi” dotknięcie dodaje zestaw jako grupę na lewym kółku albo go usuwa. */
 export const PRESETS = Object.freeze([
-  { id: 'metrology', label: 'Metrologia', icon: 'caliper', items: ['shape:dim', 'shape:line', 'shape:xline', 'shape:point', 'gdt', 'datum', 'roughness'] },
+  { id: 'metrology', label: 'Metrologia', icon: 'caliper', items: [...DIM_ITEMS, 'shape:line', 'shape:xline', 'shape:point', 'gdt', 'datum', 'roughness'] },
   { id: 'sketch', label: 'Szkic odręczny', icon: 'sketch', items: ['pen', 'eraser', 'shape:arrow'] },
   { id: 'geometry', label: 'Geometria', icon: 'geometry', items: ['shape:line', 'shape:ellipse', 'shape:xline', 'shape:point'] },
   { id: 'notes', label: 'Notatki', icon: 'notes', items: ['text', 'math', 'sticky', 'highlighter'] }
@@ -46,7 +50,8 @@ export const USER_GROUPS = Object.freeze(PRESETS.filter((group) => group.id === 
 export const ALL_ITEMS = Object.freeze(TOOL_GROUPS.flatMap((group) => group.items));
 const COMMAND_LABELS = {
   pen: 'Pióro', highlighter: 'Zakreślacz', eraser: 'Gumka', text: 'Tekst', math: 'Wzór', table: 'Tabela', sticky: 'Karteczka',
-  gdt: 'Ramka tolerancji', datum: 'Baza', roughness: 'Chropowatość'
+  gdt: 'Ramka tolerancji', datum: 'Baza', roughness: 'Chropowatość',
+  'dim:linear': 'Wymiar – długość', 'dim:angle': 'Wymiar – kąt', 'dim:radius': 'Wymiar – promień', 'dim:diameter': 'Wymiar – średnica'
 };
 /** Nazwa pozycji w oknie „Grupy narzędzi” i w opisie grupy. */
 export const itemLabel = (item) => (item.startsWith('shape:') ? SHAPE_LABELS[item.slice(6)] : COMMAND_LABELS[item]) ?? item;
@@ -69,7 +74,9 @@ export function defaultToolGroups() {
 function cleanOwnGroup(raw) {
   if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string' || !GROUP_ID.test(raw.id) || STANDARD_IDS.includes(raw.id)) return null;
   const label = typeof raw.label === 'string' ? raw.label.trim().slice(0, GROUP_LIMITS.label) : '';
-  let items = Array.isArray(raw.items) ? [...new Set(raw.items.filter((item) => ALL_ITEMS.includes(item)))].slice(0, GROUP_LIMITS.items) : [];
+  // Wymiar z 1.34–1.35 ('shape:dim') – od 1.36 cztery rodzaje w tym miejscu.
+  const listed = Array.isArray(raw.items) ? raw.items.flatMap((item) => (item === 'shape:dim' ? DIM_ITEMS : [item])) : [];
+  let items = [...new Set(listed.filter((item) => ALL_ITEMS.includes(item)))].slice(0, GROUP_LIMITS.items);
   if (raw.id === 'metrology' && items.join() === METROLOGY_133) items = [...PRESETS[0].items];
   return { id: raw.id, label: label || 'Moja grupa', icon: GROUP_ICONS.includes(raw.icon) ? raw.icon : 'star', items };
 }
@@ -116,10 +123,11 @@ export function groupsOf(side, config = defaultToolGroups()) {
 }
 export const findGroup = (side, id, config) => groupsOf(side, config).find((group) => group.id === id) ?? null;
 
-/** Pozycja odpowiadająca narzędziu: 'pen', 'shape:rect'… (zaznaczanie nie należy do grup). */
-export const toolItem = (tool, shape) => (tool === 'shape' ? `shape:${shape}` : tool);
+/** Pozycja odpowiadająca narzędziu: 'pen', 'shape:rect', od 1.36 'dim:angle'… (zaznaczanie nie należy do grup). */
+export const toolItem = (tool, shape, dimMode = 'linear') => (tool !== 'shape' ? tool
+  : shape === 'dim' ? `dim:${DIM_MODES.includes(dimMode) ? dimMode : 'linear'}` : `shape:${shape}`);
 /** Pozycja, która jest narzędziem (a nie poleceniem z oknem). */
-export const isModeItem = (item) => item === 'pen' || item === 'highlighter' || item === 'eraser' || item.startsWith('shape:');
+export const isModeItem = (item) => item === 'pen' || item === 'highlighter' || item === 'eraser' || item.startsWith('shape:') || item.startsWith('dim:');
 
 /**
  * Grupa pokazywana na starcie: zapamiętana ('right:shapes'), gdy jest na kółku; inaczej grupa
