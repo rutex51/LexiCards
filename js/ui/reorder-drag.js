@@ -110,8 +110,8 @@ export function enableDragReorder(list, { groupOf = () => 0, onMove }) {
     const row = event.target.closest('li');
     if (!row || row.parentElement !== list) return;
     const grip = event.target.closest('.row__grip');
-    // Bez uchwytu – tylko myszą, i nie na przyciskach (strzałki).
-    if (!grip && (event.pointerType !== 'mouse' || event.target.closest('button'))) return;
+    // Bez uchwytu – tylko myszą, i nie na przyciskach (strzałki) ani polach (od 1.33: pole zaznaczenia w wierszu).
+    if (!grip && (event.pointerType !== 'mouse' || event.target.closest('button, input, label, select, textarea'))) return;
     event.preventDefault();
     begin(event, row, grip ?? row);
   });

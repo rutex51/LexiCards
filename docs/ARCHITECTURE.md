@@ -1395,15 +1395,27 @@ opis bez bajtów jest poprawny – plik dochodzi z drugiego pliku.
 
 ## Interfejs edytora rysunku (od 1.32)
 
-Grupy i geometria – `js/core/tool-ring.js` (bez przeglądarki, testy w Node.js):
+Grupy i geometria – `js/core/tool-ring.js` (bez przeglądarki, testy w Node.js; od 1.33 dobór grup):
 
 - `TOOL_GROUPS` (kółko po prawej): Pisanie (`pen`, `highlighter`, `eraser`), Kształty (`shape:<rodzaj>` –
   odcinek, strzałka, prostokąt, elipsa, trójkąt, romb, trapez, strzałka po łuku), Konstrukcja
   (`shape:xline`, `shape:point`), Tekst i wzory (`text`, `math`, `table`, `sticky`), Symbole metrologiczne
-  (`gdt`, `datum`, `roughness`). `USER_GROUPS` (po lewej) – na razie zestaw Metrologia; własne grupy –
-  w następnej wersji. Pozycja to narzędzie (`isModeItem`) albo polecenie otwierające okno.
-- `startGroup(saved, item)` – grupa zapamiętana (`toolGroup` w ustawieniach narzędzi, np. `'left:metrology'`),
-  inaczej grupa z bieżącym narzędziem.
+  (`gdt`, `datum`, `roughness`). `USER_GROUPS` (po lewej na początek) – zestaw Metrologia. Pozycja to
+  narzędzie (`isModeItem`) albo polecenie otwierające okno; `ALL_ITEMS` – wszystkie pozycje grup
+  standardowych, `itemLabel` – nazwa pozycji w oknie doboru.
+- **Dobór grup (od 1.33)** – `toolGroups` w ustawieniach narzędzi (na urządzeniu, `lexicards-drawing-tools`):
+  `{ order, off, mine }` – kolejność grup standardowych, schowane grupy standardowe, grupy lewego kółka
+  `{ id, label, icon, items }`. `cleanToolGroups`: nieznane grupy standardowe wypadają, brakujące (nowe
+  w przyszłych wersjach) dochodzą na końcu, co najmniej jedna grupa standardowa zostaje widoczna; własne
+  grupy – id `/^[a-z0-9-]{1,24}$/` inne niż standardowe, bez powtórzeń, ikona z `GROUP_ICONS`, pozycje
+  z `ALL_ITEMS` bez powtórzeń; `GROUP_LIMITS` – 8 grup, 12 pozycji, 30 znaków nazwy; bez zapisu –
+  `defaultToolGroups()` (Metrologia). `PRESETS` – gotowe zestawy (Metrologia, Szkic odręczny, Geometria,
+  Notatki; id zestawu = id grupy po dodaniu), `newGroupId` – `own-1`, `own-2`…
+- `groupsOf(side, config)` – po prawej grupy z `order` bez `off`, po lewej `mine` z co najmniej jedną
+  pozycją (pusta grupa czeka w oknie); `findGroup(side, id, config)`. Bez `config` – dobór domyślny.
+- `startGroup(saved, item, config)` – grupa zapamiętana (`toolGroup` w ustawieniach narzędzi, np.
+  `'left:metrology'`), gdy jest na kółku; inaczej grupa z bieżącym narzędziem (najpierw prawe kółko);
+  inaczej pierwsza grupa prawego kółka.
 - `ringItems({ count, rotation, side, radius, edge, size })` – położenie małych kółek co 45° (`ringStep`;
   od ośmiu grup okrąg się zamyka) wokół środka wycinka (`RING_CENTER`: po prawej 122° – w dół i w lewo,
   po lewej 58°); pełna widoczność do 50° od środka, zanikanie do 95° (wycinek ok. 40% obwodu), do tego
@@ -1413,13 +1425,25 @@ Grupy i geometria – `js/core/tool-ring.js` (bez przeglądarki, testy w Node.js
   (`uiHidden` w ustawieniach narzędzi na urządzeniu); lewe kółko domyślnie `null` – schowane na wąskim
   ekranie.
 
-`js/ui/drawing-ring.js` – `createRing({ side, groups, label, onPick, onMain, onHide })`: przyciski grup
+`js/ui/drawing-ring.js` – `createRing({ side, groups, label, onPick, onMain, onHide, onEdit })`: przyciski grup
 w kwadracie wokół dużego kółka (kontener `pointer-events: none` – między kółkami rysuje się dalej);
 przeciągnięcie po kółku obraca (przechwycenie wskaźnika po 8 px łuku, po puszczeniu dociągnięcie,
 „kliknięcie” po obrocie nie wybiera grupy), `wheelAt(event)` – kółko myszy w pierścieniu (wywoływane też
 z płótna, bo w trakcie obrotu kółka uciekają spod kursora), fokus z klawiatury obraca grupę na środek;
 duże kółko: dotknięcie – `onMain`, przesunięcie do krawędzi o 40 px – `onHide(true)`; zakładka przy
-krawędzi. Pierwsze ułożenie bez animacji (klasa `drawing-ring--ready` po dwóch klatkach).
+krawędzi. Pierwsze ułożenie bez animacji (klasa `drawing-ring--ready` po dwóch klatkach). Od 1.33 za
+grupami jest jeszcze jedno małe kółko – `editButton` (`drawing-ring-<strona>-edit`, `onEdit`), liczone
+w obrocie jak grupa; `setGroups(list, active)` wymienia przyciski grup (obrót na `active` albo dociągnięty
+do nowej liczby kółek, ułożenie bez animacji).
+
+`js/ui/drawing-groups.js` (od 1.33) – `openToolGroups({ config, editing, onSave })`: okno „Grupy narzędzi”
+(`openFormSheet`, „Gotowe”) na kopii doboru – grupy standardowe (pole zaznaczenia, ≡ przez
+`enableDragReorder`, strzałki na uchwycie z klawiatury; ostatnia widoczna grupa ma pole zablokowane),
+gotowe zestawy (`aria-pressed` – grupa o id zestawu jest na lewym kółku), moje grupy (wiersz – edycja, ≡),
+„+ Nowa grupa”, edytowana grupa: nazwa, ikona, narzędzia według grup standardowych z numerem kolejności,
+„Usuń grupę”. Części okna przebudowują się osobno z zachowaniem fokusu (`data-testid`). `onSave` dostaje
+dobór po `cleanToolGroups`. W `reorder-drag.js` od 1.33 przeciąganie myszą bez uchwytu nie zaczyna się na
+polach (`input`, `label`…), więc pole zaznaczenia w wierszu działa jak zwykle.
 
 `js/ui/drawing.js`:
 - **Górne menu** (`.drawing__toolbar`): nazwa grupy, `toolRow` – przyciski pozycji pokazanej grupy
@@ -1428,7 +1452,10 @@ krawędzi. Pierwsze ułożenie bez animacji (klasa `drawing-ring--ready` po dwó
   obszar i tryb zaznaczania). Telefon (do 599 px): kropka koloru (`drawing-options`) otwiera `optionRow`
   (klasa `drawing__top--options`), wybór jak zakładka. `showGroup` – grupa z narzędziami od razu wybiera
   narzędzie (ostatnio używane w grupie, w kształtach – `tools.shape`); przy otwartych ustawieniach
-  kształtów grupa tylko się pokazuje. `activateItem` – drugie dotknięcie wybranego pióra, zakreślacza
+  kształtów grupa tylko się pokazuje. `editGroups(side)` otwiera okno doboru (z lewego kółka – z jego
+  ostatnią grupą do edycji), `applyGroups(config)` – zapis, `setGroups` obu kółek i menu od nowa; pokazana
+  grupa, której już nie ma – `startGroup` z bieżącym narzędziem; lewe kółko bez grup – duże kółko z plusem
+  otwiera okno. `activateItem` – drugie dotknięcie wybranego pióra, zakreślacza
   albo kształtu – ustawienia; inny kształt przy narzędziu kształtów nie zdejmuje zaznaczenia, ustawienia
   zostają przy odcinku, strzałkach i punkcie (jak w panelu kształtów do 1.31). Panel kształtów nie ma już
   rodzajów i symboli (są w menu).

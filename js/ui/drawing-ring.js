@@ -4,7 +4,8 @@
 // Przeciągnięcie palcem, rysikiem albo myszą po małych kółkach i kółko myszy obracają grupy (po
 // puszczeniu – dociągnięcie do najbliższej). Dotknięcie małego kółka wybiera grupę. Duże kółko:
 // dotknięcie – ustawienia narzędzia, przesunięcie do krawędzi ekranu – chowa kółko. Zakładka przy
-// krawędzi chowa i przywraca kółko.
+// krawędzi chowa i przywraca kółko. Od 1.33 ostatnie małe kółko („Grupy narzędzi”) otwiera dobór grup,
+// a grupy można wymienić (setGroups) bez budowania kółka od nowa.
 
 import { clampRotation, ringItems, ringStep, rotationFor, snapRotation } from '../core/tool-ring.js';
 import { h } from './dom.js';
@@ -25,10 +26,12 @@ const wrap = (angle) => ((((angle + 180) % 360) + 360) % 360) - 180;
 
 /**
  * side: 'right' | 'left'; groups: [{ id, label, icon }]; onPick(id) – wybór grupy; onMain() – dotknięcie
- * dużego kółka; onHide(hidden) – schowanie albo przywrócenie. Zwraca { element, tab, update(state), groupButton(id) }.
+ * dużego kółka; onHide(hidden) – schowanie albo przywrócenie; onEdit() – ostatnie małe kółko (dobór grup).
+ * Zwraca { element, tab, update(state), setGroups(list, active), groupButton(id), editButton }.
  */
-export function createRing({ side, groups, label, onPick, onMain, onHide }) {
+export function createRing({ side, groups: initial, label, onPick, onMain, onHide, onEdit }) {
   const right = side !== 'left';
+  let groups = initial;
   let sizes = SIZES.wide;
   let rotation = 0;
   let hidden = false;
@@ -38,17 +41,28 @@ export function createRing({ side, groups, label, onPick, onMain, onHide }) {
   let wheelSum = 0;
   let wheelTime = 0;
 
-  const buttons = groups.map((group, index) => h('button', {
+  const makeGroupButton = (group) => h('button', {
     type: 'button', class: 'drawing-ring__group', 'aria-label': group.label, title: group.label, 'aria-pressed': 'false',
     dataset: { group: group.id, testid: `drawing-group-${group.id}` },
-    onClick: () => {
+    onClick: (event) => {
       if (suppressClick) return;
-      turnTo(index);
+      turnTo(buttons.indexOf(event.currentTarget));
       onPick(group.id);
     },
     // Klawiatura: grupa spoza wycinka obraca się na środek, gdy dostanie fokus.
-    onFocus: () => turnTo(index)
-  }, icon(group.icon, { size: 22 })));
+    onFocus: (event) => turnTo(buttons.indexOf(event.currentTarget))
+  }, icon(group.icon, { size: 22 }));
+  // Ostatnie małe kółko – dobór grup (od 1.33): zestawy, własne grupy, kolejność.
+  const editButton = h('button', {
+    type: 'button', class: 'drawing-ring__group drawing-ring__group--edit', 'aria-label': 'Grupy narzędzi – dobór i kolejność', title: 'Grupy narzędzi',
+    dataset: { testid: `drawing-ring-${side}-edit` },
+    onClick: () => {
+      if (suppressClick) return;
+      onEdit();
+    },
+    onFocus: () => turnTo(buttons.length - 1)
+  }, icon('ringEdit', { size: 22 }));
+  let buttons = [...groups.map(makeGroupButton), editButton];
   const main = h('button', { type: 'button', class: 'drawing-ring__main', dataset: { testid: `drawing-ring-${side}-main` } });
   const element = h('div', { class: `drawing-ring drawing-ring--${side}`, role: 'group', 'aria-label': label, dataset: { testid: `drawing-ring-${side}` } },
     ...buttons, main);
@@ -73,7 +87,7 @@ export function createRing({ side, groups, label, onPick, onMain, onHide }) {
     element.style.setProperty('--ring-main', `${sizes.main}px`);
     element.style.setProperty('--ring-small', `${sizes.small}px`);
     tab.style.top = `calc(var(--drawing-ring-top, 10px) + ${sizes.main / 2 - 26}px)`;
-    const items = ringItems({ count: groups.length, rotation, side, radius: sizes.radius, edge: sizes.edge, size: sizes.small });
+    const items = ringItems({ count: buttons.length, rotation, side, radius: sizes.radius, edge: sizes.edge, size: sizes.small });
     for (const item of items) {
       const button = buttons[item.index];
       button.style.left = `${box / 2 + item.x - sizes.small / 2}px`;
@@ -84,8 +98,25 @@ export function createRing({ side, groups, label, onPick, onMain, onHide }) {
     }
   }
   function turnTo(index) {
-    rotation = rotationFor(index, groups.length, rotation);
+    if (index < 0) return;
+    rotation = rotationFor(index, buttons.length, rotation);
     layout();
+  }
+  /** Pierwsze ułożenie (i po zmianie wielkości albo grup) bez animacji – kółka nie „dolatują” na miejsca. */
+  function placeAtOnce() {
+    element.classList.remove('drawing-ring--ready');
+    layout();
+    requestAnimationFrame(() => requestAnimationFrame(() => element.classList.add('drawing-ring--ready')));
+  }
+  /** Nowe grupy (od 1.33, po zmianie w oknie „Grupy narzędzi”); active – grupa obrócona na środek wycinka. */
+  function setGroups(list, active = null) {
+    groups = list;
+    for (const button of buttons) if (button !== editButton) button.remove();
+    buttons = [...groups.map(makeGroupButton), editButton];
+    element.prepend(...buttons.slice(0, -1));
+    const index = groups.findIndex((group) => group.id === active);
+    rotation = index >= 0 ? rotationFor(index, buttons.length, 0) : snapRotation(rotation, buttons.length).rotation;
+    if (element.style.width) placeAtOnce();
   }
 
   // ---- obracanie: przeciągnięcie po małych kółkach
@@ -111,7 +142,7 @@ export function createRing({ side, groups, label, onPick, onMain, onHide }) {
       }
     }
     event.preventDefault();
-    rotation = clampRotation(right ? drag.rotation - delta : drag.rotation + delta, groups.length);
+    rotation = clampRotation(right ? drag.rotation - delta : drag.rotation + delta, buttons.length);
     layout();
   });
   const endDrag = (event) => {
@@ -123,7 +154,7 @@ export function createRing({ side, groups, label, onPick, onMain, onHide }) {
     // Po obrocie „kliknięcie” w kółko, nad którym puszczono palec, nie wybiera grupy.
     suppressClick = true;
     setTimeout(() => { suppressClick = false; }, 0);
-    rotation = snapRotation(rotation, groups.length).rotation;
+    rotation = snapRotation(rotation, buttons.length).rotation;
     layout();
   };
   element.addEventListener('pointerup', endDrag);
@@ -142,8 +173,8 @@ export function createRing({ side, groups, label, onPick, onMain, onHide }) {
     if (Math.abs(wheelSum) < WHEEL_STEP) return true;
     const direction = Math.sign(wheelSum);
     wheelSum = 0;
-    const { step } = ringStep(groups.length);
-    rotation = snapRotation(clampRotation(rotation + direction * step, groups.length), groups.length).rotation;
+    const { step } = ringStep(buttons.length);
+    rotation = snapRotation(clampRotation(rotation + direction * step, buttons.length), buttons.length).rotation;
     layout();
     return true;
   }
@@ -197,7 +228,7 @@ export function createRing({ side, groups, label, onPick, onMain, onHide }) {
     const nextSizes = state.narrow ? SIZES.narrow : SIZES.wide;
     const resized = nextSizes !== sizes;
     sizes = nextSizes;
-    for (const button of buttons) button.setAttribute('aria-pressed', String(button.dataset.group === state.active));
+    for (const button of buttons) if (button !== editButton) button.setAttribute('aria-pressed', String(button.dataset.group === state.active));
     main.replaceChildren(icon(state.main.icon, { size: Math.round(sizes.main * 0.42) }));
     main.style.setProperty('--ring-fill', state.main.fill);
     main.style.setProperty('--ring-ink', state.main.ink);
@@ -212,13 +243,11 @@ export function createRing({ side, groups, label, onPick, onMain, onHide }) {
     tab.setAttribute('aria-label', tabLabel);
     tab.title = tabLabel;
     tab.setAttribute('aria-expanded', String(!hidden));
-    if (resized || !element.style.width) {
-      // Pierwsze ułożenie (i zmiana wielkości) bez animacji – kółka nie „dolatują” na miejsca.
-      element.classList.remove('drawing-ring--ready');
-      layout();
-      requestAnimationFrame(() => requestAnimationFrame(() => element.classList.add('drawing-ring--ready')));
-    }
+    if (resized || !element.style.width) placeAtOnce();
   }
 
-  return { element, tab, update, wheelAt, groupButton: (id) => buttons.find((button) => button.dataset.group === id) ?? null, turnTo };
+  return {
+    element, tab, update, wheelAt, setGroups, editButton, turnTo,
+    groupButton: (id) => buttons.find((button) => button.dataset.group === id) ?? null
+  };
 }

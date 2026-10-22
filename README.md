@@ -1,4 +1,4 @@
-# LexiCards 1.32
+# LexiCards 1.33
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -41,8 +41,9 @@ Notatki: osobne okno tekstu na cały ekran i okno „Obrazy i załączniki”, o
 Rysunek: rysunki notatki (i jej zdjęcia) przewracane jak kartki w jednym oknie, palec też rysuje (przełącznik), obrót zaznaczenia uchwytem, odbicie lustrzane, Shift – kilka elementów kliknięciami (wersja 1.30); okno „Obrazy i załączniki” w układzie okien – białe, sekcje w ramkach (1.30.1); wydzielony magazyn danych – przygotowanie pod plik danych w OneDrive (1.30.2): [docs/RELEASE-1.30.md](docs/RELEASE-1.30.md).
 Dźwięki: szum odlatującej fiszki i szelest przewracanej kartki notatki i rysunku, tak długi jak przewracanie (wersja 1.31); kartka z nagrania prawdziwej kartki, bez dudnienia (1.31.1), bez dudnięcia przy klapnięciu (1.31.2): [docs/RELEASE-1.31.md](docs/RELEASE-1.31.md).
 Rysunek – nowy układ: kółka narzędzi (grupy standardowe po prawej, zestaw Metrologia po lewej), górne menu w dwóch wierszach z wysuwanym wyborem, dolny pasek narzędzi ogólnych, pastylki informacji i zmian, chowanie każdego elementu i całego interfejsu, lewy Alt i prawy przycisk – zaznaczanie, spacja – powiel (wersja 1.32): [docs/RELEASE-1.32.md](docs/RELEASE-1.32.md).
+Rysunek – okno „Grupy narzędzi”: które grupy standardowe są na prawym kółku i w jakiej kolejności, gotowe zestawy (Metrologia, Szkic odręczny, Geometria, Notatki) i własne grupy z wybranymi narzędziami na lewym kółku (wersja 1.33): [docs/RELEASE-1.33.md](docs/RELEASE-1.33.md).
 
-## Co potrafi wersja 1.32
+## Co potrafi wersja 1.33
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -514,6 +515,14 @@ a małe kółka wokół niego to **grupy**: Pisanie, Kształty, Konstrukcja (pro
 środka ekranu; przeciągnięcie po małych kółkach albo kółko myszy obraca je (dalsze i te przy krawędzi
 ekranu płynnie znikają), dotknięcie wybiera grupę. Po lewej – lustrzane **kółko moich narzędzi**,
 na początek z zestawem **Metrologia** (odcinek, prosta, punkt, ramka tolerancji, baza, chropowatość).
+**Grupy narzędzi (od 1.33):** ostatnie małe kółko (suwaki, przerywana obwódka) otwiera okno doboru
+grup: zaznaczone grupy standardowe są na prawym kółku w ustawionej kolejności (≡ – przeciągnij,
+klawiaturą strzałki na uchwycie; co najmniej jedna zostaje), **gotowe zestawy** – Metrologia, Szkic
+odręczny (pióro, gumka, strzałka), Geometria (odcinek, elipsa, prosta, punkt), Notatki (tekst, wzór,
+karteczka, zakreślacz) – dotknięcie dodaje zestaw jako grupę lewego kółka albo go usuwa, a **+ Nowa
+grupa** tworzy własną: nazwa, ikona i narzędzia w kolejności dotknięć (to kolejność w górnym menu;
+do 8 grup po 12 narzędzi). Zmiany obowiązują po „Gotowe” i są zapamiętane na urządzeniu; lewe kółko
+bez grup ma duże kółko z plusem, które otwiera to okno.
 **Górne menu** pokazuje grupę: w pierwszym wierszu jej narzędzia, w drugim kolor i grubość, pod spodem
 wysuwa się wybór bez osobnego okna (tryb gumki, obszar i tryb zaznaczania); na iPhonie menu ma jeden
 wiersz, a kolor i grubość otwiera kropka koloru. Drugie dotknięcie wybranego narzędzia albo dotknięcie

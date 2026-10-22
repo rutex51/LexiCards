@@ -59,7 +59,8 @@ import { rememberFit } from '../core/fits.js';
 import { MIRROR_AXES, MIRROR_LABELS, canTurn, mirrorStroke, rotateStroke, snapTurn, transformStrokes, turnDegrees } from '../core/transform.js';
 import { cleanColumnWidths, moveColumnBorder } from '../core/tables.js';
 import { openFitTable } from './fit-table.js';
-import { RING_SIDES, TOOL_GROUPS, USER_GROUPS, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPartHidden } from '../core/tool-ring.js';
+import { RING_SIDES, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPartHidden } from '../core/tool-ring.js';
+import { openToolGroups } from './drawing-groups.js';
 import { createRing } from './drawing-ring.js';
 import {
   DIM_PREFIXES, FIT_RE, LABEL_TEXT_MAX, POINT_MARKS, POINT_MARK_LABELS, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_DASHES, SHAPE_DASH_LABELS,
@@ -2496,14 +2497,14 @@ export function openDrawingEditor({
       updateRings();
     }
 
-    // ---- kółka narzędzi (od 1.32): grupy standardowe po prawej, użytkownika po lewej
+    // ---- kółka narzędzi (od 1.32): grupy standardowe po prawej, użytkownika po lewej; od 1.33 – dobór grup
     /** Pokazywana grupa: { side, id } – jej narzędzia są w pierwszym wierszu górnego menu. */
-    let shownGroup = startGroup(tools.toolGroup, toolItem(tool, tools.shape));
+    let shownGroup = startGroup(tools.toolGroup, toolItem(tool, tools.shape), tools.toolGroups);
     /** Ostatnio użyte narzędzie każdej grupy – wybór grupy wraca do niego. */
     const groupTools = new Map();
     let menuGroup = null;
     function updateMenu() {
-      const group = findGroup(shownGroup.side, shownGroup.id);
+      const group = findGroup(shownGroup.side, shownGroup.id, tools.toolGroups);
       const key = `${shownGroup.side}:${group.id}`;
       if (menuGroup !== key) {
         menuGroup = key;
@@ -2514,7 +2515,7 @@ export function openDrawingEditor({
     }
     /** Wybór grupy z kółka: menu pokazuje jej narzędzia; grupa z narzędziami (pióro, kształty) – od razu ostatnie z nich. */
     function showGroup(side, id) {
-      const group = findGroup(side, id);
+      const group = findGroup(side, id, tools.toolGroups);
       if (!group) return;
       shownGroup = { side, id };
       tools.toolGroup = `${side}:${id}`;
@@ -2604,8 +2605,10 @@ export function openDrawingEditor({
     }
     function onRingMain(side) {
       if (shownGroup.side !== side) {
-        const group = findGroup(side, menuGroups[side]) ?? groupsOf(side)[0];
-        showGroup(side, group.id);
+        const group = findGroup(side, menuGroups[side], tools.toolGroups) ?? groupsOf(side, tools.toolGroups)[0];
+        // Kółko bez grup (usunięte wszystkie własne) – duże kółko otwiera dobór grup.
+        if (group) showGroup(side, group.id);
+        else editGroups(side);
         return;
       }
       if (tool === 'pen' || tool === 'highlighter') toggleSettings();
@@ -2613,29 +2616,57 @@ export function openDrawingEditor({
       updateToolbar();
     }
     /** Ostatnio pokazana grupa każdego kółka (duże kółko drugiej strony pokazuje jej ikonę). */
-    const menuGroups = { right: shownGroup.side === 'right' ? shownGroup.id : TOOL_GROUPS[0].id, left: shownGroup.side === 'left' ? shownGroup.id : USER_GROUPS[0].id };
+    const menuGroups = Object.fromEntries(RING_SIDES.map((side) => [side, side === shownGroup.side ? shownGroup.id : groupsOf(side, tools.toolGroups)[0]?.id ?? null]));
+    const RING_LABELS = { right: 'Narzędzia standardowe', left: 'Moje narzędzia' };
     const rings = Object.fromEntries(RING_SIDES.map((side) => [side, createRing({
       side,
-      groups: groupsOf(side),
-      label: side === 'right' ? 'Narzędzia standardowe' : 'Moje narzędzia',
+      groups: groupsOf(side, tools.toolGroups),
+      label: RING_LABELS[side],
       onPick: (id) => showGroup(side, id),
       onMain: () => onRingMain(side),
-      onHide: (hiddenNow) => setHidden(side, hiddenNow)
+      onHide: (hiddenNow) => setHidden(side, hiddenNow),
+      onEdit: () => editGroups(side)
     })]));
     function updateRings() {
       menuGroups[shownGroup.side] = shownGroup.id;
       const narrow = isNarrow();
       for (const side of RING_SIDES) {
         const own = shownGroup.side === side;
-        const other = findGroup(side, menuGroups[side]) ?? groupsOf(side)[0];
+        const other = findGroup(side, menuGroups[side], tools.toolGroups) ?? groupsOf(side, tools.toolGroups)[0];
+        const idle = other
+          ? { icon: other.icon, label: `${RING_LABELS[side]}: ${other.label}` }
+          : { icon: 'plus', label: `${RING_LABELS[side]}: brak grup – dotknij, aby dodać` };
         rings[side].update({
           active: own ? shownGroup.id : null,
-          main: own ? mainLook() : { icon: other.icon, fill: 'var(--accent-fill)', ink: 'var(--on-accent)', label: `${side === 'right' ? 'Narzędzia standardowe' : 'Moje narzędzia'}: ${other.label}` },
+          main: own ? mainLook() : { ...idle, fill: 'var(--accent-fill)', ink: 'var(--on-accent)' },
           hidden: uiPartHidden(uiHidden, side, narrow),
           all: uiAll,
           narrow
         });
       }
+    }
+    /** Okno „Grupy narzędzi” (od 1.33); z lewego kółka – z otwartą do edycji jego ostatnią grupą. */
+    function editGroups(side) {
+      ctrlHold = null;
+      closeSettings();
+      openToolGroups({ config: tools.toolGroups, editing: side === 'left' ? menuGroups.left : null, onSave: applyGroups });
+    }
+    /** Nowy dobór grup: kółka i menu od razu; pokazana grupa, której już nie ma – grupa z bieżącym narzędziem. */
+    function applyGroups(config) {
+      tools.toolGroups = config;
+      if (!findGroup(shownGroup.side, shownGroup.id, config)) {
+        shownGroup = startGroup(null, toolItem(tool, tools.shape), config);
+        tools.toolGroup = `${shownGroup.side}:${shownGroup.id}`;
+      }
+      saveTools(tools);
+      menuGroup = null;
+      for (const side of RING_SIDES) {
+        if (side === shownGroup.side) menuGroups[side] = shownGroup.id;
+        else if (!findGroup(side, menuGroups[side], config)) menuGroups[side] = groupsOf(side, config)[0]?.id ?? null;
+        rings[side].setGroups(groupsOf(side, config), menuGroups[side]);
+      }
+      updateToolbar();
+      requestLive();
     }
     const isNarrow = () => window.matchMedia?.('(max-width: 599px)').matches ?? false;
 

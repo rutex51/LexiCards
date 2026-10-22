@@ -7633,6 +7633,111 @@ button.drawing__pill--gray { color: var(--text-2); font-weight: 500; }
 .drawing-ring__tab--right { right: 0; border-radius: 12px 0 0 12px; }
 .drawing-ring__tab--left { left: 0; border-radius: 0 12px 12px 0; }
 
+/* Ostatnie małe kółko (od 1.33): dobór grup – przerywana obwódka, ikona suwaków. */
+.drawing-ring__group--edit { border: 1.5px dashed var(--text-3); color: var(--text-2); }
+
+/* Okno „Grupy narzędzi” (od 1.33): sekcje w cienkich ramkach, wiersze grup z ≡, zestawy i narzędzia jako pastylki. */
+.tool-groups { display: flex; flex-direction: column; gap: 14px; }
+.tool-groups__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--outline);
+  border-radius: 14px;
+}
+.tool-groups__section[hidden] { display: none; }
+.tool-groups__title { margin: 0; font-size: 15px; font-weight: 650; }
+.tool-groups__section > .field__hint { margin: 0; }
+.tool-groups__list { margin: 0; padding: 0; list-style: none; }
+.tool-groups__list[hidden] { display: none; }
+.tool-groups__row { position: relative; min-height: 52px; border-top: 1px solid var(--separator); background: var(--surface); }
+.tool-groups__row.row--dragging { border-radius: 10px; }
+.tool-groups__main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+button.tool-groups__main { border: 0; border-radius: 10px; background: none; color: var(--text); font: inherit; text-align: left; }
+.tool-groups__edit[aria-pressed="true"] { background: var(--fill); }
+.tool-groups__edit-label { flex: none; font-size: 13px; font-weight: 600; color: var(--accent); }
+.tool-groups__check { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--accent); }
+.tool-groups__bubble {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--elevated);
+  box-shadow: 0 2px 6px -2px rgba(0, 0, 0, 0.35), 0 0 0 1px var(--separator);
+  color: var(--text);
+}
+.tool-groups__row .row__grip { width: 40px; margin-right: 0; border: 0; background: none; }
+.tool-groups__chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.tool-groups__preset,
+.tool-groups__chip,
+.tool-groups__new,
+.tool-groups__delete,
+.tool-groups__icon {
+  border: 1px solid var(--outline);
+  background: var(--elevated);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.tool-groups__preset {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 44px;
+  padding: 6px 14px;
+  border-radius: 22px;
+  text-align: left;
+}
+.tool-groups__preset-name { font-size: 14px; font-weight: 650; }
+.tool-groups__preset-tools { font-size: 12px; opacity: 0.85; }
+.tool-groups__chip { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 18px; font-size: 13px; font-weight: 600; }
+:is(.tool-groups__preset, .tool-groups__chip)[aria-pressed="true"] { border-color: var(--accent-fill); background: var(--accent-fill); color: var(--on-accent); }
+:is(.tool-groups__preset, .tool-groups__chip, .tool-groups__new):disabled { opacity: 0.45; cursor: default; }
+.tool-groups__order {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--on-accent);
+  color: var(--accent-fill);
+  font-size: 11px;
+  font-weight: 700;
+}
+.tool-groups__new,
+.tool-groups__delete {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.tool-groups__new { margin-top: 6px; border-style: dashed; background: none; }
+.tool-groups__delete { margin-top: 4px; color: var(--danger); }
+.tool-groups__empty { margin: 0; padding: 6px 0; font-size: 13px; color: var(--text-2); }
+.tool-groups__empty[hidden] { display: none; }
+.tool-groups__label { font-size: 12px; font-weight: 650; color: var(--text-2); }
+.tool-groups__kind { display: flex; flex-direction: column; gap: 6px; }
+.tool-groups__catalog { display: flex; flex-direction: column; gap: 10px; }
+.tool-groups__icons { display: flex; flex-wrap: wrap; gap: 6px; }
+.tool-groups__icon { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 50%; }
+.tool-groups__icon[aria-checked="true"] { border-color: var(--accent-fill); background: var(--accent-fill); color: var(--on-accent); }
+
 /* Telefon: jeden wiersz narzędzi z kropką koloru (kolor i grubość po dotknięciu), wybór jak zakładka pod menu. */
 @media (max-width: 599px) {
   .drawing__group-name { display: none; }

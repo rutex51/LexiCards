@@ -8897,6 +8897,167 @@ test('rysunek 1.32 na telefonie: jeden wiersz narzędzi, kolor i grubość po do
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-kolka-telefon.png') });
 });
 
+// ---------------------------------------------------------------- 1.33: grupy narzędzi – dobór, zestawy, własne grupy
+
+const groupsSheet = (page) => page.locator('dialog.sheet[open]:has([data-testid=tool-groups])');
+const ringGroupIds = (editor, side) => editor.locator(`[data-testid=drawing-ring-${side}] .drawing-ring__group[data-group]`)
+  .evaluateAll((buttons) => buttons.map((button) => button.dataset.group));
+const storedGroups = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('lexicards-drawing-tools')).toolGroups);
+
+/** Ostatnie małe kółko – okno „Grupy narzędzi” (fokus obraca je na środek wycinka, potem dotknięcie). */
+async function openToolGroupsFrom(editor, side) {
+  const page = pageOf(editor);
+  if (await editor.locator(`[data-testid=drawing-ring-${side}]`).evaluate((element) => element.classList.contains('drawing-ring--hidden'))) {
+    await editor.locator(`[data-testid=drawing-ring-${side}-tab]`).click();
+  }
+  const button = editor.locator(`[data-testid=drawing-ring-${side}-edit]`);
+  await button.evaluate((element) => element.focus());
+  await waitUntil(() => button.evaluate((element) => element.style.opacity === '1'), 'Kółko „Grupy narzędzi” w wycinku');
+  await page.waitForTimeout(320);
+  await button.click();
+  await groupsSheet(page).waitFor();
+  // Po animacji otwarcia (zrzuty ekranu, przeciąganie wierszy).
+  await groupsSheet(page).evaluate((sheet) => Promise.all(sheet.getAnimations({ subtree: true }).map((animation) => animation.finished)));
+  return groupsSheet(page);
+}
+
+test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schowanie, kolejność strzałkami i ≡), gotowe zestawy, własna grupa z narzędziami w kolejności wyboru; Anuluj bez zmian; zapamiętane (iPad)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Grupy</p>');
+  // Ostatnie małe kółko każdego kółka – „Grupy narzędzi”.
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'symbols']);
+  assert.deepEqual(await ringGroupIds(editor, 'left'), ['metrology']);
+  assert.equal(await editor.locator('[data-testid=drawing-ring-left-edit]').evaluate((element) => element.style.opacity), '1', 'przy jednej grupie widać je od razu');
+  let groups = await openToolGroupsFrom(editor, 'right');
+  const standardOrder = () => groups.locator('[data-testid=tool-groups-standard] [data-testid^=tool-groups-on-]')
+    .evaluateAll((inputs) => inputs.map((input) => input.dataset.testid.replace('tool-groups-on-', '')));
+  assert.deepEqual(await standardOrder(), ['write', 'shapes', 'construct', 'text', 'symbols']);
+  await expectText(groups.locator('[data-testid=tool-groups-standard]'), 'Pióro · Zakreślacz · Gumka');
+  assert.equal(await groups.locator('[data-testid=tool-groups-preset-metrology]').getAttribute('aria-pressed'), 'true', 'Metrologia już na lewym kółku');
+  await expectText(groups.locator('[data-testid=tool-groups-editor]'), 'Grupa „Metrologia” – narzędzia');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-grupy-okno-ipad.png') });
+
+  // Anuluj – bez zmian.
+  await groups.locator('[data-testid=tool-groups-on-write]').uncheck();
+  await groups.locator('.sheet__header .button--plain').click();
+  await groups.waitFor({ state: 'detached' });
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'symbols'], 'Anuluj zostawia grupy');
+
+  groups = await openToolGroupsFrom(editor, 'right');
+  // Symbole – poza kółkiem; Tekst na początek (strzałki na uchwycie ≡), Konstrukcja przeciągnięta nad Pisanie.
+  await groups.locator('[data-testid=tool-groups-on-symbols]').uncheck();
+  await groups.locator('[data-testid=tool-groups-move-text]').focus();
+  for (let step = 0; step < 3; step += 1) await page.keyboard.press('ArrowUp');
+  assert.deepEqual(await standardOrder(), ['text', 'write', 'shapes', 'construct', 'symbols']);
+  assert.equal(await groups.locator('[data-testid=tool-groups-move-text]').evaluate((element) => element === document.activeElement), true, 'fokus zostaje na uchwycie');
+  const grip = await groups.locator('[data-testid=tool-groups-move-construct]').boundingBox();
+  const rowHeight = (await groups.locator('[data-testid=tool-groups-move-write]').boundingBox()).y - (await groups.locator('[data-testid=tool-groups-move-text]').boundingBox()).y;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 - rowHeight * 2, { steps: 8 });
+  await page.mouse.up();
+  await waitUntil(async () => (await standardOrder()).join() === 'text,construct,write,shapes,symbols', 'Przeciągnięcie ≡ zmienia kolejność');
+  // Na kółku zostaje co najmniej jedna grupa: po odznaczeniu trzech czwarta jest zablokowana.
+  for (const id of ['text', 'write', 'shapes']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).uncheck();
+  assert.equal(await groups.locator('[data-testid=tool-groups-on-construct]').isDisabled(), true, 'ostatnia grupa zostaje');
+  for (const id of ['text', 'write', 'shapes']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).check();
+  assert.equal(await groups.locator('[data-testid=tool-groups-on-construct]').isDisabled(), false);
+
+  // Zestawy: Geometria dochodzi (i otwiera się do edycji), Metrologia odchodzi.
+  await groups.locator('[data-testid=tool-groups-preset-geometry]').click();
+  assert.equal(await groups.locator('[data-testid=tool-groups-preset-geometry]').getAttribute('aria-pressed'), 'true');
+  await expectText(groups.locator('[data-testid=tool-groups-editor]'), 'Grupa „Geometria” – narzędzia');
+  await groups.locator('[data-testid=tool-groups-preset-metrology]').click();
+  assert.equal(await groups.locator('[data-testid=tool-groups-edit-metrology]').count(), 0);
+  // Nowa grupa: nazwa, ikona, narzędzia w kolejności dotknięć (numery przy nazwach).
+  await groups.locator('[data-testid=tool-groups-new]').click();
+  await expectText(groups.locator('[data-testid=tool-groups-mine]'), 'pusta – zaznacz narzędzia poniżej');
+  await groups.locator('[data-testid=tool-groups-name]').fill('Ulubione');
+  await groups.locator('[data-testid=tool-groups-icon-sparkles]').click();
+  for (const item of ['shape:ellipse', 'pen', 'gdt']) await groups.locator(`[data-testid="tool-groups-item-${item}"]`).click();
+  await expectText(groups.locator('[data-testid="tool-groups-item-pen"]'), '2Pióro');
+  await expectText(groups.locator('[data-testid=tool-groups-edit-own-1]'), 'Elipsa · Pióro · Ramka tolerancji');
+  await expectText(groups.locator('[data-testid=tool-groups-editor]'), 'Grupa „Ulubione” – narzędzia');
+  await groups.locator('[data-testid=tool-groups-editor]').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-grupy-wlasna-ipad.png') });
+  await groups.locator('.sheet__submit').click();
+  await groups.waitFor({ state: 'detached' });
+
+  // Kółka po „Gotowe”: prawe w nowej kolejności bez Symboli, lewe – Geometria i Ulubione.
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes']);
+  assert.deepEqual(await ringGroupIds(editor, 'left'), ['geometry', 'own-1']);
+  await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Pisanie', 'pokazana grupa zostaje');
+  assert.equal(await editor.locator('[data-testid=drawing-group-write]').getAttribute('aria-pressed'), 'true');
+  await pickGroup(editor, 'own-1');
+  await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Ulubione');
+  assert.deepEqual(await rowLabels(editor), ['Elipsa', 'Pióro', 'Ramka tolerancji']);
+  assert.equal(await editor.locator('[data-testid=drawing-tool-pen]').getAttribute('aria-pressed'), 'true', 'pióro jest w grupie – zostaje');
+  await editor.locator('[data-testid=drawing-shape-ellipse]').click();
+  assert.match(await ringMain(editor, 'left').getAttribute('aria-label'), /^Elipsa/);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-grupy-kolka-ipad.png') });
+  const saved = await storedGroups(page);
+  assert.deepEqual(saved.order, ['text', 'construct', 'write', 'shapes', 'symbols']);
+  assert.deepEqual(saved.off, ['symbols']);
+  assert.deepEqual(saved.mine.map((group) => [group.id, group.label, group.icon, group.items.join()]),
+    [['geometry', 'Geometria', 'geometry', 'shape:line,shape:ellipse,shape:xline,shape:point'], ['own-1', 'Ulubione', 'sparkles', 'shape:ellipse,pen,gdt']]);
+
+  // Zapamiętane: po ponownym otwarciu edytora te same grupy i pokazana grupa „Ulubione”.
+  await editor.locator('[data-testid=drawing-cancel]').click();
+  await editor.waitFor({ state: 'detached' });
+  await noteObjectsDialog(page).locator('[data-testid=note-image-draw]').click();
+  await editor.waitFor();
+  await waitUntil(async () => (await ringGroupIds(editor, 'left')).join() === 'geometry,own-1', 'Grupy po ponownym otwarciu');
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes']);
+  await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Ulubione');
+
+  // Z lewego kółka okno otwiera się z jego grupą; usunięcie pokazanej grupy – menu wraca do grupy z narzędziem.
+  groups = await openToolGroupsFrom(editor, 'left');
+  await expectText(groups.locator('[data-testid=tool-groups-editor]'), 'Grupa „Ulubione” – narzędzia');
+  await groups.locator('[data-testid=tool-groups-delete]').click();
+  await expectText(groups.locator('[data-testid=tool-groups-editor]'), 'Grupa „Geometria” – narzędzia');
+  await groups.locator('.sheet__submit').click();
+  await groups.waitFor({ state: 'detached' });
+  assert.deepEqual(await ringGroupIds(editor, 'left'), ['geometry']);
+  // Edytor otwiera się z piórem – menu pokazuje jego grupę.
+  await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Pisanie', 'pióro – w grupie Pisanie');
+  assert.equal(await editor.locator('[data-testid=drawing-tool-pen]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await editor.locator('[data-testid=drawing-group-write]').getAttribute('aria-pressed'), 'true');
+}, { device: IPAD });
+
+test('rysunek 1.33 na telefonie: okno z prawego kółka, lewe kółko bez grup – duże kółko z plusem otwiera okno; zestaw Notatki na lewym kółku', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Grupy na telefonie</p>');
+  let groups = await openToolGroupsFrom(editor, 'right');
+  assert.equal(await overflowX(page), 0, 'okno bez przewijania w bok');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-grupy-okno-telefon.png') });
+  // Bez Metrologii lewe kółko nie ma grup.
+  await groups.locator('[data-testid=tool-groups-preset-metrology]').click();
+  await expectText(groups.locator('[data-testid=tool-groups]'), 'Brak grup – dodaj gotowy zestaw albo nową grupę.');
+  assert.equal(await groups.locator('[data-testid=tool-groups-editor]').isHidden(), true);
+  await groups.locator('.sheet__submit').click();
+  await groups.waitFor({ state: 'detached' });
+  assert.deepEqual(await ringGroupIds(editor, 'left'), []);
+  await editor.locator('[data-testid=drawing-ring-left-tab]').click();
+  await waitUntil(() => editor.locator('[data-testid=drawing-ring-left]').evaluate((element) => !element.classList.contains('drawing-ring--hidden')), 'Lewe kółko');
+  assert.equal(await ringMain(editor, 'left').getAttribute('aria-label'), 'Moje narzędzia: brak grup – dotknij, aby dodać');
+  await page.waitForTimeout(320);
+  await ringMain(editor, 'left').click();
+  groups = groupsSheet(page);
+  await groups.waitFor();
+  await groups.locator('[data-testid=tool-groups-preset-notes]').click();
+  await expectText(groups.locator('[data-testid=tool-groups-editor]'), 'Grupa „Notatki” – narzędzia');
+  await groups.locator('.sheet__submit').click();
+  await groups.waitFor({ state: 'detached' });
+  await pickGroup(editor, 'notes');
+  assert.deepEqual(await rowLabels(editor), ['Pole tekstowe', 'Wzór', 'Karteczka', 'Zakreślacz']);
+  assert.equal(await editor.locator('[data-testid=drawing-tool-highlighter]').getAttribute('aria-pressed'), 'true', 'pierwsze narzędzie grupy');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-grupy-kolka-telefon.png') });
+});
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

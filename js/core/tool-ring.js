@@ -10,6 +10,12 @@
 // Pozycje narzędzi w grupach: 'pen', 'highlighter', 'eraser' (narzędzia), 'shape:<rodzaj>' (kształt
 // – narzędzie „Kształty” z wybranym rodzajem) oraz polecenia otwierające okno: 'text', 'math',
 // 'table', 'sticky', 'gdt', 'datum', 'roughness' (narzędzie się nie zmienia).
+//
+// Od 1.33 grupy można dobrać (okno „Grupy narzędzi”, ustawienia narzędzi na urządzeniu): grupy
+// standardowe – które są na prawym kółku i w jakiej kolejności; lewe kółko – gotowe zestawy i własne
+// grupy z wybranymi narzędziami.
+
+import { SHAPE_LABELS } from './shapes.js';
 
 export const TOOL_GROUPS = Object.freeze([
   { id: 'write', label: 'Pisanie', icon: 'pen', items: ['pen', 'highlighter', 'eraser'] },
@@ -22,14 +28,82 @@ export const TOOL_GROUPS = Object.freeze([
   { id: 'symbols', label: 'Symbole metrologiczne', icon: 'gdtFrame', items: ['gdt', 'datum', 'roughness'] }
 ].map((group) => Object.freeze({ ...group, items: Object.freeze(group.items) })));
 
-/** Grupy użytkownika na początek (od 1.32 – zestaw Metrologia; własne grupy – w następnej wersji). */
-export const USER_GROUPS = Object.freeze([
-  { id: 'metrology', label: 'Metrologia', icon: 'caliper', items: ['shape:line', 'shape:xline', 'shape:point', 'gdt', 'datum', 'roughness'] }
+/** Gotowe zestawy (od 1.33): w oknie „Grupy narzędzi” dotknięcie dodaje zestaw jako grupę na lewym kółku albo go usuwa. */
+export const PRESETS = Object.freeze([
+  { id: 'metrology', label: 'Metrologia', icon: 'caliper', items: ['shape:line', 'shape:xline', 'shape:point', 'gdt', 'datum', 'roughness'] },
+  { id: 'sketch', label: 'Szkic odręczny', icon: 'sketch', items: ['pen', 'eraser', 'shape:arrow'] },
+  { id: 'geometry', label: 'Geometria', icon: 'geometry', items: ['shape:line', 'shape:ellipse', 'shape:xline', 'shape:point'] },
+  { id: 'notes', label: 'Notatki', icon: 'notes', items: ['text', 'math', 'sticky', 'highlighter'] }
 ].map((group) => Object.freeze({ ...group, items: Object.freeze(group.items) })));
 
+/** Grupy użytkownika na początek: zestaw Metrologia. */
+export const USER_GROUPS = Object.freeze(PRESETS.filter((group) => group.id === 'metrology'));
+
+/** Wszystkie pozycje, które mogą być w grupie (narzędzia i polecenia grup standardowych). */
+export const ALL_ITEMS = Object.freeze(TOOL_GROUPS.flatMap((group) => group.items));
+const COMMAND_LABELS = {
+  pen: 'Pióro', highlighter: 'Zakreślacz', eraser: 'Gumka', text: 'Tekst', math: 'Wzór', table: 'Tabela', sticky: 'Karteczka',
+  gdt: 'Ramka tolerancji', datum: 'Baza', roughness: 'Chropowatość'
+};
+/** Nazwa pozycji w oknie „Grupy narzędzi” i w opisie grupy. */
+export const itemLabel = (item) => (item.startsWith('shape:') ? SHAPE_LABELS[item.slice(6)] : COMMAND_LABELS[item]) ?? item;
+
+/** Ikony do wyboru dla własnej grupy. */
+export const GROUP_ICONS = Object.freeze(['star', 'caliper', 'sketch', 'geometry', 'notes', 'ruler', 'tag', 'sparkles']);
+/** Najwięcej własnych grup, pozycji w grupie i znaków nazwy. */
+export const GROUP_LIMITS = Object.freeze({ groups: 8, items: 12, label: 30 });
+const GROUP_ID = /^[a-z0-9-]{1,24}$/;
+const STANDARD_IDS = TOOL_GROUPS.map((group) => group.id);
+
+/** Dobór grup (od 1.33): order – kolejność grup standardowych, off – grupy schowane, mine – grupy lewego kółka. */
+export function defaultToolGroups() {
+  return { order: [...STANDARD_IDS], off: [], mine: USER_GROUPS.map((group) => ({ ...group, items: [...group.items] })) };
+}
+
+/** Własna grupa ze sprawdzonymi polami albo null. */
+function cleanOwnGroup(raw) {
+  if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string' || !GROUP_ID.test(raw.id) || STANDARD_IDS.includes(raw.id)) return null;
+  const label = typeof raw.label === 'string' ? raw.label.trim().slice(0, GROUP_LIMITS.label) : '';
+  const items = Array.isArray(raw.items) ? [...new Set(raw.items.filter((item) => ALL_ITEMS.includes(item)))].slice(0, GROUP_LIMITS.items) : [];
+  return { id: raw.id, label: label || 'Moja grupa', icon: GROUP_ICONS.includes(raw.icon) ? raw.icon : 'star', items };
+}
+
+/**
+ * Dobór grup z pamięci urządzenia: nieznane grupy standardowe wypadają, brakujące (np. nowe w następnej
+ * wersji) dochodzą na końcu; zawsze zostaje co najmniej jedna grupa standardowa. Bez zapisanych grup
+ * lewego kółka – zestaw Metrologia.
+ */
+export function cleanToolGroups(raw) {
+  const base = defaultToolGroups();
+  if (!raw || typeof raw !== 'object') return base;
+  const order = Array.isArray(raw.order) ? [...new Set(raw.order.filter((id) => STANDARD_IDS.includes(id)))] : [];
+  for (const id of STANDARD_IDS) if (!order.includes(id)) order.push(id);
+  const off = Array.isArray(raw.off) ? [...new Set(raw.off.filter((id) => STANDARD_IDS.includes(id)))] : [];
+  const mine = [];
+  for (const group of Array.isArray(raw.mine) ? raw.mine : base.mine) {
+    const clean = cleanOwnGroup(group);
+    if (clean && mine.length < GROUP_LIMITS.groups && !mine.some((other) => other.id === clean.id)) mine.push(clean);
+  }
+  return { order, off: off.length < STANDARD_IDS.length ? off : [], mine };
+}
+
+/** Identyfikator nowej własnej grupy ('own-1', 'own-2'…) – inny niż grup już zapisanych. */
+export function newGroupId(mine) {
+  let number = 1;
+  while (mine.some((group) => group.id === `own-${number}`)) number += 1;
+  return `own-${number}`;
+}
+
 export const RING_SIDES = Object.freeze(['right', 'left']);
-export const groupsOf = (side) => (side === 'left' ? USER_GROUPS : TOOL_GROUPS);
-export const findGroup = (side, id) => groupsOf(side).find((group) => group.id === id) ?? null;
+/**
+ * Grupy na kółku: po prawej – grupy standardowe w wybranej kolejności (bez schowanych), po lewej –
+ * grupy użytkownika z co najmniej jednym narzędziem (pusta grupa czeka w oknie na wybór narzędzi).
+ */
+export function groupsOf(side, config = defaultToolGroups()) {
+  if (side === 'left') return config.mine.filter((group) => group.items.length > 0);
+  return config.order.filter((id) => !config.off.includes(id)).map((id) => TOOL_GROUPS.find((group) => group.id === id));
+}
+export const findGroup = (side, id, config) => groupsOf(side, config).find((group) => group.id === id) ?? null;
 
 /** Pozycja odpowiadająca narzędziu: 'pen', 'shape:rect'… (zaznaczanie nie należy do grup). */
 export const toolItem = (tool, shape) => (tool === 'shape' ? `shape:${shape}` : tool);
@@ -37,14 +111,17 @@ export const toolItem = (tool, shape) => (tool === 'shape' ? `shape:${shape}` : 
 export const isModeItem = (item) => item === 'pen' || item === 'highlighter' || item === 'eraser' || item.startsWith('shape:');
 
 /**
- * Grupa pokazywana na starcie: zapamiętana ('right:shapes'), gdy istnieje; inaczej grupa
- * standardowa z bieżącym narzędziem; inaczej „Pisanie”. Zwraca { side, id }.
+ * Grupa pokazywana na starcie: zapamiętana ('right:shapes'), gdy jest na kółku; inaczej grupa
+ * z bieżącym narzędziem (najpierw standardowa); inaczej pierwsza grupa prawego kółka. Zwraca { side, id }.
  */
-export function startGroup(saved, item) {
+export function startGroup(saved, item, config) {
   const [side, id] = typeof saved === 'string' ? saved.split(':') : [];
-  if (RING_SIDES.includes(side) && findGroup(side, id)) return { side, id };
-  const own = TOOL_GROUPS.find((group) => group.items.includes(item));
-  return { side: 'right', id: (own ?? TOOL_GROUPS[0]).id };
+  if (RING_SIDES.includes(side) && findGroup(side, id, config)) return { side, id };
+  for (const ring of RING_SIDES) {
+    const own = groupsOf(ring, config).find((group) => group.items.includes(item));
+    if (own) return { side: ring, id: own.id };
+  }
+  return { side: 'right', id: groupsOf('right', config)[0].id };
 }
 
 /**

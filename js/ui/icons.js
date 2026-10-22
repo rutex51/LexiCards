@@ -158,6 +158,11 @@ const ICONS = {
   dimDrag: [p('M12 4v16'), p('M8.5 7.5L12 4l3.5 3.5'), p('M8.5 16.5L12 20l3.5-3.5')],
   // Od 1.32: zestaw Metrologia na kółku narzędzi – suwmiarka.
   caliper: [p('M2.5 5h19v4h-19z'), p('M5 9v9.5l3 1.5V9'), p('M14 9v6.5l3 1.5V9'), p('M10 5v2M13 5v2M16 5v2M19 5v2')],
+  // Od 1.33: gotowe zestawy Szkic odręczny, Geometria (cyrkiel) i Notatki (notes), dobór grup na kółku.
+  sketch: [p('M3.5 15.5c1.8-4.6 3.6-6.2 5.2-3.4s2.8 4.4 4.8.8 3.4-5.8 7-6.6'), p('M4 20h16')],
+  geometry: [{ tag: 'circle', cx: 12, cy: 5.5, r: 1.8 }, p('M11 7.1L5.5 20'), p('M13 7.1L18.5 20'), p('M7.2 16.2a8 8 0 0 0 9.6 0')],
+  notes: [p('M6 4.5h12v15H6z'), p('M9 4.5V3M12 4.5V3M15 4.5V3'), p('M9 9.5h6'), p('M9 13h6'), p('M9 16.5h3.5')],
+  ringEdit: [p('M4 7h9'), p('M17 7h3'), { tag: 'circle', cx: 15, cy: 7, r: 2 }, p('M4 17h3'), p('M11 17h9'), { tag: 'circle', cx: 9, cy: 17, r: 2 }],
   gdtFrame: [p('M2.5 8h19v8h-19z'), p('M9 8v8'), p('M15.5 8v8'), p('M4 14h3.5'), p('M5.75 14v-4')],
   datumMark: [p('M8 3.5h8v7H8z'), p('M12 10.5v5'), filled('M8 20.5h8L12 15.5z')],
   roughness: [p('M3.5 12.5l3.2 6.5 5.6-14h9')],

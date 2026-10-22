@@ -45,7 +45,7 @@ import { keepLinks } from './attach.js';
 import { cleanSymbol, isSymbol, symbolBox, symbolLeaderStart } from './gdt.js';
 import { cleanTable } from './tables.js';
 import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
-import { cleanUiHidden } from './tool-ring.js';
+import { cleanToolGroups, cleanUiHidden, defaultToolGroups } from './tool-ring.js';
 
 /**
  * 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13), 3 – kształty, jasność tła, szablon (1.15),
@@ -391,7 +391,9 @@ export function defaultToolSettings() {
     fingerDraws: false,
     // Od 1.32 (kółka narzędzi): ostatnio pokazana grupa ('right:shapes') i schowane elementy interfejsu.
     toolGroup: null,
-    uiHidden: cleanUiHidden(null)
+    uiHidden: cleanUiHidden(null),
+    // Od 1.33: dobór grup na kółkach (okno „Grupy narzędzi”).
+    toolGroups: defaultToolGroups()
   };
 }
 
@@ -490,7 +492,8 @@ export function cleanToolSettings(raw) {
     recentFits: cleanRecentFits(raw.recentFits, (fit) => FIT_RE.test(fit)),
     fingerDraws: typeof raw.fingerDraws === 'boolean' ? raw.fingerDraws : base.fingerDraws,
     toolGroup: typeof raw.toolGroup === 'string' && raw.toolGroup.length <= 40 ? raw.toolGroup : base.toolGroup,
-    uiHidden: cleanUiHidden(raw.uiHidden)
+    uiHidden: cleanUiHidden(raw.uiHidden),
+    toolGroups: cleanToolGroups(raw.toolGroups)
   };
 }
 
