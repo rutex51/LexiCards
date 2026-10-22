@@ -1,4 +1,4 @@
-# LexiCards 1.36
+# LexiCards 1.37
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -45,8 +45,9 @@ Rysunek – okno „Grupy narzędzi”: które grupy standardowe są na prawym k
 Rysunek: okrąg ze środka i promienia, z dwóch i z trzech punktów, łuk przez trzy punkty, narzędzie „Wymiar” (liniowy, średnica, promień, kąt – końce przyklejone do kształtu), przyciąganie do środka okręgu (wersja 1.34): [docs/RELEASE-1.34.md](docs/RELEASE-1.34.md).
 Rysunek: trzecie menu kształtów (znacznik punktu, rodzaj linii, wypełnienie, końce i ⓘ – rozwijane w dół zamiast okna „Styl”), zmiana zaznaczonego elementu z menu (kolor, grubość, styl), „Przesuń” nad zaznaczeniem, wybór zaznaczania nad dolnym paskiem, duże kółko zaznaczonego punktu, kółko narzędzi bez obracania przy samym najechaniu myszą, spirala kończy się w ostatniej dziurce (wersja 1.35); każdy kształt pamięta swój rodzaj linii i wypełnienie, tryb edycji zmienia tylko zaznaczone (1.35.1): [docs/RELEASE-1.35.md](docs/RELEASE-1.35.md).
 Rysunek: warstwy – pięć na start i dodawanie kolejnych, nazwa, ukrycie, krycie i nasycenie, poziomy tło i obraz, do trzech sygnatur elementu (rząd 1–3, kaskadowo); rodzaje wymiaru jako osobne narzędzia w górnym menu (długość, kąt, promień, średnica); trzeci pasek tylko przy narzędziu z pokazanej grupy (wersja 1.36): [docs/RELEASE-1.36.md](docs/RELEASE-1.36.md).
+Rysunek: wczytywanie plików DXF (odcinki, okręgi, łuki, łamane, splajny, teksty, bloki, wymiary; warstwy, kolory i rodzaje linii z pliku, prawdziwe milimetry, skala dopasowana do kartki) i zapis kartki jako DXF (R12, milimetry, warstwy, wymiary z grotami i liczbą) (wersja 1.37): [docs/RELEASE-1.37.md](docs/RELEASE-1.37.md).
 
-## Co potrafi wersja 1.36
+## Co potrafi wersja 1.37
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -788,6 +789,28 @@ prostokątów w warstwie 1 z kryciem 50%, trzy z nich także w warstwie 2, jeden
 jeden jest szary). Elementów ukrytych warstw nie da się zaznaczyć, zetrzeć ani do nich przyciągnąć. Obraz w notatce
 i plik PDF wyglądają tak samo jak edytor. Elementy sprzed 1.36 są na warstwie 1. Rysunek z warstwami ma format 11 –
 starsza wersja aplikacji otworzy go w edytorze bez warstw (wszystko widoczne) i tak go zapisze; obraz w notatce się nie zmienia.
+**Pliki DXF** (od 1.37, menu kartek – przycisk **Kartka 1 z 1**): **Wczytaj DXF…** czyta plik DXF z AutoCAD-a
+i innych programów CAD (tekstowy; DWG trzeba najpierw zapisać jako DXF – np. w AutoCAD „Zapisz jako” albo darmowym
+konwerterem). Wczytuje odcinki, proste, okręgi, łuki, elipsy, łamane (też z łukami), splajny, punkty, teksty (TEXT
+i MTEXT), wypełnione trójkąty i czworokąty (np. groty), bloki (wstawienia przesunięte, obrócone i przeskalowane)
+i wymiary (jako linie, groty i liczba – bez możliwości edycji wymiaru). Pomija kreskowania, bryły 3D, obrazy
+i nieznane encje (okno podaje ich liczbę). Okno **Wczytaj DXF** pokazuje nazwę pliku, liczbę elementów, warstw i rozmiar
+w milimetrach (jednostki z pliku – $INSUNITS; bez nich milimetry) i pyta, gdzie: **Ta kartka – skala dopasowana** (pusta
+kartka), **Nowa kartka – skala dopasowana** albo **Ta kartka – jej skala**; skala dopasowana to najmniejsza z szeregu
+1–2–5 (np. 1 kratka = 5 mm), przy której rysunek mieści się na kartce – długości i wymiary pokazują wtedy prawdziwe
+milimetry. Warstwy pliku stają się warstwami rysunku o tych samych nazwach (warstwa „0” – warstwa 1; wyłączona albo
+zamrożona w pliku – ukryta; przy 32 warstwach dalsze trafiają na ostatnią), kolory (ACI i 24-bitowe; biały i bardzo
+jasne – przyciemnione, żeby były widać na białej kartce) i rodzaje linii (kreskowa, osiowa, dwupunktowa, kropkowa)
+– z pliku albo z warstwy. Polskie litery – z plików UTF-8 (AutoCAD 2007 i nowsze), ze strony kodowej z pliku
+($DWGCODEPAGE) albo Windows-1250, także zapis \U+XXXX; %%c, %%d i %%p to ⌀, ° i ±. Wczytane elementy są zaznaczone
+(można je od razu przesunąć), a wczytanie to jeden krok cofania. Łamana dłuższa niż 24 wierzchołki dzieli się na
+kawałki, obrót tekstu jest pomijany, najwyżej 20 000 elementów na kartce. **Zapisz kartkę jako DXF** zapisuje plik
+„Rysunek 1.dxf” (na iPhonie i iPadzie – arkusz udostępniania) w formacie R12 (czyta go każdy program CAD): milimetry
+w skali rysunku (oś y w górę), warstwy rysunku z nazwami (wielkie litery bez polskich znaków; ukryta – wyłączona),
+kolor – najbliższy z palety AutoCAD-a, rodzaj linii; kreski pióra i zakreślacza – łamane, kształty – odcinki, okręgi,
+łuki, punkty i łamane, prosta – długi odcinek przez kartkę, tekst i wzór – tekst (każdy wiersz osobno, wzór jako zapis),
+wymiary (także stałe wymiary kształtów) – linie pomocnicze, linia wymiarowa albo łuk, groty i ta sama liczba co na kartce.
+Element trafia na warstwę swojej sygnatury rzędu 1. Pomijane: tabele, karteczki, symbole metrologiczne i zdjęcie.
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę

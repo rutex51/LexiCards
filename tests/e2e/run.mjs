@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { inflateSync } from 'node:zlib';
 import { decodeText, parseCsv } from '../../js/core/csv.js';
+import { dxfPrimitives, parseDxf } from '../../js/core/dxf.js';
 import { openWorkbook } from '../../js/core/xlsx.js';
 import { readZipDirectory } from '../../js/core/zip.js';
 import { startServer } from '../../tools/serve.mjs';
@@ -9773,6 +9774,93 @@ test('rysunek 1.36 na telefonie: panel warstw w szerokości ekranu, bez przewija
   }
   assert.equal(await overflowX(page), 0);
 });
+
+/** Mały plik DXF (R12, mm): odcinek 100 mm, okrąg R20 na warstwie OSIE (czerwona, osiowa), łuk, prostokąt z łukiem na wyłączonej warstwie, tekst. */
+const SAMPLE_DXF = [
+  0, 'SECTION', 2, 'HEADER', 9, '$INSUNITS', 70, 4, 0, 'ENDSEC',
+  0, 'SECTION', 2, 'TABLES', 0, 'TABLE', 2, 'LAYER', 70, 2,
+  0, 'LAYER', 2, 'OSIE', 70, 0, 62, 1, 6, 'CENTER',
+  0, 'LAYER', 2, 'UKRYTA', 70, 0, 62, -3, 6, 'CONTINUOUS',
+  0, 'ENDTAB', 0, 'ENDSEC',
+  0, 'SECTION', 2, 'ENTITIES',
+  0, 'LINE', 8, '0', 10, 0, 20, 0, 30, 0, 11, 100, 21, 0, 31, 0,
+  0, 'CIRCLE', 8, 'OSIE', 10, 50, 20, 50, 30, 0, 40, 20,
+  0, 'ARC', 8, '0', 10, 0, 20, 0, 30, 0, 40, 10, 50, 0, 51, 90,
+  0, 'LWPOLYLINE', 8, 'UKRYTA', 90, 4, 70, 1, 10, 0, 20, 0, 10, 40, 20, 0, 42, 1, 10, 40, 20, 20, 10, 0, 20, 20,
+  0, 'TEXT', 8, '0', 10, 5, 20, 90, 30, 0, 40, 5, 1, 'Wałek %%c20',
+  0, 'ENDSEC', 0, 'EOF'
+].join('\n');
+
+test('rysunek 1.37: DXF – wczytanie z menu kartek (podsumowanie, skala dopasowana), warstwy z pliku (wyłączona – ukryta), prawdziwe milimetry; zapis kartki jako DXF z wymiarem i odczyt z powrotem (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>DXF</p>');
+  // Wczytaj DXF… – plik z dysku.
+  await editor.locator('[data-testid=drawing-pages]').click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('[data-testid=drawing-dxf-import]').click();
+  await (await chooser).setFiles({ name: 'walek.dxf', mimeType: 'application/dxf', buffer: Buffer.from(SAMPLE_DXF, 'utf8') });
+  await expectText(page.locator('[data-testid=drawing-dxf-summary]'), 'walek.dxf: 5 elementów, 3 warstwy, 100 × 95 mm.');
+  // Pusta kartka: skala dopasowana (100 mm na wysokości 25 kratek – 5 mm na kratkę), nowa kartka albo skala kartki.
+  assert.equal(await page.locator('[data-testid=drawing-dxf-place-fit]').isChecked(), true);
+  await expectText(page.locator('li', { has: page.locator('[data-testid=drawing-dxf-place-fit]') }), '1 kratka = 5 mm');
+  assert.equal(await page.locator('[data-testid=drawing-dxf-place-new]').count(), 1);
+  await settled(page.locator('dialog.sheet[open]').last());
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-137-dxf-wczytaj.png') });
+  await sheetSubmit(page).click();
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), '4 elementy');
+  await expectText(editor.locator('[data-testid=drawing-scale-info]'), 'Kratka: 5 mm');
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Wczytano 5 elementów z „walek.dxf”');
+  // Warstwy z pliku: OSIE, UKRYTA (wyłączona w pliku – ukryta).
+  await editor.locator('[data-testid=drawing-layers]').click();
+  const panel = editor.locator('[data-testid=drawing-layers-panel]');
+  await waitUntil(async () => (await panel.locator('input.drawing__layer-name').evaluateAll((inputs) => inputs.map((input) => input.value))).join() === 'Warstwa 1,Warstwa 2,Warstwa 3,Warstwa 4,Warstwa 5,OSIE,UKRYTA', 'Warstwy z pliku');
+  assert.equal(await panel.locator('[data-testid=drawing-layer-eye-7]').getAttribute('aria-pressed'), 'false', 'UKRYTA ukryta');
+  await panel.locator('[data-testid=drawing-panel-close]').click();
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-137-dxf-na-kartce.png') });
+  // Wymiar 20 mm obok rysunku (zmiana narzędzia zdejmuje zaznaczenie) – w pliku z grotami i liczbą.
+  const mouse = pageMouse(page, await pageFrame(page));
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  await pickGroup(editor, 'dims');
+  await count.waitFor({ state: 'hidden' });
+  // Obok krótszych pastylek w lewym dolnym rogu (pod szeroką podpowiedzią) jest kartka – można tam rysować.
+  const zoom = await editor.locator('[data-testid=drawing-zoom]').boundingBox();
+  const under = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.dataset.testid, [zoom.x + zoom.width + 40, zoom.y + zoom.height / 2]);
+  assert.equal(under, 'drawing-canvas', 'obok pastylek – kartka');
+  await mouse.drag([1300, 300], [1476, 300]);
+  await expectText(count, 'Wymiar');
+  // Zapis kartki jako DXF – pobrany plik czyta się z powrotem: odcinek 100 mm na warstwie WARSTWA_1, okrąg R20 na OSIE.
+  await editor.locator('[data-testid=drawing-pages]').click();
+  const download = page.waitForEvent('download');
+  await page.locator('[data-testid=drawing-dxf-export]').click();
+  const file = await download;
+  assert.equal(file.suggestedFilename(), 'Rysunek 1.dxf');
+  const text = await readFile(await file.path(), 'utf8');
+  const parsed = parseDxf(text);
+  assert.ok(parsed.layers.has('OSIE') && parsed.layers.get('UKRYTA').hidden, 'warstwy w pliku');
+  const { primitives } = dxfPrimitives(parsed);
+  const line = primitives.find((item) => item.kind === 'line');
+  const circle = primitives.find((item) => item.kind === 'circle');
+  assert.ok(Math.abs(Math.hypot(line.b.x - line.a.x, line.b.y - line.a.y) - 100) < 0.2, 'odcinek 100 mm');
+  assert.ok(Math.abs(circle.r - 20) < 0.1 && circle.layer === 'OSIE' && circle.dash === 'center', 'okrąg R20 na warstwie OSIE');
+  assert.ok(/^[\x20-\x7e\r\n]*$/.test(text), 'plik R12 – same znaki ASCII');
+  assert.ok(primitives.some((item) => item.kind === 'text' && item.text === 'Wałek ⌀20'), 'polskie litery i ⌀ z powrotem');
+  const label = parsed.entities.find((item) => item.type === 'TEXT' && item.number(72) === 1);
+  assert.equal(label?.first(1), '20 mm', 'liczba wymiaru wyśrodkowana');
+  assert.equal(parsed.entities.filter((item) => item.type === 'SOLID').length, 2, 'dwa groty wymiaru');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  const saved = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  assert.deepEqual(saved.scale, { value: 5, unit: 'mm' });
+  const savedLine = saved.strokes.find((stroke) => stroke.shape === 'line');
+  assert.ok(Math.abs(savedLine.w * (5 / 44) - 100) < 0.2, `odcinek 100 mm (${savedLine.w})`);
+  assert.equal(saved.strokes.find((stroke) => stroke.shape === 'ellipse').layers[0], 6);
+  assert.equal(saved.strokes.find((stroke) => stroke.tool === 'text').text, 'Wałek ⌀20');
+}, { device: DESKTOP });
 
 // ---------------------------------------------------------------- nauka z fiszkami
 

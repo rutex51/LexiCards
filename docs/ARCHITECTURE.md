@@ -63,6 +63,7 @@ js/core/backup.js          kopia zapasowa: plik danych i plik obrazów i załąc
 js/core/note-files.js      załączniki notatek: nazwy plików, typy i rodzaje (PDF, Word, Excel, PowerPoint…)
 js/core/math.js            wzory: wyszukiwanie $…$ w tekście, odczyt zapisu (podzbiór LaTeX), wzór słowami, ściągawka
 js/core/layers.js          warstwy rysunku (od 1.36): lista warstw, sygnatury elementów, wygląd kaskadowo, nasycenie koloru
+js/core/dxf.js             pliki DXF (od 1.37): czytanie (jednostki, warstwy, bloki, encje, strona kodowa), zamiana na elementy rysunku, zapis kartki jako DXF R12
 js/core/tool-ring.js       kółka narzędzi (od 1.32): grupy (standardowe, zestaw Metrologia), grupa na starcie, układ i widoczność małych kółek, obrót i dociąganie, schowane elementy interfejsu
 js/core/drawing.js         rysunki: grubość z nacisku, wygładzanie, gumka, historia cofania, skala, przyciąganie linijki, obszar zaznaczania, tabele i karteczki (prostokąt, strzałka), sprawdzanie danych rysunku
 js/core/math-layout.js     wzór na płótnie (rysunek): układ ułamków, potęg, pierwiastków, sum, nawiasów i rysowanie
@@ -1610,6 +1611,46 @@ i `tools.dimMode`; wybór pod menu (`dimModes`) usunięty.
 Trzeci pasek: `toolInMenu` (w `updateToolbar`) – pozycja narzędzia jest w grupie pokazanej w menu; bez tego tryby gumki,
 sposób rysowania okręgu i trzecie menu kształtów są schowane, a trzecie menu zostaje tylko dla zaznaczonych (tryb edycji).
 
+## Pliki DXF (od 1.37)
+
+`js/core/dxf.js` (bez przeglądarki, testy w Node.js) – w obie strony, bez bibliotek:
+
+- **Czytanie.** `decodeDxf(bajty)` – UTF-8 (`TextDecoder` z `fatal`), inaczej strona kodowa z `$DWGCODEPAGE` (`ANSI_125x`
+  → `windows-125x`), bez niej Windows-1250. `parseDxf(tekst)` – pary kod/wartość (`dxfPairs`; binarny DXF i nie-DXF –
+  błąd z opisem), sekcje HEADER (`$INSUNITS` → `unitMm`, brak – mm), TABLES (warstwa: kolor, wyłączona – kolor ujemny,
+  zamrożona – bit 1, rodzaj linii), BLOCKS (punkt bazowy, encje) i ENTITIES (POLYLINE z VERTEX/SEQEND). `dxfPrimitives`
+  – prymitywy w jednostkach pliku, oś y w górę: `line`, `xline`, `circle`, `arc`, `ellipse`, `poly` (LWPOLYLINE, POLYLINE
+  z wybrzuszeniami – `bulgePoints`, SPLINE – B-spline z wagami albo punkty dopasowania, łuki i okręgi po przekształceniu
+  niejednakowym, SOLID/TRACE – `fill`), `point`, `text` (TEXT, MTEXT bez kodów formatowania – `dxfText`; zaczepienie
+  `ax` – 0 / 0,5 / 1 szerokości, `ay` – linia bazowa, góra, środek, dół: TEXT 72/73 z punktem 11/21, MTEXT 71). INSERT
+  i DIMENSION rozwijają blok (`transformPoint`: punkt bazowy, skala, obrót, przesunięcie; do 8 poziomów); kolor
+  BYLAYER/BYBLOCK, 24-bitowy (420), rodzaj linii z encji albo warstwy (`dashOfLinetype`). Pominięte (licznik `skipped`):
+  HATCH, siatki i łamane 3D, nieznane encje, wstawienia bez bloku. `primitivesBounds`, `fittingScale` – skala z szeregu
+  1–2–5 (mm / cm / m), przy której rysunek mieści się w 90% kartki.
+- **Na kartkę.** `primitivesToElements(prymitywy, { unitMm, pageUnitMm, origin, bounds, layerOf, defaultSize })` – jednostki
+  strony (`pageUnitMillimeters(skala)` – milimetry na jednostkę strony), oś y w dół: odcinek, prosta, okrąg (`circleShape`),
+  łuk przez trzy punkty (`arcFromPoints`), elipsa, wielokąt zamknięty do `POLY_NODES_MAX` wierzchołków (wypełniony –
+  `fill: 'solid'`), dłuższe łamane – kawałki po 24 wierzchołki ze wspólnymi końcami, punkt, pole tekstowe (wielkość ≈
+  wysokość / 0,7, zaczepienie). Kolor `paperColor` – biały i bardzo jasne przyciemnione; sygnatura z `layerOf`.
+- **Zapis.** `drawingToDxf(rysunek)` → `{ text, written, skipped }`: R12 (AC1009), CRLF, same znaki ASCII (`dxfString`:
+  ⌀ %%c, ° %%d, ± %%p, inne `\U+XXXX`), `$INSUNITS` 4 (mm), tabele LTYPE (CONTINUOUS, DASHED, CENTER, PHANTOM, DOT)
+  i LAYER (`dxfLayerName` – wielkie litery bez znaków niedozwolonych, do 31 znaków, powtórzenia z numerem; ukryta – kolor
+  ujemny). Element – warstwa sygnatury rzędu 1, kolor `hexAci` (najbliższy z palety), rodzaj linii. Pióro i zakreślacz –
+  POLYLINE; odcinek, strzałka – LINE; prosta – LINE przez całą stronę; okrąg – CIRCLE; łuk – ARC (kąty z odwróconym
+  znakiem, przeciwnie do ruchu wskazówek); punkt – POINT; krzywa, łamana, wielokąt i pozostałe kształty – POLYLINE
+  z obrysu; tekst i wzór – TEXT na wiersz; szyk – kopie. Wymiar narzędzia „Wymiar” i stałe wymiary kształtów
+  (`shownDims`) – z `dimGeometry` jak `paintTechnicalDim`: linie pomocnicze, linia wymiarowa albo ARC, groty SOLID
+  (krótki wymiar – na zewnątrz), liczba `dimensionText` (format `dimFormat`) jako TEXT wyśrodkowany (72 = 1, 73 = 2)
+  z obrotem. Pominięte: tabele, karteczki, symbole metrologiczne (`skipped`), zdjęcie.
+
+Edytor (`js/ui/drawing.js`): menu kartek – `drawing-dxf-import` („Wczytaj DXF…”, `pickFile('.dxf')`) i `drawing-dxf-export`
+(„Zapisz kartkę jako DXF”, `deliverFile` – pobranie albo arkusz udostępniania). `importDxf` – okno z podsumowaniem
+(`drawing-dxf-summary`) i wyborem miejsca (`drawing-dxf-place-fit` – pusta kartka, `-new` – nowa kartka, `-here` – skala
+kartki). `placeDxf` – skala, warstwy z pliku („0” – warstwa 1, ta sama nazwa – istniejąca, nowe do `LAYER_LIMIT`, wyłączona
+– ukryta), wyśrodkowanie, `remeasure`, najwyżej `MAX_STROKES` elementów na kartce, jeden krok cofania, zaznaczenie
+widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kartki obok krótszych pastylek
+(`pointer-events: none` na pojemniku).
+
 ## Dźwięki (od 1.31)
 
 `js/core/sounds.js` – bez przeglądarki (testy w Node.js):
@@ -1659,7 +1700,8 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   rozpoznawanie odręcznych kształtów – figury, przyciąganie kierunków, kształty odrzucane – oraz łamana
   i wielokąt: wierzchołki, punkty, przesuwanie wierzchołka, dane; od 1.25 jednostki liczb wymiarów,
   oznaczenie „Wymiary w …”, tolerancje w mm i przeliczenie starszych rysunków, odchyłki w ramce
-  tolerancji, tabela pasowań i ostatnio użyte),
+  tolerancji, tabela pasowań i ostatnio użyte; od 1.36 warstwy i sygnatury; od 1.37 pliki DXF – czytanie,
+  zamiana na elementy, zapis i odczyt z powrotem, strony kodowe),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

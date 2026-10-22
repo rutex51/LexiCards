@@ -7574,6 +7574,8 @@ input.drawing__layer-name:focus { border-color: var(--tone-blue); outline: none;
   align-items: flex-start;
   gap: 8px;
   max-width: calc(50% - 180px);
+  /* Puste miejsce obok krótszych pastylek należy do kartki (od 1.37 – rysowanie przy dolnym brzegu). */
+  pointer-events: none;
 }
 
 .drawing__info .drawing__pill { pointer-events: auto; }

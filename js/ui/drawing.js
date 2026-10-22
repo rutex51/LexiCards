@@ -48,11 +48,12 @@ import {
   HIGHLIGHTER_COLORS, HIGHLIGHTER_RANGE, INK_COLORS, RAY_STEPS, WIDTH_LIMITS, STICKY_COLORS, STICKY_MIN, STICKY_TEXT_MAX, STICKY_TEXT_SIZES, TABLE_TEXT_SIZES, isBox, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
   SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings, shapeToolStyle, stickyColor, withShapeToolStyle,
   DIM_UNITS, DRAWING_VERSION, defaultDimUnit, defaultToolSettings, dimFactor, dimFormat, dimMillimeters, dimUnitLabel, dimUnitNote, dimensionParts, formatTolerance, hasMeasuredContent, elementBox, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
-  isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
+  MAX_STROKES, isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
   hasContent, rulerDegrees, rulerOffset, rulerPoint, scaleUnitLabel, screenScale, screenScaleValue, selectionBounds, smoothPoint, snapRulerAngle,
   snapToStrokes, splitByPolygon, strokeBounds, strokesAt, strokesInPolygon, strokesInRect, toScaleLength, touchesStroke, translateStroke
 } from '../core/drawing.js';
 import { layoutMath } from '../core/math-layout.js';
+import { decodeDxf, drawingToDxf, dxfPrimitives, fittingScale, pageUnitMillimeters, parseDxf, primitivesBounds, primitivesToElements } from '../core/dxf.js';
 import {
   BACKGROUND_LAYER, LAYER_LIMIT, LAYER_NAME_MAX, PHOTO_LAYER, SIGNATURE_LIMIT, addLayer, drawingLayers, elementLayers, layerUse, layersActive, layersOf,
   levelEffect, removeLayer, saturateHex, strokeEffect, toneStroke, updateLayer, withSignatures
@@ -81,7 +82,8 @@ import {
 } from '../core/templates.js';
 import { plural } from '../core/text.js';
 import { TOOLS_KEY, colorTabBody } from './color-picker.js';
-import { field, segmented, textArea, toggle } from './components.js';
+import { field, group, radioRow, segmented, textArea, toggle } from './components.js';
+import { deliverFile, pickFile } from './files.js';
 import { confirmDialog, mountDialog, openFormSheet, openMenu, showError } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { hintsToggle } from './hints.js';
@@ -4568,10 +4570,129 @@ export function openDrawingEditor({
             label: `Kartka ${index + 1} – ${page.title}`, checked: index === pageIndex, testID: `drawing-page-${index + 1}`,
             onSelect: () => flipTo(index)
           })) : []),
+          // Od 1.37: rysunek z pliku DXF i kartka jako DXF.
+          'separator',
+          { label: 'Wczytaj DXF…', icon: 'upload', testID: 'drawing-dxf-import', onSelect: () => importDxf() },
+          { label: 'Zapisz kartkę jako DXF', icon: 'download', testID: 'drawing-dxf-export', onSelect: () => exportDxf() },
           added ? 'separator' : null,
           added ? { label: 'Usuń tę kartkę', icon: 'trash', destructive: true, testID: 'drawing-page-delete', onSelect: () => deletePage() } : null
         ]
       });
+    }
+
+    // ---- DXF (od 1.37): rysunek CAD na kartkę i kartka jako plik DXF
+    /** Wybór pliku DXF, okno z podsumowaniem i miejscem (ta kartka albo nowa, skala dopasowana albo kartki), wczytanie. */
+    async function importDxf() {
+      const file = await pickFile('.dxf');
+      if (!file) return;
+      let parsed;
+      try {
+        parsed = parseDxf(decodeDxf(await file.arrayBuffer()));
+      } catch (error) {
+        flash(error?.message || 'Nie udało się odczytać pliku DXF.');
+        return;
+      }
+      const { primitives, skipped } = dxfPrimitives(parsed);
+      const bounds = primitivesBounds(primitives);
+      if (!bounds) {
+        flash('W pliku nie ma linii, okręgów, łuków ani tekstów do wczytania.');
+        return;
+      }
+      const widthMm = (bounds.maxX - bounds.minX) * parsed.unitMm;
+      const heightMm = (bounds.maxY - bounds.minY) * parsed.unitMm;
+      const fitted = fittingScale(widthMm, heightMm, drawing.width, drawing.height);
+      const fits = (scale) => widthMm / pageUnitMillimeters(scale) <= drawing.width && heightMm / pageUnitMillimeters(scale) <= drawing.height;
+      const canAdd = newPages && pages.filter((page) => page.added).length < pageRoom;
+      const empty = drawing.strokes.length === 0;
+      const scaleText = (scale) => `1 kratka = ${formatLength(PAPER_STEP, scale)}`;
+      const places = [
+        ...(empty ? [{ value: 'fit', title: 'Ta kartka – skala dopasowana', subtitle: scaleText(fitted) }] : []),
+        ...(canAdd ? [{ value: 'new', title: 'Nowa kartka – skala dopasowana', subtitle: scaleText(fitted) }] : []),
+        { value: 'here', title: 'Ta kartka – jej skala', subtitle: `${scaleText(drawing.scale)}${fits(drawing.scale) ? '' : ' – rysunek nie zmieści się na kartce'}` }
+      ];
+      let where = places[0].value;
+      let chosen = null;
+      const layerCount = new Set(primitives.map((item) => item.layer)).size;
+      openFormSheet({
+        title: 'Wczytaj DXF',
+        submitLabel: 'Wczytaj',
+        build: () => [
+          h('p', { class: 'drawing__dxf-summary', dataset: { testid: 'drawing-dxf-summary' } },
+            `${file.name}: ${plural(primitives.length, 'element', 'elementy', 'elementów')}, ${plural(layerCount, 'warstwa', 'warstwy', 'warstw')}, `
+            + `${formatNumber(widthMm)} × ${formatNumber(heightMm)} mm${skipped > 0 ? ` · pominięte: ${skipped} (np. kreskowanie, bryły 3D)` : ''}.`),
+          group({ title: 'Gdzie' }, ...places.map((place) => radioRow({
+            name: 'drawing-dxf-place', value: place.value, checked: place.value === where, title: place.title, subtitle: place.subtitle,
+            testID: `drawing-dxf-place-${place.value}`, onChange: () => { where = place.value; }
+          }))),
+          h('p', { class: 'field__hint' }, 'Linie, okręgi, łuki, elipsy, łamane, splajny, punkty i teksty stają się kształtami rysunku (wymiary – liniami '
+            + 'i tekstem), warstwy pliku – warstwami rysunku. Skala dopasowana: rysunek mieści się na kartce, a wymiary mierzą prawdziwe milimetry.')
+        ],
+        onSubmit: () => {
+          chosen = where;
+          return true;
+        },
+        onClose: () => {
+          if (chosen) placeDxf(file.name, parsed, primitives, bounds, chosen === 'here' ? drawing.scale : fitted, chosen === 'new', skipped);
+        }
+      });
+    }
+    /** Elementy z pliku na kartce: warstwy pliku – warstwy rysunku (nowe na końcu, do limitu), na środku kartki; jeden krok cofania. */
+    function placeDxf(name, parsed, primitives, bounds, scale, onNewPage, skipped) {
+      if (onNewPage) addPage();
+      drawing.scale = { ...scale };
+      let layers = drawingLayers(drawing);
+      const ids = new Map();
+      for (const layerName of new Set(primitives.map((item) => item.layer))) {
+        if (layerName === '0') {
+          ids.set(layerName, 1);
+          continue;
+        }
+        const existing = elementLayers(layers).find((layer) => layer.name.toLowerCase() === layerName.toLowerCase());
+        if (existing) {
+          ids.set(layerName, existing.id);
+          continue;
+        }
+        const next = addLayer(layers);
+        if (next === layers) {
+          ids.set(layerName, elementLayers(layers).at(-1).id);
+          continue;
+        }
+        const id = next.at(-1).id;
+        layers = updateLayer(next, id, { name: layerName, hidden: parsed.layers.get(layerName)?.hidden === true });
+        ids.set(layerName, id);
+      }
+      drawing.layers = layers;
+      const pageUnitMm = pageUnitMillimeters(drawing.scale);
+      const k = parsed.unitMm / pageUnitMm;
+      const [width, height] = [(bounds.maxX - bounds.minX) * k, (bounds.maxY - bounds.minY) * k];
+      const origin = { x: Math.max(0, (drawing.width - width) / 2), y: Math.max(0, (drawing.height - height) / 2) };
+      const width0 = tools.penWidths[tools.penWidth];
+      const elements = primitivesToElements(primitives, {
+        unitMm: parsed.unitMm, pageUnitMm, origin, bounds, layerOf: (layerName) => ids.get(layerName) ?? 1,
+        defaultSize: Math.round(((width0.min + width0.max) / 2) * 10) / 10
+      }).map(remeasure);
+      // Najwyżej MAX_STROKES elementów na kartce – nadmiar bardzo dużego pliku pomijany (z komunikatem).
+      const over = Math.max(0, drawing.strokes.length + elements.length - MAX_STROKES);
+      if (over > 0) elements.length -= over;
+      setTool('select');
+      history.begin();
+      drawing.strokes.push(...elements);
+      commitStep();
+      changed = true;
+      selection = new Set(elements.filter(isShown));
+      selectionKind = 'whole';
+      updateToolbar();
+      requestRender();
+      flash(`Wczytano ${plural(elements.length, 'element', 'elementy', 'elementów')} z „${name}”${skipped > 0 ? ` (pominięte: ${skipped})` : ''}`
+        + `${over > 0 ? ` – ${formatNumber(over)} nie zmieściło się (najwięcej ${formatNumber(MAX_STROKES)} na kartce)` : ''}.`);
+    }
+    /** Kartka jako plik DXF (R12, milimetry): pobranie albo – na iPhonie i iPadzie – arkusz udostępniania. */
+    async function exportDxf() {
+      const { text, written, skipped } = drawingToDxf(drawing);
+      const safe = pageTitle().replace(/[\\/:*?"<>|]+/g, '-').trim() || 'Rysunek';
+      const file = new File([text], `${safe}.dxf`, { type: 'application/dxf' });
+      const result = await deliverFile(file, { title: 'Zapisz kartkę jako DXF', message: `Plik „${file.name}” – ${plural(written, 'element', 'elementy', 'elementów')} w milimetrach.` });
+      if (result !== 'cancelled') flash(`Zapisano „${file.name}”${skipped > 0 ? ` – pominięte: ${skipped} (tabele, karteczki, symbole)` : ''}.`);
     }
 
     // ---- linijka
