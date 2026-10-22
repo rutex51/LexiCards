@@ -46,7 +46,7 @@ import {
 import {
   DrawingHistory, ELEMENT_TEXT_MAX, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA,
   HIGHLIGHTER_COLORS, HIGHLIGHTER_RANGE, INK_COLORS, RAY_STEPS, WIDTH_LIMITS, STICKY_COLORS, STICKY_MIN, STICKY_TEXT_MAX, STICKY_TEXT_SIZES, TABLE_TEXT_SIZES, isBox, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
-  SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings,
+  SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings, shapeToolStyle, withShapeToolStyle,
   DIM_UNITS, DRAWING_VERSION, defaultDimUnit, defaultToolSettings, dimFactor, dimFormat, dimMillimeters, dimUnitLabel, dimUnitNote, dimensionParts, formatTolerance, hasMeasuredContent, elementBox, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
   isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
   hasContent, rulerDegrees, rulerOffset, rulerPoint, scaleUnitLabel, screenScale, screenScaleValue, selectionBounds, smoothPoint, snapRulerAngle,
@@ -2600,7 +2600,7 @@ export function openDrawingEditor({
       for (const [kind, button] of kindButtons) button.setAttribute('aria-pressed', String(tool === 'shape' && tools.shape === kind));
       updateMenu();
       // Kształty (od 1.15) mają kolor i grubość pióra. Od 1.35 zaznaczone elementy: kolor i grubość w menu
-      // zmieniają je (przy narzędziu do rysowania – także kolor i grubość następnych).
+      // zmieniają je; od 1.35.1 tylko je (tryb edycji) – kolor i grubość narzędzia zmienia wybór bez zaznaczenia.
       const inking = tool === 'pen' || tool === 'highlighter' || tool === 'shape';
       const painted = paintedSelection();
       const sized = painted.filter(hasLineWidth);
@@ -2608,7 +2608,7 @@ export function openDrawingEditor({
       const palette = highlighter ? HIGHLIGHTER_COLORS : INK_COLORS;
       const chosen = painted.length > 0 ? commonColor(painted, highlighter) : highlighter ? tools.highlighterColor : tools.penColor;
       const choose = (value) => {
-        if (inking) {
+        if (inking && painted.length === 0) {
           if (tool === 'highlighter') tools.highlighterColor = value;
           else tools.penColor = value;
           saveTools(tools);
@@ -2640,7 +2640,7 @@ export function openDrawingEditor({
         type: 'button', class: 'drawing__width', 'aria-label': ['Cienka', 'Średnia', 'Gruba'][index], title: ['Cienka', 'Średnia', 'Gruba'][index],
         'aria-pressed': String(index === current), dataset: { testid: `drawing-width-${index}` },
         onClick: () => {
-          if (inking) {
+          if (inking && sized.length === 0) {
             if (tool === 'highlighter') tools.highlighterWidth = index;
             else tools.penWidth = index;
             saveTools(tools);
@@ -3614,6 +3614,7 @@ export function openDrawingEditor({
       const kind = tool === 'shape' ? tools.shape : null;
       if (targets.length === 0 && !kind) return null;
       const probe = targets.length > 0 ? targets : [{ shape: kind }];
+      const own = kind ? shapeToolStyle(tools, kind) : {};
       const pick = (test, value, fallback) => {
         if (!probe.some(test)) return undefined;
         return targets.length > 0 ? sameValue(targets.filter(test).map(value)) : fallback;
@@ -3626,8 +3627,8 @@ export function openDrawingEditor({
         targets, kind,
         values: {
           mark: pick(isPointShape, pointMark, tools.pointMark),
-          dash: pick(canDash, shapeDash, tools.shapeDash),
-          fill: pick(canFill, (shape) => shape.fill ?? 'none', tools.shapeFill),
+          dash: pick(canDash, shapeDash, own.dash),
+          fill: pick(canFill, (shape) => shape.fill ?? 'none', own.fill),
           caps
         }
       };
@@ -3647,14 +3648,16 @@ export function openDrawingEditor({
       if (fill === 'solid' && next.label?.color === next.color) next.label = { ...next.label, color: '#ffffff' };
       return next;
     }
-    /** Wybór w trzecim menu: zaznaczone kształty, a przy narzędziu kształtów (albo bez zaznaczenia) – też następne. */
+    /**
+     * Wybór w trzecim menu. Bez zaznaczenia – styl następnych kształtów narzędzia (od 1.35.1 rodzaj linii i wypełnienie
+     * osobno dla każdego kształtu); zaznaczone (tryb edycji) – zmieniają się tylko one, ustawienia narzędzia zostają.
+     */
     function pickStyle(key, value, which = null) {
       const state = styleState();
       if (!state) return;
-      if (tool === 'shape' || state.targets.length === 0) {
+      if (state.targets.length === 0) {
         if (key === 'mark') tools.pointMark = value;
-        if (key === 'dash') tools.shapeDash = value;
-        if (key === 'fill') tools.shapeFill = value;
+        if (key === 'dash' || key === 'fill') tools.shapeStyles = withShapeToolStyle(tools, state.kind, key, value).shapeStyles;
         if (key === 'caps' && hasCaps({ shape: tools.shape })) tools[CAPS_KEYS[tools.shape]] = { ...segmentDefaultCaps(), [which]: value };
         saveTools(tools);
       }
@@ -5780,10 +5783,12 @@ export function openDrawingEditor({
     /** Styl nowego kształtu: kolor pióra, średnia grubość wybranej grubości pióra, (od 1.17) wypełnienie i (od 1.19) zakończenia odcinka. */
     const shapeStyle = () => {
       const width = tools.penWidths[tools.penWidth];
+      // Od 1.35.1 rodzaj linii i wypełnienie – wybranego kształtu.
+      const own = shapeToolStyle(tools, tools.shape);
       return {
-        color: inkHex(tools.penColor), size: Math.round(((width.min + width.max) / 2) * 10) / 10, fill: tools.shapeFill, caps: segmentDefaultCaps(),
+        color: inkHex(tools.penColor), size: Math.round(((width.min + width.max) / 2) * 10) / 10, fill: own.fill, caps: segmentDefaultCaps(),
         // Od 1.27: rodzaj linii i znacznik punktu.
-        dash: tools.shapeDash, mark: tools.pointMark
+        dash: own.dash, mark: tools.pointMark
       };
     };
     /** Styl nowego kształtu z rodzajem wymiaru i wzorem odsunięcia (od 1.34) – dla narzędzia „Wymiar”. */

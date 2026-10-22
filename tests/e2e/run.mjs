@@ -9547,6 +9547,54 @@ test('rysunek 1.35: spirala kończy się w ostatniej dziurce (bez zwoju w powiet
   await waitUntil(async () => (await editor.locator(`[data-testid=${other}]`).getAttribute('aria-pressed')) === 'true', 'Grupa wybrana kliknięciem');
 }, { device: DESKTOP });
 
+test('rysunek 1.35.1: trzecie menu – każdy kształt pamięta swój rodzaj linii; tryb edycji (zaznaczony kształt) zmienia tylko jego – ustawienia narzędzia (rodzaj linii, kolor) zostają (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Style</p>');
+  const frame = await pageFrame(page);
+  const mouse = pageMouse(page, frame);
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const dash = (value) => editor.locator(`[data-testid=drawing-choices] [data-testid=drawing-dash-default-${value}]`);
+  const checked = async (value) => (await dash(value).getAttribute('aria-checked')) === 'true';
+  // Prosta – osiowa, łuk – kropkowa; po powrocie do prostej osiowa zostaje (do 1.35 rodzaj linii był wspólny).
+  await press(editor, 'drawing-shape-xline');
+  await dash('center').click();
+  await press(editor, 'drawing-shape-arc');
+  assert.ok(await checked('solid'), 'łuk – swój rodzaj linii');
+  await dash('dotted').click();
+  await press(editor, 'drawing-shape-xline');
+  assert.ok(await checked('center'), 'prosta – osiowa zostaje');
+  await press(editor, 'drawing-shape-arc');
+  assert.ok(await checked('dotted'), 'łuk – kropkowa');
+  // Łuk narysowany i zaznaczony (tryb edycji): przerywana i czerwony – tylko on.
+  await mouse.drag([300, 700], [500, 700]);
+  await mouse.tap([400, 620]);
+  await expectText(count, 'Łuk');
+  assert.ok(await checked('dotted'), 'zaznaczony łuk – kropkowy');
+  await dash('dashed').click();
+  await waitUntil(() => checked('dashed'), 'Zaznaczony łuk – przerywany');
+  await press(editor, 'drawing-color-red');
+  await waitUntil(async () => (await editor.locator('[data-testid=drawing-color-red]').getAttribute('aria-pressed')) === 'true', 'Zaznaczony łuk – czerwony');
+  // Dotknięcie pustego miejsca zdejmuje zaznaczenie – menu pokazuje znowu ustawienia narzędzia.
+  await mouse.tap([1300, 1000]);
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Odznaczony');
+  assert.ok(await checked('dotted'), 'ustawienie łuku zostaje');
+  assert.equal(await editor.locator('[data-testid=drawing-color-black]').getAttribute('aria-pressed'), 'true', 'kolor narzędzia zostaje');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-1351-style-ksztaltow.png') });
+  // Następny łuk – kropkowy i czarny.
+  await mouse.drag([800, 700], [1000, 700]);
+  await mouse.tap([900, 620]);
+  await expectText(count, 'Łuk');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  const arcs = (await savedStrokes(page, ids.statements)).filter((stroke) => stroke.shape === 'arc');
+  assert.deepEqual(arcs.map((arc) => [arc.dash, arc.color]), [['dashed', '#d70015'], ['dotted', '#1d1d1f']]);
+}, { device: DESKTOP });
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

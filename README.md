@@ -43,7 +43,7 @@ Dźwięki: szum odlatującej fiszki i szelest przewracanej kartki notatki i rysu
 Rysunek – nowy układ: kółka narzędzi (grupy standardowe po prawej, zestaw Metrologia po lewej), górne menu w dwóch wierszach z wysuwanym wyborem, dolny pasek narzędzi ogólnych, pastylki informacji i zmian, chowanie każdego elementu i całego interfejsu, lewy Alt i prawy przycisk – zaznaczanie, spacja – powiel (wersja 1.32): [docs/RELEASE-1.32.md](docs/RELEASE-1.32.md).
 Rysunek – okno „Grupy narzędzi”: które grupy standardowe są na prawym kółku i w jakiej kolejności, gotowe zestawy (Metrologia, Szkic odręczny, Geometria, Notatki) i własne grupy z wybranymi narzędziami na lewym kółku (wersja 1.33): [docs/RELEASE-1.33.md](docs/RELEASE-1.33.md).
 Rysunek: okrąg ze środka i promienia, z dwóch i z trzech punktów, łuk przez trzy punkty, narzędzie „Wymiar” (liniowy, średnica, promień, kąt – końce przyklejone do kształtu), przyciąganie do środka okręgu (wersja 1.34): [docs/RELEASE-1.34.md](docs/RELEASE-1.34.md).
-Rysunek: trzecie menu kształtów (znacznik punktu, rodzaj linii, wypełnienie, końce i ⓘ – rozwijane w dół zamiast okna „Styl”), zmiana zaznaczonego elementu z menu (kolor, grubość, styl), „Przesuń” nad zaznaczeniem, wybór zaznaczania nad dolnym paskiem, duże kółko zaznaczonego punktu, kółko narzędzi bez obracania przy samym najechaniu myszą, spirala kończy się w ostatniej dziurce (wersja 1.35): [docs/RELEASE-1.35.md](docs/RELEASE-1.35.md).
+Rysunek: trzecie menu kształtów (znacznik punktu, rodzaj linii, wypełnienie, końce i ⓘ – rozwijane w dół zamiast okna „Styl”), zmiana zaznaczonego elementu z menu (kolor, grubość, styl), „Przesuń” nad zaznaczeniem, wybór zaznaczania nad dolnym paskiem, duże kółko zaznaczonego punktu, kółko narzędzi bez obracania przy samym najechaniu myszą, spirala kończy się w ostatniej dziurce (wersja 1.35); każdy kształt pamięta swój rodzaj linii i wypełnienie, tryb edycji zmienia tylko zaznaczone (1.35.1): [docs/RELEASE-1.35.md](docs/RELEASE-1.35.md).
 
 ## Co potrafi wersja 1.35
 
@@ -545,9 +545,11 @@ przy prostej i łuku – rodzaje linii, przy innych kształtach przyciski **Lini
 z wybraną wartością, które rozwijają wybór w dół; **ⓘ** rozwija w dół przełączniki (proporcje, przyciąganie
 końców) i opis kształtu – bez osobnego okna (okna **Styl** z 1.27 już nie ma). **Zaznaczony element zmieniasz
 od razu:** kolor i grubość w menu i trzecie menu zmieniają zaznaczone kształty i kreski pióra albo zakreślacza
-(kolor – także pola tekstowe, wzory i symbole), jeden krok cofania. Przy zaznaczaniu następne elementy rysują
-się jak dotąd; przy narzędziu do rysowania wybrany kolor, grubość i styl są też ustawieniem następnych, a przy
-narzędziu kształtów zmiana dotyczy zaznaczonych kształtów tego rodzaju (np. właśnie narysowanego). **Przesuń** –
+(kolor – także pola tekstowe, wzory i symbole), jeden krok cofania. Przy narzędziu kształtów zmiana dotyczy
+zaznaczonych kształtów tego rodzaju (np. właśnie narysowanego). Od 1.35.1 to **tryb edycji**: zmienia się tylko
+zaznaczone, ustawienia narzędzia zostają (po zdjęciu zaznaczenia menu znowu je pokazuje); bez zaznaczenia kolor,
+grubość i trzecie menu ustawiają następne elementy, a rodzaj linii i wypełnienie **każdy kształt pamięta osobno**
+(np. prosta – osiowa, łuk – kropkowa, prostokąt – jasne wypełnienie). **Przesuń** –
 pierwszy przycisk nad zaznaczeniem: przeciągnięcie w dowolnym miejscu strony przesuwa zaznaczenie (nie trzeba
 trafiać palcem w cienką kreskę); ponowne dotknięcie albo zdjęcie zaznaczenia kończy. Zaznaczony **punkt** ma duże
 przerywane kółko zamiast kwadratowej ramki. Mysz puszczona poza kółkiem narzędzi nie zostawia go „przyklejonego” –

@@ -1532,9 +1532,11 @@ Wszystko w `js/ui/drawing.js` (bez zmian w `js/core`, format rysunku bez zmian):
   wartości (`undefined`) – grupa nie dotyczy kształtu (`isPointShape`, `canDash`, `canFill`, `hasCaps`).
   Jedna grupa (znacznik punktu, rodzaj linii prostej i łuku) – od razu jej przyciski (`styleTiles`); kilka –
   przyciski `drawing-style-<mark|dash|fill|caps>` z ikoną wybranej wartości (`styleIcon`), które otwierają
-  `styleDrop` (`openPicker`; `closeSettings` zamyka). `pickStyle` – przy narzędziu kształtów albo bez
-  zaznaczenia zapisuje ustawienie nowych (`tools.pointMark`, `shapeDash`, `shapeFill`, `CAPS_KEYS`), potem
-  `restyle` zaznaczonych (jeden krok cofania). Przyciski wyboru mają testid `drawing-<mark|dash|fill|caps>-default-…`.
+  `styleDrop` (`openPicker`; `closeSettings` zamyka). `pickStyle` – bez zaznaczenia zapisuje ustawienie nowych
+  (`tools.pointMark`, `CAPS_KEYS`; od 1.35.1 rodzaj linii i wypełnienie osobno dla każdego kształtu –
+  `tools.shapeStyles`, `withShapeToolStyle`, odczyt `shapeToolStyle` z dawnymi `shapeDash` / `shapeFill` jako
+  wartością domyślną, `js/core/drawing.js`), z zaznaczeniem – tylko `restyle` zaznaczonych (jeden krok cofania;
+  w 1.35 zmieniało też ustawienie wspólne dla wszystkich kształtów). Przyciski wyboru mają testid `drawing-<mark|dash|fill|caps>-default-…`.
   **ⓘ** (`drawing-style-info`, tylko przy narzędziu kształtów) – `toggleShapePanel`: panel kształtów ma już
   tylko przełączniki (proporcje, przyciąganie końców) i opis (`SHAPE_TIPS` – od 1.35 też punkt, prosta,
   strzałka po łuku; opis ogólny – przy kształtach z ramką). Okno „Styl” (`chooseStyle`) usunięte.
@@ -1544,8 +1546,8 @@ Wszystko w `js/ui/drawing.js` (bez zmian w `js/core`, format rysunku bez zmian):
   i grubości także przy zaznaczaniu; wybrana jest wspólna wartość (`commonColor`, `commonWidth` – najbliższa
   z trzech grubości). Wybór – `changeSelection(test, change)` (jeden krok cofania, zaznaczenie przechodzi na
   nowe obiekty): kolor (`inkHex` / `highlighterHex`), grubość – `withLineWidth` (kształt – `size`, kreska –
-  szerokości punktów przeskalowane, nacisk zostaje; zakreślacz – stała szerokość). Przy piórze, zakreślaczu
-  i kształtach wybór zapisuje też ustawienie narzędzia. `editSignature()` na początku `renderLive` odświeża
+  szerokości punktów przeskalowane, nacisk zostaje; zakreślacz – stała szerokość). Ustawienie narzędzia (pióro,
+  zakreślacz, kształty) zapisuje wybór bez zaznaczenia (od 1.35.1 – tylko wtedy; tryb edycji go nie zmienia). `editSignature()` na początku `renderLive` odświeża
   menu, gdy zaznaczenie się zmieniło.
 - **Przesuń** (`drawing-selection-move`, pierwszy na pasku poleceń, `aria-pressed`): `moveMode` – w
   `pointerdown` przeciągnięcie gdziekolwiek na stronie przy zaznaczeniu to `{ kind: 'move', free: true }`

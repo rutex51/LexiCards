@@ -397,8 +397,37 @@ export function defaultToolSettings() {
     toolGroup: null,
     uiHidden: cleanUiHidden(null),
     // Od 1.33: dobór grup na kółkach (okno „Grupy narzędzi”).
-    toolGroups: defaultToolGroups()
+    toolGroups: defaultToolGroups(),
+    // Od 1.35.1: rodzaj linii i wypełnienie zapamiętane osobno dla każdego kształtu ({ xline: { dash: 'center' } });
+    // brak – wspólne shapeDash i shapeFill (ustawienia sprzed 1.35.1).
+    shapeStyles: {}
   };
+}
+
+/** Rodzaj linii i wypełnienie nowych kształtów rodzaju `kind` (od 1.35.1 – osobno dla każdego kształtu). */
+export function shapeToolStyle(tools, kind) {
+  const own = tools.shapeStyles?.[kind] ?? {};
+  return { dash: own.dash ?? tools.shapeDash, fill: own.fill ?? tools.shapeFill };
+}
+
+/** Ustawienia narzędzi z rodzajem linii (`key` 'dash') albo wypełnieniem ('fill') kształtu `kind` – tylko tego kształtu. */
+export function withShapeToolStyle(tools, kind, key, value) {
+  return { ...tools, shapeStyles: { ...tools.shapeStyles, [kind]: { ...tools.shapeStyles?.[kind], [key]: value } } };
+}
+
+/** Sprawdzone style kształtów: znane kształty, znane rodzaje linii i wypełnienia. */
+function cleanShapeStyles(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const styles = {};
+  for (const kind of SHAPES) {
+    const own = raw[kind];
+    if (!own || typeof own !== 'object') continue;
+    const style = {};
+    if (SHAPE_DASHES.includes(own.dash)) style.dash = own.dash;
+    if (SHAPE_FILLS.includes(own.fill)) style.fill = own.fill;
+    if (Object.keys(style).length > 0) styles[kind] = style;
+  }
+  return styles;
 }
 
 /** Sprawdzone zakończenia { start, end } albo domyślne. */
@@ -499,7 +528,8 @@ export function cleanToolSettings(raw) {
     fingerDraws: typeof raw.fingerDraws === 'boolean' ? raw.fingerDraws : base.fingerDraws,
     toolGroup: typeof raw.toolGroup === 'string' && raw.toolGroup.length <= 40 ? raw.toolGroup : base.toolGroup,
     uiHidden: cleanUiHidden(raw.uiHidden),
-    toolGroups: cleanToolGroups(raw.toolGroups)
+    toolGroups: cleanToolGroups(raw.toolGroups),
+    shapeStyles: cleanShapeStyles(raw.shapeStyles)
   };
 }
 

@@ -18,8 +18,8 @@ i »Przesuń«”).
 
 Zachowanie, które warto znać:
 
-- Przy narzędziu do rysowania (pióro, zakreślacz, kształty) wybrany kolor, grubość i styl zmieniają
-  zaznaczone i są też ustawieniem następnych elementów; przy zaznaczaniu następne rysują się jak dotąd.
+- Przy narzędziu do rysowania (pióro, zakreślacz, kształty) wybrany kolor, grubość i styl zmieniały
+  zaznaczone i były też ustawieniem następnych elementów (od 1.35.1 – tylko zaznaczone, niżej).
 - Przy narzędziu kształtów zmiana dotyczy zaznaczonych kształtów **tego samego rodzaju** (np. właśnie
   narysowanej strzałki), a nie wcześniej zaznaczonego okręgu.
 - Wybór zaznaczania nad dolnym paskiem może zasłonić dół strony – uchwyt nad paskiem chowa oba.
@@ -55,3 +55,24 @@ Zachowanie, które warto znać:
   Windows z prawdziwą myszą nie sprawdzony – jeśli kółko nadal obraca się samo, proszę o kroki (który
   kształt, które menu).
 - Ciemny motyw nowych elementów – nie oglądany.
+
+## 1.35.1 – każdy kształt pamięta swój styl, tryb edycji nie zmienia ustawień narzędzia
+
+Wersja 1.35.1, 22 października 2026. Prośba: „przechodząc w tryb edycji lub przy rysowaniu giną wcześniej
+zdefiniowane przyborniki poziomu 3”. Przyczyna (odtworzona w Chromium): rodzaj linii i wypełnienie były
+**wspólne dla wszystkich kształtów** – osiowa ustawiona dla prostej zmieniała się w kropkową po wybraniu
+kropkowej dla łuku; a zmiana stylu zaznaczonego kształtu (także właśnie narysowanego) zmieniała ustawienie
+następnych.
+
+- **Każdy kształt pamięta swój rodzaj linii i wypełnienie** (prosta – osiowa, łuk – kropkowa, prostokąt –
+  jasne wypełnienie…); zapamiętane na urządzeniu. Zakończenia odcinka, strzałki i strzałki po łuku oraz znacznik
+  punktu już wcześniej były osobne. Kształty bez własnego wyboru zaczynają od dotychczasowego wspólnego ustawienia.
+- **Tryb edycji** (zaznaczony element, także właśnie narysowany kształt): kolor, grubość i trzecie menu zmieniają
+  **tylko zaznaczone**. Ustawienia narzędzia zostają – po zdjęciu zaznaczenia (dotknięcie pustego miejsca) menu
+  znowu je pokazuje. Ustawienia narzędzia zmienia wybór bez zaznaczenia.
+
+Testy: logika – 401 zaliczone (2 nowe: style osobno dla kształtów, dawne wspólne ustawienie jako
+domyślne, sprawdzanie zapisu); przeglądarka (Chromium) – 194 zaliczone w dwóch pełnych przebiegach (1 nowy,
+komputer: prosta – osiowa, łuk – kropkowa, powrót do prostej – osiowa; narysowany łuk zmieniony na przerywany
+i czerwony, po odznaczeniu menu pokazuje kropkową i czarny; następny łuk kropkowy i czarny – sprawdzone
+w zapisie); lint bez błędów. Nie sprawdzono w Safari na iPhonie i iPadzie.
