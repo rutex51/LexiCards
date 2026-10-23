@@ -1,4 +1,4 @@
-# LexiCards 1.45
+# LexiCards 1.45.1
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -53,9 +53,9 @@ Rysunek – etap D, część 2: odbicie i kopia odbita względem prostej przez d
 Rysunek – zaległości pakietów A i B planu: przyciąganie do środka kształtu, środka boku, przecięć i kresek pióra; wymiar poziomy i pionowy, wymiary łańcuchowe i od bazy, wymiar długości łuku; łuk ze środka, początku i końca; okrąg z osiami (znacznik środka) i polem ⌀; ramka A4 pionowo (wersja 1.42): [docs/RELEASE-1.42.md](docs/RELEASE-1.42.md).
 Rysunek – edycja geometrii (pakiet E planu): grupa Edycja – odsuń, zaokrąglij, fazuj, przytnij, wydłuż; okrąg styczny do dwóch elementów o danym promieniu; łamana punkt po punkcie (wersja 1.43): [docs/RELEASE-1.43.md](docs/RELEASE-1.43.md).
 Rysunek – szablony jakości (Six Sigma / Lean): grupa Jakość – diagram Ishikawy (6M, przyczyny i podprzyczyny), 5 × Dlaczego, tabela SIPOC, układ kartki (raport A3, PDCA, macierz 2×2, Kanban, diagram pokrewieństwa); zestaw „Jakość / Lean” (wersja 1.44): [docs/RELEASE-1.44.md](docs/RELEASE-1.44.md).
-Rysunek – schematy procesów: grupa Procesy – kształty schematu blokowego (początek / koniec, dane, dokument, podproces), łącznik pod kątem prostym przyklejany do kształtów, tory (swimlanes), symbole i oś czasu VSM (czas przejścia, PCE), legenda wad liczona ze znaczników, długość zaznaczonych tras („spaghetti”); zestaw „Procesy / VSM” (wersja 1.45): [docs/RELEASE-1.45.md](docs/RELEASE-1.45.md).
+Rysunek – schematy procesów: grupa Procesy – kształty schematu blokowego (początek / koniec, dane, dokument, podproces), łącznik pod kątem prostym przyklejany do kształtów, tory (swimlanes), symbole i oś czasu VSM (czas przejścia, PCE), legenda wad liczona ze znaczników, długość zaznaczonych tras („spaghetti”); zestaw „Procesy / VSM” (wersja 1.45); iPad w pionie – układ jak na komputerze (1.45.1): [docs/RELEASE-1.45.md](docs/RELEASE-1.45.md).
 
-## Co potrafi wersja 1.45
+## Co potrafi wersja 1.45.1
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -197,7 +197,8 @@ Rysunek – schematy procesów: grupa Procesy – kształty schematu blokowego (
   ustawienia – mały plik) oraz jeden plik ze wszystkimi obrazami i załącznikami notatek. Przywracasz
   je po kolei albo oba naraz; obrazy i załączniki, które już są na urządzeniu, zostają.
 - Motyw jasny, ciemny albo zgodny z systemem i kolor aplikacji do wyboru (niebieski, antracytowy,
-  pomarańczowy, zielony, czerwony); układ na telefon i na szeroki ekran. Ikony dziedzin mają
+  pomarańczowy, zielony, czerwony); układ na telefon i na szeroki ekran (od 1.45.1 panel boczny od 700 px, więc także
+  iPad w pionie; glosariusz jako tabela od 1024 px). Ikony dziedzin mają
   szare tło, a inny kolor można wybrać w edycji dziedziny. Od 1.26 wszystkie okna (formularze, okna
   rysunku, tabeli, kalendarza, równań) wyglądają tak samo: białe tło jak panele edytora rysunku, każde
   pole i przełącznik w cienkiej zaokrąglonej ramce, aktywne pole – ramka w kolorze aplikacji.

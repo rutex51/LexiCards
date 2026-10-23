@@ -629,7 +629,7 @@ button:disabled { cursor: default; }
 .bottombar__inner--note .bottombar__note { max-width: calc(50% - 46px); }
 
 /* Pasek poleceń nad zakładkami: dół zostaje wolny pod wystającym przyciskiem. */
-@media (max-width: 899px) {
+@media (max-width: 699px) {
   .app:not(.app--focus) .bottombar__inner { padding-bottom: 24px; }
 }
 
@@ -1376,6 +1376,8 @@ a.row__main:active,
 .table__row--selected { background: var(--accent-soft); }
 
 .table-wrap {
+  /* Od 1.45.1: ukryte napisy dla czytnika ekranu (pozycjonowane) zostają w przewijanym polu – nie poszerzają strony. */
+  position: relative;
   overflow-x: auto;
   border-radius: var(--radius);
   background: var(--surface);
@@ -4106,7 +4108,12 @@ dialog:not(:has(:is(.field__hint, .form-note, .note-paragraph__hint, .note-pdf-s
   .menu__panel { box-shadow: var(--shadow); border-radius: 15px; }
 }
 
-@media (min-width: 900px) {
+/* Od 1.45.1 panel boczny od 700 px (także iPad w pionie); do 1023 px – węższy, żeby treść miała miejsce. */
+@media (min-width: 700px) and (max-width: 1023px) {
+  :root { --sidebar-width: 220px; }
+}
+
+@media (min-width: 700px) {
   .only-compact { display: none; }
   .tabbar { display: none; }
 

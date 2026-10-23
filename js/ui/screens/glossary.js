@@ -281,7 +281,8 @@ export class GlossaryScreen {
     replaceChildren(this.results,
       h('section', { class: 'group' },
         h('h2', { class: 'group__title', dataset: { testid: 'glossary-count' } }, status),
-        ctx.isWide()
+        // Tabela – przy dużej szerokości (od 1.45.1 od 1024 px; iPad w pionie – lista jak na telefonie).
+        (ctx.isRoomy?.() ?? ctx.isWide())
           ? this.#table(page)
           : termList(ctx, this.list, page.items, {
               path: (term) => library.lessonPath(term.lessonID), statusDirection: this.filter.statusDirection

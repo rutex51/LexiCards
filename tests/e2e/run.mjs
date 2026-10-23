@@ -669,6 +669,54 @@ test('szeroki ekran: panel boczny i tabela glosariusza; wąski: zakładki i list
   assert.equal(await page.locator('.tabbar').isVisible(), true);
 }, { device: DESKTOP });
 
+test('iPad w pionie (820 i 744 px): panel boczny jak na komputerze zamiast zakładek, żaden ekran nie przewija się w poziomie; edytor rysunku; 699 px – zakładki', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const base = page.url().split('#')[0];
+  const lessonID = await page.evaluate(() => [...window.lexicards.library.maps.lessons.values()].find((lesson) => lesson.name === 'Negotiation Techniques').id);
+  const hashes = ['#/start', '#/library', '#/library/glossary', `#/library/lesson/${lessonID}`, '#/settings', '#/study', '#/quiz', '#/stats', '#/listen'];
+  for (const [width, height] of [[820, 1180], [744, 1133]]) {
+    await page.setViewportSize({ width, height });
+    for (const hash of hashes) {
+      await page.goto(base + hash);
+      await page.waitForFunction((expected) => location.hash === expected, hash);
+      await page.locator('.screen__body').first().waitFor();
+      assert.equal(await page.locator('.sidebar').isVisible(), true, `${width} px ${hash}: panel boczny`);
+      assert.equal(await page.locator('.tabbar').isVisible(), false, `${width} px ${hash}: bez zakładek`);
+      const overflow = await overflowX(page);
+      assert.ok(overflow <= 0, `${width} px ${hash}: treść wystaje o ${overflow} px`);
+      if (width === 820 && (hash === '#/start' || hash === '#/library/glossary')) {
+        await page.screenshot({ path: path.join(OUTPUT, `ipad-pionowo-${hash === '#/start' ? 'start' : 'glosariusz'}.png`) });
+      }
+    }
+  }
+  // Panel boczny – nawigacja jak na komputerze; glosariusz w pionie – lista (tabela z pięcioma kolumnami – od 1024 px,
+  // np. iPad Pro 12,9″ w pionie).
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await page.goto(`${base}#/start`);
+  await page.locator('.sidebar').getByRole('link', { name: 'Nauka' }).click();
+  await page.waitForFunction(() => location.hash === '#/study');
+  await page.goto(`${base}#/library/glossary`);
+  await page.locator('.terms').waitFor();
+  assert.equal(await page.locator('table.table').count(), 0, 'w pionie – lista pojęć');
+  await page.setViewportSize({ width: 1024, height: 1366 });
+  await page.locator('table.table').waitFor();
+  assert.ok((await overflowX(page)) <= 0, '1024 px – tabela bez przewijania strony w bok');
+  await page.setViewportSize({ width: 820, height: 1180 });
+  // Edytor rysunku w pionie – mieści się w szerokości.
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>iPad</p>');
+  await editor.locator('[data-testid=drawing-canvas]').waitFor();
+  assert.equal(await overflowX(page), 0, 'edytor rysunku bez przewijania w bok');
+  await page.screenshot({ path: path.join(OUTPUT, 'ipad-pionowo-rysunek.png') });
+  await editor.locator('[data-testid=drawing-cancel]').click();
+  // Poniżej 700 px (np. iPad w podziale ekranu) – zakładki jak na telefonie.
+  await page.setViewportSize({ width: 699, height: 1000 });
+  await page.goto(`${base}#/start`);
+  await page.locator('.tabbar').waitFor();
+  assert.equal(await page.locator('.sidebar').isVisible(), false);
+}, { device: { ...IPAD, viewport: { width: 820, height: 1180 } } });
+
 test('wąski ekran 320 px: żaden ekran nie przewija się w poziomie', async ({ open }) => {
   const page = await open();
   await loadSamples(page);

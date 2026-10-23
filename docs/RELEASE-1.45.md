@@ -60,3 +60,26 @@ Zmiany przy okazji:
 - Przebieg łącznika przy obróconych kształtach (kierunek liczony z normalnej krawędzi – sprawdzony tylko przy prostych).
 - Plik DXF w programie CAD – sprawdzony odczytem z powrotem w aplikacji.
 - Ciemny motyw.
+
+## Uzupełnienie w wersji 1.45.1 – iPad w pionie z układem jak na komputerze
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Na iPadzie otwiera się układ z telefonu – ma być ten z komputera | Układ komputerowy (panel boczny zamiast zakładek u dołu) włączał się dopiero od 900 px szerokości, a iPad w pionie ma mniej (mini 744, iPad i Air 820, Pro 11″ 834). Teraz włącza się od **700 px**: iPad w pionie i w poziomie ma panel boczny. Do 1023 px panel jest węższy (220 zamiast 264 px), żeby treść miała miejsce. Okna dialogowe już wcześniej od 700 px wyglądały jak na komputerze. Poniżej 700 px (telefon, iPad z dwiema aplikacjami obok siebie) – zakładki jak dotąd. |
+| | Glosariusz jako tabela (pięć kolumn) – od 1024 px; na iPadzie w pionie – lista jak na telefonie, bo tabela byłaby za ciasna. |
+| | Poprawka przy okazji: ukryty napis dla czytnika ekranu w tabeli glosariusza poszerzał stronę (przewijała się w bok, gdy tabela nie mieściła się na szerokość). |
+
+Testy wersji 1.45.1:
+
+- **Testy logiki (Node.js): 469 – wszystkie zaliczone** (bez zmian).
+- **Testy w przeglądarce (Chromium): 216 – wszystkie zaliczone w dwóch pełnych przebiegach** (1 nowy): ekran iPada
+  w pionie 820 × 1180 i 744 × 1133 (dotyk) – na dziewięciu ekranach (Start, Biblioteka, Glosariusz, lekcja, Ustawienia,
+  Nauka, Quiz, Statystyki, Słuchanie) panel boczny, bez zakładek i bez przewijania w bok; nawigacja panelem; glosariusz –
+  lista, przy 1024 px tabela bez przewijania strony; edytor rysunku w pionie mieści się w szerokości; przy 699 px –
+  zakładki.
+- Pierwsze uruchomienie nowego testu wykryło przewijanie strony w bok w glosariuszu (opisane wyżej) – poprawione.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium): Start, glosariusz i edytor rysunku na iPadzie w pionie.
+
+Czego nie sprawdzono: prawdziwy iPad w Safari (ekran iPada udawany w Chromium), iPad z dwiema aplikacjami obok siebie
+i Stage Manager.

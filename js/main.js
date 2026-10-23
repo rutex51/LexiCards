@@ -41,7 +41,11 @@ const SCREENS = {
   settings: SettingsScreen
 };
 
-const WIDE_QUERY = '(min-width: 900px)';
+// Układ jak na komputerze (panel boczny zamiast zakładek u dołu) – od 1.45.1 od 700 px, więc także iPad w pionie
+// (mini 744, Air 820, Pro 11″ 834); węższe okno (telefon, iPad w podziale ekranu) – zakładki.
+const WIDE_QUERY = '(min-width: 700px)';
+// Dużo miejsca na treść obok panelu bocznego (np. tabela glosariusza z pięcioma kolumnami) – od 1024 px.
+const ROOMY_QUERY = '(min-width: 1024px)';
 
 /**
  * iPhone i iPad: Safari nie powiększa strony przy dotknięciu pola formularza, gdy widok ma
@@ -145,6 +149,7 @@ async function boot() {
   configureSounds({ enabled: () => library.getSettings().sounds !== false });
 
   const wide = window.matchMedia(WIDE_QUERY);
+  const roomy = window.matchMedia(ROOMY_QUERY);
   /** Bieżący ekran: { key, screen }. Obiekt ekranu żyje, dopóki adres się nie zmieni. */
   let current = null;
   let refreshQueued = false;
@@ -169,6 +174,7 @@ async function boot() {
     },
     navigate: (hash, options) => router.navigate(hash, options),
     isWide: () => wide.matches,
+    isRoomy: () => roomy.matches,
     applyAppearance: () => applyAppearance(library.getSettings())
   };
 
@@ -244,6 +250,7 @@ async function boot() {
   }
 
   wide.addEventListener('change', () => ctx.refresh());
+  roomy.addEventListener('change', () => ctx.refresh());
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => ctx.applyAppearance());
 
   if (!adapter.capabilities.persistent) {

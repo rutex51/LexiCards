@@ -273,8 +273,10 @@ w przeglądarce (test e2e na osobnej bazie).
   sąsiada. Przy krawędzi okna (72 px) pętla `requestAnimationFrame` przewija stronę (do 14 px na
   klatkę). Upuszczenie wywołuje `onMove(from, to)` → `library.reorder(level, movedOrder(…))` i ekran
   rysuje się od nowa; `pointercancel` przywraca wiersze. Strzałki ↑ ↓ zostają (klawiatura).
-- **Układ**: poniżej 900 px zakładki u dołu, powyżej panel boczny; glosariusz na szerokim
-  ekranie jest tabelą. Rozmiar tekstu na iPhonie podąża za ustawieniem systemowym.
+- **Układ**: poniżej 700 px zakładki u dołu, od 700 px panel boczny (od 1.45.1; wcześniej od 900 px – iPad w pionie
+  dostawał układ telefonu), do 1023 px węższy (220 px); `ctx.isWide()` – `(min-width: 700px)`, `ctx.isRoomy()` –
+  `(min-width: 1024px)`: glosariusz jest tabelą od 1024 px. `.table-wrap` ma `position: relative`, więc ukryte napisy
+  w komórkach nie poszerzają strony. Rozmiar tekstu na iPhonie podąża za ustawieniem systemowym.
 - Stan jest zawsze nazwany tekstem lub ikoną, nie samym kolorem; brak treści to „Brak danych”.
 - **Motyw i kolor aplikacji** to dwa niezależne ustawienia (`appearance`, `accentColor`).
   Motyw ustawia atrybut `data-theme` (brak – zgodnie z systemem), kolor – `data-accent`
