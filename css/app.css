@@ -7527,6 +7527,13 @@ button.drawing__pill .icon { color: var(--text-2); }
 .drawing__diagram-block { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--separator); border-radius: 12px; }
 .drawing__diagram-add { justify-self: start; }
 .drawing__diagram-add[hidden] { display: none; }
+/* Od 1.45: oś czasu VSM (jednostki w rzędzie, krok – oczekiwanie i praca obok siebie) i legenda wad. */
+.drawing__diagram-remove { justify-self: start; color: var(--danger); }
+.drawing__timeline-units { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.drawing__timeline-step { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: end; }
+.drawing__timeline-step .drawing__diagram-remove { grid-column: 1 / -1; }
+.drawing__defect-look { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.drawing__defect-actions { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .drawing__corner-size {
   width: 6.5em;
   min-height: 34px;

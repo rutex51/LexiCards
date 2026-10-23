@@ -26,6 +26,10 @@ export const DIM_ITEMS = Object.freeze(['dim:linear', 'dim:angle', 'dim:radius',
 export const EDIT_ITEMS = Object.freeze(['edit:offset', 'edit:fillet', 'edit:chamfer', 'edit:trim', 'edit:extend']);
 /** Jakość (od 1.44): diagram Ishikawy, 5 × Dlaczego, SIPOC, układ kartki. */
 export const QUALITY_ITEMS = Object.freeze(['diagram:fishbone', 'diagram:whys', 'sipoc', 'layout']);
+/** Od 1.45: schematy procesów – schemat blokowy, łącznik, mapa strumienia wartości, legenda wad. */
+export const PROCESS_ITEMS = Object.freeze([
+  'shape:terminator', 'shape:data', 'shape:document', 'shape:subprocess', 'shape:connector', 'vsm', 'diagram:timeline', 'diagram:defects'
+]);
 
 export const TOOL_GROUPS = Object.freeze([
   { id: 'write', label: 'Pisanie', icon: 'pen', items: ['pen', 'highlighter', 'eraser'] },
@@ -43,7 +47,9 @@ export const TOOL_GROUPS = Object.freeze([
   // Od 1.43: edycja geometrii – na końcu (dotychczasowe grupy zostają na swoich miejscach kółka).
   { id: 'edit', label: 'Edycja', icon: 'trim', items: EDIT_ITEMS },
   // Od 1.44: jakość i Lean – na końcu.
-  { id: 'quality', label: 'Jakość', icon: 'fishbone', items: QUALITY_ITEMS }
+  { id: 'quality', label: 'Jakość', icon: 'fishbone', items: QUALITY_ITEMS },
+  // Od 1.45: procesy – na końcu.
+  { id: 'process', label: 'Procesy', icon: 'flowchart', items: PROCESS_ITEMS }
 ].map((group) => Object.freeze({ ...group, items: Object.freeze(group.items) })));
 
 /** Gotowe zestawy (od 1.33): w oknie „Grupy narzędzi” dotknięcie dodaje zestaw jako grupę na lewym kółku albo go usuwa. */
@@ -53,7 +59,13 @@ export const PRESETS = Object.freeze([
   { id: 'geometry', label: 'Geometria', icon: 'geometry', items: ['shape:line', 'shape:ellipse', 'shape:xline', 'shape:point'] },
   { id: 'notes', label: 'Notatki', icon: 'notes', items: ['text', 'math', 'sticky', 'highlighter'] },
   // Od 1.44: jakość i Lean – diagramy, tabele, karteczki i kształty schematów.
-  { id: 'lean', label: 'Jakość / Lean', icon: 'fishbone', items: [...QUALITY_ITEMS, 'sticky', 'text', 'table', 'shape:rect', 'shape:diamond', 'shape:arrow'] }
+  { id: 'lean', label: 'Jakość / Lean', icon: 'fishbone', items: [...QUALITY_ITEMS, 'sticky', 'text', 'table', 'shape:rect', 'shape:diamond', 'shape:arrow'] },
+  // Od 1.45: schemat procesu i mapa strumienia wartości – kształty schematu (z procesem i decyzją), łącznik, VSM, wady.
+  {
+    id: 'process-map', label: 'Procesy / VSM', icon: 'flowchart',
+    items: ['shape:terminator', 'shape:rect', 'shape:diamond', 'shape:data', 'shape:document', 'shape:subprocess', 'shape:connector', 'vsm', 'diagram:timeline',
+      'diagram:defects', 'shape:point', 'sticky']
+  }
 ].map((group) => Object.freeze({ ...group, items: Object.freeze(group.items) })));
 
 /** Grupy użytkownika na początek: zestaw Metrologia. */
@@ -67,13 +79,14 @@ const COMMAND_LABELS = {
   'dim:linear': 'Wymiar – długość', 'dim:angle': 'Wymiar – kąt', 'dim:radius': 'Wymiar – promień', 'dim:diameter': 'Wymiar – średnica',
   'dim:arc': 'Wymiar – długość łuku',
   'edit:offset': 'Odsuń', 'edit:fillet': 'Zaokrąglij', 'edit:chamfer': 'Fazuj', 'edit:trim': 'Przytnij', 'edit:extend': 'Wydłuż',
-  'diagram:fishbone': 'Diagram Ishikawy', 'diagram:whys': '5 × Dlaczego', sipoc: 'SIPOC', layout: 'Układ kartki'
+  'diagram:fishbone': 'Diagram Ishikawy', 'diagram:whys': '5 × Dlaczego', sipoc: 'SIPOC', layout: 'Układ kartki',
+  vsm: 'Symbol VSM', 'diagram:timeline': 'Oś czasu VSM', 'diagram:defects': 'Legenda wad'
 };
 /** Nazwa pozycji w oknie „Grupy narzędzi” i w opisie grupy. */
 export const itemLabel = (item) => (item.startsWith('shape:') ? SHAPE_LABELS[item.slice(6)] : COMMAND_LABELS[item]) ?? item;
 
 /** Ikony do wyboru dla własnej grupy. */
-export const GROUP_ICONS = Object.freeze(['star', 'caliper', 'sketch', 'geometry', 'notes', 'ruler', 'tag', 'sparkles', 'fishbone']);
+export const GROUP_ICONS = Object.freeze(['star', 'caliper', 'sketch', 'geometry', 'notes', 'ruler', 'tag', 'sparkles', 'fishbone', 'flowchart']);
 /** Najwięcej własnych grup, pozycji w grupie i znaków nazwy. */
 export const GROUP_LIMITS = Object.freeze({ groups: 8, items: 12, label: 30 });
 const GROUP_ID = /^[a-z0-9-]{1,24}$/;

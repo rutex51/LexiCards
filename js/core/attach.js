@@ -14,7 +14,7 @@
 // (miejsce 'mid' – zapis { kind: 'edge', index, t: 0,5 }), przecięcia dwóch linii ('intersection' –
 // zapis jako miejsce na krawędzi jednego z elementów) i kresek pióra (końce i linia – bez przyklejania).
 
-import { arcGeometry, isMeasure, isSegment, isShape, shapeCenter, shapeOutline, shapePoint } from './shapes.js';
+import { arcGeometry, connectorPoints, isConnector, isMeasure, isSegment, isShape, shapeCenter, shapeOutline, shapePoint } from './shapes.js';
 
 const ID_RE = /^[a-z0-9]{6,16}$/;
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
@@ -34,6 +34,11 @@ const plainBox = (stroke) => ({ x: stroke.x, y: stroke.y, width: stroke.width, h
 export function snapGeometry(stroke, boxOf = plainBox) {
   if (isShape(stroke)) {
     if (isMeasure(stroke)) return null;
+    // Łącznik (od 1.45): końce, załamania i odcinki przebiegu.
+    if (isConnector(stroke)) {
+      const points = connectorPoints(stroke);
+      return { corners: points, edges: points.slice(1).map((point, index) => [points[index], point]) };
+    }
     if (isSegment(stroke)) {
       const [a, b] = [shapePoint(stroke, -0.5, 0), shapePoint(stroke, 0.5, 0)];
       return { corners: [a, b, shapePoint(stroke, 0, 0)], edges: [[a, b]] };

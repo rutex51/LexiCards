@@ -51,7 +51,7 @@ import {
   MAX_STROKES, isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
   hasContent, rulerDegrees, rulerOffset, rulerPoint, scaleUnitLabel, screenScale, screenScaleValue, selectionBounds, smoothPoint, snapRulerAngle,
   snapToStrokes, splitByPolygon, strokeBounds, strokesAt, strokesInPolygon, strokesInRect, toScaleLength, touchesStroke, translateStroke,
-  ORDER_LABELS, ORDER_MOVES, lengthText, reorderStrokes, shapeMeasureText
+  ORDER_LABELS, ORDER_MOVES, lengthText, pathLengthText, reorderStrokes, shapeMeasureText
 } from '../core/drawing.js';
 import { layoutMath } from '../core/math-layout.js';
 import { decodeDxf, drawingToDxf, dxfPrimitives, fittingScale, pageUnitMillimeters, parseDxf, primitivesBounds, primitivesToElements } from '../core/dxf.js';
@@ -68,7 +68,10 @@ import {
 } from '../core/transform.js';
 import { FRAME_FIELDS, FRAME_FIELD_LABELS, FRAME_FIELD_MAX, FRAME_FORMATS, cleanFrame, frameScaleText } from '../core/title-block.js';
 import { cleanColumnWidths, moveColumnBorder } from '../core/tables.js';
-import { DIAGRAM_LIMITS, DIAGRAM_SIZES, causesText, cleanDiagram, diagramLabel, diagramTargetAt, newDiagram, parseCauses, withDiagramSize } from '../core/diagrams.js';
+import {
+  DIAGRAM_LIMITS, DIAGRAM_SIZES, TIMELINE_UNITS, VSM_DEFAULTS, VSM_LABELS, VSM_SYMBOLS, causesText, cleanDiagram, diagramLabel, diagramTargetAt, newDiagram, parseCauses,
+  withDiagramSize
+} from '../core/diagrams.js';
 import { COLUMN_DEFAULTS, LAYOUT_KINDS, LAYOUT_LABELS, MATRIX_DEFAULT, cleanLayout } from '../core/page-layouts.js';
 import { paintDiagram, paintPageLayout } from './drawing-diagrams.js';
 import { openFitTable } from './fit-table.js';
@@ -85,7 +88,7 @@ import {
   angleDimDegrees, circleFromPoints, dimAwayFrom, dimFromPoints, dimMode, isArc, isMeasure,
   CORNER_LABELS, HATCH_ANGLES, HATCH_GAPS, HATCH_GAP_LABELS, NGON_SIDES, cleanHatch, ngonSides, withCorner, withNgonSides, withShapeFill,
   ARC_MODES, ARC_MODE_LABELS, DIM_AXES, DIM_AXIS_LABELS, DIM_OFFSET_LIMITS, DIM_TIER, arcDimFromArc, arcDimLength, arcFromCenter, dimAxis, measuredLength,
-  withAxes, withDimAxis, POLY_NODES_MAX, polyFromPoints
+  withAxes, withDimAxis, POLY_NODES_MAX, polyFromPoints, CONNECTOR_ROUTES, CONNECTOR_ROUTE_LABELS, connectorRoute, isConnector, routeFromEnds, withRoute
 } from '../core/shapes.js';
 import {
   canExtend, canOffset, canTrim, chamferSegments, edgesOf, extendAt, filletSegments, isPlainSegment, offsetShape, tangentCircle, tangentTarget, trimAt
@@ -96,7 +99,7 @@ import {
 } from '../core/templates.js';
 import { plural } from '../core/text.js';
 import { TOOLS_KEY, colorTabBody } from './color-picker.js';
-import { field, group, radioRow, segmented, textArea, textInput, toggle } from './components.js';
+import { field, group, radioRow, segmented, selectInput, textArea, textInput, toggle } from './components.js';
 import { deliverFile, pickFile } from './files.js';
 import { confirmDialog, mountDialog, openFormSheet, openMenu, showError } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
@@ -175,7 +178,8 @@ const GUIDE_COLOR = 'rgba(0, 88, 190, 0.42)';
 const CAP_ICONS = { none: 'capNone', arrow: 'capArrow', triangle: 'capTriangle', circle: 'capCircle', square: 'capSquare', diamond: 'capDiamond' };
 const SHAPE_ICONS = {
   line: 'shapeLine', arrow: 'shapeArrow', rect: 'shapeRect', ellipse: 'shapeEllipse', triangle: 'shapeTriangle', diamond: 'shapeDiamond', trapezoid: 'shapeTrapezoid',
-  xline: 'shapeXline', curve: 'shapeCurve', point: 'shapePoint', arc: 'shapeArc', dim: 'dimension', ngon: 'shapeNgon', ray: 'shapeRay', polyline: 'shapePolyline'
+  xline: 'shapeXline', curve: 'shapeCurve', point: 'shapePoint', arc: 'shapeArc', dim: 'dimension', ngon: 'shapeNgon', ray: 'shapeRay', polyline: 'shapePolyline',
+  terminator: 'shapeTerminator', data: 'shapeData', document: 'shapeDocument', subprocess: 'shapeSubprocess', connector: 'shapeConnector'
 };
 /** SIPOC (od 1.44): tabela z nagłówkami dostawcy, wejścia, proces, wyjścia, klienci i czterema pustymi wierszami. */
 const SIPOC_TABLE = Object.freeze({ rows: [['Dostawcy (S)', 'Wejścia (I)', 'Proces (P)', 'Wyjścia (O)', 'Klienci (C)'], ...Array.from({ length: 4 }, () => ['', '', '', '', ''])], header: true });
@@ -424,7 +428,7 @@ export function paintStroke(ctx, stroke, options = {}) {
   }
   // Diagram Ishikawy i 5 × Dlaczego (od 1.44).
   if (stroke.tool === 'diagram') {
-    paintDiagram(ctx, stroke);
+    paintDiagram(ctx, stroke, options.strokes ?? null);
     return;
   }
   if (stroke.tool === 'sticky') {
@@ -552,7 +556,8 @@ export function paintDrawing(ctx, drawing, media = {}, skip = null, plain = null
     const effect = active ? strokeEffect(layers, stroke) : null;
     if (effect?.hidden) continue;
     const painted = effect && effect.saturation < 1 ? toneStroke(stroke, effect.saturation, stickyColor) : stroke;
-    const options = { scale: drawing.scale, dimFormat: format, dims: stroke !== plain, number: stroke.tool === 'sticky' ? number : null, editor, image };
+    // Od 1.45 kreski kartki – legenda wad liczy znaczniki.
+    const options = { scale: drawing.scale, dimFormat: format, dims: stroke !== plain, number: stroke.tool === 'sticky' ? number : null, editor, image, strokes: drawing.strokes };
     if (effect && effect.opacity < 1) {
       ctx.save();
       ctx.globalAlpha = effect.opacity;
@@ -716,7 +721,7 @@ function strokesCanvas(strokes, scale, layers = null) {
       if (effect?.hidden) continue;
       ctx.save();
       if (effect) ctx.globalAlpha = effect.opacity;
-      paintStroke(ctx, effect && effect.saturation < 1 ? toneStroke(stroke, effect.saturation, stickyColor) : stroke, { scale });
+      paintStroke(ctx, effect && effect.saturation < 1 ? toneStroke(stroke, effect.saturation, stickyColor) : stroke, { scale, strokes });
       ctx.restore();
     }
   });
@@ -2183,7 +2188,7 @@ export function openDrawingEditor({
         ctx.save();
         ctx.translate(active.dx, active.dy);
         for (const stroke of selection) {
-          if (stroke !== kept) paintStroke(ctx, stroke, { scale: drawing.scale, dimFormat: dimFormat(drawing), editor: true, number: stroke.tool === 'sticky' ? stickyNumber(drawing, stroke) : null });
+          if (stroke !== kept) paintStroke(ctx, stroke, { scale: drawing.scale, dimFormat: dimFormat(drawing), editor: true, number: stroke.tool === 'sticky' ? stickyNumber(drawing, stroke) : null, strokes: drawing.strokes });
         }
         ctx.restore();
         if (kept) paintStroke(ctx, movedSticky(kept, active.dx, active.dy), { editor: true, number: stickyNumber(drawing, kept) });
@@ -2193,7 +2198,7 @@ export function openDrawingEditor({
           scale: drawing.scale, dimFormat: dimFormat(drawing), editor: true, number: stroke.tool === 'sticky' ? stickyNumber(drawing, active.items[index]) : null
         }));
       }
-      if (active?.kind === 'box-edit') paintStroke(ctx, active.preview, { editor: true, number: stickyNumber(drawing, active.original) });
+      if (active?.kind === 'box-edit') paintStroke(ctx, active.preview, { editor: true, number: stickyNumber(drawing, active.original), strokes: drawing.strokes });
       // Przyklejone końce idące za przesuwanym albo zmienianym kształtem (od 1.22).
       for (const [original, preview] of activeFollowers() ?? []) {
         paintStroke(ctx, preview, { scale: drawing.scale, dimFormat: dimFormat(drawing), editor: true, number: original.tool === 'sticky' ? stickyNumber(drawing, original) : null });
@@ -2351,8 +2356,12 @@ export function openDrawingEditor({
       // Wymiar (od 1.34) – bez tekstu na kształcie.
       shapeTextButton.hidden = !shape || isMeasure(shape);
       const measure = shape ? shapeMeasureText(shape, drawing.scale, dimFormat(drawing)) : null;
-      selectionMeasure.hidden = !measure;
+      // Od 1.45 („spaghetti”): suma długości zaznaczonych linii – odcinków, łączników, łamanych, łuków i kresek pióra.
+      const route = !snip && !measure ? pathLengthText(items, drawing.scale, dimFormat(drawing)) : null;
+      selectionMeasure.hidden = !measure && !route;
       if (measure) selectionMeasure.textContent = `pole ${measure.area} · obwód ${measure.perimeter}`;
+      else if (route) selectionMeasure.textContent = route.count > 1 ? `długość razem ${route.text}` : `długość ${route.text}`;
+      selectionMeasure.title = measure ? 'Pole i obwód w skali rysunku' : 'Długość w skali rysunku (trasa, spaghetti)';
       // Magnes (od 1.22): przy odcinku, strzałce i karteczce ze strzałką.
       // Od 1.22.1 także strzałka ramki tolerancji, trójkąt bazy i wierzchołek chropowatości.
       const withEnds = Boolean(shape && isSegment(shape)) || Boolean(sticky?.leader) || (!snip && selection.size === 1 && isSymbol(only));
@@ -2538,7 +2547,7 @@ export function openDrawingEditor({
       }
     }, icon('marquee', { size: 24 }));
     /** Krótkie napisy rodzajów kształtów w górnym menu. */
-    const SHAPE_SHORT = { curve: 'Po łuku', ngon: 'Foremny' };
+    const SHAPE_SHORT = { curve: 'Po łuku', ngon: 'Foremny', terminator: 'Start/stop' };
     const kindButtons = new Map(SHAPES.map((kind) => {
       const button = menuButton(`shape:${kind}`, SHAPE_LABELS[kind], SHAPE_ICONS[kind], `drawing-shape-${kind}`, SHAPE_SHORT[kind] ?? SHAPE_LABELS[kind]);
       button.setAttribute('aria-pressed', 'false');
@@ -2579,7 +2588,11 @@ export function openDrawingEditor({
     const fishboneButton = menuButton('diagram:fishbone', 'Diagram Ishikawy', 'fishbone', 'drawing-insert-fishbone', 'Ishikawa');
     const whysButton = menuButton('diagram:whys', '5 × Dlaczego', 'whys', 'drawing-insert-whys', '5 Why');
     const sipocButton = menuButton('sipoc', 'SIPOC – dostawcy, wejścia, proces, wyjścia, klienci', 'sipoc', 'drawing-insert-sipoc', 'SIPOC');
-    const layoutButton = menuButton('layout', 'Układ kartki – A3, PDCA, macierz 2×2, Kanban, pokrewieństwo', 'pageLayout', 'drawing-insert-layout', 'Układ');
+    const layoutButton = menuButton('layout', 'Układ kartki – A3, PDCA, macierz 2×2, Kanban, pokrewieństwo, tory', 'pageLayout', 'drawing-insert-layout', 'Układ');
+    // Od 1.45: procesy – symbol VSM, oś czasu VSM, legenda wad (koncentracja wad).
+    const vsmButton = menuButton('vsm', 'Symbol VSM – proces, zapas, dostawca, supermarket, push, kaizen, operator, transport', 'vsm', 'drawing-insert-vsm', 'VSM');
+    const timelineButton = menuButton('diagram:timeline', 'Oś czasu VSM – oczekiwanie i praca, czas przejścia, PCE', 'timeline', 'drawing-insert-timeline', 'Oś czasu');
+    const defectsButton = menuButton('diagram:defects', 'Legenda wad – liczy znaczniki wad na kartce', 'defects', 'drawing-insert-defects', 'Wady');
     /** Pozycja grupy → przycisk (ten sam przycisk w kilku grupach – pokazywana jest jedna grupa naraz). */
     const itemButtons = new Map([
       ['pen', penButton], ['highlighter', highlighterButton], ['eraser', eraserButton],
@@ -2588,7 +2601,8 @@ export function openDrawingEditor({
       ...[...editButtons].map(([kind, button]) => [`edit:${kind}`, button]),
       ['text', textButton], ['math', mathButton], ['table', tableButton], ['sticky', stickyButton],
       ['gdt', gdtButton], ['datum', datumButton], ['roughness', roughnessButton],
-      ['diagram:fishbone', fishboneButton], ['diagram:whys', whysButton], ['sipoc', sipocButton], ['layout', layoutButton]
+      ['diagram:fishbone', fishboneButton], ['diagram:whys', whysButton], ['sipoc', sipocButton], ['layout', layoutButton],
+      ['vsm', vsmButton], ['diagram:timeline', timelineButton], ['diagram:defects', defectsButton]
     ]);
     const rulerButton = h('button', {
       type: 'button', class: 'drawing__tool', 'aria-label': 'Linijka', title: 'Linijka', 'aria-pressed': 'false', dataset: { testid: 'drawing-ruler' },
@@ -3070,7 +3084,8 @@ export function openDrawingEditor({
       updateToolbar();
       const open = { text: () => editElement('text'), math: () => editElement('math'), table: () => editTable(), sticky: () => editSticky(),
         gdt: () => editGdt(), datum: () => editDatum(), roughness: () => editRoughness(),
-        'diagram:fishbone': () => editDiagram(null, 'fishbone'), 'diagram:whys': () => editDiagram(null, 'whys'), sipoc: () => editTable(null, SIPOC_TABLE), layout: () => editLayout() }[item];
+        'diagram:fishbone': () => editDiagram(null, 'fishbone'), 'diagram:whys': () => editDiagram(null, 'whys'), sipoc: () => editTable(null, SIPOC_TABLE), layout: () => editLayout(),
+        vsm: () => editVsm(), 'diagram:timeline': () => editTimeline(), 'diagram:defects': () => editDefects() }[item];
       open?.();
     }
     /** Wygląd dużego kółka (wariant C): wypełnienie w kolorze narzędzia, obwódka biała; narzędzie bez koloru – kolor aplikacji. */
@@ -3923,7 +3938,7 @@ export function openDrawingEditor({
     let styleKey = '';
     /** Narzędzie jest w grupie pokazywanej w górnym menu (od 1.36 – inaczej trzeci pasek tylko w trybie edycji). */
     let toolInMenu = true;
-    const STYLE_LABELS = { mark: 'Znacznik', dash: 'Linia', fill: 'Wypełnienie', caps: 'Końce', sides: 'Boki', corner: 'Narożniki', axes: 'Osie', axis: 'Kierunek' };
+    const STYLE_LABELS = { mark: 'Znacznik', dash: 'Linia', fill: 'Wypełnienie', caps: 'Końce', sides: 'Boki', corner: 'Narożniki', axes: 'Osie', axis: 'Kierunek', route: 'Przebieg' };
     /** Wymiar liniowy narzędzia „Wymiar” (od 1.42 – kierunek do wyboru). */
     const isLinearMeasure = (shape) => shape.shape === 'dim' && dimMode(shape) === 'linear';
     /** Narożniki jako napis do porównań ('none' – ostre, 'round:11'). */
@@ -3960,7 +3975,9 @@ export function openDrawingEditor({
           corner: pick((shape) => shape.shape === 'rect', (shape) => cornerKey(shape.corner), cornerKey(tools.rectCorner)),
           // Od 1.42: osie okręgu i elipsy; kierunek zaznaczonego wymiaru liniowego (nowego – w wyborze pod menu).
           axes: pick((shape) => shape.shape === 'ellipse', (shape) => Boolean(shape.axes), tools.ellipseAxes),
-          axis: targets.length > 0 ? pick(isLinearMeasure, (shape) => dimAxis(shape) ?? 'aligned', tools.dimAxis) : undefined
+          axis: targets.length > 0 ? pick(isLinearMeasure, (shape) => dimAxis(shape) ?? 'aligned', tools.dimAxis) : undefined,
+          // Od 1.45: przebieg zaznaczonego łącznika (nowy – z przyklejonych końców).
+          route: targets.length > 0 ? pick(isConnector, connectorRoute, null) : undefined
         }
       };
     }
@@ -3972,6 +3989,7 @@ export function openDrawingEditor({
       if (key === 'sides') return 'shapeNgon';
       if (key === 'axes') return 'centerMark';
       if (key === 'axis') return value === 'v' ? 'dimVertical' : value === 'h' ? 'dimension' : 'dimAligned';
+      if (key === 'route') return 'shapeConnector';
       if (key === 'corner') return CORNER_ICONS[cornerOfKey(value)?.kind ?? 'none'];
       return value === 'hatch' ? 'hatch' : 'fill';
     }
@@ -4021,6 +4039,7 @@ export function openDrawingEditor({
       if (key === 'corner') restyle((shape) => shape.shape === 'rect', (shape) => withCorner(shape, value));
       if (key === 'axes') restyle((shape) => shape.shape === 'ellipse', (shape) => withAxes(shape, value));
       if (key === 'axis') restyle(isLinearMeasure, (shape) => withDimAxis(shape, value));
+      if (key === 'route') restyle(isConnector, (shape) => withRoute(shape, value));
       updateToolbar();
       requestLive();
     }
@@ -4089,6 +4108,10 @@ export function openDrawingEditor({
       if (key === 'axis') {
         return h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Kierunek wymiaru' }, DIM_AXES.map((axis) => segmentButton(
           DIM_AXIS_LABELS[axis], value === axis, `drawing-axis-${axis}`, () => pickStyle('axis', axis))));
+      }
+      if (key === 'route') {
+        return h('div', { class: 'drawing__segmented drawing__segmented--wrap', role: 'radiogroup', 'aria-label': 'Przebieg łącznika' }, CONNECTOR_ROUTES.map((route) => segmentButton(
+          CONNECTOR_ROUTE_LABELS[route], value === route, `drawing-route-${route}`, () => pickStyle('route', route))));
       }
       const fills = h('div', { class: 'drawing__segmented drawing__segmented--wrap', role: 'radiogroup', 'aria-label': 'Wypełnienie' }, SHAPE_FILLS.map((fill) => h('button', {
         type: 'button', role: 'radio', 'aria-checked': String(fill === value), dataset: { testid: `drawing-fill-default-${fill}` },
@@ -4162,7 +4185,7 @@ export function openDrawingEditor({
       return lock;
     }
     /** Zakończenia nowego odcinka, strzałki albo (od 1.27) strzałki po łuku – wybrane w panelu kształtów. */
-    const CAPS_KEYS = { line: 'lineCaps', arrow: 'arrowCaps', curve: 'curveCaps' };
+    const CAPS_KEYS = { line: 'lineCaps', arrow: 'arrowCaps', curve: 'curveCaps', connector: 'connectorCaps' };
     const segmentDefaultCaps = () => ({ ...tools[CAPS_KEYS[tools.shape] ?? 'lineCaps'] });
     /**
      * Wybór stylu (od 1.27): rodzaju linii albo znacznika punktu – przyciski z ikoną (nazwa wybranego –
@@ -4974,7 +4997,7 @@ export function openDrawingEditor({
         kind: old?.kind ?? 'none',
         title: old?.title ?? '',
         matrix: [...(old?.kind === 'matrix' ? old.labels : MATRIX_DEFAULT)],
-        columns: { kanban: (old?.kind === 'kanban' ? old.labels : COLUMN_DEFAULTS.kanban).join('\n'), affinity: (old?.kind === 'affinity' ? old.labels : COLUMN_DEFAULTS.affinity).join('\n') }
+        columns: Object.fromEntries(['kanban', 'affinity', 'lanes'].map((kind) => [kind, (old?.kind === kind ? old.labels : COLUMN_DEFAULTS[kind]).join('\n')]))
       };
       const titleField = field('Tytuł raportu', textInput({ value: draft.title, testID: 'drawing-layout-title', onInput: (value) => { draft.title = value; } }));
       const matrixNames = ['Oś pionowa', 'Oś pozioma', 'Lewa górna ćwiartka', 'Prawa górna ćwiartka', 'Lewa dolna ćwiartka', 'Prawa dolna ćwiartka'];
@@ -4986,7 +5009,9 @@ export function openDrawingEditor({
       const show = () => {
         titleField.hidden = draft.kind !== 'a3';
         matrixFields.hidden = draft.kind !== 'matrix';
-        columnsField.hidden = draft.kind !== 'kanban' && draft.kind !== 'affinity';
+        columnsField.hidden = !['kanban', 'affinity', 'lanes'].includes(draft.kind);
+        // Od 1.45 tory – nazwy torów (działów) jedna w wierszu.
+        columnsField.querySelector('.field__label').textContent = draft.kind === 'lanes' ? 'Tory – jeden w wierszu (2–6)' : 'Kolumny – jedna w wierszu (2–6)';
         if (!columnsField.hidden) columnsArea.value = draft.columns[draft.kind];
       };
       show();
@@ -4998,7 +5023,8 @@ export function openDrawingEditor({
           group({ title: 'Układ' }, ...['none', ...LAYOUT_KINDS].map((kind) => radioRow({
             name: 'drawing-layout-kind', value: kind, checked: kind === draft.kind, title: kind === 'none' ? 'Bez układu' : LAYOUT_LABELS[kind],
             subtitle: { none: null, a3: 'Tytuł i siedem pól: od tła i stanu obecnego do kontroli wyników', pdca: 'Koło: planuj, wykonaj, sprawdź, działaj',
-              matrix: 'Wpływ i wysiłek – cztery ćwiartki', kanban: 'Kolumny: do zrobienia, w toku, zrobione', affinity: 'Kolumny-grupy z kolorowymi nagłówkami' }[kind],
+              matrix: 'Wpływ i wysiłek – cztery ćwiartki', kanban: 'Kolumny: do zrobienia, w toku, zrobione', affinity: 'Kolumny-grupy z kolorowymi nagłówkami',
+              lanes: 'Poziome pasy działów pod schemat procesu' }[kind],
             testID: `drawing-layout-kind-${kind}`, onChange: () => { draft.kind = kind; show(); }
           }))),
           titleField, matrixFields, columnsField,
@@ -6265,7 +6291,7 @@ export function openDrawingEditor({
     // ---- tabele i karteczki (od 1.21)
     /** Poprawka zaznaczonej tabeli albo karteczki. */
     const editBox = (element, point = null) => (element.tool === 'table' ? editTable(element) : element.tool === 'sticky' ? editSticky(element)
-      : element.tool === 'diagram' ? editDiagram(element, element.kind, point ? diagramTargetAt(element, point) : null)
+      : element.tool === 'diagram' ? editDiagramElement(element, point)
       : element.tool === 'gdt' ? editGdt(element) : element.tool === 'datum' ? editDatum(element) : editRoughness(element));
     /** Nowy albo poprawiony element zaznaczony – od razu można go przesunąć. */
     function selectOnly(element) {
@@ -6400,6 +6426,242 @@ export function openDrawingEditor({
         }
       });
       requestAnimationFrame(() => fields.get(focus)?.focus());
+    }
+
+    /** Okno diagramu zaznaczonego elementu (od 1.45 także symbol VSM, oś czasu i legenda wad); point – miejsce dotknięcia. */
+    function editDiagramElement(element, point = null) {
+      if (element.kind === 'vsm') return editVsm(element);
+      if (element.kind === 'timeline') return editTimeline(element);
+      if (element.kind === 'defects') return editDefects(element);
+      return editDiagram(element, element.kind, point ? diagramTargetAt(element, point) : null);
+    }
+    /** Wielkość i kolor diagramu z okna (zaznaczony – jego, nowy – pióra). */
+    const diagramChoice = (element) => {
+      const known = element ? DIAGRAM_SIZES.indexOf(element.size) : -1;
+      return { size: known >= 0 ? known : 1, color: element ? inkChoice(element.color) : tools.penColor };
+    };
+    /** Zapis diagramu z okna: nowy (element = null) albo poprawka – z tym samym identyfikatorem i warstwami. */
+    function putDiagram(element, saved) {
+      putBox(element, element ? { ...saved, ...(element.id ? { id: element.id } : {}), ...(element.layers ? { layers: element.layers } : {}) } : saved);
+    }
+    /** Opisy symboli VSM w oknie. */
+    const VSM_HINTS = {
+      process: 'Nazwa i dane: C/T, C/O, dostępność, zmiany', inventory: 'Trójkąt z I – ilość i czas pod spodem', supplier: 'Fabryka – dostawca albo klient',
+      supermarket: 'Regał – zapas kontrolowany (pull)', push: 'Pchanie do następnego procesu', kaizen: 'Miejsce do poprawy', operator: 'Pracownik – liczba osób pod spodem',
+      truck: 'Dostawa – częstotliwość w skrzyni'
+    };
+
+    /** Symbol VSM (od 1.45): rodzaj, nazwa i wiersze (dane procesu albo napisy pod symbolem). */
+    function editVsm(element = null) {
+      if (!element) clearSelection();
+      const choice = diagramChoice(element);
+      const start = element?.symbol ?? 'process';
+      const draft = { symbol: start, title: element?.title ?? VSM_DEFAULTS[start].title, rows: (element?.rows ?? VSM_DEFAULTS[start].rows).join('\n') };
+      // Nowy symbol: dopóki napisów nie zmieniono, zmiana rodzaju wstawia jego domyślne napisy.
+      let typed = Boolean(element);
+      const titleInput = textInput({ value: draft.title, testID: 'drawing-vsm-title', onInput: (value) => { draft.title = value; typed = true; } });
+      const rowsInput = textArea({
+        value: draft.rows, rows: 3, placeholder: 'Jeden wiersz – jedna dana, np. C/T = 45 s', testID: 'drawing-vsm-rows', onInput: (value) => { draft.rows = value; typed = true; }
+      });
+      let saved = null;
+      openFormSheet({
+        title: element ? diagramLabel(element) : 'Nowy symbol VSM',
+        submitLabel: element ? 'Zapisz' : 'Wstaw',
+        build: () => [
+          group({ title: 'Symbol' }, ...VSM_SYMBOLS.map((symbol) => radioRow({
+            name: 'drawing-vsm-symbol', value: symbol, checked: symbol === draft.symbol, title: VSM_LABELS[symbol], subtitle: VSM_HINTS[symbol], testID: `drawing-vsm-symbol-${symbol}`,
+            onChange: () => {
+              draft.symbol = symbol;
+              if (typed) return;
+              draft.title = VSM_DEFAULTS[symbol].title;
+              draft.rows = VSM_DEFAULTS[symbol].rows.join('\n');
+              titleInput.value = draft.title;
+              rowsInput.value = draft.rows;
+            }
+          }))),
+          field('Nazwa', titleInput),
+          field('Wiersze – jeden w wierszu', rowsInput, { hint: 'Proces – dane w polu pod nazwą; inne symbole – napisy pod symbolem (zapas: ilość i dni, transport: częstotliwość).' }),
+          elementOptions(choice)
+        ],
+        onSubmit: () => {
+          saved = cleanDiagram({
+            tool: 'diagram', kind: 'vsm', symbol: draft.symbol, title: draft.title, rows: draft.rows.split('\n'),
+            size: DIAGRAM_SIZES[choice.size], color: inkHex(choice.color), x: element?.x ?? 0, y: element?.y ?? 0
+          }, drawing.width, drawing.height);
+          return true;
+        },
+        onClose: () => {
+          if (saved) putDiagram(element, saved);
+        }
+      });
+    }
+
+    /** Oś czasu VSM (od 1.45): kroki (oczekiwanie, praca), jednostki i długość dnia. */
+    function editTimeline(element = null) {
+      if (!element) clearSelection();
+      const choice = diagramChoice(element);
+      const base = element ?? newDiagram('timeline');
+      const draft = {
+        waitUnit: base.waitUnit, workUnit: base.workUnit, dayHours: String(base.dayHours ?? 24),
+        steps: base.steps.map((step) => ({ wait: formatNumber(step.wait), work: formatNumber(step.work) }))
+      };
+      const list = h('div', { class: 'drawing__diagram-list' });
+      const addButton = h('button', {
+        type: 'button', class: 'button button--plain drawing__diagram-add', dataset: { testid: 'drawing-timeline-add' },
+        onClick: () => {
+          draft.steps.push({ wait: '0', work: '0' });
+          render();
+          list.querySelector(`[data-testid=drawing-timeline-wait-${draft.steps.length - 1}]`)?.focus();
+        }
+      }, '+ Dodaj krok');
+      const number = (value, testID, onInput) => {
+        const input = textInput({ value, testID, onInput });
+        input.inputMode = 'decimal';
+        return input;
+      };
+      function render() {
+        const blocks = draft.steps.map((step, index) => h('div', { class: 'drawing__diagram-block drawing__timeline-step' },
+          field(`Krok ${index + 1} – oczekiwanie`, number(step.wait, `drawing-timeline-wait-${index}`, (value) => { step.wait = value; })),
+          field('praca', number(step.work, `drawing-timeline-work-${index}`, (value) => { step.work = value; })),
+          draft.steps.length > 1 ? h('button', {
+            type: 'button', class: 'button button--plain drawing__diagram-remove', 'aria-label': `Usuń krok ${index + 1}`, dataset: { testid: `drawing-timeline-remove-${index}` },
+            onClick: () => {
+              draft.steps.splice(index, 1);
+              render();
+            }
+          }, 'Usuń') : null));
+        addButton.hidden = draft.steps.length >= DIAGRAM_LIMITS.steps;
+        replaceChildren(list, blocks, addButton);
+      }
+      render();
+      const unitSelect = (key, testID) => selectInput({
+        value: draft[key], options: TIMELINE_UNITS.map((unit) => ({ value: unit, label: unit })), testID, onChange: (value) => { draft[key] = value; }
+      });
+      let saved = null;
+      openFormSheet({
+        title: element ? 'Oś czasu VSM' : 'Nowa oś czasu VSM',
+        submitLabel: element ? 'Zapisz' : 'Wstaw',
+        build: () => [
+          h('div', { class: 'drawing__timeline-units' },
+            field('Oczekiwanie', unitSelect('waitUnit', 'drawing-timeline-wait-unit')),
+            field('Praca', unitSelect('workUnit', 'drawing-timeline-work-unit')),
+            field('Dzień (h)', number(draft.dayHours, 'drawing-timeline-day', (value) => { draft.dayHours = value; }))),
+          list,
+          h('p', { class: 'field__hint' }, 'Oczekiwanie (zapas przed procesem) – górna linia, praca (czas wartości dodanej) – dolna. Na końcu: czas przejścia, '
+            + 'wartość dodana i ich stosunek (PCE). Dzień – do przeliczenia dni na godziny (24 – doba, 8 – jedna zmiana).'),
+          elementOptions(choice)
+        ],
+        onSubmit: () => {
+          const steps = draft.steps.map((step, index) => {
+            const [wait, work] = [parseDecimal(step.wait || '0'), parseDecimal(step.work || '0')];
+            if (wait === null || work === null || wait < 0 || work < 0) throw new Error(`Krok ${index + 1}: wpisz liczby nie mniejsze od zera, np. 2,5`);
+            return { wait, work };
+          });
+          const dayHours = parseDecimal(draft.dayHours);
+          if (dayHours === null || dayHours < 1 || dayHours > 24) throw new Error('Dzień: od 1 do 24 godzin');
+          saved = cleanDiagram({
+            tool: 'diagram', kind: 'timeline', waitUnit: draft.waitUnit, workUnit: draft.workUnit, dayHours, steps,
+            size: DIAGRAM_SIZES[choice.size], color: inkHex(choice.color), x: element?.x ?? 0, y: element?.y ?? 0
+          }, drawing.width, drawing.height);
+          return true;
+        },
+        onClose: () => {
+          if (saved) putDiagram(element, saved);
+        }
+      });
+    }
+
+    /**
+     * Legenda wad (od 1.45, koncentracja wad): wady – znacznik, kolor i nazwa; legenda liczy punkty kartki (narzędzie Punkt)
+     * z tym znacznikiem i kolorem. „Zaznaczaj” – po zapisie narzędzie Punkt z tym znacznikiem i kolorem.
+     */
+    function editDefects(element = null) {
+      if (!element) clearSelection();
+      const choice = diagramChoice(element);
+      const base = element ?? newDiagram('defects');
+      const draft = { title: base.title, items: base.items.map((item) => ({ ...item })) };
+      let markWith = null;
+      const list = h('div', { class: 'drawing__diagram-list' });
+      const colorOptions = [...INK_COLORS.map((color) => ({ value: color.hex, label: color.label }))];
+      const addButton = h('button', {
+        type: 'button', class: 'button button--plain drawing__diagram-add', dataset: { testid: 'drawing-defects-add' },
+        onClick: () => {
+          const used = new Set(draft.items.map((item) => `${item.mark}:${item.color}`));
+          const next = POINT_MARKS.flatMap((mark) => INK_COLORS.map((color) => ({ mark, color: color.hex }))).find((item) => !used.has(`${item.mark}:${item.color}`));
+          draft.items.push({ ...(next ?? { mark: 'cross', color: INK_COLORS[0].hex }), name: '' });
+          render();
+          list.querySelector(`[data-testid=drawing-defects-name-${draft.items.length - 1}]`)?.focus();
+        }
+      }, '+ Dodaj wadę');
+      function render() {
+        const blocks = draft.items.map((item, index) => {
+          if (!colorOptions.some((option) => option.value === item.color)) colorOptions.push({ value: item.color, label: item.color.toUpperCase() });
+          return h('div', { class: 'drawing__diagram-block drawing__defect-row' },
+            field(`Wada ${index + 1} – nazwa`, textInput({ value: item.name, placeholder: 'np. rysa', testID: `drawing-defects-name-${index}`, onInput: (value) => { item.name = value; } })),
+            h('div', { class: 'drawing__defect-look' },
+              field('Znacznik', selectInput({
+                value: item.mark, options: POINT_MARKS.map((mark) => ({ value: mark, label: POINT_MARK_LABELS[mark] })), testID: `drawing-defects-mark-${index}`,
+                onChange: (value) => { item.mark = value; }
+              })),
+              field('Kolor', selectInput({ value: item.color, options: colorOptions, testID: `drawing-defects-color-${index}`, onChange: (value) => { item.color = value; } }))),
+            h('div', { class: 'drawing__defect-actions' },
+              h('button', {
+                type: 'button', class: 'button button--plain', dataset: { testid: `drawing-defects-use-${index}` },
+                onClick: () => {
+                  markWith = item;
+                  list.closest('form')?.requestSubmit();
+                }
+              }, 'Zaznaczaj tę wadę'),
+              draft.items.length > 1 ? h('button', {
+                type: 'button', class: 'button button--plain drawing__diagram-remove', dataset: { testid: `drawing-defects-remove-${index}` },
+                onClick: () => {
+                  draft.items.splice(index, 1);
+                  render();
+                }
+              }, 'Usuń') : null));
+        });
+        addButton.hidden = draft.items.length >= DIAGRAM_LIMITS.items;
+        replaceChildren(list, blocks, addButton);
+      }
+      render();
+      const titleInput = textInput({ value: draft.title, testID: 'drawing-defects-title', onInput: (value) => { draft.title = value; } });
+      let saved = null;
+      openFormSheet({
+        title: element ? 'Legenda wad' : 'Nowa legenda wad',
+        submitLabel: element ? 'Zapisz' : 'Wstaw',
+        build: () => [
+          field('Tytuł', titleInput),
+          list,
+          h('p', { class: 'field__hint' }, 'Wady zaznaczasz na rysunku wyrobu narzędziem Punkt (Konstrukcja → Punkt) – tym znacznikiem i kolorem; '
+            + 'legenda sama je liczy. „Zaznaczaj tę wadę” zapisuje legendę i włącza Punkt z jej znacznikiem i kolorem.'),
+          elementOptions(choice)
+        ],
+        onSubmit: () => {
+          if (new Set(draft.items.map((item) => `${item.mark}:${item.color}`)).size !== draft.items.length) {
+            markWith = null;
+            throw new Error('Dwie wady mają ten sam znacznik i kolor – legenda by ich nie rozróżniła');
+          }
+          saved = cleanDiagram({
+            tool: 'diagram', kind: 'defects', title: draft.title, items: draft.items,
+            size: DIAGRAM_SIZES[choice.size], color: inkHex(choice.color), x: element?.x ?? 0, y: element?.y ?? 0
+          }, drawing.width, drawing.height);
+          return true;
+        },
+        onClose: () => {
+          if (saved) putDiagram(element, saved);
+          if (saved && markWith) {
+            tools.pointMark = markWith.mark;
+            tools.penColor = inkChoice(markWith.color);
+            saveTools(tools);
+            // Bez zaznaczenia legendy (pierwsze dotknięcie od razu stawia znacznik); menu – grupa z narzędziem Punkt, potem sam Punkt.
+            clearSelection();
+            const home = startGroup(null, 'shape:point', tools.toolGroups);
+            showGroup(home.side, home.id);
+            applyItem('shape:point');
+            flash(`Zaznaczaj: ${markWith.name || 'wada'} – dotknij miejsca wady`);
+          }
+        }
+      });
     }
 
     /** Koniec strzałki nowej karteczki: na prawo w dół od niej, na stronie. */
@@ -7317,7 +7579,8 @@ export function openDrawingEditor({
         requestRender();
         return;
       }
-      const hadSelection = selection.size > 0;
+      // Od 1.45 Punkt: zaznaczone same punkty (np. właśnie postawiony znacznik wady) – dotknięcie obok od razu stawia kolejny.
+      const hadSelection = selection.size > 0 && !(tools.shape === 'point' && [...selection].every(isPointShape));
       clearSelection();
       // Od 1.34: okrąg przez 3 punkty, łuk i wymiar kąta – punkt po punkcie (od 1.39 – punkty tylko na kartce).
       if (multiKind()) {
@@ -7633,6 +7896,15 @@ export function openDrawingEditor({
       let next = stroke;
       // Od 1.42 miejsce bez zapisu (kreska pióra, przecięcie prostych) – koniec wolny.
       for (const [end, snap] of links) next = withLink(next, end, snap?.ref ? { ...snap.ref, id: ensureId(snap.target, ids) } : null);
+      // Łącznik (od 1.45): przebieg z kierunków wyjścia z przyklejonych elementów (z boku – poziomo, z góry albo dołu – pionowo).
+      if (isConnector(next)) {
+        const sides = Object.fromEntries(links.filter(([, snap]) => snap?.target).map(([end, snap]) => {
+          const [nx, ny] = snapNormal(snap, elementBox);
+          return [end, Math.abs(nx) >= Math.abs(ny) ? 'h' : 'v'];
+        }));
+        const route = routeFromEnds(sides.start ?? null, sides.end ?? null);
+        if (route) next = withRoute(next, route);
+      }
       return next;
     }
     /** Zastępuje element poprawionym z przyklejonymi albo odklejonymi końcami – jeden krok cofania. */

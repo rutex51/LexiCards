@@ -1,4 +1,5 @@
-// Diagramy jakości (od 1.44) i układ kartki na płótnie: linie, strzałki, ramki, okręgi i napisy z rozkładu
+// Diagramy jakości (od 1.44; od 1.45 też symbole VSM, oś czasu i legenda wad) i układ kartki na płótnie: linie, strzałki,
+// ramki, okręgi, wielokąty, znaczniki i napisy z rozkładu
 // (core/diagrams.js, core/page-layouts.js). Za długi napis – zwężony (najwyżej do 60%), potem ucięty.
 
 import { DIAGRAM_FILLS, diagramLayout } from '../core/diagrams.js';
@@ -73,11 +74,51 @@ function paintGeometry(ctx, geometry, { ink, text = ink, muted = MUTED, width, f
   ctx.strokeStyle = ink;
   ctx.fillStyle = ink;
   ctx.lineWidth = width;
+  const fillOf = (name) => (name === 'ink' ? ink : fills[name] ?? (name?.startsWith?.('#') ? name : null));
   for (const circle of geometry.circles ?? []) {
     ctx.beginPath();
     ctx.arc(circle.x, circle.y, circle.r, 0, Math.PI * 2);
+    if (fillOf(circle.fill)) {
+      ctx.fillStyle = fillOf(circle.fill);
+      ctx.fill();
+    }
     ctx.stroke();
   }
+  // Od 1.45: wielokąty symboli VSM (wypełnione, potem obrys) i znaczniki legendy wad w kolorze wady.
+  for (const item of geometry.polys ?? []) {
+    ctx.beginPath();
+    item.points.forEach((point, index) => (index === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y)));
+    if (item.closed) ctx.closePath();
+    if (item.closed && fillOf(item.fill)) {
+      ctx.fillStyle = fillOf(item.fill);
+      ctx.fill();
+    }
+    ctx.stroke();
+  }
+  for (const mark of geometry.marks ?? []) {
+    ctx.save();
+    ctx.strokeStyle = mark.color;
+    ctx.fillStyle = mark.color;
+    ctx.lineWidth = mark.width ?? width;
+    ctx.beginPath();
+    for (const [a, b] of mark.lines ?? []) {
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+    }
+    ctx.stroke();
+    if (mark.ring) {
+      ctx.beginPath();
+      ctx.arc(mark.ring.x, mark.ring.y, mark.ring.r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (mark.dot) {
+      ctx.beginPath();
+      ctx.arc(mark.dot.x, mark.dot.y, mark.dot.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.fillStyle = ink;
   ctx.beginPath();
   for (const [a, b] of geometry.lines ?? []) {
     ctx.moveTo(a.x, a.y);
@@ -103,9 +144,9 @@ function paintGeometry(ctx, geometry, { ink, text = ink, muted = MUTED, width, f
   ctx.restore();
 }
 
-/** Diagram Ishikawy albo 5 × Dlaczego w kolorze elementu. */
-export function paintDiagram(ctx, element) {
-  paintGeometry(ctx, diagramLayout(element), { ink: element.color, width: Math.max(1.5, element.size / 11), fills: DIAGRAM_FILLS });
+/** Diagram (Ishikawa, 5 × Dlaczego, od 1.45 symbol i oś czasu VSM, legenda wad – liczy znaczniki z `strokes`) w kolorze elementu. */
+export function paintDiagram(ctx, element, strokes = null) {
+  paintGeometry(ctx, diagramLayout(element, { strokes }), { ink: element.color, width: Math.max(1.5, element.size / 11), fills: DIAGRAM_FILLS });
 }
 
 /** Układ kartki (od 1.44) – szare linie i nagłówki pod rysunkiem. */

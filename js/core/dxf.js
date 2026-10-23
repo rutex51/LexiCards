@@ -19,7 +19,7 @@ import { diagramLayout, textWidth } from './diagrams.js';
 import { pageLayoutGeometry } from './page-layouts.js';
 import {
   arcFromPoints, arcGeometry, circleShape, cornerSize, curveSamples, dimGeometry, dimKeys, isMeasure, polyFromPoints, polyPoints, shapeAxes, shapeHatch,
-  shapeOutline, shapePoint, shownDims, DIM_ARROW, DIM_FONT, POLY_NODES_MAX
+  shapeInnerLines, shapeOutline, shapePoint, shownDims, DIM_ARROW, DIM_FONT, POLY_NODES_MAX
 } from './shapes.js';
 
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
@@ -824,9 +824,17 @@ export function drawingToDxf(drawing) {
     for (const box of geometry.boxes ?? []) {
       polyline(stroke, [{ x: box.x, y: box.y }, { x: box.x + box.w, y: box.y }, { x: box.x + box.w, y: box.y + box.h }, { x: box.x, y: box.y + box.h }].map(pt), true);
     }
-    for (const circle of geometry.circles ?? []) {
+    const ringOf = (ink, circle) => {
       const ring = Array.from({ length: 72 }, (_, index) => ({ x: circle.x + Math.cos((index / 72) * Math.PI * 2) * circle.r, y: circle.y + Math.sin((index / 72) * Math.PI * 2) * circle.r }));
-      polyline(stroke, ring.map(pt), true);
+      polyline(ink, ring.map(pt), true);
+    };
+    for (const circle of geometry.circles ?? []) ringOf(stroke, circle);
+    // Od 1.45: wielokąty symboli VSM i znaczniki legendy wad (w kolorze wady).
+    for (const item of geometry.polys ?? []) polyline(stroke, item.points.map(pt), item.closed);
+    for (const mark of geometry.marks ?? []) {
+      const ink = { ...stroke, color: mark.color };
+      for (const [a, b] of mark.lines ?? []) line(ink, pt(a), pt(b));
+      for (const circle of [mark.ring, mark.dot].filter(Boolean)) ringOf(ink, circle);
     }
     for (const item of geometry.texts ?? []) {
       if (!item.text) continue;
@@ -875,7 +883,7 @@ export function drawingToDxf(drawing) {
     }
     // Diagram jakości (od 1.44): linie, strzałki, ramki i napisy rozkładu.
     if (stroke.tool === 'diagram') {
-      writeGeometry(stroke, diagramLayout(stroke));
+      writeGeometry(stroke, diagramLayout(stroke, { strokes: drawing.strokes }));
       return;
     }
     if (stroke.tool !== 'shape') {
@@ -891,6 +899,8 @@ export function drawingToDxf(drawing) {
     // Kreskowanie (od 1.40) – odcinki linią ciągłą; osie okręgu (od 1.42) – linią osiową.
     for (const [a, b] of shapeHatch(stroke)) line({ ...stroke, dash: 'solid' }, pt(a), pt(b));
     for (const [a, b] of shapeAxes(stroke)) line({ ...stroke, dash: 'center' }, pt(a), pt(b));
+    // Podproces (od 1.45) – pionowe linie przy bokach; łącznik i kształty schematu – obrys jak niżej.
+    for (const [a, b] of shapeInnerLines(stroke)) line(stroke, pt(a), pt(b));
     switch (stroke.shape) {
       case 'ray': {
         // Półprosta (od 1.40) – od pierwszego punktu do brzegu strony i dalej (DXF R12 nie ma RAY).

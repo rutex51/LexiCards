@@ -1,20 +1,24 @@
 // Układ kartki (od 1.44) – bez przeglądarki: tło kartki do wypełniania karteczkami, tekstem i rysunkiem, jak ramka
 // rysunkowa (należy do tła, nie da się go zaznaczyć ani zetrzeć). Rodzaje: raport A3 (tytuł i siedem pól), koło PDCA,
-// macierz 2×2 (wpływ / wysiłek), tablica Kanban i diagram pokrewieństwa (kolumny z nagłówkami).
+// macierz 2×2 (wpływ / wysiłek), tablica Kanban i diagram pokrewieństwa (kolumny z nagłówkami); od 1.45 tory
+// (swimlanes) – poziome pasy z nazwą działu po lewej, pod schemat procesu.
 //
-// W rysunku: layout { kind, title?, labels? } – labels: Kanban i pokrewieństwo – nazwy kolumn (2–6), macierz – nazwy
-// osi i ćwiartek (6). Przy ramce rysunkowej układ zajmuje wnętrze ramki nad tabliczką.
+// W rysunku: layout { kind, title?, labels? } – labels: Kanban i pokrewieństwo – nazwy kolumn (2–6), tory – nazwy
+// torów (2–6), macierz – nazwy osi i ćwiartek (6). Przy ramce rysunkowej układ zajmuje wnętrze ramki nad tabliczką.
 
 import { frameLayout } from './title-block.js';
 
-export const LAYOUT_KINDS = Object.freeze(['a3', 'pdca', 'matrix', 'kanban', 'affinity']);
-export const LAYOUT_LABELS = Object.freeze({ a3: 'Raport A3', pdca: 'PDCA', matrix: 'Macierz 2×2', kanban: 'Kanban', affinity: 'Diagram pokrewieństwa' });
+export const LAYOUT_KINDS = Object.freeze(['a3', 'pdca', 'matrix', 'kanban', 'affinity', 'lanes']);
+export const LAYOUT_LABELS = Object.freeze({ a3: 'Raport A3', pdca: 'PDCA', matrix: 'Macierz 2×2', kanban: 'Kanban', affinity: 'Diagram pokrewieństwa', lanes: 'Tory (swimlanes)' });
 /** Pola raportu A3: lewa kolumna – problem, prawa – rozwiązanie. */
 export const A3_SECTIONS = Object.freeze(['1. Tło', '2. Stan obecny', '3. Cel', '4. Analiza przyczyn', '5. Działania', '6. Plan wdrożenia', '7. Kontrola i wyniki']);
 export const PDCA_LABELS = Object.freeze(['P – Planuj', 'D – Wykonaj', 'C – Sprawdź', 'A – Działaj']);
 /** Macierz: oś pionowa, oś pozioma, ćwiartki (lewa górna, prawa górna, lewa dolna, prawa dolna). */
 export const MATRIX_DEFAULT = Object.freeze(['Wpływ', 'Wysiłek', 'Szybkie korzyści', 'Duże projekty', 'Drobne poprawki', 'Strata czasu']);
-export const COLUMN_DEFAULTS = Object.freeze({ kanban: Object.freeze(['Do zrobienia', 'W toku', 'Zrobione']), affinity: Object.freeze(['Grupa 1', 'Grupa 2', 'Grupa 3', 'Grupa 4']) });
+export const COLUMN_DEFAULTS = Object.freeze({
+  kanban: Object.freeze(['Do zrobienia', 'W toku', 'Zrobione']), affinity: Object.freeze(['Grupa 1', 'Grupa 2', 'Grupa 3', 'Grupa 4']),
+  lanes: Object.freeze(['Klient', 'Biuro', 'Produkcja', 'Kontrola jakości'])
+});
 export const LAYOUT_LIMITS = Object.freeze({ columns: 6, label: 40, title: 80 });
 /** Nagłówki grup diagramu pokrewieństwa – kolory karteczek (żółta, różowa, zielona, niebieska, pomarańczowa). */
 export const AFFINITY_FILLS = Object.freeze(['#ffe680', '#ffc2d4', '#c4f0b0', '#b9e0ff', '#ffd2a6', '#e5d4ff']);
@@ -32,7 +36,7 @@ export function cleanLayout(raw) {
   if (raw.kind === 'matrix') {
     layout.labels = MATRIX_DEFAULT.map((fallback, index) => clip(raw.labels?.[index], LAYOUT_LIMITS.label) || fallback);
   }
-  if (raw.kind === 'kanban' || raw.kind === 'affinity') {
+  if (raw.kind === 'kanban' || raw.kind === 'affinity' || raw.kind === 'lanes') {
     const labels = (Array.isArray(raw.labels) ? raw.labels : []).map((label) => clip(label, LAYOUT_LIMITS.label)).filter(Boolean).slice(0, LAYOUT_LIMITS.columns);
     layout.labels = labels.length >= 2 ? labels : [...COLUMN_DEFAULTS[raw.kind]];
   }
@@ -110,6 +114,17 @@ export function pageLayoutGeometry(layout, drawing) {
     // Nazwa osi pionowej – obrócona (czytana od dołu).
     text(left - size * 0.6, y + qh, `${labels[0]} →`, { align: 'center', bold: true, rotate: -Math.PI / 2, width: qh });
     text(left + qw, bottom + size * 1.5, `${labels[1]} →`, { align: 'center', bold: true, width: qw });
+  } else if (layout.kind === 'lanes') {
+    // Tory: poziome pasy jeden pod drugim, z lewej – pole z nazwą (napis obrócony, czytany od dołu).
+    const labels = layout.labels ?? COLUMN_DEFAULTS.lanes;
+    const each = h / labels.length;
+    const head = size * 2.4;
+    labels.forEach((label, index) => {
+      const top = y + index * each;
+      geometry.boxes.push({ x, y: top, w, h: each });
+      geometry.boxes.push({ x, y: top, w: head, h: each, fill: '#f2f2f7', strong: true });
+      text(x + head * 0.62, top + each / 2, label, { align: 'center', bold: true, rotate: -Math.PI / 2, width: each - size });
+    });
   } else {
     // Kanban i pokrewieństwo: kolumny z nagłówkami (pokrewieństwo – nagłówki w kolorach karteczek).
     const labels = layout.labels ?? COLUMN_DEFAULTS[layout.kind];

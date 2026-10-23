@@ -45,14 +45,25 @@
 //   z axis 'h' | 'v' – poziomy albo pionowy (rzut odległości mierzonych punktów; brak – równoległy);
 //   'arcdim' – wymiar długości łuku: nodes jak łuku (początek, punkt na łuku, koniec), łuk wymiarowy
 //   współśrodkowy, odsunięty na zewnątrz o dimOffsets.arc, liczba ze znakiem ⌒.
+//   Od 1.45 (schematy procesów): 'terminator' – początek / koniec (prostokąt o półokrągłych bokach), 'data' – dane
+//   (równoległobok), 'document' – dokument (falisty dół), 'subprocess' – podproces (prostokąt z pionowymi liniami
+//   przy bokach); 'connector' – łącznik: odcinek (dwa końce, przyklejanie, grot na końcu) rysowany pod kątem prostym,
+//   route – przebieg: 'h' (poziomo, pionowo w połowie, poziomo), 'v' (odwrotnie), 'hv' i 'vh' (jedno załamanie).
 
 // Od 1.43 łamana także jako narzędzie (punkt po punkcie; do 1.42 – tylko z rozpoznania odręcznego kształtu).
-export const SHAPES = Object.freeze(['line', 'arrow', 'rect', 'ellipse', 'triangle', 'diamond', 'trapezoid', 'xline', 'curve', 'point', 'arc', 'dim', 'ngon', 'ray', 'polyline']);
+export const SHAPES = Object.freeze(['line', 'arrow', 'rect', 'ellipse', 'triangle', 'diamond', 'trapezoid', 'xline', 'curve', 'point', 'arc', 'dim', 'ngon', 'ray', 'polyline',
+  'terminator', 'data', 'document', 'subprocess', 'connector']);
 export const SHAPE_LABELS = Object.freeze({
   line: 'Odcinek', arrow: 'Strzałka', rect: 'Prostokąt', ellipse: 'Elipsa', triangle: 'Trójkąt', diamond: 'Romb', trapezoid: 'Trapez',
   xline: 'Prosta', curve: 'Strzałka po łuku', point: 'Punkt', polyline: 'Łamana', polygon: 'Wielokąt', arc: 'Łuk', dim: 'Wymiar', angledim: 'Wymiar kąta',
-  ngon: 'Wielokąt foremny', ray: 'Półprosta', arcdim: 'Wymiar długości łuku'
+  ngon: 'Wielokąt foremny', ray: 'Półprosta', arcdim: 'Wymiar długości łuku',
+  terminator: 'Początek / koniec', data: 'Dane', document: 'Dokument', subprocess: 'Podproces', connector: 'Łącznik'
 });
+/** Kształty schematu blokowego (od 1.45; proces – prostokąt, decyzja – romb). */
+export const FLOW_SHAPES = Object.freeze(['terminator', 'data', 'document', 'subprocess']);
+/** Przebieg łącznika (od 1.45): poziomo–pionowo–poziomo, pionowo–poziomo–pionowo, jedno załamanie. */
+export const CONNECTOR_ROUTES = Object.freeze(['h', 'v', 'hv', 'vh']);
+export const CONNECTOR_ROUTE_LABELS = Object.freeze({ h: 'Poziomo', v: 'Pionowo', hv: 'W bok, potem w pionie', vh: 'W pionie, potem w bok' });
 /** Kształty z wierzchołkami (od 1.24) – z rozpoznania odręcznego kształtu; od 1.43 łamana także z narzędzia (punkt po punkcie). */
 export const POLY_SHAPES = Object.freeze(['polyline', 'polygon']);
 /** Z wierzchołkami w nodes: łamana, wielokąt, (od 1.27) strzałka po łuku, (od 1.34) łuk i wymiar kąta. */
@@ -60,7 +71,9 @@ export const isPoly = (shape) => ['polyline', 'polygon', 'curve', 'arc', 'angled
 /** Najwięcej wierzchołków łamanej i wielokąta. */
 export const POLY_NODES_MAX = 24;
 /** Kształty z dwoma końcami (bez wysokości); od 1.27 także prosta, od 1.34 wymiar (mierzone punkty), od 1.40 półprosta. */
-export const isSegment = (shape) => ['line', 'arrow', 'xline', 'dim', 'ray'].includes(shape.shape);
+export const isSegment = (shape) => ['line', 'arrow', 'xline', 'dim', 'ray', 'connector'].includes(shape.shape);
+/** Łącznik (od 1.45) – odcinek rysowany pod kątem prostym. */
+export const isConnector = (shape) => shape?.shape === 'connector';
 /** Prosta albo (od 1.40) półprosta – linia biegnąca poza swoje punkty. */
 export const isXline = (shape) => shape.shape === 'xline' || shape.shape === 'ray';
 export const isCurve = (shape) => shape.shape === 'curve';
@@ -83,7 +96,7 @@ export const ARC_MODES = Object.freeze(['three', 'center']);
 export const ARC_MODE_LABELS = Object.freeze({ three: 'Przez 3 punkty', center: 'Środek, początek, koniec' });
 export const ELLIPSE_MODE_LABELS = Object.freeze({ frame: 'Ramka', center: 'Środek i promień', two: '2 punkty', three: '3 punkty', ttr: 'Styczny do dwóch, promień' });
 /** Kształty z zakończeniami (grot, trójkąt…): odcinek, strzałka i (od 1.27) strzałka po łuku – prosta ich nie ma. */
-export const hasCaps = (shape) => shape.shape === 'line' || shape.shape === 'arrow' || shape.shape === 'curve';
+export const hasCaps = (shape) => shape.shape === 'line' || shape.shape === 'arrow' || shape.shape === 'curve' || shape.shape === 'connector';
 export const isShape = (stroke) => stroke?.tool === 'shape';
 export const SKEW_LIMIT = 2.5;
 export const MIN_SHAPE = 4;
@@ -454,10 +467,85 @@ function polygonOf(shape) {
     case 'diamond': return [[0, -0.5], [0.5, 0], [0, 0.5], [-0.5, 0]];
     case 'triangle': return [[shape.adjust - 0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
     case 'trapezoid': return [[-0.5 + shape.adjust, -0.5], [0.5 - shape.adjust, -0.5], [0.5, 0.5], [-0.5, 0.5]];
+    // Od 1.45: schemat blokowy.
+    case 'terminator': return cornerPolygon(pillOf(shape));
+    case 'subprocess': return [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
+    case 'data': {
+      const slant = dataSlant(shape);
+      return [[-0.5 + slant, -0.5], [0.5, -0.5], [0.5 - slant, 0.5], [-0.5, 0.5]];
+    }
+    case 'document': return documentNodes();
     case 'polyline':
     case 'polygon': return nodePairs(shape);
     default: return null;
   }
+}
+
+// ---------------------------------------------------------------- schemat blokowy i łącznik (od 1.45)
+
+/** Początek / koniec: prostokąt zaokrąglony połową krótszego boku (półokrągłe boki). */
+const pillOf = (shape) => ({ ...shape, shape: 'rect', corner: { kind: 'round', size: Math.min(Math.abs(shape.w), Math.abs(shape.h)) / 2 } });
+/** Dane: wcięcie górnej i dolnej krawędzi (część szerokości) – 0,35 wysokości, najwyżej 0,3 szerokości. */
+const dataSlant = (shape) => Math.min(0.3, (0.35 * Math.abs(shape.h)) / Math.max(1e-9, Math.abs(shape.w)));
+/** Dokument: góra prosta, dół – fala (w dół po lewej, w górę po prawej), 16 odcinków. */
+let documentCache = null;
+function documentNodes() {
+  if (!documentCache) {
+    const wave = Array.from({ length: 17 }, (_, index) => {
+      const u = 0.5 - index / 16;
+      return [u, 0.42 + 0.08 * Math.sin(2 * Math.PI * (u + 0.5))];
+    });
+    documentCache = [[-0.5, -0.5], [0.5, -0.5], ...wave];
+  }
+  return documentCache;
+}
+/** Linie wewnątrz kształtu: podproces – pionowe linie przy bokach (punkty strony), odsunięte o 0,18 wysokości (najwyżej 12% szerokości). */
+export function shapeInnerLines(shape) {
+  if (shape.shape !== 'subprocess') return [];
+  const inset = Math.min(0.12, (0.18 * Math.abs(shape.h)) / Math.max(1e-9, Math.abs(shape.w)));
+  return [-0.5 + inset, 0.5 - inset].map((u) => [shapePoint(shape, u, -0.5), shapePoint(shape, u, 0.5)]);
+}
+
+/** Domyślny przebieg łącznika z kierunku od początku do końca: bardziej w poziomie – 'h', inaczej 'v'. */
+export const defaultRoute = (shape) => (Math.abs(Math.cos(shape.angle)) >= Math.abs(Math.sin(shape.angle)) ? 'h' : 'v');
+export const connectorRoute = (shape) => (CONNECTOR_ROUTES.includes(shape.route) ? shape.route : defaultRoute(shape));
+/**
+ * Przebieg z kierunków wyjścia z elementów, do których przyklejono końce ('h' – z boku, 'v' – z góry albo dołu,
+ * null – koniec wolny): oba tak samo – 'h' / 'v', różne – jedno załamanie; bez kierunków – null (domyślny).
+ */
+export function routeFromEnds(start, end) {
+  if (start && end) return start === end ? start : `${start}${end}`;
+  return start ?? end ?? null;
+}
+/** Łącznik z przebiegiem `route` (zapisany tylko inny niż domyślny) – nowy obiekt. */
+export function withRoute(shape, route) {
+  const next = { ...shape };
+  delete next.route;
+  if (isConnector(shape) && CONNECTOR_ROUTES.includes(route) && route !== defaultRoute(shape)) next.route = route;
+  return next;
+}
+/** Punkty łącznika (strony): początek, załamania, koniec. */
+export function connectorPoints(shape) {
+  const [a, b] = [shapePoint(shape, -0.5, 0), shapePoint(shape, 0.5, 0)];
+  const route = connectorRoute(shape);
+  if (route === 'hv') return [a, { x: b.x, y: a.y }, b];
+  if (route === 'vh') return [a, { x: a.x, y: b.y }, b];
+  if (route === 'v') {
+    const middle = (a.y + b.y) / 2;
+    return [a, { x: a.x, y: middle }, { x: b.x, y: middle }, b];
+  }
+  const middle = (a.x + b.x) / 2;
+  return [a, { x: middle, y: a.y }, { x: middle, y: b.y }, b];
+}
+/** Łącznik bez odcinków zerowej długości i bez załamań na prostej (koniec pod początkiem itp.). */
+function connectorPath(shape) {
+  const all = connectorPoints(shape);
+  const points = all.filter((point, index) => index === 0 || Math.hypot(point.x - all[index - 1].x, point.y - all[index - 1].y) > 1e-6);
+  return points.filter((point, index) => {
+    if (index === 0 || index === points.length - 1) return true;
+    const [a, b] = [points[index - 1], points[index + 1]];
+    return Math.abs((point.x - a.x) * (b.y - a.y) - (point.y - a.y) * (b.x - a.x)) > 1e-6;
+  });
 }
 
 /** Wierzchołki łamanej albo wielokąta: [[u, v], …]. */
@@ -729,6 +817,7 @@ export function shapeMeasure(shape) {
     const [a, b] = [Math.sqrt((sum + root) / 2) / 2, Math.sqrt(Math.max(0, (sum - root) / 2)) / 2];
     return { area: Math.PI * a * b, perimeter: Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b))) };
   }
+  if (shape.shape === 'terminator') return shapeMeasure(pillOf(shape));
   if (shape.shape === 'rect' && shape.corner?.kind === 'round' && cornerSize(shape) > 0) {
     const r = cornerSize(shape);
     // Pochylenie nie zmienia pola; obwód pochylonego – z gęstego obrysu.
@@ -755,7 +844,7 @@ export const SEGMENT_CAP_LABELS = Object.freeze({ none: 'Brak', arrow: 'Grot', t
 export function segmentCaps(shape) {
   if (isXline(shape)) return { start: 'none', end: 'none' };
   const pick = (value, fallback) => (SEGMENT_CAPS.includes(value) ? value : fallback);
-  return { start: pick(shape.startCap, 'none'), end: pick(shape.endCap, shape.shape === 'arrow' || shape.shape === 'curve' ? 'arrow' : 'none') };
+  return { start: pick(shape.startCap, 'none'), end: pick(shape.endCap, ['arrow', 'curve', 'connector'].includes(shape.shape) ? 'arrow' : 'none') };
 }
 
 /** Odcinek z zakończeniami { start, end } – nowy obiekt; zapisane tylko te, które są inne niż domyślne. */
@@ -781,6 +870,15 @@ function capLength(shape, caps, span) {
  * i długość (odcinek – długość, łuk – cięciwa). Od 1.27 łuk: kierunek stycznej w końcu krzywej.
  */
 function capFrame(shape, which) {
+  if (isConnector(shape)) {
+    // Łącznik (od 1.45): kierunek ostatniego (pierwszego) odcinka przebiegu.
+    const points = connectorPath(shape);
+    const [tip, toward] = which === 'end' ? [points.at(-1), points.at(-2) ?? points[0]] : [points[0], points[1] ?? points[0]];
+    let [dx, dy] = [tip.x - toward.x, tip.y - toward.y];
+    if (Math.hypot(dx, dy) < 1e-6) [dx, dy] = which === 'end' ? [Math.cos(shape.angle), Math.sin(shape.angle)] : [-Math.cos(shape.angle), -Math.sin(shape.angle)];
+    const length = Math.hypot(dx, dy) || 1;
+    return { tip, ux: dx / length, uy: dy / length, span: Math.hypot(dx, dy) };
+  }
   if (isCurve(shape)) {
     const curve = curveControls(shape);
     const nodes = polyPoints(shape);
@@ -874,6 +972,7 @@ export function shapeOutline(shape) {
     }
     return { points, closed: true };
   }
+  if (isConnector(shape)) return { points: connectorPath(shape).flatMap((point) => [point.x, point.y]), closed: false };
   if (isSegment(shape)) {
     const [a, b] = [shapePoint(shape, -0.5, 0), shapePoint(shape, 0.5, 0)];
     return { points: [a.x, a.y, b.x, b.y], closed: false };
@@ -906,6 +1005,14 @@ export function shapePath(shape) {
   }
   // Od 1.40: prostokąt z zaokrąglonymi narożnikami – łuki krzywymi Béziera, boki – krzywe proste.
   if (shape.shape === 'rect' && shape.corner?.kind === 'round' && cornerSize(shape) > 0) return roundedRectPath(shape);
+  // Od 1.45: początek / koniec – półokrągłe boki; łącznik – przebieg między zakończeniami.
+  if (shape.shape === 'terminator') return roundedRectPath(pillOf(shape));
+  if (isConnector(shape)) {
+    const [start, end] = [segmentCap(shape, 'start'), segmentCap(shape, 'end')];
+    const points = connectorPath(shape);
+    const inner = points.slice(1, -1);
+    return { start: start.trim, lines: [...inner, end.trim], closed: false, caps: [start, end].filter((cap) => cap.kind !== 'none') };
+  }
   if (isCurve(shape)) {
     // Od 1.27: krzywa łuku (przy trójkącie – przycięta pod jego podstawą) i zakończenia.
     const curve = curveControls(shape);
@@ -1347,7 +1454,7 @@ export function setSegment(shape, { length = shape.w, degrees = segmentDegrees(s
 
 /** Wymiary kształtu: szerokość, wysokość i kąt pochylenia; odcinka i strzałki – długość i kąt. */
 export const dimKeys = (shape) => (isXline(shape) || shape.shape === 'angledim' ? ['angle'] : shape.shape === 'dim' ? ['length'] : shape.shape === 'arcdim' ? ['arc']
-  : ['curve', 'point', 'arc'].includes(shape.shape) ? [] : isSegment(shape) ? ['length', 'angle'] : isPoly(shape) ? ['width', 'height'] : ['width', 'height', 'skew']);
+  : ['curve', 'point', 'arc', 'connector'].includes(shape.shape) ? [] : isSegment(shape) ? ['length', 'angle'] : isPoly(shape) ? ['width', 'height'] : ['width', 'height', 'skew']);
 /** Wielkość czcionki stałego wymiaru i jego odstęp od linii ramki (jednostki strony; kratka ma 44). */
 export const DIM_FONT = 22;
 export const DIM_GAP = 8;
@@ -1926,6 +2033,8 @@ export function cleanShape(raw, pageWidth, pageHeight, isColor) {
     // Od 1.42: wymiar poziomy albo pionowy, osie okręgu.
     ...(raw.shape === 'dim' && dimMode(raw) === 'linear' && (raw.axis === 'h' || raw.axis === 'v') ? { axis: raw.axis } : {}),
     ...(raw.shape === 'ellipse' && raw.axes === true ? { axes: true } : {}),
+    // Od 1.45: przebieg łącznika (inny niż domyślny z kierunku).
+    ...(isConnector(raw) && CONNECTOR_ROUTES.includes(raw.route) && raw.route !== defaultRoute(raw) ? { route: raw.route } : {}),
     ...(dims ? { dims } : {}),
     // Od 1.22.1: odsunięcia linii wymiarowych i oznaczenia wymiarów (znak, tolerancja).
     ...cleanDimExtras(raw, { shape: raw.shape })

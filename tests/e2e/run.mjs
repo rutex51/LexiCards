@@ -3167,7 +3167,9 @@ const ITEM_GROUPS = {
   'drawing-symbol-gdt': 'symbols', 'drawing-symbol-datum': 'symbols', 'drawing-symbol-roughness': 'symbols',
   'drawing-measure-linear': 'dims', 'drawing-measure-angle': 'dims', 'drawing-measure-radius': 'dims', 'drawing-measure-diameter': 'dims', 'drawing-measure-arc': 'dims',
   'drawing-edit-offset': 'edit', 'drawing-edit-fillet': 'edit', 'drawing-edit-chamfer': 'edit', 'drawing-edit-trim': 'edit', 'drawing-edit-extend': 'edit',
-  'drawing-insert-fishbone': 'quality', 'drawing-insert-whys': 'quality', 'drawing-insert-sipoc': 'quality', 'drawing-insert-layout': 'quality'
+  'drawing-insert-fishbone': 'quality', 'drawing-insert-whys': 'quality', 'drawing-insert-sipoc': 'quality', 'drawing-insert-layout': 'quality',
+  'drawing-shape-terminator': 'process', 'drawing-shape-data': 'process', 'drawing-shape-document': 'process', 'drawing-shape-subprocess': 'process',
+  'drawing-shape-connector': 'process', 'drawing-insert-vsm': 'process', 'drawing-insert-timeline': 'process', 'drawing-insert-defects': 'process'
 };
 const groupOfItem = (testID) => ITEM_GROUPS[testID] ?? (testID.startsWith('drawing-shape-') ? 'shapes' : null);
 const OPTION_IDS = /^drawing-(color-|width-|eraser-size-|select-all$|paste$)/;
@@ -8943,13 +8945,13 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Grupy</p>');
   // Ostatnie małe kółko każdego kółka – „Grupy narzędzi”.
   // Od 1.43 na końcu grupa Edycja, od 1.44 – Jakość.
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality']);
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality', 'process']);
   assert.deepEqual(await ringGroupIds(editor, 'left'), ['metrology']);
   assert.equal(await editor.locator('[data-testid=drawing-ring-left-edit]').evaluate((element) => element.style.opacity), '1', 'przy jednej grupie widać je od razu');
   let groups = await openToolGroupsFrom(editor, 'right');
   const standardOrder = () => groups.locator('[data-testid=tool-groups-standard] [data-testid^=tool-groups-on-]')
     .evaluateAll((inputs) => inputs.map((input) => input.dataset.testid.replace('tool-groups-on-', '')));
-  assert.deepEqual(await standardOrder(), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality']);
+  assert.deepEqual(await standardOrder(), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality', 'process']);
   await expectText(groups.locator('[data-testid=tool-groups-standard]'), 'Pióro · Zakreślacz · Gumka');
   assert.equal(await groups.locator('[data-testid=tool-groups-preset-metrology]').getAttribute('aria-pressed'), 'true', 'Metrologia już na lewym kółku');
   await expectText(groups.locator('[data-testid=tool-groups-editor]'), 'Grupa „Metrologia” – narzędzia');
@@ -8959,14 +8961,14 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await groups.locator('[data-testid=tool-groups-on-write]').uncheck();
   await groups.locator('.sheet__header .button--plain').click();
   await groups.waitFor({ state: 'detached' });
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality'], 'Anuluj zostawia grupy');
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality', 'process'], 'Anuluj zostawia grupy');
 
   groups = await openToolGroupsFrom(editor, 'right');
   // Symbole – poza kółkiem; Tekst na początek (strzałki na uchwycie ≡), Konstrukcja przeciągnięta nad Pisanie.
   await groups.locator('[data-testid=tool-groups-on-symbols]').uncheck();
   await groups.locator('[data-testid=tool-groups-move-text]').focus();
   for (let step = 0; step < 3; step += 1) await page.keyboard.press('ArrowUp');
-  assert.deepEqual(await standardOrder(), ['text', 'write', 'shapes', 'construct', 'dims', 'symbols', 'edit', 'quality']);
+  assert.deepEqual(await standardOrder(), ['text', 'write', 'shapes', 'construct', 'dims', 'symbols', 'edit', 'quality', 'process']);
   assert.equal(await groups.locator('[data-testid=tool-groups-move-text]').evaluate((element) => element === document.activeElement), true, 'fokus zostaje na uchwycie');
   const grip = await groups.locator('[data-testid=tool-groups-move-construct]').boundingBox();
   const rowHeight = (await groups.locator('[data-testid=tool-groups-move-write]').boundingBox()).y - (await groups.locator('[data-testid=tool-groups-move-text]').boundingBox()).y;
@@ -8974,11 +8976,11 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await page.mouse.down();
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 - rowHeight * 2, { steps: 8 });
   await page.mouse.up();
-  await waitUntil(async () => (await standardOrder()).join() === 'text,construct,write,shapes,dims,symbols,edit,quality', 'Przeciągnięcie ≡ zmienia kolejność');
+  await waitUntil(async () => (await standardOrder()).join() === 'text,construct,write,shapes,dims,symbols,edit,quality,process', 'Przeciągnięcie ≡ zmienia kolejność');
   // Na kółku zostaje co najmniej jedna grupa: po odznaczeniu pozostałych ostatnia jest zablokowana.
-  for (const id of ['text', 'write', 'shapes', 'dims', 'edit', 'quality']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).uncheck();
+  for (const id of ['text', 'write', 'shapes', 'dims', 'edit', 'quality', 'process']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).uncheck();
   assert.equal(await groups.locator('[data-testid=tool-groups-on-construct]').isDisabled(), true, 'ostatnia grupa zostaje');
-  for (const id of ['text', 'write', 'shapes', 'dims', 'edit', 'quality']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).check();
+  for (const id of ['text', 'write', 'shapes', 'dims', 'edit', 'quality', 'process']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).check();
   assert.equal(await groups.locator('[data-testid=tool-groups-on-construct]').isDisabled(), false);
 
   // Zestawy: Geometria dochodzi (i otwiera się do edycji), Metrologia odchodzi.
@@ -9002,7 +9004,7 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await groups.waitFor({ state: 'detached' });
 
   // Kółka po „Gotowe”: prawe w nowej kolejności bez Symboli, lewe – Geometria i Ulubione.
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit', 'quality']);
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit', 'quality', 'process']);
   assert.deepEqual(await ringGroupIds(editor, 'left'), ['geometry', 'own-1']);
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Pisanie', 'pokazana grupa zostaje');
   assert.equal(await editor.locator('[data-testid=drawing-group-write]').getAttribute('aria-pressed'), 'true');
@@ -9014,7 +9016,7 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   assert.match(await ringMain(editor, 'left').getAttribute('aria-label'), /^Elipsa/);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-grupy-kolka-ipad.png') });
   const saved = await storedGroups(page);
-  assert.deepEqual(saved.order, ['text', 'construct', 'write', 'shapes', 'dims', 'symbols', 'edit', 'quality']);
+  assert.deepEqual(saved.order, ['text', 'construct', 'write', 'shapes', 'dims', 'symbols', 'edit', 'quality', 'process']);
   assert.deepEqual(saved.off, ['symbols']);
   assert.deepEqual(saved.mine.map((group) => [group.id, group.label, group.icon, group.items.join()]),
     [['geometry', 'Geometria', 'geometry', 'shape:line,shape:ellipse,shape:xline,shape:point'], ['own-1', 'Ulubione', 'sparkles', 'shape:ellipse,pen,gdt']]);
@@ -9025,7 +9027,7 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await noteObjectsDialog(page).locator('[data-testid=note-image-draw]').click();
   await editor.waitFor();
   await waitUntil(async () => (await ringGroupIds(editor, 'left')).join() === 'geometry,own-1', 'Grupy po ponownym otwarciu');
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit', 'quality']);
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit', 'quality', 'process']);
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Ulubione');
 
   // Z lewego kółka okno otwiera się z jego grupą; usunięcie pokazanej grupy – menu wraca do grupy z narzędziem.
@@ -11004,6 +11006,232 @@ test('rysunek 1.44 na telefonie: grupa Jakość w górnym menu, okno diagramu Is
   await sheetSubmit(page).click();
   await expectText(editor.locator('[data-testid=drawing-notice]'), 'Układ kartki: Raport A3');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-144-a3-telefon.png') });
+}, { device: PHONE });
+
+test('rysunek 1.45: grupa Procesy – schemat blokowy na torach, łączniki przyklejone pod kątem prostym (przebieg z krawędzi, zmiana w trzecim menu), długość trasy; symbole VSM i oś czasu; legenda wad liczy znaczniki; zapis i DXF (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Procesy</p>');
+  const frame = await pageFrame(page);
+  const mouse = pageMouse(page, frame);
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const measure = editor.locator('[data-testid=drawing-selection-measure]');
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  const closed = () => waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+  const settled = () => page.waitForFunction(() => document.getAnimations().length === 0);
+  const deselect = async () => {
+    await page.keyboard.press('Escape');
+    await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  };
+  const shot = async (name) => {
+    await nextFrames(page);
+    await page.screenshot({ path: path.join(OUTPUT, `rysunek-145-${name}.png`) });
+  };
+
+  // Grupa Procesy: kształty schematu, łącznik, VSM, oś czasu, wady.
+  await pickGroup(editor, 'process');
+  await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Procesy');
+  assert.deepEqual(await editor.locator('[data-testid=drawing-tool-row] .drawing__tool-label').allTextContents(),
+    ['Start/stop', 'Dane', 'Dokument', 'Podproces', 'Łącznik', 'VSM', 'Oś czasu', 'Wady']);
+
+  // Tory (układ kartki): cztery działy.
+  await pickGroup(editor, 'quality');
+  await editor.locator('[data-testid=drawing-insert-layout]').click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Układ kartki');
+  await settled();
+  await page.locator('[data-testid=drawing-layout-kind-lanes]').check({ force: true });
+  assert.equal(await page.locator('[data-testid=drawing-layout-columns]').inputValue(), 'Klient\nBiuro\nProdukcja\nKontrola jakości');
+  await page.locator('[data-testid=drawing-layout-columns]').fill('Klient\nSprzedaż\nProdukcja\nKontrola');
+  await sheetSubmit(page).click();
+  await closed();
+  await expectText(notice, 'Układ kartki: Tory (swimlanes)');
+
+  // Schemat: start/stop, proces, decyzja, dokument, dane, podproces – po torach. Po każdym – bez zaznaczenia (pasek
+  // zaznaczenia nie zasłania miejsca następnego przeciągnięcia).
+  const link = async (from, to) => {
+    await mouse.drag(from, to);
+    await deselect();
+  };
+  const draw = async (kind, from, to) => {
+    await press(editor, `drawing-shape-${kind}`);
+    await link(from, to);
+  };
+  await draw('terminator', [180, 110], [360, 190]);
+  await draw('rect', [460, 370], [640, 450]);
+  await draw('diamond', [740, 600], [920, 740]);
+  await draw('document', [1020, 370], [1200, 450]);
+  await draw('data', [1020, 880], [1200, 960]);
+  await draw('subprocess', [1300, 630], [1480, 710]);
+  // Łączniki: od krawędzi do krawędzi (końce przyciągają się i przyklejają).
+  await press(editor, 'drawing-shape-connector');
+  await link([364, 150], [550, 366]);
+  await link([644, 410], [830, 596]);
+  await link([924, 670], [1296, 670]);
+  await link([830, 744], [1110, 876]);
+  // Pierwszy łącznik: z boku start/stop w bok, potem w dół do górnej krawędzi procesu – załamanie nad procesem.
+  await waitUntil(async () => darkAt(page, ...frame.at(550, 260)), 'Łącznik w pionie nad procesem');
+  assert.equal(await darkAt(page, ...frame.at(457, 260)), false, 'bez linii w połowie drogi');
+  await shot('schemat');
+
+  // Zaznaczony łącznik: długość trasy; przebieg w trzecim menu – „Poziomo” (załamanie w połowie drogi).
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await mouse.tap([460, 150]);
+  await expectText(count, 'Łącznik');
+  assert.match(await measure.textContent(), /^długość \d/, 'długość trasy łącznika');
+  await editor.locator('[data-testid=drawing-style-route]').click();
+  await editor.locator('[data-testid=drawing-route-h]').click();
+  await waitUntil(async () => darkAt(page, ...frame.at(457, 260)), 'Przebieg poziomo – pion w połowie drogi');
+  await deselect();
+
+  // Spaghetti: dwa odcinki zaznaczone prostokątem – suma długości.
+  await draw('line', [120, 1000], [320, 1000]);
+  await draw('line', [120, 1040], [420, 1040]);
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await mouse.drag([100, 980], [440, 1060]);
+  await expectText(count, '2 elementy');
+  await waitUntil(async () => /^długość razem \d/.test(await measure.textContent()), 'Suma długości zaznaczonych linii');
+  const lengths = await measure.textContent();
+  await deselect();
+
+  // Druga kartka: mapa strumienia wartości – proces z danymi, zapas, oś czasu.
+  await editor.locator('[data-testid=drawing-pages]').click();
+  await page.locator('[data-testid=drawing-page-new]').click();
+  await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 2 z 2');
+  await press(editor, 'drawing-insert-vsm');
+  await expectText(sheet(page).locator('.sheet__title'), 'Nowy symbol VSM');
+  assert.equal(await page.locator('[data-testid=drawing-vsm-rows]').inputValue(), 'C/T =\nC/O =\nDostępność =');
+  await page.locator('[data-testid=drawing-vsm-title]').fill('Toczenie');
+  await page.locator('[data-testid=drawing-vsm-rows]').fill('C/T = 45 s\nC/O = 15 min\nDostępność = 90%');
+  await sheetSubmit(page).click();
+  await closed();
+  await expectText(count, 'VSM: Proces');
+  await deselect();
+  await press(editor, 'drawing-insert-vsm');
+  await settled();
+  await page.locator('[data-testid=drawing-vsm-symbol-inventory]').check({ force: true });
+  assert.equal(await page.locator('[data-testid=drawing-vsm-title]').inputValue(), '', 'zapas – bez domyślnej nazwy');
+  await page.locator('[data-testid=drawing-vsm-title]').fill('300 szt.');
+  await page.locator('[data-testid=drawing-vsm-rows]').fill('2 dni');
+  await sheetSubmit(page).click();
+  await closed();
+  await expectText(count, 'VSM: Zapas');
+  await deselect();
+  await press(editor, 'drawing-insert-timeline');
+  await expectText(sheet(page).locator('.sheet__title'), 'Nowa oś czasu VSM');
+  for (const [index, wait, work] of [[0, '2', '45'], [1, '1,5', '30']]) {
+    await page.locator(`[data-testid=drawing-timeline-wait-${index}]`).fill(wait);
+    await page.locator(`[data-testid=drawing-timeline-work-${index}]`).fill(work);
+  }
+  await page.locator('[data-testid=drawing-timeline-remove-2]').click();
+  await page.locator('[data-testid=drawing-timeline-wait-0]').fill('x');
+  await sheetSubmit(page).click();
+  await expectText(sheet(page).locator('.form-message--error'), 'Krok 1: wpisz liczby nie mniejsze od zera, np. 2,5');
+  await page.locator('[data-testid=drawing-timeline-wait-0]').fill('2');
+  await sheetSubmit(page).click();
+  await closed();
+  await expectText(count, 'Oś czasu VSM');
+  await deselect();
+  // Zrzut bez menu i pasków (oko w nagłówku), potem z powrotem.
+  await editor.locator('[data-testid=drawing-hide-ui]').click();
+  await waitUntil(() => notice.isHidden(), 'Komunikat zniknął');
+  await shot('vsm');
+  await editor.locator('[data-testid=drawing-hide-ui]').click();
+
+  // Trzecia kartka: legenda wad, „Zaznaczaj tę wadę” – Punkt z krzyżykiem w kolorze wady, trzy wady na kartce.
+  await editor.locator('[data-testid=drawing-pages]').click();
+  await page.locator('[data-testid=drawing-page-new]').click();
+  await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 3 z 3');
+  await press(editor, 'drawing-insert-defects');
+  await expectText(sheet(page).locator('.sheet__title'), 'Nowa legenda wad');
+  assert.equal(await page.locator('[data-testid=drawing-defects-name-0]').inputValue(), 'Rysa');
+  await page.locator('[data-testid=drawing-defects-mark-1]').selectOption('cross');
+  await page.locator('[data-testid=drawing-defects-color-1]').selectOption('#d70015');
+  await sheetSubmit(page).click();
+  await expectText(sheet(page).locator('.form-message--error'), 'Dwie wady mają ten sam znacznik i kolor – legenda by ich nie rozróżniła');
+  await page.locator('[data-testid=drawing-defects-mark-1]').selectOption('dot');
+  await page.locator('[data-testid=drawing-defects-color-1]').selectOption('#0040dd');
+  await page.locator('[data-testid=drawing-defects-use-0]').click();
+  await closed();
+  await expectText(notice, 'Zaznaczaj: Rysa – dotknij miejsca wady');
+  assert.equal(await editor.locator('[data-testid=drawing-shape-point]').getAttribute('aria-pressed'), 'true', 'narzędzie Punkt');
+  // Kolejne dotknięcia od razu stawiają kolejne znaczniki (zaznaczony punkt nie zabiera dotknięcia). Nowa kartka ma swój widok.
+  const sheetMouse = pageMouse(page, await pageFrame(page));
+  for (const point of [[300, 300], [420, 340], [540, 280]]) {
+    await sheetMouse.tap(point);
+    await nextFrames(page);
+  }
+  await deselect();
+  await shot('wady');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const images = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id)).map((image) => image.drawing), ids.statements);
+  const [flow, vsm, defects] = images;
+  assert.deepEqual(flow.layout, { kind: 'lanes', labels: ['Klient', 'Sprzedaż', 'Produkcja', 'Kontrola'] });
+  const shapes = flow.strokes.filter((stroke) => stroke.tool === 'shape');
+  assert.deepEqual(shapes.map((stroke) => stroke.shape), ['terminator', 'rect', 'diamond', 'document', 'data', 'subprocess', 'connector', 'connector', 'connector', 'connector', 'line', 'line']);
+  const [start, process, decision, , data, sub, ...links] = shapes;
+  const connectors = links.filter((stroke) => stroke.shape === 'connector');
+  assert.deepEqual(connectors.map((stroke) => [stroke.attach?.start?.id, stroke.attach?.end?.id]),
+    [[start.id, process.id], [process.id, decision.id], [decision.id, sub.id], [decision.id, data.id]], 'końce przyklejone do kształtów');
+  // Przebieg: pierwszy – zmieniony na „Poziomo”; drugi – z boku do góry; trzeci – w poziomie (domyślny); czwarty – z dołu do góry.
+  assert.deepEqual(connectors.map((stroke) => stroke.route), ['h', 'hv', undefined, 'v']);
+  const { connectorRoute, segmentCaps } = await import('../../js/core/shapes.js');
+  assert.equal(connectorRoute(connectors[2]), 'h');
+  assert.ok(connectors.every((stroke) => segmentCaps(stroke).end === 'arrow' && segmentCaps(stroke).start === 'none'), 'łącznik – grot na końcu');
+  // Suma dwóch odcinków (ok. 200 + 300 jednostek strony – mysz trafia w piksele ekranu) w jednostkach rysunku.
+  const { dimFormat, lengthText } = await import('../../js/core/drawing.js');
+  const lines = shapes.filter((stroke) => stroke.shape === 'line');
+  assert.ok(Math.abs(lines[0].w + lines[1].w - 500) < 4, `długości odcinków: ${lines.map((line) => line.w)}`);
+  assert.equal(lengths, `długość razem ${lengthText(lines[0].w + lines[1].w, flow.scale, dimFormat(flow))}`);
+  const symbols = vsm.strokes.filter((stroke) => stroke.tool === 'diagram');
+  assert.deepEqual(symbols.map((stroke) => stroke.kind === 'vsm' ? stroke.symbol : stroke.kind), ['process', 'inventory', 'timeline']);
+  assert.deepEqual(symbols[0].rows, ['C/T = 45 s', 'C/O = 15 min', 'Dostępność = 90%']);
+  assert.deepEqual(symbols[2].steps, [{ wait: 2, work: 45 }, { wait: 1.5, work: 30 }]);
+  const { diagramLayout, timelineTotals } = await import('../../js/core/diagrams.js');
+  assert.equal(Math.round(timelineTotals(symbols[2]).lead * 1000) / 1000, 3.501, 'czas przejścia 3,5 dnia');
+  const legend = defects.strokes.find((stroke) => stroke.tool === 'diagram');
+  assert.deepEqual(legend.items, [{ mark: 'cross', color: '#d70015', name: 'Rysa' }, { mark: 'dot', color: '#0040dd', name: 'Wgniecenie' }]);
+  const marks = defects.strokes.filter((stroke) => stroke.shape === 'point');
+  assert.equal(marks.length, 3, 'trzy wady');
+  assert.ok(marks.every((mark) => mark.mark === 'cross' && mark.color === '#d70015'), 'znacznik i kolor wady');
+  assert.deepEqual(diagramLayout(legend, { strokes: defects.strokes }).texts.map((item) => item.text), ['Wady', 'Rysa', '3', 'Wgniecenie', '0', 'Razem', '3']);
+  // DXF kartki ze schematem: łączniki jako polilinie, tory na warstwie UKLAD.
+  const { drawingToDxf, parseDxf } = await import('../../js/core/dxf.js');
+  const parsed = parseDxf(drawingToDxf(flow).text);
+  assert.ok(parsed.layers.has('UKLAD'));
+  assert.ok(parsed.entities.filter((item) => item.type === 'POLYLINE' && item.layer !== 'UKLAD').length >= 10, 'kształty i łączniki');
+}, { device: DESKTOP });
+
+test('rysunek 1.45 na telefonie: grupa Procesy w górnym menu, okna symbolu VSM, osi czasu i legendy wad w szerokości ekranu', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  await pickGroup(editor, 'process');
+  // Osiem pozycji – rząd przewijany w bok (jak Kształty); każdą da się przewinąć na ekran.
+  for (const id of ['drawing-shape-terminator', 'drawing-shape-connector', 'drawing-insert-vsm', 'drawing-insert-timeline', 'drawing-insert-defects']) {
+    await editor.locator(`[data-testid=${id}]`).scrollIntoViewIfNeeded();
+    const box = await editor.locator(`[data-testid=${id}]`).boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 391, `${id} na ekranie`);
+  }
+  const closed = () => waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+  for (const [button, field] of [['drawing-insert-vsm', 'drawing-vsm-rows'], ['drawing-insert-defects', 'drawing-defects-name-1'], ['drawing-insert-timeline', 'drawing-timeline-work-2']]) {
+    await editor.locator(`[data-testid=${button}]`).click();
+    await page.locator(`[data-testid=${field}]`).waitFor();
+    assert.equal(await overflowX(page), 0, `${button}: okno bez przewijania w bok`);
+    const box = await page.locator(`[data-testid=${field}]`).boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= 390, `${field} w szerokości ekranu`);
+    if (button === 'drawing-insert-timeline') {
+      await page.waitForFunction(() => document.getAnimations().length === 0);
+      await page.screenshot({ path: path.join(OUTPUT, 'rysunek-145-os-czasu-okno-telefon.png') });
+    }
+    await page.keyboard.press('Escape');
+    await closed();
+  }
 }, { device: PHONE });
 
 // ---------------------------------------------------------------- nauka z fiszkami

@@ -214,7 +214,7 @@ test('rysunek 1.44: sprawdzanie zapisu diagramu – zły rodzaj, kolor, brak oś
 });
 
 test('rysunek 1.44: diagram w rysunku – zapis (format 16), kolor jak w „Styl jak…”, skala tylko przesuwa, bez szyku', () => {
-  assert.equal(DRAWING_VERSION, 16);
+  assert.ok(DRAWING_VERSION >= 16, 'od 1.44 (1.45 – 17)');
   const diagram = newDiagram('fishbone', { x: 200, y: 200 });
   const drawing = cleanDrawing({ ...emptyDrawing(), strokes: [diagram, { ...diagram, kind: 'zły' }] });
   assert.equal(drawing.strokes.length, 1);
@@ -231,7 +231,7 @@ test('rysunek 1.44: diagram w rysunku – zapis (format 16), kolor jak w „Styl
 });
 
 test('rysunek 1.44: układ kartki – sprawdzanie: rodzaje, tytuł A3, macierz z sześcioma nazwami, kolumny Kanban i pokrewieństwa 2–6', () => {
-  assert.deepEqual(LAYOUT_KINDS, ['a3', 'pdca', 'matrix', 'kanban', 'affinity']);
+  assert.deepEqual(LAYOUT_KINDS.slice(0, 5), ['a3', 'pdca', 'matrix', 'kanban', 'affinity'], 'od 1.45 także tory');
   assert.equal(cleanLayout(null), null);
   assert.equal(cleanLayout({ kind: 'gantt' }), null);
   assert.deepEqual(cleanLayout({ kind: 'a3', title: '  Rysy   na obudowie ', labels: ['x'] }), { kind: 'a3', title: 'Rysy na obudowie' });
@@ -333,5 +333,5 @@ test('rysunek 1.44: grupa Jakość (Ishikawa, 5 × Dlaczego, SIPOC, Układ) i ze
   assert.equal(lean.label, 'Jakość / Lean');
   assert.ok(lean.items.every((item) => ALL_ITEMS.includes(item)), lean.items.join());
   assert.ok(QUALITY_ITEMS.every((item) => lean.items.includes(item)));
-  assert.ok(Object.keys(DIAGRAM_FILLS).length === 4);
+  assert.ok(Object.keys(DIAGRAM_FILLS).length >= 4, 'od 1.45 także wybuch kaizen');
 });

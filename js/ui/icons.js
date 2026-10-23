@@ -215,6 +215,16 @@ const ICONS = {
   whys: [p('M7 3.5h10v4H7z'), p('M7 16.5h10v4H7z'), p('M12 7.5v9'), p('M9.8 14.2L12 16.5l2.2-2.3')],
   sipoc: [p('M3 6h18v12H3z'), p('M3 10h18'), p('M6.6 6v12'), p('M10.2 6v12'), p('M13.8 6v12'), p('M17.4 6v12')],
   pageLayout: [p('M4 3.5h16v17H4z'), p('M4 8h16'), p('M12 8v12.5'), p('M4 14h8')],
+  // Od 1.45: schemat blokowy, łącznik, mapa strumienia wartości, legenda wad.
+  shapeTerminator: [p('M8 7.5h8a4.5 4.5 0 0 1 0 9H8a4.5 4.5 0 0 1 0-9z')],
+  shapeData: [p('M7 7h14l-4 10H3z')],
+  shapeDocument: [p('M4 5h16v11c-2.7 0-2.7 2.5-5.3 2.5S12 15 9.3 15 6.7 17.5 4 17.5z')],
+  shapeSubprocess: [p('M3 6h18v12H3z'), p('M6 6v12'), p('M18 6v12')],
+  shapeConnector: [p('M3.5 6.5H11v11h7'), p('M15.5 14.5l3 3-3 3')],
+  flowchart: [p('M8 2.5h8a2.5 2.5 0 0 1 0 5H8a2.5 2.5 0 0 1 0-5z'), p('M12 7.5v2'), p('M12 9.5l4.5 3.5-4.5 3.5-4.5-3.5z'), p('M12 16.5v2'), p('M7.5 18.5h9v3h-9z')],
+  vsm: [p('M3 4h12v4H3z'), p('M3 8h12v7H3z'), p('M5.5 11h7'), p('M18.5 13l3 6h-6z')],
+  timeline: [p('M2.5 8h4.5v8h5V8h5v8h4.5')],
+  defects: [p('M3.5 3.5h17v17h-17z'), p('M7 8l3 3m0-3l-3 3'), p('M15 14.5l2.5 2.5m0-2.5L15 17'), p('M15.5 7.5a1.5 1.5 0 1 0 .01 0')],
   // Od 1.43: łamana i edycja geometrii – odsuń, zaokrąglij, fazuj, przytnij, wydłuż.
   shapePolyline: [p('M3.5 18.5l5-10 6 6 6-10'), dot(3.5, 18.5, 1.6), dot(8.5, 8.5, 1.6), dot(14.5, 14.5, 1.6), dot(20.5, 4.5, 1.6)],
   offset: [p('M4 14l8-8 8 8'), { d: 'M4 20l8-8 8 8', 'stroke-dasharray': '2.2 2' }],

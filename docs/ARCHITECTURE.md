@@ -1847,6 +1847,33 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
 - **Kółko**: `ringStep` – przy więcej niż 8 pozycjach odstęp 360° / liczba (wcześniej stałe 45°: dziewiąta pozycja
   stawała na pierwszej).
 
+## Schematy procesów: schemat blokowy, łącznik, VSM, wady (od 1.45)
+
+- **Kształty** (`js/core/shapes.js`): `FLOW_SHAPES` – `terminator` (obrys i ścieżka jak prostokąt z zaokrągleniem połowy
+  krótszego boku – `pillOf`), `data` (równoległobok, wcięcie 0,35 wysokości, najwyżej 0,3 szerokości – `dataSlant`),
+  `document` (fala `0,42 + 0,08·sin` – `documentNodes`), `subprocess` (prostokąt + `shapeInnerLines`, malowane
+  w `paintShape` i zapisywane w DXF jako LINE). Wypełnienie, tekst na kształcie, uchwyty – jak prostokąt.
+- **Łącznik** `connector` – odcinek (`isSegment`, końce i przyklejanie jak strzałka, `hasCaps`, grot na końcu, ustawienie
+  `connectorCaps`), rysowany przez `connectorPoints` (początek, załamania, koniec) wg `route` (`CONNECTOR_ROUTES`: 'h' – poziomo,
+  pion w połowie; 'v'; 'hv', 'vh' – jedno załamanie; domyślny z kierunku – `defaultRoute`, zapisywany tylko inny).
+  `shapeOutline` / `shapePath` / `capFrame` – przez załamania (grot wzdłuż ostatniego odcinka), `snapGeometry` – załamania
+  i odcinki przebiegu. Edytor (`linkEnds`): przy przyklejeniu końców kierunek z `snapNormal` (z boku – 'h', z góry albo
+  dołu – 'v') → `routeFromEnds` → `withRoute`; trzecie menu – `route` (`drawing-route-<przebieg>`). Bez odsuwania i przycinania.
+- **Długość linii** (`pathLength`, `pathLengthText` w `core/drawing.js`): otwarty obrys kształtu (odcinek, łącznik, łamana,
+  łuk, krzywa) albo punkty kreski pióra; prosta, wymiar, punkt i figury zamknięte – bez. Pasek zaznaczenia: `długość …`
+  albo `długość razem …` (gdy nie ma pola i obwodu jednego kształtu).
+- **Tory** – `layout.kind = 'lanes'` (`page-layouts.js`): pasy na całą szerokość, pole nazwy z lewej (`rotate: −π/2`).
+- **Diagramy** (`diagrams.js`): `vsm` { symbol (`VSM_SYMBOLS`), title, rows } – `vsmLayout` z wielokątami `polys`
+  ({ points, closed, fill – nazwa z `DIAGRAM_FILLS`, `ink` – kolor diagramu }) i okręgami z wypełnieniem; `timeline`
+  { waitUnit, workUnit, dayHours, steps } – `timelineTotals` (sekundy z `TIMELINE_UNITS`, dzień – dayHours), schodkowe linie
+  i pole podsumowania; `defects` { title, items: [{ mark, color, name }] } – `diagramLayout(element, { strokes })` liczy
+  punkty kartki (`defectCounts`: shape 'point', `pointMark`, kolor), znaczniki legendy – `marks` z `pointMarkGeometry`.
+  Kreski kartki dostaje malowanie (`paintStroke` – `options.strokes`, `paintDrawing`) i DXF; bez nich – „–”.
+- **Edytor**: grupa `process` (`PROCESS_ITEMS`), zestaw `process-map`; okna `editVsm`, `editTimeline`, `editDefects`
+  (`editDiagramElement` – dotknięcie zaznaczonego). „Zaznaczaj tę wadę” – zapis, bez zaznaczenia, grupa z Punktem
+  (`startGroup` → `showGroup`), narzędzie Punkt ze znacznikiem i kolorem wady. Narzędzie Punkt: przy zaznaczonych samych
+  punktach dotknięcie obok od razu stawia kolejny (`startShape` – `hadSelection`). Format rysunku 17.
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).
@@ -1935,7 +1962,8 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   odbicie względem prostej, skalowanie, styl jak…, ramka rysunkowa i jej DXF; od 1.42 przyciąganie do środka kształtu,
   środka boku, przecięć i kresek pióra, wymiar poziomy i pionowy, długość łuku, łuk ze środka, osie okręgu, A4 pionowo;
   od 1.43 odsunięcie, zaokrąglenie i faza, przycinanie i wydłużanie, okrąg styczny; od 1.44 diagram Ishikawy
-  i 5 × Dlaczego – rozkład, przyczyny z tekstu, miejsca dotknięcia, zapis – układ kartki i jego DXF),
+  i 5 × Dlaczego – rozkład, przyczyny z tekstu, miejsca dotknięcia, zapis – układ kartki i jego DXF; od 1.45 kształty
+  schematu blokowego, łącznik i jego przebieg, długość linii, tory, symbole i oś czasu VSM, legenda wad, ich DXF),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

@@ -40,12 +40,14 @@
 //   Od 1.44 (format 16) w strokes diagramy jakości { tool: 'diagram', kind: 'fishbone' | 'whys', … } (core/diagrams.js)
 //   i layout – układ kartki: raport A3, PDCA, macierz 2×2, Kanban, diagram pokrewieństwa (core/page-layouts.js;
 //   tylko kartka bez zdjęcia).
+//   Od 1.45 (format 17) kształty schematu blokowego i łącznik (core/shapes.js), diagramy 'vsm', 'timeline', 'defects',
+//   układ 'lanes' (tory); w ustawieniach narzędzi – zakończenia łącznika (connectorCaps).
 
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import { DEFAULT_RECENT_FITS, cleanRecentFits } from './fits.js';
 import {
   ARC_MODES, CORNER_KINDS, DIM_AXES, DIM_MODES, DIM_OFFSET, DIM_OFFSET_LIMITS, ELLIPSE_MODES, FIT_RE, NGON_DEFAULT, NGON_SIDES, POINT_MARKS, SEGMENT_CAPS, SHAPES,
-  SHAPE_DASHES, SHAPE_FILLS, angleDimDegrees, arcDimLength, capPoints, cleanHatch, cleanShape, isLengthKey, isLinearDim, isShape, measuredLength,
+  SHAPE_DASHES, SHAPE_FILLS, angleDimDegrees, arcDimLength, capPoints, cleanHatch, cleanShape, isLengthKey, isLinearDim, isMeasure, isShape, isXline, measuredLength,
   scaleDimTolerances, segmentDegrees,
   shapeAsStroke, shapeBounds, shapeMeasure, shapeOutline, skewDegrees, touchesShape
 } from './shapes.js';
@@ -67,9 +69,10 @@ import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './la
  * 12 – wymiary graniczne, rodzaj wymiaru, miejsca po przecinku, ramka z Ⓟ i drugim wierszem, chropowatość
  * z kierunkiem struktury, odnośnik (1.38), 13 – wielokąt foremny, półprosta, narożniki prostokąta, kreskowanie (1.40),
  * 14 – ramka rysunkowa z tabliczką (1.41), 15 – wymiar długości łuku, wymiar poziomy i pionowy, osie okręgu,
- * arkusz A4 pionowo (1.42), 16 – diagramy Ishikawy i 5 × Dlaczego, układ kartki (1.44).
+ * arkusz A4 pionowo (1.42), 16 – diagramy Ishikawy i 5 × Dlaczego, układ kartki (1.44), 17 – kształty schematu blokowego,
+ * łącznik, symbole i oś czasu VSM, legenda wad, tory (1.45).
  */
-export const DRAWING_VERSION = 16;
+export const DRAWING_VERSION = 17;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -415,6 +418,8 @@ export function defaultToolSettings() {
     // Od 1.27: rodzaj linii nowych kształtów, zakończenia strzałki po łuku i znacznik punktu.
     shapeDash: 'solid',
     curveCaps: { start: 'none', end: 'arrow' },
+    // Od 1.45: zakończenia nowych łączników (jak strzałki – grot na końcu).
+    connectorCaps: { start: 'none', end: 'arrow' },
     pointMark: 'center',
     // Od 1.34: sposób rysowania okręgu (ramka, środek i promień, 2 albo 3 punkty) i rodzaj wymiaru narzędzia „Wymiar”.
     ellipseMode: 'frame',
@@ -578,6 +583,7 @@ export function cleanToolSettings(raw) {
     arrowCaps: cleanCaps(raw.arrowCaps, base.arrowCaps),
     shapeDash: SHAPE_DASHES.includes(raw.shapeDash) ? raw.shapeDash : base.shapeDash,
     curveCaps: cleanCaps(raw.curveCaps, base.curveCaps),
+    connectorCaps: cleanCaps(raw.connectorCaps, base.connectorCaps),
     pointMark: POINT_MARKS.includes(raw.pointMark) ? raw.pointMark : base.pointMark,
     ellipseMode: ELLIPSE_MODES.includes(raw.ellipseMode) ? raw.ellipseMode : base.ellipseMode,
     dimMode: DIM_MODES.includes(raw.dimMode) ? raw.dimMode : base.dimMode,
@@ -908,6 +914,30 @@ export function shapeMeasureText(shape, scale, format = 'unit') {
   if (!measure) return null;
   const factor = toScaleLength(1, scale) * dimFactor(scale, format);
   return { area: `${formatNumber(measure.area * factor * factor)} ${dimUnitLabel(scale, format)}²`, perimeter: lengthText(measure.perimeter, scale, format) };
+}
+/**
+ * Długość linii (od 1.45 – „spaghetti”: trasy ruchu) w jednostkach strony albo null: odcinek, strzałka, łącznik (przebieg),
+ * łamana, łuk, strzałka po łuku, kreska pióra i zakreślacza (bez prostej, półprostej, wymiaru i figur zamkniętych).
+ */
+export function pathLength(stroke) {
+  const sum = (points) => points.reduce((total, point, index) => (index === 0 ? 0 : total + Math.hypot(point.x - points[index - 1].x, point.y - points[index - 1].y)), 0);
+  if (stroke?.tool === 'pen' || stroke?.tool === 'highlighter') {
+    const points = [];
+    for (let index = 0; index + 2 < stroke.points.length; index += 3) points.push({ x: stroke.points[index], y: stroke.points[index + 1] });
+    return points.length > 1 ? sum(points) : null;
+  }
+  if (!isShape(stroke) || isXline(stroke) || isMeasure(stroke) || stroke.shape === 'point') return null;
+  const { points, closed } = shapeOutline(stroke);
+  if (closed) return null;
+  const list = [];
+  for (let index = 0; index + 1 < points.length; index += 2) list.push({ x: points[index], y: points[index + 1] });
+  return sum(list);
+}
+/** Suma długości linii zaznaczenia jako napis w jednostkach rysunku i ich liczba – albo null (żadnej linii). */
+export function pathLengthText(strokes, scale, format = 'unit') {
+  const lengths = strokes.map(pathLength).filter((length) => length !== null);
+  if (lengths.length === 0) return null;
+  return { count: lengths.length, text: lengthText(lengths.reduce((total, length) => total + length, 0), scale, format) };
 }
 /** Długość w jednostkach strony jako napis w jednostce liczb wymiarów rysunku („2,5 mm”). */
 export const lengthText = (units, scale, format = 'unit') => `${formatNumber(toScaleLength(units, scale) * dimFactor(scale, format))} ${dimUnitLabel(scale, format)}`;

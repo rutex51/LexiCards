@@ -2,7 +2,7 @@
 // z wypełnieniem, od 1.19 z zakończeniami odcinka, od 1.27 z rodzajem linii, prosta, łuk i punkt)
 // i szablon pod kreskami – boisko piłkarskie rysowane liniami albo obraz z pliku (core/templates.js).
 
-import { FILL_ALPHA, dashPattern, hatchWidth, isPointShape, pointMarkGeometry, shapeAxes, shapeHatch, shapePath } from '../core/shapes.js';
+import { FILL_ALPHA, dashPattern, hatchWidth, isPointShape, pointMarkGeometry, shapeAxes, shapeHatch, shapeInnerLines, shapePath } from '../core/shapes.js';
 import { PITCH, TEMPLATE_ALPHA } from '../core/templates.js';
 import { frameLayout } from '../core/title-block.js';
 import { textFont } from './canvas-text.js';
@@ -113,6 +113,16 @@ export function paintShape(ctx, shape) {
   // Od 1.27 rodzaj linii (przerywana, osiowa…) – tylko linia kształtu; groty i zakończenia – ciągłe.
   ctx.setLineDash(dashPattern(shape));
   ctx.stroke();
+  // Podproces (od 1.45) – pionowe linie przy bokach, tą samą linią.
+  const inner = shapeInnerLines(shape);
+  if (inner.length > 0) {
+    ctx.beginPath();
+    for (const [a, b] of inner) {
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+    }
+    ctx.stroke();
+  }
   // Osie okręgu i elipsy (od 1.42) – cieńsza linia osiowa przez środek, poza obrysem.
   const axes = shapeAxes(shape);
   if (axes.length > 0) {

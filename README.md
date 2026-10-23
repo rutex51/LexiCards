@@ -1,4 +1,4 @@
-# LexiCards 1.44
+# LexiCards 1.45
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -53,8 +53,9 @@ Rysunek – etap D, część 2: odbicie i kopia odbita względem prostej przez d
 Rysunek – zaległości pakietów A i B planu: przyciąganie do środka kształtu, środka boku, przecięć i kresek pióra; wymiar poziomy i pionowy, wymiary łańcuchowe i od bazy, wymiar długości łuku; łuk ze środka, początku i końca; okrąg z osiami (znacznik środka) i polem ⌀; ramka A4 pionowo (wersja 1.42): [docs/RELEASE-1.42.md](docs/RELEASE-1.42.md).
 Rysunek – edycja geometrii (pakiet E planu): grupa Edycja – odsuń, zaokrąglij, fazuj, przytnij, wydłuż; okrąg styczny do dwóch elementów o danym promieniu; łamana punkt po punkcie (wersja 1.43): [docs/RELEASE-1.43.md](docs/RELEASE-1.43.md).
 Rysunek – szablony jakości (Six Sigma / Lean): grupa Jakość – diagram Ishikawy (6M, przyczyny i podprzyczyny), 5 × Dlaczego, tabela SIPOC, układ kartki (raport A3, PDCA, macierz 2×2, Kanban, diagram pokrewieństwa); zestaw „Jakość / Lean” (wersja 1.44): [docs/RELEASE-1.44.md](docs/RELEASE-1.44.md).
+Rysunek – schematy procesów: grupa Procesy – kształty schematu blokowego (początek / koniec, dane, dokument, podproces), łącznik pod kątem prostym przyklejany do kształtów, tory (swimlanes), symbole i oś czasu VSM (czas przejścia, PCE), legenda wad liczona ze znaczników, długość zaznaczonych tras („spaghetti”); zestaw „Procesy / VSM” (wersja 1.45): [docs/RELEASE-1.45.md](docs/RELEASE-1.45.md).
 
-## Co potrafi wersja 1.44
+## Co potrafi wersja 1.45
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -161,7 +162,9 @@ Rysunek – szablony jakości (Six Sigma / Lean): grupa Jakość – diagram Ish
   wymiary **łańcuchowe** i **od bazy**, wymiar **długości łuku**, **łuk ze środka**, okrąg z **osiami** i polem **⌀**,
   ramka **A4 pionowo**. Od 1.43 grupa **Edycja**: **odsuń**, **zaokrąglij**, **fazuj**, **przytnij**, **wydłuż**,
   a także **okrąg styczny** (TTR) i **łamana** punkt po punkcie. Od 1.44 grupa **Jakość**: **diagram Ishikawy**,
-  **5 × Dlaczego**, tabela **SIPOC** i **układ kartki** (raport A3, PDCA, macierz 2×2, Kanban, diagram pokrewieństwa). Od 1.24.1 kartka w edytorze wygląda
+  **5 × Dlaczego**, tabela **SIPOC** i **układ kartki** (raport A3, PDCA, macierz 2×2, Kanban, diagram pokrewieństwa). Od 1.45 grupa
+  **Procesy**: **schemat blokowy** z **łącznikami** pod kątem prostym, **tory**, **mapa strumienia wartości** (symbole i oś czasu)
+  i **koncentracja wad** (legenda liczy znaczniki), a zaznaczone linie pokazują **długość trasy**. Od 1.24.1 kartka w edytorze wygląda
   jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
@@ -915,6 +918,18 @@ karteczkami i pismem: raport **A3** (tytuł i siedem pól), koło **PDCA**, **ma
 **Kanban** i **diagram pokrewieństwa** (2–6 kolumn o własnych nazwach); widać go na obrazie w notatce, w PDF i w DXF
 (warstwa UKLAD), przy ramce rysunkowej – w ramce nad tabliczką. Diagramy mają kolor i wielkość napisów jak pola tekstowe,
 przenoszą się do DXF liniami i napisami. Format rysunku – 16.
+**Schematy procesów** (od 1.45): grupa **Procesy** na prawym kółku (i zestaw **Procesy / VSM** – z prostokątem procesu, rombem
+decyzji, punktem i karteczką). Kształty schematu blokowego: **Start/stop** (półokrągłe boki), **Dane** (równoległobok),
+**Dokument** (falisty dół), **Podproces** (linie przy bokach) – z tekstem, wypełnieniem i uchwytami jak inne kształty.
+**Łącznik** – strzałka rysowana pod kątem prostym; końce przyciągają się i przyklejają do kształtów, a przebieg wynika
+z krawędzi (z boku – poziomo, z góry albo dołu – pionowo, różne – jedno załamanie); zaznaczony łącznik zmienia przebieg
+w trzecim menu (**Przebieg**). **Tory** w oknie **Układ kartki** – 2–6 poziomych pasów z nazwami działów. **VSM** – symbol
+mapy strumienia wartości: proces (nazwa i dane C/T, C/O…), zapas (trójkąt z I), dostawca / klient, supermarket, strzałka
+push, kaizen, operator, transport. **Oś czasu** – kroki (oczekiwanie u góry, praca u dołu) z jednostkami i podsumowaniem:
+czas przejścia, wartość dodana i PCE (dzień – wybrana liczba godzin). **Wady** – legenda koncentracji wad: każda wada ma
+znacznik i kolor narzędzia Punkt, a legenda sama liczy takie punkty na kartce; **Zaznaczaj tę wadę** włącza Punkt z jej
+znacznikiem i kolorem (kolejne dotknięcia stawiają kolejne znaczniki). **Spaghetti**: zaznaczone linie (odcinki, łączniki,
+łamane, łuki, kreski pióra) pokazują swoją długość, a kilka – długość razem, w jednostkach rysunku. Format rysunku – 17.
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę

@@ -6,7 +6,7 @@
 // identyfikatora ani przyklejeń (poza kawałkiem, który zostaje w miejscu elementu – zob. trimAt).
 
 import {
-  MIN_SHAPE, arcFromPoints, arcGeometry, circleShape, cornerSize, isArc, isMeasure, isSegment, isShape, isXline, polyFromPoints,
+  MIN_SHAPE, arcFromPoints, arcGeometry, circleShape, cornerSize, isArc, isConnector, isMeasure, isSegment, isShape, isXline, polyFromPoints,
   polyPoints, segmentCaps, shapeContains, shapeOutline, shapePoint, withCaps, withCorner, withDash
 } from './shapes.js';
 
@@ -106,7 +106,8 @@ function signedArea(points) {
 
 /** Czy element da się odsunąć (odcinek, prosta, półprosta, okrąg, łuk, prostokąt bez pochylenia, łamana, wielokąt). */
 export function canOffset(shape) {
-  if (!isShape(shape) || isMeasure(shape)) return false;
+  // Łącznik (od 1.45) – połączenie dwóch elementów, nie linia do odsuwania ani przycinania.
+  if (!isShape(shape) || isMeasure(shape) || isConnector(shape)) return false;
   if (isSegment(shape)) return true;
   if (isArc(shape)) return Boolean(arcGeometry(shape));
   if (isCircleShape(shape)) return true;
@@ -368,7 +369,7 @@ function cuttersFor(strokes, target) {
 }
 
 /** Czy element da się przyciąć (odcinek, strzałka, prosta, półprosta, okrąg, łuk). */
-export const canTrim = (shape) => isShape(shape) && !isMeasure(shape) && (isSegment(shape) || isCircleShape(shape) || (isArc(shape) && Boolean(arcGeometry(shape))));
+export const canTrim = (shape) => isShape(shape) && !isMeasure(shape) && !isConnector(shape) && (isSegment(shape) || isCircleShape(shape) || (isArc(shape) && Boolean(arcGeometry(shape))));
 
 /**
  * Przycięcie (jak TRIM w trybie szybkim): część elementu `target` między najbliższymi przecięciami z innymi
