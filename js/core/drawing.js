@@ -37,6 +37,9 @@
 //   Od 1.36 (format 11) layers – warstwy rysunku (core/layers.js; brak – tło, obraz i warstwy 1–5),
 //   activeLayer – warstwa nowych elementów (brak – 1), w elementach layers – sygnatury (warstwy rzędu 1–3).
 //   Od 1.41 (format 14) frame – ramka rysunkowa z tabliczką (core/title-block.js; tylko kartka bez zdjęcia).
+//   Od 1.44 (format 16) w strokes diagramy jakości { tool: 'diagram', kind: 'fishbone' | 'whys', … } (core/diagrams.js)
+//   i layout – układ kartki: raport A3, PDCA, macierz 2×2, Kanban, diagram pokrewieństwa (core/page-layouts.js;
+//   tylko kartka bez zdjęcia).
 
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import { DEFAULT_RECENT_FITS, cleanRecentFits } from './fits.js';
@@ -51,6 +54,8 @@ import { cleanSymbol, isSymbol, symbolBox, symbolLeaderStart } from './gdt.js';
 import { cleanTable } from './tables.js';
 import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
 import { cleanFrame } from './title-block.js';
+import { cleanDiagram } from './diagrams.js';
+import { cleanLayout } from './page-layouts.js';
 import { cleanRingPositions, cleanToolGroups, cleanUiHidden, defaultToolGroups } from './tool-ring.js';
 import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './layers.js';
 
@@ -62,9 +67,9 @@ import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './la
  * 12 – wymiary graniczne, rodzaj wymiaru, miejsca po przecinku, ramka z Ⓟ i drugim wierszem, chropowatość
  * z kierunkiem struktury, odnośnik (1.38), 13 – wielokąt foremny, półprosta, narożniki prostokąta, kreskowanie (1.40),
  * 14 – ramka rysunkowa z tabliczką (1.41), 15 – wymiar długości łuku, wymiar poziomy i pionowy, osie okręgu,
- * arkusz A4 pionowo (1.42).
+ * arkusz A4 pionowo (1.42), 16 – diagramy Ishikawy i 5 × Dlaczego, układ kartki (1.44).
  */
-export const DRAWING_VERSION = 15;
+export const DRAWING_VERSION = 16;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -331,7 +336,7 @@ export const TEXT_SIZE_LABELS = Object.freeze(['Mała', 'Średnia', 'Duża', 'Ba
 export const ELEMENT_TEXT_MAX = 2000;
 
 /** Czy to pole tekstowe, wzór, (od 1.15) kształt, (od 1.19) szyk albo (od 1.21) tabela lub karteczka – a nie kreska z punktami. */
-export const isElement = (stroke) => ['text', 'math', 'shape', 'array', 'table', 'sticky', 'gdt', 'datum', 'roughness'].includes(stroke?.tool);
+export const isElement = (stroke) => ['text', 'math', 'shape', 'array', 'table', 'sticky', 'gdt', 'datum', 'roughness', 'diagram'].includes(stroke?.tool);
 
 // ---------------------------------------------------------------- tabele i karteczki (od 1.21)
 
@@ -353,8 +358,8 @@ export const STICKY_MIN = Object.freeze({ width: 160, height: 120 });
 export const STICKY_TEXT_MAX = 1000;
 /** Kolory karteczki { fill, ink } – według koloru karteczki; od 1.36 także gotowe kolory (karteczka z nasyceniem warstwy). */
 export const stickyColor = (id) => (id && typeof id === 'object' ? id : STICKY_COLORS.find((color) => color.id === id) ?? STICKY_COLORS[0]);
-/** Tabela, karteczka i (od 1.22.1) symbol metrologiczny – element z oknem poprawki i uchwytami. */
-export const isBox = (stroke) => stroke?.tool === 'table' || stroke?.tool === 'sticky' || isSymbol(stroke);
+/** Tabela, karteczka, (od 1.22.1) symbol metrologiczny i (od 1.44) diagram jakości – element z oknem poprawki. */
+export const isBox = (stroke) => stroke?.tool === 'table' || stroke?.tool === 'sticky' || isSymbol(stroke) || stroke?.tool === 'diagram';
 
 /** Prostokąt elementu { x, y, width, height }: zwinięta karteczka (od 1.21) – sama ikona. */
 export function elementBox(element) {
@@ -1319,6 +1324,8 @@ export function cleanDrawing(raw) {
     ...(photo ? { photo } : {}),
     // Ramka rysunkowa (od 1.41) – tylko kartka bez zdjęcia.
     ...(!photo && cleanFrame(raw.frame) ? { frame: cleanFrame(raw.frame) } : {}),
+    // Układ kartki (od 1.44) – też tylko bez zdjęcia.
+    ...(!photo && cleanLayout(raw.layout) ? { layout: cleanLayout(raw.layout) } : {}),
     ...(layers ? { layers } : {}),
     ...(Number.isInteger(raw.activeLayer) && raw.activeLayer !== 1 && known.has(raw.activeLayer) ? { activeLayer: raw.activeLayer } : {})
   };
@@ -1375,6 +1382,7 @@ function cleanElementData(raw, pageWidth, pageHeight) {
   if (raw.tool === 'shape') return cleanShape(raw, pageWidth, pageHeight, (color) => HEX.test(color ?? ''));
   if (raw.tool === 'table' || raw.tool === 'sticky') return cleanBox(raw, pageWidth, pageHeight);
   if (isSymbol(raw)) return cleanSymbol(raw, pageWidth, pageHeight);
+  if (raw.tool === 'diagram') return cleanDiagram(raw, pageWidth, pageHeight);
   const content = raw.tool === 'text' ? raw.text : raw.source;
   if (typeof content !== 'string' || content.trim() === '' || !HEX.test(raw.color ?? '')) return null;
   if (![raw.x, raw.y, raw.size, raw.width, raw.height].every(finite)) return null;

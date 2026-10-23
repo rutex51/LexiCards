@@ -3166,7 +3166,8 @@ const ITEM_GROUPS = {
   'drawing-insert-text': 'text', 'drawing-insert-math': 'text', 'drawing-insert-table': 'text', 'drawing-insert-sticky': 'text',
   'drawing-symbol-gdt': 'symbols', 'drawing-symbol-datum': 'symbols', 'drawing-symbol-roughness': 'symbols',
   'drawing-measure-linear': 'dims', 'drawing-measure-angle': 'dims', 'drawing-measure-radius': 'dims', 'drawing-measure-diameter': 'dims', 'drawing-measure-arc': 'dims',
-  'drawing-edit-offset': 'edit', 'drawing-edit-fillet': 'edit', 'drawing-edit-chamfer': 'edit', 'drawing-edit-trim': 'edit', 'drawing-edit-extend': 'edit'
+  'drawing-edit-offset': 'edit', 'drawing-edit-fillet': 'edit', 'drawing-edit-chamfer': 'edit', 'drawing-edit-trim': 'edit', 'drawing-edit-extend': 'edit',
+  'drawing-insert-fishbone': 'quality', 'drawing-insert-whys': 'quality', 'drawing-insert-sipoc': 'quality', 'drawing-insert-layout': 'quality'
 };
 const groupOfItem = (testID) => ITEM_GROUPS[testID] ?? (testID.startsWith('drawing-shape-') ? 'shapes' : null);
 const OPTION_IDS = /^drawing-(color-|width-|eraser-size-|select-all$|paste$)/;
@@ -8941,14 +8942,14 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   const ids = await sampleLessons(page);
   const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Grupy</p>');
   // Ostatnie małe kółko każdego kółka – „Grupy narzędzi”.
-  // Od 1.43 na końcu grupa Edycja.
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit']);
+  // Od 1.43 na końcu grupa Edycja, od 1.44 – Jakość.
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality']);
   assert.deepEqual(await ringGroupIds(editor, 'left'), ['metrology']);
   assert.equal(await editor.locator('[data-testid=drawing-ring-left-edit]').evaluate((element) => element.style.opacity), '1', 'przy jednej grupie widać je od razu');
   let groups = await openToolGroupsFrom(editor, 'right');
   const standardOrder = () => groups.locator('[data-testid=tool-groups-standard] [data-testid^=tool-groups-on-]')
     .evaluateAll((inputs) => inputs.map((input) => input.dataset.testid.replace('tool-groups-on-', '')));
-  assert.deepEqual(await standardOrder(), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit']);
+  assert.deepEqual(await standardOrder(), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality']);
   await expectText(groups.locator('[data-testid=tool-groups-standard]'), 'Pióro · Zakreślacz · Gumka');
   assert.equal(await groups.locator('[data-testid=tool-groups-preset-metrology]').getAttribute('aria-pressed'), 'true', 'Metrologia już na lewym kółku');
   await expectText(groups.locator('[data-testid=tool-groups-editor]'), 'Grupa „Metrologia” – narzędzia');
@@ -8958,14 +8959,14 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await groups.locator('[data-testid=tool-groups-on-write]').uncheck();
   await groups.locator('.sheet__header .button--plain').click();
   await groups.waitFor({ state: 'detached' });
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit'], 'Anuluj zostawia grupy');
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality'], 'Anuluj zostawia grupy');
 
   groups = await openToolGroupsFrom(editor, 'right');
   // Symbole – poza kółkiem; Tekst na początek (strzałki na uchwycie ≡), Konstrukcja przeciągnięta nad Pisanie.
   await groups.locator('[data-testid=tool-groups-on-symbols]').uncheck();
   await groups.locator('[data-testid=tool-groups-move-text]').focus();
   for (let step = 0; step < 3; step += 1) await page.keyboard.press('ArrowUp');
-  assert.deepEqual(await standardOrder(), ['text', 'write', 'shapes', 'construct', 'dims', 'symbols', 'edit']);
+  assert.deepEqual(await standardOrder(), ['text', 'write', 'shapes', 'construct', 'dims', 'symbols', 'edit', 'quality']);
   assert.equal(await groups.locator('[data-testid=tool-groups-move-text]').evaluate((element) => element === document.activeElement), true, 'fokus zostaje na uchwycie');
   const grip = await groups.locator('[data-testid=tool-groups-move-construct]').boundingBox();
   const rowHeight = (await groups.locator('[data-testid=tool-groups-move-write]').boundingBox()).y - (await groups.locator('[data-testid=tool-groups-move-text]').boundingBox()).y;
@@ -8973,11 +8974,11 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await page.mouse.down();
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 - rowHeight * 2, { steps: 8 });
   await page.mouse.up();
-  await waitUntil(async () => (await standardOrder()).join() === 'text,construct,write,shapes,dims,symbols,edit', 'Przeciągnięcie ≡ zmienia kolejność');
+  await waitUntil(async () => (await standardOrder()).join() === 'text,construct,write,shapes,dims,symbols,edit,quality', 'Przeciągnięcie ≡ zmienia kolejność');
   // Na kółku zostaje co najmniej jedna grupa: po odznaczeniu pozostałych ostatnia jest zablokowana.
-  for (const id of ['text', 'write', 'shapes', 'dims', 'edit']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).uncheck();
+  for (const id of ['text', 'write', 'shapes', 'dims', 'edit', 'quality']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).uncheck();
   assert.equal(await groups.locator('[data-testid=tool-groups-on-construct]').isDisabled(), true, 'ostatnia grupa zostaje');
-  for (const id of ['text', 'write', 'shapes', 'dims', 'edit']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).check();
+  for (const id of ['text', 'write', 'shapes', 'dims', 'edit', 'quality']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).check();
   assert.equal(await groups.locator('[data-testid=tool-groups-on-construct]').isDisabled(), false);
 
   // Zestawy: Geometria dochodzi (i otwiera się do edycji), Metrologia odchodzi.
@@ -9001,7 +9002,7 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await groups.waitFor({ state: 'detached' });
 
   // Kółka po „Gotowe”: prawe w nowej kolejności bez Symboli, lewe – Geometria i Ulubione.
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit']);
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit', 'quality']);
   assert.deepEqual(await ringGroupIds(editor, 'left'), ['geometry', 'own-1']);
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Pisanie', 'pokazana grupa zostaje');
   assert.equal(await editor.locator('[data-testid=drawing-group-write]').getAttribute('aria-pressed'), 'true');
@@ -9013,7 +9014,7 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   assert.match(await ringMain(editor, 'left').getAttribute('aria-label'), /^Elipsa/);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-grupy-kolka-ipad.png') });
   const saved = await storedGroups(page);
-  assert.deepEqual(saved.order, ['text', 'construct', 'write', 'shapes', 'dims', 'symbols', 'edit']);
+  assert.deepEqual(saved.order, ['text', 'construct', 'write', 'shapes', 'dims', 'symbols', 'edit', 'quality']);
   assert.deepEqual(saved.off, ['symbols']);
   assert.deepEqual(saved.mine.map((group) => [group.id, group.label, group.icon, group.items.join()]),
     [['geometry', 'Geometria', 'geometry', 'shape:line,shape:ellipse,shape:xline,shape:point'], ['own-1', 'Ulubione', 'sparkles', 'shape:ellipse,pen,gdt']]);
@@ -9024,7 +9025,7 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await noteObjectsDialog(page).locator('[data-testid=note-image-draw]').click();
   await editor.waitFor();
   await waitUntil(async () => (await ringGroupIds(editor, 'left')).join() === 'geometry,own-1', 'Grupy po ponownym otwarciu');
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit']);
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit', 'quality']);
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Ulubione');
 
   // Z lewego kółka okno otwiera się z jego grupą; usunięcie pokazanej grupy – menu wraca do grupy z narzędziem.
@@ -10810,6 +10811,199 @@ test('rysunek 1.43 na telefonie: grupa Edycja mieści się w górnym menu, okno 
   await waitUntil(async () => (await page.evaluate(() => document.querySelectorAll('[data-testid=drawing-edit-trim][aria-pressed=true]').length)) === 1, 'Przycinanie trwa');
   await page.keyboard.press('Escape');
   await expectText(notice, 'Koniec przycinania');
+}, { device: PHONE });
+
+test('rysunek 1.44: grupa Jakość – diagram Ishikawy (6M, przyczyny i podprzyczyny, dotknięcie ości), 5 × Dlaczego, SIPOC, układ kartki (A3, PDCA, macierz, pokrewieństwo, Kanban); zapis (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Jakość</p>');
+  const frame = await pageFrame(page);
+  const mouse = pageMouse(page, frame);
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  const closed = () => waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+  const deselect = async () => {
+    await page.keyboard.press('Escape');
+    await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  };
+
+  // Grupa Jakość: Ishikawa, 5 × Dlaczego, SIPOC, Układ.
+  await pickGroup(editor, 'quality');
+  await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Jakość');
+  assert.deepEqual(await editor.locator('[data-testid=drawing-tool-row] .drawing__tool-label').allTextContents(), ['Ishikawa', '5 Why', 'SIPOC', 'Układ']);
+
+  // Układ kartki na pustej kartce: A3, PDCA, macierz, pokrewieństwo (zrzuty), potem bez układu.
+  const layout = async (kind, fill = null) => {
+    await editor.locator('[data-testid=drawing-insert-layout]').click();
+    await expectText(sheet(page).locator('.sheet__title'), 'Układ kartki');
+    await page.waitForFunction(() => document.getAnimations().length === 0);
+    await page.locator(`[data-testid=drawing-layout-kind-${kind}]`).check({ force: true });
+    if (fill) await fill();
+    await sheetSubmit(page).click();
+    await closed();
+  };
+  const shot = async (name) => {
+    await nextFrames(page);
+    await page.screenshot({ path: path.join(OUTPUT, `rysunek-144-${name}.png`) });
+  };
+  await layout('a3', () => page.locator('[data-testid=drawing-layout-title]').fill('Rysy na obudowie'));
+  await expectText(notice, 'Układ kartki: Raport A3');
+  await shot('uklad-a3');
+  await layout('pdca');
+  await expectText(notice, 'Układ kartki: PDCA');
+  await shot('uklad-pdca');
+  await layout('matrix');
+  await expectText(notice, 'Układ kartki: Macierz 2×2');
+  await shot('uklad-macierz');
+  await layout('affinity');
+  await expectText(notice, 'Układ kartki: Diagram pokrewieństwa');
+  await shot('uklad-pokrewienstwo');
+  await layout('none');
+  await expectText(notice, 'Bez układu kartki');
+
+  // Diagram Ishikawy: problem, przyczyny Maszyny (z podprzyczyną) i Pomiaru.
+  await editor.locator('[data-testid=drawing-insert-fishbone]').click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Nowy: Diagram Ishikawy');
+  assert.equal(await page.locator('[data-testid=drawing-fishbone-name-0]').inputValue(), 'Człowiek', '6M na start');
+  assert.equal(await page.locator('[data-testid=drawing-fishbone-name-5]').inputValue(), 'Środowisko');
+  await page.locator('[data-testid=drawing-diagram-problem]').fill('Wymiar ⌀20 poza tolerancją');
+  await page.locator('[data-testid=drawing-fishbone-causes-1]').fill('Zużyte narzędzie\n- brak wymiany\nTemperatura wrzeciona');
+  await page.locator('[data-testid=drawing-fishbone-causes-4]').fill('Suwmiarka bez kalibracji\n- brak wzorca\n- przegląd po terminie');
+  await sheetSubmit(page).click();
+  await closed();
+  await expectText(count, 'Diagram Ishikawy');
+  await shot('ishikawa');
+  await deselect();
+
+  // SIPOC: tabela z nagłówkami.
+  await editor.locator('[data-testid=drawing-insert-sipoc]').click();
+  await expectText(sheet(page).locator('.sheet__title'), 'SIPOC');
+  assert.equal(await page.locator('[data-testid=table-cell-0-0]').inputValue(), 'Dostawcy (S)');
+  assert.equal(await page.locator('[data-testid=table-cell-0-4]').inputValue(), 'Klienci (C)');
+  await page.locator('[data-testid=table-cell-1-2]').fill('Toczenie wałka');
+  await sheetSubmit(page).click();
+  await closed();
+  await expectText(count, 'Tabela');
+  await deselect();
+
+  // Kanban z własnymi kolumnami pod diagramem i tabelą.
+  await layout('kanban', async () => {
+    assert.equal(await page.locator('[data-testid=drawing-layout-columns]').inputValue(), 'Do zrobienia\nW toku\nZrobione');
+    await page.locator('[data-testid=drawing-layout-columns]').fill('Pomysły\nW toku\nZrobione\nOdrzucone');
+  });
+  await expectText(notice, 'Układ kartki: Kanban');
+  // Nagłówek pierwszej kolumny – jasnoszare pole u góry kartki (x 70–420, y 30–82).
+  await waitUntil(async () => {
+    const [r, g, b] = await pixelAt(page, ...frame.at(240, 40));
+    return r < 250 && r > 225 && b > g;
+  }, 'Nagłówek kolumny Kanban');
+  await editor.locator('[data-testid=drawing-pages]').click();
+  await expectText(page.locator('[data-testid=drawing-layout]'), 'Układ kartki: Kanban…');
+
+  // Druga kartka: 5 × Dlaczego – dwie odpowiedzi, potem „Dlaczego?” nad zaznaczonym – pierwsze puste pole.
+  await page.locator('[data-testid=drawing-page-new]').click();
+  await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 2 z 2');
+  await editor.locator('[data-testid=drawing-insert-whys]').click();
+  await page.locator('[data-testid=drawing-diagram-problem]').fill('Rysy na obudowie');
+  await page.locator('[data-testid=drawing-whys-answer-0]').fill('Obudowy ocierają się w pojemniku');
+  await page.locator('[data-testid=drawing-whys-answer-1]').fill('Brak przekładek');
+  await sheetSubmit(page).click();
+  await closed();
+  await expectText(count, '5 × Dlaczego');
+  await editor.locator('[data-testid=drawing-selection-why]').click();
+  await waitUntil(() => page.evaluate(() => document.activeElement?.dataset.testid === 'drawing-whys-answer-2'), 'Kursor w pierwszym pustym polu');
+  await page.locator('[data-testid=drawing-whys-answer-2]').fill('Przekładek nie zamówiono');
+  await page.locator('[data-testid=drawing-whys-answer-3]').fill('Brak minimum magazynowego');
+  await page.locator('[data-testid=drawing-whys-answer-4]').fill('Minimum nie ustalone w systemie ERP');
+  await sheetSubmit(page).click();
+  await closed();
+  // Wszystkie pola wypełnione – „Dlaczego?” dalej dostępny (kolejne pole, do 7).
+  await waitUntil(() => editor.locator('[data-testid=drawing-selection-why]').isVisible(), 'Przycisk „Dlaczego?” przy pełnym diagramie');
+  await deselect();
+  await waitUntil(() => notice.isHidden(), 'Komunikat zniknął');
+  await shot('5-dlaczego');
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const saved = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  assert.deepEqual(saved.layout, { kind: 'kanban', labels: ['Pomysły', 'W toku', 'Zrobione', 'Odrzucone'] });
+  const fishbone = saved.strokes.find((stroke) => stroke.tool === 'diagram' && stroke.kind === 'fishbone');
+  assert.equal(fishbone.problem, 'Wymiar ⌀20 poza tolerancją');
+  assert.deepEqual(fishbone.bones.map((bone) => bone.name), ['Człowiek', 'Maszyna', 'Metoda', 'Materiał', 'Pomiar', 'Środowisko']);
+  assert.deepEqual(fishbone.bones[1].causes, [{ text: 'Zużyte narzędzie', subs: ['brak wymiany'] }, { text: 'Temperatura wrzeciona', subs: [] }]);
+  assert.deepEqual(fishbone.bones[4].causes, [{ text: 'Suwmiarka bez kalibracji', subs: ['brak wzorca', 'przegląd po terminie'] }]);
+  const second = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[1].drawing, ids.statements);
+  assert.equal(second.layout, undefined, 'druga kartka bez układu');
+  const whys = second.strokes.find((stroke) => stroke.tool === 'diagram' && stroke.kind === 'whys');
+  assert.deepEqual(whys.answers, ['Obudowy ocierają się w pojemniku', 'Brak przekładek', 'Przekładek nie zamówiono', 'Brak minimum magazynowego', 'Minimum nie ustalone w systemie ERP']);
+  const table = saved.strokes.find((stroke) => stroke.tool === 'table');
+  assert.deepEqual(table.rows[0], ['Dostawcy (S)', 'Wejścia (I)', 'Proces (P)', 'Wyjścia (O)', 'Klienci (C)']);
+  assert.equal(table.rows[1][2], 'Toczenie wałka');
+  // Obraz w notatce (też PDF) – z układem: nagłówek pierwszej kolumny Kanban w tym samym miejscu kartki.
+  const header = await page.evaluate(async (id) => {
+    const [image] = await window.lexicards.library.noteImages(id);
+    const bitmap = await createImageBitmap(new Blob([image.bytes], { type: image.type }));
+    const canvas = document.createElement('canvas');
+    [canvas.width, canvas.height] = [bitmap.width, bitmap.height];
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+    const ratio = bitmap.width / image.drawing.width;
+    return [...ctx.getImageData(Math.round(240 * ratio), Math.round(40 * ratio), 1, 1).data];
+  }, ids.statements);
+  assert.ok(header[0] > 225 && header[0] < 250 && header[2] > header[1], `nagłówek Kanban na obrazie notatki: ${header}`);
+
+  // Ponowne otwarcie: dotknięcie zaznaczonego diagramu na ości „Pomiar” – okno z kursorem w jej przyczynach.
+  await openNoteObjects(page);
+  await dialog.locator('.note-images__open').first().click();
+  await menuItem(page, 'Edytuj rysunek');
+  await editor.waitFor();
+  await waitUntil(() => editor.locator('[data-testid=drawing-canvas]').evaluate((canvas) => canvas.width > 0), 'Płótno gotowe');
+  await nextFrames(page);
+  const { diagramLayout } = await import('../../js/core/diagrams.js');
+  const targets = diagramLayout(fishbone).targets;
+  const bone = targets.find((target) => target.id === 'bone-4');
+  const head = targets.find((target) => target.id === 'problem');
+  // Zaznaczenie dotknięciem głowy, potem dotknięcie ości – w ramce zaznaczonego.
+  await editor.locator('[data-testid=drawing-tool-select]').click();
+  await mouse.tap([head.x + head.w / 2, head.y + head.h / 2]);
+  await expectText(count, 'Diagram Ishikawy');
+  await mouse.tap([bone.x + bone.w * 0.6, bone.y + bone.h * 0.5]);
+  await expectText(sheet(page).locator('.sheet__title'), 'Diagram Ishikawy');
+  await waitUntil(() => page.evaluate(() => document.activeElement?.dataset.testid === 'drawing-fishbone-causes-4'), 'Kursor w przyczynach ości Pomiar');
+  assert.equal(await page.locator('[data-testid=drawing-fishbone-causes-4]').inputValue(), 'Suwmiarka bez kalibracji\n- brak wzorca\n- przegląd po terminie');
+}, { device: DESKTOP });
+
+test('rysunek 1.44 na telefonie: grupa Jakość w górnym menu, okno diagramu Ishikawy i układu kartki w szerokości ekranu, raport A3 na kartce', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  await pickGroup(editor, 'quality');
+  for (const id of ['drawing-insert-fishbone', 'drawing-insert-whys', 'drawing-insert-sipoc', 'drawing-insert-layout']) {
+    const box = await editor.locator(`[data-testid=${id}]`).boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 391, `${id} na ekranie`);
+  }
+  await editor.locator('[data-testid=drawing-insert-fishbone]').click();
+  await page.locator('[data-testid=drawing-fishbone-causes-0]').waitFor();
+  assert.equal(await overflowX(page), 0, 'okno bez przewijania w bok');
+  const causes = await page.locator('[data-testid=drawing-fishbone-causes-0]').boundingBox();
+  assert.ok(causes.x >= 0 && causes.x + causes.width <= 390, 'pole przyczyn w szerokości ekranu');
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-144-ishikawa-okno-telefon.png') });
+  await page.keyboard.press('Escape');
+  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+  await editor.locator('[data-testid=drawing-insert-layout]').click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Układ kartki');
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  await page.locator('[data-testid=drawing-layout-kind-a3]').check({ force: true });
+  await page.locator('[data-testid=drawing-layout-title]').fill('Rysy na obudowie');
+  assert.equal(await overflowX(page), 0);
+  await sheetSubmit(page).click();
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Układ kartki: Raport A3');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-144-a3-telefon.png') });
 }, { device: PHONE });
 
 // ---------------------------------------------------------------- nauka z fiszkami

@@ -235,7 +235,7 @@ export function scaleStroke(stroke, cx, cy, factor) {
 
 const HEX = /^#[0-9a-f]{6}$/i;
 /** Elementy z kolorem do przeniesienia: kreski, kształty, pola tekstowe, wzory i symbole. */
-const STYLED = ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness'];
+const STYLED = ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness', 'diagram'];
 /** Grubość linii: kształtu – size, kreski – średnia szerokość punktów; inne – null. */
 export function lineWidthOf(stroke) {
   if (isShape(stroke)) return stroke.size;

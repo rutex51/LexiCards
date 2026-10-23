@@ -210,6 +210,11 @@ const ICONS = {
   dimAligned: [p('M4 15l8-8'), p('M13 22l8-8'), p('M5.5 18.5l12-12'), p('M5.3 14.3l.2 4.2 4.2.2'), p('M13.8 6.3l3.7-.2-.2 3.7')],
   dimChain: [p('M3 8v10'), p('M12 8v10'), p('M21 8v10'), p('M3 13h18'), p('M5.5 11.2L3 13l2.5 1.8'), p('M9.5 11.2L12 13l-2.5 1.8'), p('M14.5 11.2L12 13l2.5 1.8'), p('M18.5 11.2L21 13l-2.5 1.8')],
   dimBaseline: [p('M3 5v15'), p('M12 13v7'), p('M21 7v13'), p('M3 15h9'), p('M3 9h18'), p('M9.5 13.2L12 15l-2.5 1.8'), p('M18.5 7.2L21 9l-2.5 1.8')],
+  // Od 1.44: jakość – rybia ość (Ishikawa), 5 × Dlaczego, SIPOC, układ kartki.
+  fishbone: [p('M2.5 12h15'), p('M17.5 8.5h4v7h-4z'), p('M6 12L3.5 6'), p('M11 12L8.5 6'), p('M6 12l-2.5 6'), p('M11 12l-2.5 6')],
+  whys: [p('M7 3.5h10v4H7z'), p('M7 16.5h10v4H7z'), p('M12 7.5v9'), p('M9.8 14.2L12 16.5l2.2-2.3')],
+  sipoc: [p('M3 6h18v12H3z'), p('M3 10h18'), p('M6.6 6v12'), p('M10.2 6v12'), p('M13.8 6v12'), p('M17.4 6v12')],
+  pageLayout: [p('M4 3.5h16v17H4z'), p('M4 8h16'), p('M12 8v12.5'), p('M4 14h8')],
   // Od 1.43: łamana i edycja geometrii – odsuń, zaokrąglij, fazuj, przytnij, wydłuż.
   shapePolyline: [p('M3.5 18.5l5-10 6 6 6-10'), dot(3.5, 18.5, 1.6), dot(8.5, 8.5, 1.6), dot(14.5, 14.5, 1.6), dot(20.5, 4.5, 1.6)],
   offset: [p('M4 14l8-8 8 8'), { d: 'M4 20l8-8 8 8', 'stroke-dasharray': '2.2 2' }],

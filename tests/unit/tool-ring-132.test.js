@@ -7,16 +7,16 @@ import { test } from 'node:test';
 import { cleanToolSettings, defaultToolSettings } from '../../js/core/drawing.js';
 import { DIM_MODES, SHAPES } from '../../js/core/shapes.js';
 import {
-  EDIT_ITEMS, RING_CENTER, TOOL_GROUPS, USER_GROUPS, clampRotation, cleanUiHidden, findGroup, isModeItem, ringItems, ringStep, rotationFor,
+  EDIT_ITEMS, QUALITY_ITEMS, RING_CENTER, TOOL_GROUPS, USER_GROUPS, clampRotation, cleanUiHidden, findGroup, isModeItem, ringItems, ringStep, rotationFor,
   snapRotation, startGroup, toolItem, uiPartHidden
 } from '../../js/core/tool-ring.js';
 
 // Od 1.43 także polecenia edycji geometrii.
-const COMMANDS = ['text', 'math', 'table', 'sticky', 'gdt', 'datum', 'roughness', ...EDIT_ITEMS];
+const COMMANDS = ['text', 'math', 'table', 'sticky', 'gdt', 'datum', 'roughness', ...EDIT_ITEMS, ...QUALITY_ITEMS];
 
 test('kółka 1.32: grupy – każdy kształt i polecenie w grupie standardowej, Metrologia z symbolami, pozycje bez powtórzeń', () => {
   // Od 1.34 także Wymiary, od 1.43 Edycja.
-  assert.deepEqual(TOOL_GROUPS.map((group) => group.id), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit']);
+  assert.deepEqual(TOOL_GROUPS.map((group) => group.id), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality']);
   const items = TOOL_GROUPS.flatMap((group) => group.items);
   assert.equal(new Set(items).size, items.length, 'pozycja w jednej grupie standardowej');
   // Od 1.36 wymiar – cztery pozycje 'dim:<rodzaj>' zamiast 'shape:dim'.
@@ -49,6 +49,12 @@ test('kółka 1.32: grupa na starcie – zapamiętana, inaczej z bieżącym narz
 test('kółka 1.32: małe kółka – co 45°, wycinek ok. 40% okręgu do środka ekranu, zanikanie dalej i przy krawędzi', () => {
   assert.deepEqual(ringStep(5), { step: 45, wrap: false });
   assert.deepEqual(ringStep(8), { step: 45, wrap: true });
+  // Od 1.44: więcej niż 8 kółek (8 grup i „Grupy narzędzi”) – gęściej, każde w innym miejscu okręgu.
+  assert.deepEqual(ringStep(9), { step: 40, wrap: true });
+  for (const count of [9, 10, 12]) {
+    const angles = ringItems({ count, rotation: 0, side: 'right', radius: 84, edge: 400, size: 46 }).map((item) => Math.round(((item.angle % 360) + 360) % 360));
+    assert.equal(new Set(angles).size, count, `${count} kółek bez nakładania: ${angles}`);
+  }
   const base = { radius: 84, edge: 400, size: 46 };
   const right = ringItems({ count: 5, rotation: 0, side: 'right', ...base });
   assert.equal(right[0].angle, RING_CENTER.right);

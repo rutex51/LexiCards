@@ -1814,6 +1814,39 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   ostatni jeszcze raz – koniec, pierwszy – `polygon`, `POLY_NODES_MAX`; Enter i Esc – `completePolyline`; podgląd –
   `polylineFrom` w `paintPending`. Format rysunku bez zmian (15).
 
+## Szablony jakości: diagramy i układ kartki (od 1.44)
+
+- **Diagramy** (`js/core/diagrams.js`, bez przeglądarki): element `{ tool: 'diagram', kind: 'fishbone' | 'whys', x, y, size,
+  color, width, height, problem, bones | answers }` – pudełko (`isBox`, `elementBox`), więc zaznaczanie, przesuwanie,
+  warstwy, kopiowanie, „Styl jak…” (kolor) i obroty stojących prosto (`placeUpright`) działają jak przy tabelach; bez szyku.
+  - `diagramLayout(element)` – jeden rozkład dla płótna, granic i DXF: `lines`, `spine`, `arrows`, `boxes` (z `fill`:
+    `head`, `label`, `root`, `box` – kolory `DIAGRAM_FILLS`), `texts` (linia bazowa, wyrównanie, najwięcej `width`),
+    `targets` (miejsca dotknięcia: `problem`, `bone-i`, `answer-i`; ość – pas równoległy do niej, `slant`).
+  - Napisy bez mierzenia czcionką: `textWidth` (przeciętny znak 0,56 wielkości, pogrubiony 0,6) i `wrapText`; płótno
+    zwęża za długi wiersz do 60% i ucina z „…” (`fitText` w `js/ui/drawing-diagrams.js`).
+  - Ishikawa: ości na przemian u góry (pierwsze ⌈n/2⌉) i u dołu, nachylenie 0,55, kolumny co `1,08 L + 1,5 s`; L –
+    długość kreski przyczyny z najdłuższego napisu (przyczyna 0,9 s, podprzyczyna 0,78 s na pół kreski), 8,5–17 s;
+    wysokość ości z największej liczby wierszy (przyczyny i podprzyczyny); napis u góry nad kreską, u dołu pod nią;
+    podprzyczyny – mała ość od 0,55 L przyczyny w stronę kręgosłupa. `parseCauses` / `causesText` – pole okna (wiersz,
+    „-”, „–”, „•” albo wcięcie – podprzyczyna). Granice `DIAGRAM_LIMITS` (8 ości, 10 przyczyn, 5 podprzyczyn, 7 odpowiedzi).
+  - 5 × Dlaczego: pola szerokości 16 s jedno pod drugim ze strzałkami; ostatnie (przy co najmniej dwóch) – `root`.
+  - `cleanDiagram` – zapis i kopia (Ishikawa bez ości – odrzucony), wymiary zawsze z rozkładu (`withDiagramSize`).
+- **Układ kartki** (`js/core/page-layouts.js`): `drawing.layout = { kind, title?, labels? }` – tło kartki jak ramka (nie
+  da się go zaznaczyć ani zetrzeć; na zdjęciu – nie ma). `cleanLayout`, `layoutArea` (kartka bez marginesów: z lewej 70 –
+  spirala, reszta 30; przy ramce – wnętrze ramki nad tabliczką z `frameLayout`), `pageLayoutGeometry` – A3 (nagłówek
+  i 4 + 3 pola `A3_SECTIONS`), PDCA (okrąg, osie, 4 strzałki na obwodzie), macierz (ćwiartki, osie, nazwa osi pionowej
+  obrócona `rotate: −π/2`), Kanban i pokrewieństwo (kolumny z nagłówkami; pokrewieństwo – `AFFINITY_FILLS`).
+- **Edytor** (`js/ui/drawing.js`): grupa `quality` (`QUALITY_ITEMS`: `diagram:fishbone`, `diagram:whys`, `sipoc`,
+  `layout`) i zestaw `lean`; `editDiagram(element, kind, focus)` – okno z polami `drawing-diagram-problem`,
+  `drawing-fishbone-name-i` / `-causes-i`, `drawing-whys-answer-i` (focus z `diagramTargetAt` przy dotknięciu
+  zaznaczonego, `add` – przycisk `drawing-selection-why`); SIPOC – `editTable(null, SIPOC_TABLE)`; `editLayout` – okno
+  z rodzajem (`drawing-layout-kind-<rodzaj|none>`), tytułem, nazwami macierzy i kolumnami. Malowanie –
+  `paintDiagram` i `paintPageLayout` (po ramce, z jasnością tła; ukryte tło – bez układu), więc obraz w notatce i PDF
+  mają to samo. DXF – `writeGeometry` (linie, strzałki, zamknięte polilinie, okręgi 72 odcinkami, TEXT z przesunięciem
+  wyrównania), układ na warstwie `UKLAD`. Format rysunku 16.
+- **Kółko**: `ringStep` – przy więcej niż 8 pozycjach odstęp 360° / liczba (wcześniej stałe 45°: dziewiąta pozycja
+  stawała na pierwszej).
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).
@@ -1901,7 +1934,8 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   foremny, półprosta, narożniki, kreskowanie, pole i obwód, kolejność rysowania, DXF z łukami i kreskowaniem; od 1.41
   odbicie względem prostej, skalowanie, styl jak…, ramka rysunkowa i jej DXF; od 1.42 przyciąganie do środka kształtu,
   środka boku, przecięć i kresek pióra, wymiar poziomy i pionowy, długość łuku, łuk ze środka, osie okręgu, A4 pionowo;
-  od 1.43 odsunięcie, zaokrąglenie i faza, przycinanie i wydłużanie, okrąg styczny),
+  od 1.43 odsunięcie, zaokrąglenie i faza, przycinanie i wydłużanie, okrąg styczny; od 1.44 diagram Ishikawy
+  i 5 × Dlaczego – rozkład, przyczyny z tekstu, miejsca dotknięcia, zapis – układ kartki i jego DXF),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

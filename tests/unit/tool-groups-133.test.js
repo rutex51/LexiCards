@@ -11,7 +11,8 @@ import {
 } from '../../js/core/tool-ring.js';
 
 test('grupy 1.33: gotowe zestawy – znane pozycje bez powtórzeń, ikony do wyboru, nazwy pozycji', () => {
-  assert.deepEqual(PRESETS.map((preset) => preset.label), ['Metrologia', 'Szkic odręczny', 'Geometria', 'Notatki']);
+  // Od 1.44 także „Jakość / Lean”.
+  assert.deepEqual(PRESETS.map((preset) => preset.label), ['Metrologia', 'Szkic odręczny', 'Geometria', 'Notatki', 'Jakość / Lean']);
   for (const preset of PRESETS) {
     assert.ok(preset.items.every((item) => ALL_ITEMS.includes(item)), preset.id);
     assert.equal(new Set(preset.items).size, preset.items.length, preset.id);
@@ -41,7 +42,7 @@ test('grupy 1.33: dobór z pamięci – kolejność, brakujące grupy w miejscu 
   });
   // Brakująca grupa – za tą, która jest przed nią w kolejności domyślnej (od 1.34 Wymiary za Tekstem i wzorami, od 1.43
   // Edycja za Symbolami).
-  assert.deepEqual(clean.order, ['text', 'dims', 'symbols', 'edit', 'write', 'shapes', 'construct']);
+  assert.deepEqual(clean.order, ['text', 'dims', 'symbols', 'edit', 'quality', 'write', 'shapes', 'construct']);
   assert.deepEqual(clean.off, ['symbols']);
   assert.deepEqual(clean.mine, [
     { id: 'own-1', label: 'Ulubione', icon: 'star', items: ['pen', 'shape:rect'] },
@@ -72,7 +73,7 @@ test('grupy 1.33: grupy na kółkach i grupa na starcie przy własnym doborze', 
     off: ['write', 'text'],
     mine: [{ id: 'own-1', label: 'Pusta', items: [] }, { id: 'sketch', label: 'Szkic', icon: 'sketch', items: ['pen', 'eraser'] }]
   });
-  assert.deepEqual(groupsOf('right', config).map((group) => group.id), ['symbols', 'edit', 'shapes', 'construct', 'dims']);
+  assert.deepEqual(groupsOf('right', config).map((group) => group.id), ['symbols', 'edit', 'quality', 'shapes', 'construct', 'dims']);
   assert.deepEqual(groupsOf('left', config).map((group) => group.id), ['sketch'], 'pusta grupa nie jest na kółku');
   assert.equal(findGroup('right', 'write', config), null, 'schowana grupa');
   assert.equal(findGroup('left', 'sketch', config).label, 'Szkic');

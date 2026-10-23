@@ -7521,6 +7521,12 @@ button.drawing__pill .icon { color: var(--text-2); }
 .drawing__hatch .drawing__chip { align-self: flex-start; }
 .drawing__hatch .drawing__chip[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .drawing__corner-field { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: var(--size-sub); }
+
+/* Okno diagramu Ishikawy i 5 × Dlaczego (od 1.44): ości jedna pod drugą, przycisk dodawania pod listą. */
+.drawing__diagram-list { display: grid; gap: 12px; }
+.drawing__diagram-block { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--separator); border-radius: 12px; }
+.drawing__diagram-add { justify-self: start; }
+.drawing__diagram-add[hidden] { display: none; }
 .drawing__corner-size {
   width: 6.5em;
   min-height: 34px;

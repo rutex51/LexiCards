@@ -68,6 +68,9 @@ import {
 } from '../core/transform.js';
 import { FRAME_FIELDS, FRAME_FIELD_LABELS, FRAME_FIELD_MAX, FRAME_FORMATS, cleanFrame, frameScaleText } from '../core/title-block.js';
 import { cleanColumnWidths, moveColumnBorder } from '../core/tables.js';
+import { DIAGRAM_LIMITS, DIAGRAM_SIZES, causesText, cleanDiagram, diagramLabel, diagramTargetAt, newDiagram, parseCauses, withDiagramSize } from '../core/diagrams.js';
+import { COLUMN_DEFAULTS, LAYOUT_KINDS, LAYOUT_LABELS, MATRIX_DEFAULT, cleanLayout } from '../core/page-layouts.js';
+import { paintDiagram, paintPageLayout } from './drawing-diagrams.js';
 import { openFitTable } from './fit-table.js';
 import { RING_SIDES, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPartHidden } from '../core/tool-ring.js';
 import { openToolGroups } from './drawing-groups.js';
@@ -174,6 +177,8 @@ const SHAPE_ICONS = {
   line: 'shapeLine', arrow: 'shapeArrow', rect: 'shapeRect', ellipse: 'shapeEllipse', triangle: 'shapeTriangle', diamond: 'shapeDiamond', trapezoid: 'shapeTrapezoid',
   xline: 'shapeXline', curve: 'shapeCurve', point: 'shapePoint', arc: 'shapeArc', dim: 'dimension', ngon: 'shapeNgon', ray: 'shapeRay', polyline: 'shapePolyline'
 };
+/** SIPOC (od 1.44): tabela z nagłówkami dostawcy, wejścia, proces, wyjścia, klienci i czterema pustymi wierszami. */
+const SIPOC_TABLE = Object.freeze({ rows: [['Dostawcy (S)', 'Wejścia (I)', 'Proces (P)', 'Wyjścia (O)', 'Klienci (C)'], ...Array.from({ length: 4 }, () => ['', '', '', '', ''])], header: true });
 /** Narożniki prostokąta (od 1.40) – ikony wyboru i gotowe wielkości (¼, ½ i 1 kratka). */
 const CORNER_ICONS = { none: 'cornerNone', round: 'cornerRound', chamfer: 'cornerChamfer' };
 const CORNER_CHOICE_LABELS = { none: 'Ostre', ...CORNER_LABELS };
@@ -361,6 +366,8 @@ function remeasure(stroke) {
   if (stroke.tool === 'gdt') return { ...stroke, ...measureGdt(stroke) };
   if (stroke.tool === 'roughness') return { ...stroke, ...measureRoughness(stroke) };
   if (stroke.tool === 'datum') return stroke;
+  // Diagram jakości (od 1.44) – wielkość z rozkładu.
+  if (stroke.tool === 'diagram') return withDiagramSize(stroke);
   // Tabela i karteczka (od 1.21): wysokość z treści.
   if (stroke.tool === 'table') return { ...stroke, ...measureTable(stroke) };
   if (stroke.tool === 'sticky') return { ...stroke, ...measureSticky(stroke) };
@@ -413,6 +420,11 @@ export function paintStroke(ctx, stroke, options = {}) {
   }
   if (stroke.tool === 'table') {
     paintTable(ctx, stroke);
+    return;
+  }
+  // Diagram Ishikawy i 5 × Dlaczego (od 1.44).
+  if (stroke.tool === 'diagram') {
+    paintDiagram(ctx, stroke);
     return;
   }
   if (stroke.tool === 'sticky') {
@@ -523,6 +535,13 @@ export function paintDrawing(ctx, drawing, media = {}, skip = null, plain = null
     ctx.save();
     if (background) ctx.globalAlpha = background.opacity;
     paintFrame(ctx, drawing);
+    ctx.restore();
+  }
+  // Układ kartki (od 1.44) – też część tła.
+  if (drawing.layout && !background?.hidden) {
+    ctx.save();
+    if (background) ctx.globalAlpha = background.opacity;
+    paintPageLayout(ctx, drawing);
     ctx.restore();
   }
   let number = 0;
@@ -859,6 +878,11 @@ export function openDrawingEditor({
     const scaleButton = selectionButton('drawing-selection-scale', 'scale', 'Skaluj', 'Skaluj o współczynnik – wokół środka zaznaczenia', () => openScaleSheet());
     const matchButton = selectionButton('drawing-selection-match', 'brush', 'Styl jak…', 'Styl jak… – dotknij elementu, którego kolor, grubość, linię i wypełnienie przenieść na zaznaczone', () => startPointPick('match'));
     // Od 1.42: wymiary łańcuchowe i od bazy – po zaznaczonym wymiarze liniowym kolejne dotknięcia dodają wymiary.
+    // Od 1.44: kolejne „Dlaczego?” zaznaczonego diagramu 5 × Dlaczego – okno z nowym polem.
+    const whyButton = selectionButton('drawing-selection-why', 'whys', 'Dlaczego?', 'Kolejne „Dlaczego?” – nowe pole na końcu łańcucha', () => {
+      const [only] = selection;
+      if (only?.tool === 'diagram') editDiagram(only, 'whys', 'add');
+    });
     const chainButton = selectionButton('drawing-selection-chain', 'dimChain', 'Łańcuch', 'Wymiary łańcuchowe – każde dotknięcie dodaje wymiar od końca poprzedniego (Esc – koniec)', () => startPointPick('chain'));
     const baselineButton = selectionButton('drawing-selection-baseline', 'dimBaseline', 'Od bazy', 'Wymiary od bazy – każde dotknięcie dodaje wymiar od początku tego wymiaru, piętro wyżej (Esc – koniec)', () => startPointPick('baseline'));
     // Od 1.40: kolejność rysowania – na wierzch, wyżej, niżej, na spód (menu).
@@ -882,7 +906,7 @@ export function openDrawingEditor({
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
       // Od 1.41 nazwa i pole z obwodem w jednej kolumnie (na telefonie – pole i obwód w osobnym wierszu).
       h('span', { class: 'drawing__selection-head' }, selectionCount, selectionMeasure), moveButton, editButton, collapseButton, shapeTextButton, magnetButton, layersSelectionButton, copyButton, duplicateButton,
-      chainButton, baselineButton, mirrorButton, scaleButton, matchButton, orderButton, arrayButton, explodeButton, embedButton, deleteButton);
+      whyButton, chainButton, baselineButton, mirrorButton, scaleButton, matchButton, orderButton, arrayButton, explodeButton, embedButton, deleteButton);
     // Pola wymiarów zaznaczonego kształtu (od 1.17): na liniach ramki konstrukcyjnej, wpisywane z klawiatury.
     const dims = h('div', { class: 'drawing__dims', hidden: true, dataset: { testid: 'drawing-dims' } });
     // Od 1.22: animacja przewracania kartki (zdjęcia stron nad płótnem, tylko w trakcie).
@@ -2309,6 +2333,7 @@ export function openDrawingEditor({
       selectionCount.textContent = snip ? 'Wycinek' : selectionKind === 'region' ? 'Fragment' : only?.tool === 'text' ? 'Pole tekstowe' : only?.tool === 'math' ? 'Wzór'
         : only?.tool === 'table' ? 'Tabela' : only?.tool === 'sticky' ? `Karteczka ${stickyNumber(drawing, only)}`
         : only?.tool === 'gdt' ? gdtSymbol(only.symbol).label : only?.tool === 'datum' ? `Baza ${only.letter}` : only?.tool === 'roughness' ? 'Chropowatość'
+        : only?.tool === 'diagram' ? diagramLabel(only)
         : isShape(only) ? SHAPE_LABELS[only.shape] : isArray(only) ? `${ARRAY_LABELS[only.kind]} · ${arraySize(only)}`
         : items.some(isElement) ? plural(items.length, 'element', 'elementy', 'elementów') : plural(items.length, 'kreska', 'kreski', 'kresek');
       // Wycinek (od 1.17): tylko kopiuj i osadź – rysunek się nie zmienia.
@@ -2350,6 +2375,7 @@ export function openDrawingEditor({
       scaleButton.hidden = Boolean(snip) || selectionKind !== 'whole' || !canTurn(items);
       const linearMeasure = Boolean(shape) && shape.shape === 'dim' && dimMode(shape) === 'linear';
       chainButton.hidden = !linearMeasure;
+      whyButton.hidden = snip || !(only?.tool === 'diagram' && only.kind === 'whys' && (only.answers.length < DIAGRAM_LIMITS.answers || only.answers.some((answer) => !answer)));
       baselineButton.hidden = !linearMeasure;
       matchButton.hidden = Boolean(snip) || selectionKind !== 'whole' || !items.some((stroke) => hasStyle(stroke) || isArray(stroke));
       deleteButton.hidden = Boolean(snip);
@@ -2549,6 +2575,11 @@ export function openDrawingEditor({
     const gdtButton = menuButton('gdt', 'Ramka tolerancji', 'gdtFrame', 'drawing-symbol-gdt', 'Tolerancja');
     const datumButton = menuButton('datum', 'Baza', 'datumMark', 'drawing-symbol-datum');
     const roughnessButton = menuButton('roughness', 'Chropowatość', 'roughness', 'drawing-symbol-roughness');
+    // Od 1.44: jakość – diagram Ishikawy, 5 × Dlaczego, SIPOC (tabela), układ kartki.
+    const fishboneButton = menuButton('diagram:fishbone', 'Diagram Ishikawy', 'fishbone', 'drawing-insert-fishbone', 'Ishikawa');
+    const whysButton = menuButton('diagram:whys', '5 × Dlaczego', 'whys', 'drawing-insert-whys', '5 Why');
+    const sipocButton = menuButton('sipoc', 'SIPOC – dostawcy, wejścia, proces, wyjścia, klienci', 'sipoc', 'drawing-insert-sipoc', 'SIPOC');
+    const layoutButton = menuButton('layout', 'Układ kartki – A3, PDCA, macierz 2×2, Kanban, pokrewieństwo', 'pageLayout', 'drawing-insert-layout', 'Układ');
     /** Pozycja grupy → przycisk (ten sam przycisk w kilku grupach – pokazywana jest jedna grupa naraz). */
     const itemButtons = new Map([
       ['pen', penButton], ['highlighter', highlighterButton], ['eraser', eraserButton],
@@ -2556,7 +2587,8 @@ export function openDrawingEditor({
       ...[...dimButtons].map(([mode, button]) => [`dim:${mode}`, button]),
       ...[...editButtons].map(([kind, button]) => [`edit:${kind}`, button]),
       ['text', textButton], ['math', mathButton], ['table', tableButton], ['sticky', stickyButton],
-      ['gdt', gdtButton], ['datum', datumButton], ['roughness', roughnessButton]
+      ['gdt', gdtButton], ['datum', datumButton], ['roughness', roughnessButton],
+      ['diagram:fishbone', fishboneButton], ['diagram:whys', whysButton], ['sipoc', sipocButton], ['layout', layoutButton]
     ]);
     const rulerButton = h('button', {
       type: 'button', class: 'drawing__tool', 'aria-label': 'Linijka', title: 'Linijka', 'aria-pressed': 'false', dataset: { testid: 'drawing-ruler' },
@@ -2755,7 +2787,7 @@ export function openDrawingEditor({
     });
     // ---- edycja zaznaczonego (od 1.35): kolor, grubość i styl z menu zmieniają zaznaczone elementy
     /** Element z kolorem do zmiany: kreska pióra i zakreślacza, kształt, pole tekstowe, wzór, symbol. */
-    const hasPaint = (stroke) => ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness'].includes(stroke.tool);
+    const hasPaint = (stroke) => ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness', 'diagram'].includes(stroke.tool);
     /** Element z grubością linii: kreska pióra i zakreślacza, kształt (bez wymiaru). */
     const hasLineWidth = (stroke) => stroke.tool === 'pen' || stroke.tool === 'highlighter' || (isShape(stroke) && !isMeasure(stroke));
     /**
@@ -3037,7 +3069,8 @@ export function openDrawingEditor({
       closeSettings();
       updateToolbar();
       const open = { text: () => editElement('text'), math: () => editElement('math'), table: () => editTable(), sticky: () => editSticky(),
-        gdt: () => editGdt(), datum: () => editDatum(), roughness: () => editRoughness() }[item];
+        gdt: () => editGdt(), datum: () => editDatum(), roughness: () => editRoughness(),
+        'diagram:fishbone': () => editDiagram(null, 'fishbone'), 'diagram:whys': () => editDiagram(null, 'whys'), sipoc: () => editTable(null, SIPOC_TABLE), layout: () => editLayout() }[item];
       open?.();
     }
     /** Wygląd dużego kółka (wariant C): wypełnienie w kolorze narzędzia, obwódka biała; narzędzie bez koloru – kolor aplikacji. */
@@ -4866,6 +4899,10 @@ export function openDrawingEditor({
           drawing.photo ? null : {
             label: drawing.frame ? `Ramka rysunkowa ${FRAME_FORMATS[drawing.frame.format].label}…` : 'Ramka rysunkowa…', icon: 'titleBlock', testID: 'drawing-frame', onSelect: () => editFrame()
           },
+          // Od 1.44: układ kartki – A3, PDCA, macierz 2×2, Kanban, pokrewieństwo.
+          drawing.photo ? null : {
+            label: drawing.layout ? `Układ kartki: ${LAYOUT_LABELS[drawing.layout.kind]}…` : 'Układ kartki…', icon: 'pageLayout', testID: 'drawing-layout', onSelect: () => editLayout()
+          },
           added ? 'separator' : null,
           added ? { label: 'Usuń tę kartkę', icon: 'trash', destructive: true, testID: 'drawing-page-delete', onSelect: () => deletePage() } : null
         ]
@@ -4921,6 +4958,68 @@ export function openDrawingEditor({
           updateToolbar();
           requestRender();
           flash(next ? `Ramka ${FRAME_FORMATS[next.format].label} z tabliczką` : 'Bez ramki rysunkowej');
+        }
+      });
+    }
+
+    // ---- układ kartki (od 1.44)
+    /** Okno układu: rodzaj (bez układu, A3, PDCA, macierz, Kanban, pokrewieństwo) i jego napisy. */
+    function editLayout() {
+      if (drawing.photo) {
+        flash('Kartka ze zdjęciem nie ma układu – dodaj nową kartkę.');
+        return;
+      }
+      const old = drawing.layout ?? null;
+      const draft = {
+        kind: old?.kind ?? 'none',
+        title: old?.title ?? '',
+        matrix: [...(old?.kind === 'matrix' ? old.labels : MATRIX_DEFAULT)],
+        columns: { kanban: (old?.kind === 'kanban' ? old.labels : COLUMN_DEFAULTS.kanban).join('\n'), affinity: (old?.kind === 'affinity' ? old.labels : COLUMN_DEFAULTS.affinity).join('\n') }
+      };
+      const titleField = field('Tytuł raportu', textInput({ value: draft.title, testID: 'drawing-layout-title', onInput: (value) => { draft.title = value; } }));
+      const matrixNames = ['Oś pionowa', 'Oś pozioma', 'Lewa górna ćwiartka', 'Prawa górna ćwiartka', 'Lewa dolna ćwiartka', 'Prawa dolna ćwiartka'];
+      const matrixFields = h('div', {}, matrixNames.map((name, index) => field(name, textInput({
+        value: draft.matrix[index], testID: `drawing-layout-matrix-${index}`, onInput: (value) => { draft.matrix[index] = value; }
+      }))));
+      const columnsArea = textArea({ value: '', rows: 4, testID: 'drawing-layout-columns', onInput: (value) => { draft.columns[draft.kind] = value; } });
+      const columnsField = field('Kolumny – jedna w wierszu (2–6)', columnsArea);
+      const show = () => {
+        titleField.hidden = draft.kind !== 'a3';
+        matrixFields.hidden = draft.kind !== 'matrix';
+        columnsField.hidden = draft.kind !== 'kanban' && draft.kind !== 'affinity';
+        if (!columnsField.hidden) columnsArea.value = draft.columns[draft.kind];
+      };
+      show();
+      let saved = false;
+      openFormSheet({
+        title: 'Układ kartki',
+        submitLabel: 'Gotowe',
+        build: () => [
+          group({ title: 'Układ' }, ...['none', ...LAYOUT_KINDS].map((kind) => radioRow({
+            name: 'drawing-layout-kind', value: kind, checked: kind === draft.kind, title: kind === 'none' ? 'Bez układu' : LAYOUT_LABELS[kind],
+            subtitle: { none: null, a3: 'Tytuł i siedem pól: od tła i stanu obecnego do kontroli wyników', pdca: 'Koło: planuj, wykonaj, sprawdź, działaj',
+              matrix: 'Wpływ i wysiłek – cztery ćwiartki', kanban: 'Kolumny: do zrobienia, w toku, zrobione', affinity: 'Kolumny-grupy z kolorowymi nagłówkami' }[kind],
+            testID: `drawing-layout-kind-${kind}`, onChange: () => { draft.kind = kind; show(); }
+          }))),
+          titleField, matrixFields, columnsField,
+          h('p', { class: 'field__hint' }, 'Układ to tło kartki (jak ramka): wypełniasz go karteczkami, tekstem i rysunkiem. Widać go na obrazie w notatce, '
+            + 'w PDF i w pliku DXF (warstwa UKLAD); ukrycie tła w warstwach ukrywa i układ. Przy ramce rysunkowej układ jest w ramce nad tabliczką.')
+        ],
+        onSubmit: () => {
+          saved = true;
+          return true;
+        },
+        onClose: () => {
+          if (!saved) return;
+          const labels = draft.kind === 'matrix' ? draft.matrix : (draft.columns[draft.kind] ?? '').split('\n');
+          const next = draft.kind === 'none' ? null : cleanLayout({ kind: draft.kind, title: draft.title, labels });
+          if (JSON.stringify(next) === JSON.stringify(old)) return;
+          if (next) drawing.layout = next;
+          else delete drawing.layout;
+          changed = true;
+          updateToolbar();
+          requestRender();
+          flash(next ? `Układ kartki: ${LAYOUT_LABELS[next.kind]}` : 'Bez układu kartki');
         }
       });
     }
@@ -6165,7 +6264,8 @@ export function openDrawingEditor({
 
     // ---- tabele i karteczki (od 1.21)
     /** Poprawka zaznaczonej tabeli albo karteczki. */
-    const editBox = (element) => (element.tool === 'table' ? editTable(element) : element.tool === 'sticky' ? editSticky(element)
+    const editBox = (element, point = null) => (element.tool === 'table' ? editTable(element) : element.tool === 'sticky' ? editSticky(element)
+      : element.tool === 'diagram' ? editDiagram(element, element.kind, point ? diagramTargetAt(element, point) : null)
       : element.tool === 'gdt' ? editGdt(element) : element.tool === 'datum' ? editDatum(element) : editRoughness(element));
     /** Nowy albo poprawiony element zaznaczony – od razu można go przesunąć. */
     function selectOnly(element) {
@@ -6188,15 +6288,15 @@ export function openDrawingEditor({
       selectOnly(next);
     }
 
-    /** Nowa tabela (element = null) albo poprawka istniejącej – to samo okno tabeli co w notatce. */
-    function editTable(element = null) {
+    /** Nowa tabela (element = null; od 1.44 też z gotowego wzoru, np. SIPOC) albo poprawka istniejącej – to samo okno tabeli co w notatce. */
+    function editTable(element = null, template = null) {
       if (!element) clearSelection();
       const known = element ? TABLE_TEXT_SIZES.indexOf(element.size) : -1;
       const choice = { size: known >= 0 ? known : 1, color: element ? inkChoice(element.color) : tools.penColor };
       openTableEditor({
-        title: element ? 'Tabela na rysunku' : 'Nowa tabela',
+        title: element ? 'Tabela na rysunku' : template ? 'SIPOC' : 'Nowa tabela',
         submitLabel: element ? 'Zapisz' : 'Wstaw',
-        table: element,
+        table: element ?? template,
         allowEmpty: Boolean(element),
         extra: elementOptions(choice),
         onSave: (table) => {
@@ -6208,6 +6308,98 @@ export function openDrawingEditor({
           putBox(element, next);
         }
       });
+    }
+
+    // ---- diagramy jakości (od 1.44)
+    /**
+     * Diagram Ishikawy albo 5 × Dlaczego: nowy (element = null) albo poprawka. focus – pole z kursorem: 'problem',
+     * 'bone-2', 'answer-1' albo 'add' (5 × Dlaczego – nowe pole na końcu). Ości: nazwa i przyczyny – wiersz to przyczyna,
+     * wiersz od „-” – podprzyczyna; ość bez nazwy i przyczyn znika.
+     */
+    function editDiagram(element = null, kind = element?.kind, focus = null) {
+      if (!element) clearSelection();
+      const known = element ? DIAGRAM_SIZES.indexOf(element.size) : -1;
+      const choice = { size: known >= 0 ? known : 1, color: element ? inkChoice(element.color) : tools.penColor };
+      const draft = JSON.parse(JSON.stringify(element ?? newDiagram(kind)));
+      const fishbone = kind === 'fishbone';
+      // „Dlaczego?” – pierwsze puste pole, a gdy wszystkie są wypełnione – nowe na końcu.
+      if (!fishbone && focus === 'add') {
+        const empty = draft.answers.findIndex((answer) => !answer.trim());
+        if (empty < 0 && draft.answers.length < DIAGRAM_LIMITS.answers) draft.answers.push('');
+        focus = `answer-${empty >= 0 ? empty : draft.answers.length - 1}`;
+      }
+      // Przyczyny ości – tekst pól (zamieniany na przyczyny przy zapisie).
+      const causeTexts = fishbone ? draft.bones.map((bone) => causesText(bone.causes)) : [];
+      const fields = new Map();
+      const list = h('div', { class: 'drawing__diagram-list' });
+      const addButton = h('button', {
+        type: 'button', class: 'button button--plain drawing__diagram-add', dataset: { testid: fishbone ? 'drawing-fishbone-add' : 'drawing-whys-add' },
+        onClick: () => {
+          if (fishbone) {
+            draft.bones.push({ name: '', causes: [] });
+            causeTexts.push('');
+          } else {
+            draft.answers.push('');
+          }
+          render();
+          (fishbone ? fields.get(`name-${draft.bones.length - 1}`) : fields.get(`answer-${draft.answers.length - 1}`))?.focus();
+        }
+      }, fishbone ? '+ Dodaj kategorię' : '+ Dodaj „Dlaczego?”');
+      function render() {
+        fields.clear();
+        const blocks = fishbone
+          ? draft.bones.map((bone, index) => {
+            const name = textInput({ value: bone.name, placeholder: `Kategoria ${index + 1}`, testID: `drawing-fishbone-name-${index}`, onInput: (value) => { bone.name = value; } });
+            const causes = textArea({
+              value: causeTexts[index], rows: 3, placeholder: 'Przyczyna\n- podprzyczyna', testID: `drawing-fishbone-causes-${index}`,
+              onInput: (value) => { causeTexts[index] = value; }
+            });
+            fields.set(`name-${index}`, name);
+            fields.set(`bone-${index}`, causes);
+            return h('div', { class: 'drawing__diagram-block' }, field(`Ość ${index + 1} – nazwa`, name), field('Przyczyny', causes));
+          })
+          : draft.answers.map((answer, index) => {
+            const input = textArea({
+              value: answer, rows: 2, testID: `drawing-whys-answer-${index}`,
+              placeholder: index === 0 ? 'Dlaczego to się stało?' : 'Dlaczego?', onInput: (value) => { draft.answers[index] = value; }
+            });
+            fields.set(`answer-${index}`, input);
+            return field(`Dlaczego? ${index + 1}`, input);
+          });
+        addButton.hidden = (fishbone ? draft.bones.length : draft.answers.length) >= (fishbone ? DIAGRAM_LIMITS.bones : DIAGRAM_LIMITS.answers);
+        replaceChildren(list, blocks, addButton);
+      }
+      render();
+      const problem = textArea({ value: draft.problem, rows: 2, placeholder: fishbone ? 'Skutek, np. wymiar poza tolerancją' : 'Problem', testID: 'drawing-diagram-problem', onInput: (value) => { draft.problem = value; } });
+      fields.set('problem', problem);
+      let saved = null;
+      openFormSheet({
+        title: element ? diagramLabel(draft) : `Nowy: ${diagramLabel(draft)}`,
+        submitLabel: element ? 'Zapisz' : 'Wstaw',
+        build: () => [
+          field(fishbone ? 'Problem (skutek – głowa ryby)' : 'Problem', problem),
+          list,
+          h('p', { class: 'field__hint' }, fishbone
+            ? 'Każdy wiersz to przyczyna; wiersz zaczęty od „-” – jej podprzyczyna. Kategoria bez nazwy i przyczyn znika. Na start – 6M: człowiek, maszyna, '
+              + 'metoda, materiał, pomiar, środowisko. Dotknięcie ości zaznaczonego diagramu otwiera to okno przy jej przyczynach.'
+            : 'Pytaj „dlaczego?” aż do przyczyny źródłowej – ostatnie pole jest wyróżnione. Kolejne pole – przyciskiem „Dlaczego?” nad zaznaczonym diagramem.'),
+          elementOptions(choice)
+        ],
+        onSubmit: () => {
+          const bones = fishbone
+            ? draft.bones.map((bone, index) => ({ name: bone.name, causes: parseCauses(causeTexts[index]) })).filter((bone) => bone.name.trim() || bone.causes.length > 0)
+            : null;
+          if (fishbone && bones.length === 0) throw new Error('Diagram potrzebuje co najmniej jednej kategorii');
+          saved = cleanDiagram({
+            ...draft, ...(bones ? { bones } : {}), size: DIAGRAM_SIZES[choice.size], color: inkHex(choice.color), x: element?.x ?? 0, y: element?.y ?? 0
+          }, drawing.width, drawing.height);
+          return true;
+        },
+        onClose: () => {
+          if (saved) putBox(element, element ? { ...saved, ...(element.id ? { id: element.id } : {}), ...(element.layers ? { layers: element.layers } : {}) } : saved);
+        }
+      });
+      requestAnimationFrame(() => fields.get(focus)?.focus());
     }
 
     /** Koniec strzałki nowej karteczki: na prawo w dół od niej, na stronie. */
@@ -7839,7 +8031,7 @@ export function openDrawingEditor({
         // Dotknięcie zaznaczonego pola tekstowego albo wzoru – poprawka; kształtu (od 1.17) – tekst na nim; szyku (od 1.19) – parametry.
         else if (selection.size === 1 && isTextual(only) && touchesStroke(only, done.start.x, done.start.y, 0)) editElement(only.tool, only);
         // Tabela i karteczka (od 1.21) – okno edycji.
-        else if (selection.size === 1 && isBox(only) && touchesStroke(only, done.start.x, done.start.y, 0)) editBox(only);
+        else if (selection.size === 1 && isBox(only) && touchesStroke(only, done.start.x, done.start.y, 0)) editBox(only, done.start);
         else if (selection.size === 1 && isArray(only) && touchesStroke(only, done.start.x, done.start.y, SELECTION_PAD / view.scale)) editArray();
         else if (selection.size === 1 && isShape(only) && !isMeasure(only)
           && (shapeContains(only, done.start.x, done.start.y) || touchesShape(only, done.start.x, done.start.y, SELECTION_PAD / view.scale))) editShapeLabel(only);

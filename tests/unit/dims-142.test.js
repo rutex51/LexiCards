@@ -243,5 +243,5 @@ test('rysunek 1.42: arkusz A4 pionowo – wpasowany w kartkę, ramka i tabliczka
   assert.deepEqual([chosen.dimAxis, chosen.arcMode, chosen.ellipseAxes, chosen.dimMode], ['v', 'center', true, 'arc']);
   const wrong = cleanToolSettings({ dimAxis: 'x', arcMode: 'two', ellipseAxes: 1 });
   assert.deepEqual([wrong.dimAxis, wrong.arcMode, wrong.ellipseAxes], ['aligned', 'three', false]);
-  assert.equal(DRAWING_VERSION, 15);
+  assert.equal(DRAWING_VERSION >= 15, true, 'od 1.42 co najmniej 15');
 });

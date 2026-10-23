@@ -15,6 +15,8 @@ import { isArray, expandArray } from './arrays.js';
 import { PAPER_STEP, SCALE_UNITS, cleanScale, dimFormat, dimensionParts, dimensionText, leaderStart, stickyColor } from './drawing.js';
 import { drawingLayers, elementLayers, layersOf } from './layers.js';
 import { frameLayout } from './title-block.js';
+import { diagramLayout, textWidth } from './diagrams.js';
+import { pageLayoutGeometry } from './page-layouts.js';
 import {
   arcFromPoints, arcGeometry, circleShape, cornerSize, curveSamples, dimGeometry, dimKeys, isMeasure, polyFromPoints, polyPoints, shapeAxes, shapeHatch,
   shapeOutline, shapePoint, shownDims, DIM_ARROW, DIM_FONT, POLY_NODES_MAX
@@ -809,6 +811,35 @@ export function drawingToDxf(drawing) {
       polyline(stroke, outline.map(pt), true);
     }
   };
+  /**
+   * Linie, strzałki, ramki, okręgi i napisy (diagram, od 1.44 – także układ kartki) w kolorze elementu; napis wyśrodkowany
+   * albo do prawej – przesunięty o szacowaną szerokość (TEXT bez wyrównania), obrócony – z kątem 50.
+   */
+  const writeGeometry = (stroke, geometry) => {
+    for (const [a, b] of [...(geometry.spine ? [geometry.spine] : []), ...(geometry.lines ?? [])]) line(stroke, pt(a), pt(b));
+    for (const { from, to } of geometry.arrows ?? []) {
+      line(stroke, pt(from), pt(to));
+      arrowHead(stroke, to, Math.atan2(to.y - from.y, to.x - from.x));
+    }
+    for (const box of geometry.boxes ?? []) {
+      polyline(stroke, [{ x: box.x, y: box.y }, { x: box.x + box.w, y: box.y }, { x: box.x + box.w, y: box.y + box.h }, { x: box.x, y: box.y + box.h }].map(pt), true);
+    }
+    for (const circle of geometry.circles ?? []) {
+      const ring = Array.from({ length: 72 }, (_, index) => ({ x: circle.x + Math.cos((index / 72) * Math.PI * 2) * circle.r, y: circle.y + Math.sin((index / 72) * Math.PI * 2) * circle.r }));
+      polyline(stroke, ring.map(pt), true);
+    }
+    for (const item of geometry.texts ?? []) {
+      if (!item.text) continue;
+      const wide = Math.min(item.width ?? Infinity, textWidth(item.text, item.size, item.bold));
+      const shift = item.align === 'center' ? wide / 2 : item.align === 'right' ? wide : 0;
+      if (item.rotate) {
+        const start = pt({ x: item.x, y: item.y + shift });
+        add([...head('TEXT', stroke), [10, fixed(start.x)], [20, fixed(start.y)], [30, 0], [40, fixed(item.size * mm * 0.7)], [1, dxfString(item.text)], [50, 90]]);
+      } else {
+        text(stroke, pt({ x: item.x - shift, y: item.y }), item.size * mm * 0.7, item.text);
+      }
+    }
+  };
   const writeStroke = (stroke) => {
     if (isArray(stroke)) {
       for (const item of expandArray(stroke)) writeStroke({ ...item, layers: stroke.layers ?? item.layers });
@@ -840,6 +871,11 @@ export function drawingToDxf(drawing) {
         line(ink, pt(start), pt(stroke.leader));
         arrowHead(ink, stroke.leader, Math.atan2(stroke.leader.y - start.y, stroke.leader.x - start.x));
       }
+      return;
+    }
+    // Diagram jakości (od 1.44): linie, strzałki, ramki i napisy rozkładu.
+    if (stroke.tool === 'diagram') {
+      writeGeometry(stroke, diagramLayout(stroke));
       return;
     }
     if (stroke.tool !== 'shape') {
@@ -947,6 +983,13 @@ export function drawingToDxf(drawing) {
     }
     for (let index = start; index < entities.length; index += 1) entities[index] = entities[index].map(([code, value]) => (code === 8 ? [8, frameLayer] : [code, value]));
   }
+  // Układ kartki (od 1.44) – osobna warstwa UKLAD (jak ramka).
+  const layoutLayer = drawing.layout ? ['UKLAD', 'UKLAD_KARTKI', 'UKLAD_LEXICARDS'].find((name) => !seen.has(name)) : null;
+  if (layoutLayer) {
+    const start = entities.length;
+    writeGeometry({ color: '#6e6e73' }, pageLayoutGeometry(drawing.layout, drawing));
+    for (let index = start; index < entities.length; index += 1) entities[index] = entities[index].map(([code, value]) => (code === 8 ? [8, layoutLayer] : [code, value]));
+  }
   let written = 0;
   for (const stroke of drawing.strokes) {
     const before = skipped;
@@ -968,10 +1011,10 @@ export function drawingToDxf(drawing) {
     for (const value of pattern) pair(49, fixed(value));
   }
   pair(0, 'ENDTAB');
-  pair(0, 'TABLE'); pair(2, 'LAYER'); pair(70, names.size + 1 + (frameLayer ? 1 : 0));
+  pair(0, 'TABLE'); pair(2, 'LAYER'); pair(70, names.size + 1 + (frameLayer ? 1 : 0) + (layoutLayer ? 1 : 0));
   pair(0, 'LAYER'); pair(2, '0'); pair(70, 0); pair(62, 7); pair(6, 'CONTINUOUS');
-  if (frameLayer) {
-    pair(0, 'LAYER'); pair(2, frameLayer); pair(70, 0); pair(62, 7); pair(6, 'CONTINUOUS');
+  for (const extra of [frameLayer, layoutLayer].filter(Boolean)) {
+    pair(0, 'LAYER'); pair(2, extra); pair(70, 0); pair(62, 7); pair(6, 'CONTINUOUS');
   }
   for (const layer of elementLayers(layers)) {
     pair(0, 'LAYER'); pair(2, names.get(layer.id)); pair(70, 0); pair(62, layer.hidden ? -7 : 7); pair(6, 'CONTINUOUS');

@@ -11,7 +11,8 @@
 // – narzędzie „Kształty” z wybranym rodzajem), od 1.36 'dim:<rodzaj>' (wymiar: długość, kąt, promień,
 // średnica – kształt 'dim' z rodzajem) oraz polecenia otwierające okno: 'text', 'math', 'table',
 // 'sticky', 'gdt', 'datum', 'roughness' (narzędzie się nie zmienia); od 1.43 polecenia edycji geometrii
-// 'edit:<rodzaj>' (odsuń, zaokrąglij, fazuj, przytnij, wydłuż) – dotknięcia elementów, narzędzie zostaje.
+// 'edit:<rodzaj>' (odsuń, zaokrąglij, fazuj, przytnij, wydłuż) – dotknięcia elementów, narzędzie zostaje; od 1.44
+// jakość: 'diagram:fishbone', 'diagram:whys', 'sipoc' (okna) i 'layout' (układ kartki).
 //
 // Od 1.33 grupy można dobrać (okno „Grupy narzędzi”, ustawienia narzędzi na urządzeniu): grupy
 // standardowe – które są na prawym kółku i w jakiej kolejności; lewe kółko – gotowe zestawy i własne
@@ -23,6 +24,8 @@ import { DIM_MODES, SHAPE_LABELS } from './shapes.js';
 export const DIM_ITEMS = Object.freeze(['dim:linear', 'dim:angle', 'dim:radius', 'dim:diameter', 'dim:arc']);
 /** Edycja geometrii (od 1.43, pakiet E planu): odsuń, zaokrąglij, fazuj, przytnij, wydłuż. */
 export const EDIT_ITEMS = Object.freeze(['edit:offset', 'edit:fillet', 'edit:chamfer', 'edit:trim', 'edit:extend']);
+/** Jakość (od 1.44): diagram Ishikawy, 5 × Dlaczego, SIPOC, układ kartki. */
+export const QUALITY_ITEMS = Object.freeze(['diagram:fishbone', 'diagram:whys', 'sipoc', 'layout']);
 
 export const TOOL_GROUPS = Object.freeze([
   { id: 'write', label: 'Pisanie', icon: 'pen', items: ['pen', 'highlighter', 'eraser'] },
@@ -38,7 +41,9 @@ export const TOOL_GROUPS = Object.freeze([
   { id: 'dims', label: 'Wymiary', icon: 'dimension', items: DIM_ITEMS },
   { id: 'symbols', label: 'Symbole metrologiczne', icon: 'gdtFrame', items: ['gdt', 'datum', 'roughness'] },
   // Od 1.43: edycja geometrii – na końcu (dotychczasowe grupy zostają na swoich miejscach kółka).
-  { id: 'edit', label: 'Edycja', icon: 'trim', items: EDIT_ITEMS }
+  { id: 'edit', label: 'Edycja', icon: 'trim', items: EDIT_ITEMS },
+  // Od 1.44: jakość i Lean – na końcu.
+  { id: 'quality', label: 'Jakość', icon: 'fishbone', items: QUALITY_ITEMS }
 ].map((group) => Object.freeze({ ...group, items: Object.freeze(group.items) })));
 
 /** Gotowe zestawy (od 1.33): w oknie „Grupy narzędzi” dotknięcie dodaje zestaw jako grupę na lewym kółku albo go usuwa. */
@@ -46,7 +51,9 @@ export const PRESETS = Object.freeze([
   { id: 'metrology', label: 'Metrologia', icon: 'caliper', items: [...DIM_ITEMS, 'shape:line', 'shape:xline', 'shape:point', 'gdt', 'datum', 'roughness'] },
   { id: 'sketch', label: 'Szkic odręczny', icon: 'sketch', items: ['pen', 'eraser', 'shape:arrow'] },
   { id: 'geometry', label: 'Geometria', icon: 'geometry', items: ['shape:line', 'shape:ellipse', 'shape:xline', 'shape:point'] },
-  { id: 'notes', label: 'Notatki', icon: 'notes', items: ['text', 'math', 'sticky', 'highlighter'] }
+  { id: 'notes', label: 'Notatki', icon: 'notes', items: ['text', 'math', 'sticky', 'highlighter'] },
+  // Od 1.44: jakość i Lean – diagramy, tabele, karteczki i kształty schematów.
+  { id: 'lean', label: 'Jakość / Lean', icon: 'fishbone', items: [...QUALITY_ITEMS, 'sticky', 'text', 'table', 'shape:rect', 'shape:diamond', 'shape:arrow'] }
 ].map((group) => Object.freeze({ ...group, items: Object.freeze(group.items) })));
 
 /** Grupy użytkownika na początek: zestaw Metrologia. */
@@ -59,13 +66,14 @@ const COMMAND_LABELS = {
   gdt: 'Ramka tolerancji', datum: 'Baza', roughness: 'Chropowatość',
   'dim:linear': 'Wymiar – długość', 'dim:angle': 'Wymiar – kąt', 'dim:radius': 'Wymiar – promień', 'dim:diameter': 'Wymiar – średnica',
   'dim:arc': 'Wymiar – długość łuku',
-  'edit:offset': 'Odsuń', 'edit:fillet': 'Zaokrąglij', 'edit:chamfer': 'Fazuj', 'edit:trim': 'Przytnij', 'edit:extend': 'Wydłuż'
+  'edit:offset': 'Odsuń', 'edit:fillet': 'Zaokrąglij', 'edit:chamfer': 'Fazuj', 'edit:trim': 'Przytnij', 'edit:extend': 'Wydłuż',
+  'diagram:fishbone': 'Diagram Ishikawy', 'diagram:whys': '5 × Dlaczego', sipoc: 'SIPOC', layout: 'Układ kartki'
 };
 /** Nazwa pozycji w oknie „Grupy narzędzi” i w opisie grupy. */
 export const itemLabel = (item) => (item.startsWith('shape:') ? SHAPE_LABELS[item.slice(6)] : COMMAND_LABELS[item]) ?? item;
 
 /** Ikony do wyboru dla własnej grupy. */
-export const GROUP_ICONS = Object.freeze(['star', 'caliper', 'sketch', 'geometry', 'notes', 'ruler', 'tag', 'sparkles']);
+export const GROUP_ICONS = Object.freeze(['star', 'caliper', 'sketch', 'geometry', 'notes', 'ruler', 'tag', 'sparkles', 'fishbone']);
 /** Najwięcej własnych grup, pozycji w grupie i znaków nazwy. */
 export const GROUP_LIMITS = Object.freeze({ groups: 8, items: 12, label: 30 });
 const GROUP_ID = /^[a-z0-9-]{1,24}$/;
@@ -154,9 +162,10 @@ export function startGroup(saved, item, config) {
 /**
  * Odstęp kółek (stopnie) i czy okrąg się zamyka: co 45° (w wycinku widać 3–4 grupy); od ośmiu grup
  * kółka obiegają cały okrąg, przy mniejszej liczbie obrót zatrzymuje się na pierwszej i ostatniej.
+ * Od 1.44 przy więcej niż ośmiu kółkach – gęściej (360° / liczba), żeby ostatnie nie stawało na pierwszym.
  */
 export function ringStep(count) {
-  return { step: 45, wrap: count >= 8 };
+  return { step: count > 8 ? 360 / count : 45, wrap: count >= 8 };
 }
 
 const wrapAngle = (angle) => ((((angle + 180) % 360) + 360) % 360) - 180;

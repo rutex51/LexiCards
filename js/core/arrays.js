@@ -229,9 +229,9 @@ export function cleanArrayParams(raw, limit) {
 /** Szyk z elementów `items` (już sprawdzonych) i parametrów – nowy element albo null. */
 export function makeArray(items, params, limit) {
   const clean = cleanArrayParams(params, limit);
-  // Bez szyku w szyku; tabele i karteczki (od 1.21) i symbole metrologiczne (od 1.22.1) – też nie.
+  // Bez szyku w szyku; tabele i karteczki (od 1.21), symbole metrologiczne (od 1.22.1) i diagramy (od 1.44) – też nie.
   // Kopie w szyku (od 1.22) nie mają identyfikatorów ani przyklejeń – są wolne.
-  const source = items.filter((item) => item && !isArray(item) && !['table', 'sticky', 'gdt', 'datum', 'roughness'].includes(item.tool)).slice(0, ARRAY_ITEMS_MAX).map(withoutLinks);
+  const source = items.filter((item) => item && !isArray(item) && !['table', 'sticky', 'gdt', 'datum', 'roughness', 'diagram'].includes(item.tool)).slice(0, ARRAY_ITEMS_MAX).map(withoutLinks);
   if (!clean || source.length === 0) return null;
   return { tool: 'array', ...clean, items: source };
 }
