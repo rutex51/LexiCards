@@ -11282,6 +11282,62 @@ test('rysunek 1.45 na telefonie: grupa Procesy w górnym menu, okna symbolu VSM,
   }
 }, { device: PHONE });
 
+test('ustawienia 1.45.2: zajęte miejsce – aplikacja, dane, obrazy i załączniki, razem, „Policz ponownie”; historia zmian od 1.0 (telefon)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await waitUntil(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), 'Pliki aplikacji w pamięci przeglądarki');
+  await page.evaluate(() => { location.hash = '#/settings'; });
+  const usage = page.locator('.settings-usage');
+  await usage.waitFor();
+  await waitUntil(async () => !(await usage.textContent()).includes('Liczenie'), 'Zajęte miejsce policzone');
+  const rows = () => usage.locator('.row--static').evaluateAll((items) => Object.fromEntries(items.map((item) => [
+    item.querySelector('.row__title').textContent, item.querySelector('.row__value').textContent
+  ])));
+  // Te same liczby co z modułu zajętego miejsca w tej przeglądarce (pliki w pamięci podręcznej, dane jak w kopii).
+  const expected = await page.evaluate(async () => {
+    const { appFilesSize, dataSize } = await import('./js/core/usage.js');
+    return { app: await appFilesSize(), data: await dataSize(window.lexicards.library) };
+  });
+  const { formatSize } = await import('../../js/core/text.js');
+  assert.ok(expected.app > 1024 * 1024, `pliki aplikacji: ${expected.app} B`);
+  assert.deepEqual(await rows(), {
+    Aplikacja: formatSize(expected.app),
+    'Materiały, notatki i postępy': formatSize(expected.data),
+    'Obrazy i załączniki': 'Brak',
+    Razem: formatSize(expected.app + expected.data)
+  });
+  assert.match(await usage.locator('.group__footer').textContent(), /Przeglądarka liczy po swojemu .*zajęte ok\. \d/);
+  await usage.screenshot({ path: path.join(OUTPUT, 'ustawienia-1452-miejsce.png') });
+  // „Policz ponownie” – po usunięciu lekcji dane maleją.
+  const before = expected.data;
+  await page.evaluate(async () => {
+    const { library } = window.lexicards;
+    const lesson = [...library.maps.lessons.values()].find((item) => item.name === 'Negotiation Techniques');
+    await library.delete({ kind: 'lesson', id: lesson.id });
+  });
+  const after = await page.evaluate(async () => (await import('./js/core/usage.js')).dataSize(window.lexicards.library));
+  assert.ok(after < before, `dane mniejsze po usunięciu lekcji (${before} → ${after})`);
+  await usage.locator('[data-testid=usage-refresh]').click();
+  await waitUntil(async () => (await rows())['Materiały, notatki i postępy'] === formatSize(after), 'Policzone ponownie');
+
+  // Historia zmian: pięć najnowszych, „Pokaż wszystkie” – od wersji 1.0.
+  const { CHANGELOG } = await import('../../js/core/changelog.js');
+  const changes = page.locator('.settings-changes');
+  const items = changes.locator('[data-testid=changelog-item]');
+  assert.equal(await items.count(), 5);
+  await expectText(items.first().locator('.changelog__version'), CHANGELOG[0].version);
+  const version = await page.locator('.row--static', { hasText: 'Wersja' }).locator('.row__value').textContent();
+  assert.ok(version.startsWith(`${CHANGELOG[0].version} `), `historia zaczyna się od bieżącej wersji (${version})`);
+  await changes.screenshot({ path: path.join(OUTPUT, 'ustawienia-1452-historia.png') });
+  await changes.locator('[data-testid=changelog-toggle]').click();
+  await waitUntil(async () => (await items.count()) === CHANGELOG.length, 'Wszystkie wersje');
+  await expectText(items.last().locator('.changelog__version'), '1.0');
+  assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
+  await changes.locator('[data-testid=changelog-toggle]').click();
+  await waitUntil(async () => (await items.count()) === 5, 'Znów najnowsze');
+}, { device: PHONE });
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

@@ -890,6 +890,19 @@ a.row__main:active,
   text-align: right;
 }
 
+/* Historia zmian w Ustawieniach (od 1.45.2): numer wersji w stałej kolumnie, opis obok. */
+.changelog__main { align-items: baseline; }
+.changelog__version {
+  flex: none;
+  min-width: 3.4em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.changelog__text { flex: 1; min-width: 0; font-size: var(--size-sub); overflow-wrap: anywhere; }
+/* Zajęte miejsce: długie wartości (np. „Nie zapisana do pracy offline”) łamią się zamiast ściskać nazwę. */
+.settings-usage .row__value { flex: 0 1 auto; }
+
 /* Wiersz z przyciskiem menu nie potrzebuje strzałki – cały wiersz i tak prowadzi dalej. */
 .row:has(> .row__more) .row__chevron { display: none; }
 .row:has(> .row__more) .row__main { padding-right: 4px; }

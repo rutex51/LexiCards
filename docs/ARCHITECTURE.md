@@ -57,6 +57,8 @@ js/core/storage-memory.js  adapter w pamięci (testy, praca bez bazy przeglądar
 js/core/storage-idb.js     adapter IndexedDB (domyślny)
 js/core/storage-snapshot.js magazyn w jednym pliku (od 1.30.2): całość w pamięci, po każdej zmianie zapis migawki przez `sink` (przyszły plik danych w OneDrive)
 js/core/model.js           kształt rekordów, wartości domyślne, stałe
+js/core/usage.js           zajęte miejsce (od 1.45.2): pliki aplikacji w pamięci podręcznej, dane, obrazy i załączniki, szacunek przeglądarki
+js/core/changelog.js       historia zmian w pigułce (od 1.45.2, tymczasowo w Ustawieniach)
 js/core/sounds.js          dźwięki (od 1.31): synteza fiszki odlatującej, opis nagrania kartki i wyczucie czasu (od 1.31.1), odpowiedź impulsowa pokoju
 sounds/kartka.wav          nagranie przewracanej kartki (od 1.31.1)
 js/core/backup.js          kopia zapasowa: plik danych i plik obrazów i załączników – tworzenie, walidacja, przywracanie

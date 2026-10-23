@@ -83,3 +83,26 @@ Testy wersji 1.45.1:
 
 Czego nie sprawdzono: prawdziwy iPad w Safari (ekran iPada udawany w Chromium), iPad z dwiema aplikacjami obok siebie
 i Stage Manager.
+
+## Uzupełnienie w wersji 1.45.2 – zajęte miejsce i historia zmian w Ustawieniach
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| W Ustawieniach – ile zajmuje aplikacja | Nowa grupa **Zajęte miejsce**: **Aplikacja** (pliki zapisane do pracy bez internetu – suma plików w pamięci podręcznej przeglądarki; w trakcie aktualizacji przez chwilę stare i nowe wydanie razem), **Materiały, notatki i postępy** (w przybliżeniu jak plik danych kopii zapasowej), **Obrazy i załączniki** (z liczbą), **Razem** i **Policz ponownie**. Pod spodem – zajęte miejsce i limit według przeglądarki (liczy po swojemu, z zapasem). Liczone przy otwarciu Ustawień. |
+| Tymczasowa historia zmian od wersji 1.0 | Grupa **Historia zmian** na końcu Ustawień: pięć najnowszych wersji, **Pokaż wszystkie** – każda wersja od 1.0 w jednym zdaniu, od najnowszej. Do usunięcia, gdy przestanie być potrzebna (`js/core/changelog.js` i jedna grupa w Ustawieniach). |
+
+Testy wersji 1.45.2:
+
+- **Testy logiki (Node.js): 473 – wszystkie zaliczone** (4 nowe: pliki aplikacji – suma zbiorów aplikacji, inne
+  pominięte, brak pamięci podręcznej; dane w bajtach UTF-8; suma z obrazami i szacunek przeglądarki, błąd pamięci
+  podręcznej; historia zmian – od bieżącej wersji (z package.json) do 1.0, każda wersja główna, kolejność, bez powtórzeń).
+- **Testy w przeglądarce (Chromium): 217 – wszystkie zaliczone w dwóch pełnych przebiegach** (1 nowy, telefon):
+  liczby w grupie zgodne z modułem zajętego miejsca w tej samej przeglądarce (aplikacja ok. 2,7 MB, dane przykładowe,
+  „Brak” obrazów, razem), opis z szacunkiem przeglądarki; po usunięciu lekcji „Policz ponownie” pokazuje mniejsze dane;
+  historia – pięć pozycji od bieżącej wersji, „Pokaż wszystkie” – do 1.0, bez przewijania w bok.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium): grupa Zajęte miejsce i Historia zmian na telefonie.
+
+Czego nie sprawdzono: Safari na iPhonie i iPadzie – szacunek przeglądarki (`navigator.storage.estimate`) Safari podaje
+dopiero od iOS 17 i liczy inaczej; pozostałe liczby aplikacja wylicza sama, ale w Safari nie były sprawdzone. Obrazy
+i załączniki – liczba i rozmiar z opisu notatek, w przeglądarce sprawdzone tylko przy braku obrazów (logika – testem).

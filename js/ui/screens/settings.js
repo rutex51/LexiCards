@@ -1,8 +1,10 @@
-// Ustawienia: wygląd, kopia zapasowa, przechowywanie danych, instalacja, dane przykładowe.
+// Ustawienia: wygląd, kopia zapasowa, przechowywanie danych, instalacja, dane przykładowe; od 1.45.2 zajęte miejsce
+// i (tymczasowo) historia zmian w pigułce.
 
 import {
   backupFileName, createBackup, createMediaArchive, isZipFile, mediaFileName, parseBackupText, restoreMedia, validateBackup
 } from '../../core/backup.js';
+import { CHANGELOG, CHANGELOG_SHOWN } from '../../core/changelog.js';
 import { ACCENT_COLORS, CONSOLIDATED_REVIEW_OPTIONS, accentColor, consolidatedReviewDays, nowISO } from '../../core/model.js';
 import {
   formatSize, joinList, plural, pluralAttachments, pluralDomains, pluralFiles, pluralForm, pluralImages, pluralLessons, pluralModules,
@@ -18,6 +20,7 @@ import { routes } from '../router.js';
 import {
   SPEECH_RATES, checkSpeech, describeCheck, forgetSilentVoices, listVoices, onVoicesChanged, silentVoice, speak, speechAvailable
 } from '../speech.js';
+import { measureUsage } from '../../core/usage.js';
 
 const APPEARANCE_OPTIONS = [
   { value: 'system', label: 'Automatyczny' },
@@ -93,6 +96,11 @@ export class SettingsScreen {
     /** Sprawdzenie wymowy: { results, finished, stop } albo null. */
     this.check = null;
     this.#checkPersistence();
+    /** Zajęte miejsce (od 1.45.2): null – liczenie, { … } – wynik measureUsage, { error } – nie udało się. */
+    this.usage = null;
+    this.#measureUsage();
+    /** Historia zmian – wszystkie wersje (true) albo tylko najnowsze. */
+    this.allChanges = false;
     // Lista głosów systemu bywa dostępna dopiero po chwili.
     this.stopWatchingVoices = onVoicesChanged(() => { if (!this.disposed) this.ctx.refresh(); });
   }
@@ -374,6 +382,60 @@ export class SettingsScreen {
     if (!this.disposed) this.ctx.refresh();
   }
 
+  /** Zajęte miejsce: pliki aplikacji, dane, obrazy i załączniki, szacunek przeglądarki (od 1.45.2). */
+  async #measureUsage() {
+    this.usage = null;
+    try {
+      this.usage = await measureUsage({ library: this.ctx.library });
+    } catch (error) {
+      this.usage = { error };
+    }
+    if (!this.disposed) this.ctx.refresh();
+  }
+
+  #usageGroup() {
+    const usage = this.usage;
+    const value = (bytes) => (usage === null ? 'Liczenie…' : bytes === null ? '–' : formatSize(bytes));
+    if (usage?.error) {
+      return group({ title: 'Zajęte miejsce', footer: 'Nie udało się policzyć zajętego miejsca w tej przeglądarce.' },
+        actionRow({ label: 'Policz ponownie', iconName: 'refresh', onClick: () => this.#measureUsage(), testID: 'usage-refresh' }));
+    }
+    const media = usage?.media;
+    const mediaText = media && media.images + media.files > 0 ? `${formatSize(media.size)} (${mediaList(media)})` : usage ? 'Brak' : 'Liczenie…';
+    const footer = [
+      'Aplikacja – pliki zapisane do pracy bez internetu (przy aktualizacji przez chwilę stare i nowe razem). Dane – materiały, '
+        + 'notatki, postępy i ustawienia, w przybliżeniu jak plik danych kopii zapasowej.',
+      usage?.browser !== null && usage?.browser !== undefined
+        ? `Przeglądarka liczy po swojemu (z zapasem i plikami roboczymi): zajęte ok. ${formatSize(usage.browser)}${usage.quota ? `, limit dla aplikacji ok. ${formatSize(usage.quota)}` : ''}.`
+        : null
+    ].filter(Boolean).join(' ');
+    return group({ title: 'Zajęte miejsce', footer, className: 'settings-usage' },
+      valueRow('Aplikacja', usage?.app === null ? 'Nie zapisana do pracy offline' : value(usage?.app ?? null)),
+      valueRow('Materiały, notatki i postępy', value(usage?.data ?? null)),
+      valueRow('Obrazy i załączniki', mediaText),
+      valueRow('Razem', value(usage?.total ?? null)),
+      usage ? actionRow({ label: 'Policz ponownie', iconName: 'refresh', onClick: () => this.#measureUsage(), testID: 'usage-refresh' }) : null);
+  }
+
+  /** Historia zmian w pigułce (od 1.45.2, tymczasowo): najnowsze wersje, reszta po „Pokaż wszystkie”. */
+  #changesGroup() {
+    const shown = this.allChanges ? CHANGELOG : CHANGELOG.slice(0, CHANGELOG_SHOWN);
+    return group({ title: 'Historia zmian', footer: 'Sekcja tymczasowa – nowości każdej wersji w jednym zdaniu, od najnowszej.', className: 'settings-changes' },
+      shown.map((entry) => h('li', { class: 'row row--static changelog__item', dataset: { testid: 'changelog-item' } },
+        h('span', { class: 'row__main changelog__main' },
+          h('span', { class: 'changelog__version' }, entry.version),
+          h('span', { class: 'changelog__text' }, entry.summary)))),
+      actionRow({
+        label: this.allChanges ? 'Pokaż tylko najnowsze' : `Pokaż wszystkie (od wersji 1.0, ${CHANGELOG.length})`,
+        iconName: this.allChanges ? 'chevronUp' : 'chevronDown',
+        onClick: () => {
+          this.allChanges = !this.allChanges;
+          this.ctx.refresh();
+        },
+        testID: 'changelog-toggle'
+      }));
+  }
+
   async #requestPersistence() {
     try {
       this.persisted = await navigator.storage.persist();
@@ -649,6 +711,7 @@ export class SettingsScreen {
         this.#libraryGroup(),
         this.#speechGroup(),
         this.#storageGroup(),
+        this.#usageGroup(),
         this.#installGroup(),
         group({ title: 'Dane' },
           actionRow({ label: 'Wczytaj przykładowe dane', iconName: 'sparkles', onClick: () => loadSampleData(ctx), testID: 'load-samples' }),
@@ -657,7 +720,8 @@ export class SettingsScreen {
         group({ title: 'O aplikacji' },
           valueRow('Wersja', ctx.env.buildID ? `${ctx.env.appVersion} (${ctx.env.buildID})` : ctx.env.appVersion),
           valueRow('Pojęcia w bibliotece', String(summary.terms))
-        )
+        ),
+        this.#changesGroup()
       ]
     };
   }
