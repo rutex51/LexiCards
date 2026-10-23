@@ -1,4 +1,4 @@
-# LexiCards 1.42
+# LexiCards 1.43
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -51,8 +51,9 @@ Rysunek: kółko narzędzi przesuwane przytrzymaniem (w środku ekranu cały okr
 Rysunek – etap D, część 1: wielokąt foremny (3–12 boków), półprosta, zaokrąglenie R i faza narożników prostokąta, kreskowanie (kąt, odstęp, krzyżowe), pole i obwód zaznaczonego kształtu, kolejność rysowania (na wierzch, wyżej, niżej, na spód), DXF z łukami narożników i kreskowaniem (wersja 1.40): [docs/RELEASE-1.40.md](docs/RELEASE-1.40.md).
 Rysunek – etap D, część 2: odbicie i kopia odbita względem prostej przez dwa punkty, skalowanie o współczynnik, „Styl jak…” (kolor, grubość, linia, wypełnienie z dotkniętego elementu), ramka rysunkowa A4 albo A3 z tabliczką (tytuł, numer, materiał, skala, data, rysował; także w DXF) (wersja 1.41): [docs/RELEASE-1.41.md](docs/RELEASE-1.41.md).
 Rysunek – zaległości pakietów A i B planu: przyciąganie do środka kształtu, środka boku, przecięć i kresek pióra; wymiar poziomy i pionowy, wymiary łańcuchowe i od bazy, wymiar długości łuku; łuk ze środka, początku i końca; okrąg z osiami (znacznik środka) i polem ⌀; ramka A4 pionowo (wersja 1.42): [docs/RELEASE-1.42.md](docs/RELEASE-1.42.md).
+Rysunek – edycja geometrii (pakiet E planu): grupa Edycja – odsuń, zaokrąglij, fazuj, przytnij, wydłuż; okrąg styczny do dwóch elementów o danym promieniu; łamana punkt po punkcie (wersja 1.43): [docs/RELEASE-1.43.md](docs/RELEASE-1.43.md).
 
-## Co potrafi wersja 1.42
+## Co potrafi wersja 1.43
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -157,7 +158,8 @@ Rysunek – zaległości pakietów A i B planu: przyciąganie do środka kształ
   **Styl jak…** (styl dotkniętego elementu na zaznaczonych) i **ramka rysunkowa** A4 albo A3 z tabliczką. Od 1.42:
   przyciąganie do **środka kształtu**, **środka boku**, **przecięć** i kresek pióra, wymiar **poziomy** i **pionowy**,
   wymiary **łańcuchowe** i **od bazy**, wymiar **długości łuku**, **łuk ze środka**, okrąg z **osiami** i polem **⌀**,
-  ramka **A4 pionowo**. Od 1.24.1 kartka w edytorze wygląda
+  ramka **A4 pionowo**. Od 1.43 grupa **Edycja**: **odsuń**, **zaokrąglij**, **fazuj**, **przytnij**, **wydłuż**,
+  a także **okrąg styczny** (TTR) i **łamana** punkt po punkcie. Od 1.24.1 kartka w edytorze wygląda
   jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
@@ -889,6 +891,16 @@ współśrodkowy na zewnątrz i liczba ze znakiem **⌒** wzdłuż łuku (tolera
 **Okrąg** i elipsa – **Osie** w trzecim menu: krzyż linii osiowych przez środek, wystający poza obrys (znacznik środka;
 także w DXF – linią CENTER); zaznaczony okrąg ma jedno pole **⌀** – wpisana średnica zmienia oba boki. Ramka rysunkowa
 także **A4 pionowo** (arkusz 210 × 297 mm, tabliczka na całą szerokość ramki). Format rysunku – 15.
+**Edycja geometrii** (od 1.43): grupa **Edycja** na prawym kółku – polecenia czekają na dotknięcia elementów (podpowiedź
+na dole), działają wielokrotnie do Esc albo ponownego dotknięcia polecenia, a narzędzie rysowania zostaje; każda zmiana to
+jeden krok cofania. **Odsuń** – najpierw odległość (w jednostkach liczb wymiarów), potem element i strona: kopia równoległa
+odcinka i prostej, współśrodkowa okręgu i łuku, prostokąt o tyle samo większy albo mniejszy (zaokrąglenie i faza – razem
+z nim), łamana i wielokąt – boki równolegle (mysz pokazuje kopię przed dotknięciem). **Zaokrąglij** (promień R, 0 – ostry
+narożnik) i **Fazuj** (45°) – dwa odcinki dotknięte w częściach, które zostają (albo dwa zaznaczone). **Przytnij** – dotknięta
+część odcinka, prostej, półprostej, okręgu albo łuku między przecięciami z innymi elementami (także kreskami pióra)
+znika. **Wydłuż** – koniec odcinka albo łuku dochodzi do najbliższego elementu na przedłużeniu. **Okrąg** – sposób
+**Styczny**: dwa dotknięte elementy (linie, okręgi, łuki) i promień. **Łamana** w grupie Kształty – wierzchołki
+dotknięciami, koniec: ostatni punkt jeszcze raz, Enter albo Esc; dotknięcie pierwszego – zamknięty wielokąt.
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę

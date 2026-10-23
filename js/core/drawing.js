@@ -418,6 +418,11 @@ export function defaultToolSettings() {
     dimAxis: 'aligned',
     arcMode: 'three',
     ellipseAxes: false,
+    // Od 1.43: ostatnie odsunięcie, promień zaokrąglenia, wielkość fazy i promień okręgu stycznego (jednostki strony).
+    editOffset: PAPER_STEP / 2,
+    editFillet: PAPER_STEP / 2,
+    editChamfer: PAPER_STEP / 4,
+    ttrRadius: PAPER_STEP,
     arrayKind: 'linear',
     // Od 1.21: kolor ostatnio dodanej karteczki.
     stickyColor: 'yellow',
@@ -524,6 +529,8 @@ function cleanGuide(raw) {
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
+/** Długość edycji geometrii (od 1.43): od 0,1 do 5000 jednostek strony (zaokrąglenie – także 0, ostry narożnik). */
+const editLength = (value, fallback, zero = false) => (finite(value) && (value > 0 || (zero && value === 0)) && value <= 5000 ? Math.round(value * 100) / 100 : fallback);
 
 /** Ustawienia narzędzi odczytane z pamięci urządzenia – złe wartości zastępują domyślne. */
 export function cleanToolSettings(raw) {
@@ -572,6 +579,10 @@ export function cleanToolSettings(raw) {
     dimAxis: DIM_AXES.includes(raw.dimAxis) ? raw.dimAxis : base.dimAxis,
     arcMode: ARC_MODES.includes(raw.arcMode) ? raw.arcMode : base.arcMode,
     ellipseAxes: typeof raw.ellipseAxes === 'boolean' ? raw.ellipseAxes : base.ellipseAxes,
+    editOffset: editLength(raw.editOffset, base.editOffset),
+    editFillet: editLength(raw.editFillet, base.editFillet, true),
+    editChamfer: editLength(raw.editChamfer, base.editChamfer),
+    ttrRadius: editLength(raw.ttrRadius, base.ttrRadius),
     arrayKind: ARRAY_KINDS.includes(raw.arrayKind) ? raw.arrayKind : base.arrayKind,
     stickyColor: STICKY_COLORS.some((color) => color.id === raw.stickyColor) ? raw.stickyColor : base.stickyColor,
     edgeSnap: typeof raw.edgeSnap === 'boolean' ? raw.edgeSnap : base.edgeSnap,

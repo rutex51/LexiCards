@@ -7,19 +7,21 @@ import { test } from 'node:test';
 import { cleanToolSettings, defaultToolSettings } from '../../js/core/drawing.js';
 import { DIM_MODES, SHAPES } from '../../js/core/shapes.js';
 import {
-  RING_CENTER, TOOL_GROUPS, USER_GROUPS, clampRotation, cleanUiHidden, findGroup, isModeItem, ringItems, ringStep, rotationFor,
+  EDIT_ITEMS, RING_CENTER, TOOL_GROUPS, USER_GROUPS, clampRotation, cleanUiHidden, findGroup, isModeItem, ringItems, ringStep, rotationFor,
   snapRotation, startGroup, toolItem, uiPartHidden
 } from '../../js/core/tool-ring.js';
 
-const COMMANDS = ['text', 'math', 'table', 'sticky', 'gdt', 'datum', 'roughness'];
+// Od 1.43 także polecenia edycji geometrii.
+const COMMANDS = ['text', 'math', 'table', 'sticky', 'gdt', 'datum', 'roughness', ...EDIT_ITEMS];
 
 test('kółka 1.32: grupy – każdy kształt i polecenie w grupie standardowej, Metrologia z symbolami, pozycje bez powtórzeń', () => {
-  // Od 1.34 także Wymiary.
-  assert.deepEqual(TOOL_GROUPS.map((group) => group.id), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols']);
+  // Od 1.34 także Wymiary, od 1.43 Edycja.
+  assert.deepEqual(TOOL_GROUPS.map((group) => group.id), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit']);
   const items = TOOL_GROUPS.flatMap((group) => group.items);
   assert.equal(new Set(items).size, items.length, 'pozycja w jednej grupie standardowej');
   // Od 1.36 wymiar – cztery pozycje 'dim:<rodzaj>' zamiast 'shape:dim'.
-  const panelShapes = SHAPES.filter((kind) => kind !== 'polyline' && kind !== 'polygon' && kind !== 'dim');
+  // Od 1.43 także łamana (narzędzie punkt po punkcie).
+  const panelShapes = SHAPES.filter((kind) => kind !== 'polygon' && kind !== 'dim');
   for (const kind of panelShapes) assert.ok(items.includes(`shape:${kind}`), `kształt ${kind} w grupie`);
   for (const mode of DIM_MODES) assert.ok(items.includes(`dim:${mode}`), `wymiar ${mode} w grupie`);
   for (const item of [...items, ...USER_GROUPS.flatMap((group) => group.items)]) {

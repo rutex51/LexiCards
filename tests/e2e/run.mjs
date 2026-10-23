@@ -3165,7 +3165,8 @@ const ITEM_GROUPS = {
   'drawing-shape-xline': 'construct', 'drawing-shape-point': 'construct', 'drawing-shape-ray': 'construct',
   'drawing-insert-text': 'text', 'drawing-insert-math': 'text', 'drawing-insert-table': 'text', 'drawing-insert-sticky': 'text',
   'drawing-symbol-gdt': 'symbols', 'drawing-symbol-datum': 'symbols', 'drawing-symbol-roughness': 'symbols',
-  'drawing-measure-linear': 'dims', 'drawing-measure-angle': 'dims', 'drawing-measure-radius': 'dims', 'drawing-measure-diameter': 'dims', 'drawing-measure-arc': 'dims'
+  'drawing-measure-linear': 'dims', 'drawing-measure-angle': 'dims', 'drawing-measure-radius': 'dims', 'drawing-measure-diameter': 'dims', 'drawing-measure-arc': 'dims',
+  'drawing-edit-offset': 'edit', 'drawing-edit-fillet': 'edit', 'drawing-edit-chamfer': 'edit', 'drawing-edit-trim': 'edit', 'drawing-edit-extend': 'edit'
 };
 const groupOfItem = (testID) => ITEM_GROUPS[testID] ?? (testID.startsWith('drawing-shape-') ? 'shapes' : null);
 const OPTION_IDS = /^drawing-(color-|width-|eraser-size-|select-all$|paste$)/;
@@ -4299,8 +4300,8 @@ test('rysunek 1.15: kształty – prostokąt przeciągnięciem, punkty konstrukc
   await shapeTool(editor);
   await panel.waitFor();
   // Od 1.32 rodzaje kształtów w górnym menu: 8 w „Kształtach” (od 1.27 ze strzałką po łuku, od 1.34 – 9, z łukiem, od 1.40 – 10,
-  // z wielokątem foremnym), prosta, półprosta i punkt – w „Konstrukcji”.
-  assert.equal(await editor.locator('[data-testid=drawing-tool-row] [data-testid^=drawing-shape-]').count(), 10);
+  // z wielokątem foremnym, od 1.43 – 11, z łamaną), prosta, półprosta i punkt – w „Konstrukcji”.
+  assert.equal(await editor.locator('[data-testid=drawing-tool-row] [data-testid^=drawing-shape-]').count(), 11);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-ksztalty-panel-ipad.png') });
   await press(editor, 'drawing-shape-rect');
   await waitUntil(() => panel.isHidden(), 'Panel kształtów zamknięty po wyborze');
@@ -8940,13 +8941,14 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   const ids = await sampleLessons(page);
   const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Grupy</p>');
   // Ostatnie małe kółko każdego kółka – „Grupy narzędzi”.
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols']);
+  // Od 1.43 na końcu grupa Edycja.
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit']);
   assert.deepEqual(await ringGroupIds(editor, 'left'), ['metrology']);
   assert.equal(await editor.locator('[data-testid=drawing-ring-left-edit]').evaluate((element) => element.style.opacity), '1', 'przy jednej grupie widać je od razu');
   let groups = await openToolGroupsFrom(editor, 'right');
   const standardOrder = () => groups.locator('[data-testid=tool-groups-standard] [data-testid^=tool-groups-on-]')
     .evaluateAll((inputs) => inputs.map((input) => input.dataset.testid.replace('tool-groups-on-', '')));
-  assert.deepEqual(await standardOrder(), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols']);
+  assert.deepEqual(await standardOrder(), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit']);
   await expectText(groups.locator('[data-testid=tool-groups-standard]'), 'Pióro · Zakreślacz · Gumka');
   assert.equal(await groups.locator('[data-testid=tool-groups-preset-metrology]').getAttribute('aria-pressed'), 'true', 'Metrologia już na lewym kółku');
   await expectText(groups.locator('[data-testid=tool-groups-editor]'), 'Grupa „Metrologia” – narzędzia');
@@ -8956,14 +8958,14 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await groups.locator('[data-testid=tool-groups-on-write]').uncheck();
   await groups.locator('.sheet__header .button--plain').click();
   await groups.waitFor({ state: 'detached' });
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols'], 'Anuluj zostawia grupy');
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit'], 'Anuluj zostawia grupy');
 
   groups = await openToolGroupsFrom(editor, 'right');
   // Symbole – poza kółkiem; Tekst na początek (strzałki na uchwycie ≡), Konstrukcja przeciągnięta nad Pisanie.
   await groups.locator('[data-testid=tool-groups-on-symbols]').uncheck();
   await groups.locator('[data-testid=tool-groups-move-text]').focus();
   for (let step = 0; step < 3; step += 1) await page.keyboard.press('ArrowUp');
-  assert.deepEqual(await standardOrder(), ['text', 'write', 'shapes', 'construct', 'dims', 'symbols']);
+  assert.deepEqual(await standardOrder(), ['text', 'write', 'shapes', 'construct', 'dims', 'symbols', 'edit']);
   assert.equal(await groups.locator('[data-testid=tool-groups-move-text]').evaluate((element) => element === document.activeElement), true, 'fokus zostaje na uchwycie');
   const grip = await groups.locator('[data-testid=tool-groups-move-construct]').boundingBox();
   const rowHeight = (await groups.locator('[data-testid=tool-groups-move-write]').boundingBox()).y - (await groups.locator('[data-testid=tool-groups-move-text]').boundingBox()).y;
@@ -8971,11 +8973,11 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await page.mouse.down();
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 - rowHeight * 2, { steps: 8 });
   await page.mouse.up();
-  await waitUntil(async () => (await standardOrder()).join() === 'text,construct,write,shapes,dims,symbols', 'Przeciągnięcie ≡ zmienia kolejność');
+  await waitUntil(async () => (await standardOrder()).join() === 'text,construct,write,shapes,dims,symbols,edit', 'Przeciągnięcie ≡ zmienia kolejność');
   // Na kółku zostaje co najmniej jedna grupa: po odznaczeniu pozostałych ostatnia jest zablokowana.
-  for (const id of ['text', 'write', 'shapes', 'dims']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).uncheck();
+  for (const id of ['text', 'write', 'shapes', 'dims', 'edit']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).uncheck();
   assert.equal(await groups.locator('[data-testid=tool-groups-on-construct]').isDisabled(), true, 'ostatnia grupa zostaje');
-  for (const id of ['text', 'write', 'shapes', 'dims']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).check();
+  for (const id of ['text', 'write', 'shapes', 'dims', 'edit']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).check();
   assert.equal(await groups.locator('[data-testid=tool-groups-on-construct]').isDisabled(), false);
 
   // Zestawy: Geometria dochodzi (i otwiera się do edycji), Metrologia odchodzi.
@@ -8999,7 +9001,7 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await groups.waitFor({ state: 'detached' });
 
   // Kółka po „Gotowe”: prawe w nowej kolejności bez Symboli, lewe – Geometria i Ulubione.
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims']);
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit']);
   assert.deepEqual(await ringGroupIds(editor, 'left'), ['geometry', 'own-1']);
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Pisanie', 'pokazana grupa zostaje');
   assert.equal(await editor.locator('[data-testid=drawing-group-write]').getAttribute('aria-pressed'), 'true');
@@ -9011,7 +9013,7 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   assert.match(await ringMain(editor, 'left').getAttribute('aria-label'), /^Elipsa/);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-grupy-kolka-ipad.png') });
   const saved = await storedGroups(page);
-  assert.deepEqual(saved.order, ['text', 'construct', 'write', 'shapes', 'dims', 'symbols']);
+  assert.deepEqual(saved.order, ['text', 'construct', 'write', 'shapes', 'dims', 'symbols', 'edit']);
   assert.deepEqual(saved.off, ['symbols']);
   assert.deepEqual(saved.mine.map((group) => [group.id, group.label, group.icon, group.items.join()]),
     [['geometry', 'Geometria', 'geometry', 'shape:line,shape:ellipse,shape:xline,shape:point'], ['own-1', 'Ulubione', 'sparkles', 'shape:ellipse,pen,gdt']]);
@@ -9022,7 +9024,7 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await noteObjectsDialog(page).locator('[data-testid=note-image-draw]').click();
   await editor.waitFor();
   await waitUntil(async () => (await ringGroupIds(editor, 'left')).join() === 'geometry,own-1', 'Grupy po ponownym otwarciu');
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims']);
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit']);
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Ulubione');
 
   // Z lewego kółka okno otwiera się z jego grupą; usunięcie pokazanej grupy – menu wraca do grupy z narzędziem.
@@ -10626,6 +10628,188 @@ test('rysunek 1.42 na telefonie: wybór kierunku wymiaru i sposobu rysowania łu
     const box = await editor.locator(`[data-testid=${id}]`).boundingBox();
     assert.ok(box && box.x >= 0 && box.x + box.width <= 391, `${id} na ekranie`);
   }
+}, { device: PHONE });
+
+test('rysunek 1.43: łamana punkt po punkcie i wielokąt, grupa Edycja – odsuń, zaokrąglij, fazuj, przytnij, wydłuż, okrąg styczny; zapis (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Edycja geometrii</p>');
+  const frame = await pageFrame(page);
+  const mouse = pageMouse(page, frame);
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  const hint = editor.locator('[data-testid=drawing-shape-hint]');
+  const deselect = async () => {
+    await page.keyboard.press('Escape');
+    await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  };
+  const line = async (from, to) => {
+    await mouse.drag(from, to);
+    await expectText(count, 'Odcinek');
+    await deselect();
+  };
+  /** Okno wielkości polecenia: wartość w cm (kratka = 1 cm), „Dalej”. */
+  const value = async (title, text) => {
+    await expectText(sheet(page).locator('.sheet__title'), title);
+    await page.locator('[data-testid=drawing-edit-value]').fill(text);
+    await sheetSubmit(page).click();
+    await waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+  };
+
+  // Łamana: cztery punkty, ostatni jeszcze raz – koniec; druga – trzy punkty i pierwszy – wielokąt.
+  await pickGroup(editor, 'shapes');
+  await press(editor, 'drawing-shape-polyline');
+  await expectText(hint, 'Łamana: dotknij pierwszego punktu');
+  for (const point of [[200, 200], [332, 200], [332, 288], [464, 288]]) await mouse.tap(point);
+  await expectText(hint, 'ostatni jeszcze raz, Enter albo Esc – koniec');
+  await page.mouse.move(...frame.screen(500, 350), { steps: 3 });
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-143-lamana.png') });
+  await mouse.tap([464, 288]);
+  await expectText(count, 'Łamana');
+  await deselect();
+  for (const point of [[600, 200], [732, 200], [666, 300]]) await mouse.tap(point);
+  await mouse.tap([600, 200]);
+  await expectText(count, 'Wielokąt');
+  await deselect();
+
+  // Odcinki do edycji (końce z dala od innych – bez przyciągania): narożnik „L” bez styku (zaokrąglenie), drugi „L”
+  // (faza), poziomy przecięty dwoma pionowymi (przycięcie), krótki przed ścianą (wydłużenie).
+  await press(editor, 'drawing-shape-line');
+  await line([100, 500], [300, 500]);
+  await line([300, 380], [300, 440]);
+  await line([400, 500], [600, 500]);
+  await line([600, 380], [600, 440]);
+  await line([800, 400], [1200, 400]);
+  await line([900, 340], [900, 460]);
+  await line([1100, 340], [1100, 460]);
+  await line([800, 600], [900, 600]);
+  await line([1150, 540], [1150, 660]);
+
+  // Grupa Edycja: pięć poleceń.
+  await pickGroup(editor, 'edit');
+  await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Edycja');
+  assert.deepEqual(await editor.locator('[data-testid=drawing-tool-row] .drawing__tool-label').allTextContents(), ['Odsuń', 'Zaokrąglij', 'Fazuj', 'Przytnij', 'Wydłuż']);
+
+  // Zaokrąglij R 1 cm: dotknięcie poziomego i pionowego odcinka pierwszego „L”.
+  await editor.locator('[data-testid=drawing-edit-fillet]').click();
+  await value('Zaokrąglij', '1');
+  await expectText(notice, 'Zaokrąglij R 1 cm: dotknij pierwszego odcinka');
+  assert.equal(await editor.locator('[data-testid=drawing-edit-fillet]').getAttribute('aria-pressed'), 'true');
+  await mouse.tap([200, 500]);
+  await expectText(notice, 'dotknij drugiego odcinka');
+  await mouse.tap([300, 420]);
+  await expectText(notice, 'dotknij pierwszego odcinka');
+  // Fazuj 0,5 cm – drugie „L”.
+  await editor.locator('[data-testid=drawing-edit-chamfer]').click();
+  await value('Fazuj', '0,5');
+  // Polecenie rusza po zamknięciu okna – dotknięcia dopiero po podpowiedzi.
+  await expectText(notice, 'Fazuj 0,5 cm: dotknij pierwszego odcinka');
+  await mouse.tap([500, 500]);
+  await expectText(notice, 'Fazuj 0,5 cm: dotknij drugiego odcinka');
+  await mouse.tap([600, 420]);
+  await expectText(notice, 'Fazuj 0,5 cm: dotknij pierwszego odcinka');
+  // Przytnij: część poziomego odcinka między pionowymi znika; dotknięcie pustego miejsca – komunikat.
+  await editor.locator('[data-testid=drawing-edit-trim]').click();
+  await expectText(notice, 'Przytnij: dotknij części elementu do usunięcia');
+  await mouse.tap([1000, 800]);
+  await expectText(notice, 'Dotknij odcinka, prostej, półprostej, okręgu albo łuku');
+  await mouse.tap([1000, 400]);
+  // Wydłuż: krótki odcinek do pionowej ściany.
+  await editor.locator('[data-testid=drawing-edit-extend]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-edit-trim]').getAttribute('aria-pressed'), 'false');
+  await mouse.tap([890, 600]);
+  await expectText(notice, 'Wydłuż: dotknij odcinka albo łuku');
+  // Odsuń o 1 cm: odcinek ściany, strona w prawo (mysz – podgląd kopii).
+  await editor.locator('[data-testid=drawing-edit-offset]').click();
+  await value('Odsuń', '1');
+  await expectText(notice, 'Odsuń o 1 cm: dotknij odcinka, okręgu');
+  await mouse.tap([1150, 640]);
+  await expectText(notice, 'dotknij strony, po której ma stanąć kopia');
+  await page.mouse.move(...frame.screen(1250, 600), { steps: 3 });
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-143-edycja.png') });
+  await mouse.tap([1250, 600]);
+  await expectText(notice, 'Odsuń o 1 cm: dotknij odcinka');
+  await page.keyboard.press('Escape');
+  await expectText(notice, 'Koniec odsuwania');
+  assert.equal(await editor.locator('[data-testid=drawing-edit-offset]').getAttribute('aria-pressed'), 'false');
+
+  // Okrąg styczny (Kształty → Elipsa → Styczny): dwa boki drugiego „L”, promień 1 cm.
+  await pickGroup(editor, 'shapes');
+  await press(editor, 'drawing-shape-ellipse');
+  await editor.locator('[data-testid=drawing-ellipse-ttr]').click();
+  await expectText(hint, 'Okrąg styczny: dotknij pierwszej linii albo okręgu');
+  await mouse.tap([450, 500]);
+  await expectText(hint, 'Okrąg styczny: dotknij drugiej linii');
+  await mouse.tap([600, 400]);
+  await value('Okrąg styczny', '1');
+  await expectText(count, 'Elipsa');
+  await deselect();
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const strokes = await savedStrokes(page, ids.statements);
+  const ends = (stroke) => [-1, 1].map((side) => ({ x: stroke.x + (side * stroke.w * Math.cos(stroke.angle)) / 2, y: stroke.y + (side * stroke.w * Math.sin(stroke.angle)) / 2 }));
+  const at = (point, x, y, tolerance = 2) => Math.abs(point.x - x) <= tolerance && Math.abs(point.y - y) <= tolerance;
+  const hasEnd = (stroke, x, y, tolerance) => ends(stroke).some((point) => at(point, x, y, tolerance));
+  assert.equal(strokes.filter((stroke) => stroke.shape === 'polyline').length, 1);
+  assert.equal(strokes.find((stroke) => stroke.shape === 'polyline').nodes.length, 8, 'łamana – cztery wierzchołki');
+  assert.equal(strokes.find((stroke) => stroke.shape === 'polygon').nodes.length, 6, 'wielokąt – trzy wierzchołki');
+  const lines = strokes.filter((stroke) => stroke.shape === 'line');
+  // Zaokrąglenie R 44: poziomy kończy się 44 przed narożnikiem (256, 500), pionowy – (300, 456); łuk między nimi.
+  assert.ok(lines.some((stroke) => hasEnd(stroke, 256, 500, 3) && hasEnd(stroke, 100, 500, 3)), 'poziomy – do punktu styczności');
+  assert.ok(lines.some((stroke) => hasEnd(stroke, 300, 456, 3) && hasEnd(stroke, 300, 380, 3)), 'pionowy – do punktu styczności');
+  assert.equal(strokes.filter((stroke) => stroke.shape === 'arc').length, 1, 'łuk zaokrąglenia');
+  // Faza 22: odcinek od (578, 500) do (600, 478).
+  assert.ok(lines.some((stroke) => hasEnd(stroke, 578, 500, 3) && hasEnd(stroke, 600, 478, 3)), 'faza');
+  // Przycięcie: (800–900) i (1100–1200) na y = 400.
+  assert.ok(lines.some((stroke) => hasEnd(stroke, 800, 400, 3) && hasEnd(stroke, 900, 400, 3)), 'lewy kawałek');
+  assert.ok(lines.some((stroke) => hasEnd(stroke, 1100, 400, 3) && hasEnd(stroke, 1200, 400, 3)), 'prawy kawałek');
+  // Wydłużenie do ściany x = 1150.
+  assert.ok(lines.some((stroke) => hasEnd(stroke, 800, 600, 3) && hasEnd(stroke, 1150, 600, 3)), 'wydłużony do ściany');
+  // Kopia ściany 44 w prawo.
+  assert.ok(lines.some((stroke) => hasEnd(stroke, 1194, 540, 3) && hasEnd(stroke, 1194, 660, 3)), 'kopia odsunięta');
+  // Okrąg styczny R 44 w narożniku drugiego „L” (po fazie – boki y = 500 i x = 600): środek (556, 456).
+  const circle = strokes.find((stroke) => stroke.shape === 'ellipse');
+  assert.ok(Math.abs(circle.w - 88) < 0.5 && at(circle, 556, 456, 3), `okrąg styczny: ${JSON.stringify(circle)}`);
+}, { device: DESKTOP });
+
+test('rysunek 1.43 na telefonie: grupa Edycja mieści się w górnym menu, okno odsunięcia w szerokości ekranu, przycięcie palcem', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const frame = await pageFrame(page);
+  const mouse = pageMouse(page, frame);
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  // Grupa Kształty – od razu odcinek (drugie dotknięcie otworzyłoby jego ustawienia).
+  await press(editor, 'drawing-shape-line');
+  for (const [from, to] of [[[300, 500], [1300, 500]], [[600, 300], [600, 700]], [[1000, 300], [1000, 700]]]) {
+    await mouse.drag(from, to);
+    await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Odcinek');
+    await page.keyboard.press('Escape');
+  }
+  await pickGroup(editor, 'edit');
+  for (const kind of ['offset', 'fillet', 'chamfer', 'trim', 'extend']) {
+    const box = await editor.locator(`[data-testid=drawing-edit-${kind}]`).boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 391, `${kind} na ekranie`);
+  }
+  assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
+  await editor.locator('[data-testid=drawing-edit-offset]').click();
+  const input = await page.locator('[data-testid=drawing-edit-value]').boundingBox();
+  assert.ok(input.x >= 0 && input.x + input.width <= 390, 'pole w szerokości ekranu');
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-143-odsun-telefon.png') });
+  await page.keyboard.press('Escape');
+  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+  await editor.locator('[data-testid=drawing-edit-trim]').click();
+  await expectText(notice, 'Przytnij');
+  await mouse.tap([800, 500]);
+  await waitUntil(async () => (await page.evaluate(() => document.querySelectorAll('[data-testid=drawing-edit-trim][aria-pressed=true]').length)) === 1, 'Przycinanie trwa');
+  await page.keyboard.press('Escape');
+  await expectText(notice, 'Koniec przycinania');
 }, { device: PHONE });
 
 // ---------------------------------------------------------------- nauka z fiszkami

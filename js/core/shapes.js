@@ -46,13 +46,14 @@
 //   'arcdim' – wymiar długości łuku: nodes jak łuku (początek, punkt na łuku, koniec), łuk wymiarowy
 //   współśrodkowy, odsunięty na zewnątrz o dimOffsets.arc, liczba ze znakiem ⌒.
 
-export const SHAPES = Object.freeze(['line', 'arrow', 'rect', 'ellipse', 'triangle', 'diamond', 'trapezoid', 'xline', 'curve', 'point', 'arc', 'dim', 'ngon', 'ray']);
+// Od 1.43 łamana także jako narzędzie (punkt po punkcie; do 1.42 – tylko z rozpoznania odręcznego kształtu).
+export const SHAPES = Object.freeze(['line', 'arrow', 'rect', 'ellipse', 'triangle', 'diamond', 'trapezoid', 'xline', 'curve', 'point', 'arc', 'dim', 'ngon', 'ray', 'polyline']);
 export const SHAPE_LABELS = Object.freeze({
   line: 'Odcinek', arrow: 'Strzałka', rect: 'Prostokąt', ellipse: 'Elipsa', triangle: 'Trójkąt', diamond: 'Romb', trapezoid: 'Trapez',
   xline: 'Prosta', curve: 'Strzałka po łuku', point: 'Punkt', polyline: 'Łamana', polygon: 'Wielokąt', arc: 'Łuk', dim: 'Wymiar', angledim: 'Wymiar kąta',
   ngon: 'Wielokąt foremny', ray: 'Półprosta', arcdim: 'Wymiar długości łuku'
 });
-/** Kształty z wierzchołkami (od 1.24) – tylko z rozpoznania odręcznego kształtu, nie z panelu kształtów. */
+/** Kształty z wierzchołkami (od 1.24) – z rozpoznania odręcznego kształtu; od 1.43 łamana także z narzędzia (punkt po punkcie). */
 export const POLY_SHAPES = Object.freeze(['polyline', 'polygon']);
 /** Z wierzchołkami w nodes: łamana, wielokąt, (od 1.27) strzałka po łuku, (od 1.34) łuk i wymiar kąta. */
 export const isPoly = (shape) => ['polyline', 'polygon', 'curve', 'arc', 'angledim', 'arcdim'].includes(shape.shape);
@@ -75,11 +76,12 @@ export const DIM_AXES = Object.freeze(['aligned', 'h', 'v']);
 export const DIM_AXIS_LABELS = Object.freeze({ aligned: 'Równoległy', h: 'Poziomy', v: 'Pionowy' });
 export const dimMode = (shape) => (shape.mode === 'diameter' || shape.mode === 'radius' ? shape.mode : 'linear');
 /** Sposób rysowania okręgu i elipsy (od 1.34): ramka, środek i promień, dwa punkty (średnica), trzy punkty. */
-export const ELLIPSE_MODES = Object.freeze(['frame', 'center', 'two', 'three']);
+// Od 1.43 także okrąg styczny do dwóch elementów o danym promieniu (TTR).
+export const ELLIPSE_MODES = Object.freeze(['frame', 'center', 'two', 'three', 'ttr']);
 /** Sposób rysowania łuku (od 1.42): przez trzy punkty albo ze środka, początku i końca. */
 export const ARC_MODES = Object.freeze(['three', 'center']);
 export const ARC_MODE_LABELS = Object.freeze({ three: 'Przez 3 punkty', center: 'Środek, początek, koniec' });
-export const ELLIPSE_MODE_LABELS = Object.freeze({ frame: 'Ramka', center: 'Środek i promień', two: '2 punkty', three: '3 punkty' });
+export const ELLIPSE_MODE_LABELS = Object.freeze({ frame: 'Ramka', center: 'Środek i promień', two: '2 punkty', three: '3 punkty', ttr: 'Styczny do dwóch, promień' });
 /** Kształty z zakończeniami (grot, trójkąt…): odcinek, strzałka i (od 1.27) strzałka po łuku – prosta ich nie ma. */
 export const hasCaps = (shape) => shape.shape === 'line' || shape.shape === 'arrow' || shape.shape === 'curve';
 export const isShape = (stroke) => stroke?.tool === 'shape';

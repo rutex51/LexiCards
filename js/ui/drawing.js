@@ -82,8 +82,11 @@ import {
   angleDimDegrees, circleFromPoints, dimAwayFrom, dimFromPoints, dimMode, isArc, isMeasure,
   CORNER_LABELS, HATCH_ANGLES, HATCH_GAPS, HATCH_GAP_LABELS, NGON_SIDES, cleanHatch, ngonSides, withCorner, withNgonSides, withShapeFill,
   ARC_MODES, ARC_MODE_LABELS, DIM_AXES, DIM_AXIS_LABELS, DIM_OFFSET_LIMITS, DIM_TIER, arcDimFromArc, arcDimLength, arcFromCenter, dimAxis, measuredLength,
-  withAxes, withDimAxis
+  withAxes, withDimAxis, POLY_NODES_MAX, polyFromPoints
 } from '../core/shapes.js';
+import {
+  canExtend, canOffset, canTrim, chamferSegments, edgesOf, extendAt, filletSegments, isPlainSegment, offsetShape, tangentCircle, tangentTarget, trimAt
+} from '../core/geometry-edit.js';
 import {
   DEFAULT_PAPER_LEVEL, DEFAULT_TEMPLATE_LEVEL, LEVEL_LABELS, PAPER_COLORS, TEMPLATE_ALPHA, TEMPLATE_CORNERS, TEMPLATE_LABELS, centerTemplate,
   fitTemplate, pitchScale, resizeTemplateCorner, scaleTemplate, setTemplatePercent, templateCorner, templatePercent
@@ -169,7 +172,7 @@ const GUIDE_COLOR = 'rgba(0, 88, 190, 0.42)';
 const CAP_ICONS = { none: 'capNone', arrow: 'capArrow', triangle: 'capTriangle', circle: 'capCircle', square: 'capSquare', diamond: 'capDiamond' };
 const SHAPE_ICONS = {
   line: 'shapeLine', arrow: 'shapeArrow', rect: 'shapeRect', ellipse: 'shapeEllipse', triangle: 'shapeTriangle', diamond: 'shapeDiamond', trapezoid: 'shapeTrapezoid',
-  xline: 'shapeXline', curve: 'shapeCurve', point: 'shapePoint', arc: 'shapeArc', dim: 'dimension', ngon: 'shapeNgon', ray: 'shapeRay'
+  xline: 'shapeXline', curve: 'shapeCurve', point: 'shapePoint', arc: 'shapeArc', dim: 'dimension', ngon: 'shapeNgon', ray: 'shapeRay', polyline: 'shapePolyline'
 };
 /** Narożniki prostokąta (od 1.40) – ikony wyboru i gotowe wielkości (¼, ½ i 1 kratka). */
 const CORNER_ICONS = { none: 'cornerNone', round: 'cornerRound', chamfer: 'cornerChamfer' };
@@ -2258,6 +2261,7 @@ export function openDrawingEditor({
           : !active && (tool === 'shape' || symbolPlacing || pointPick) ? [edgeHover] : [];
       for (const snap of snaps) if (snap) paintSnapMarker(ctx, snap);
       if (pointPick?.first) paintAxisPick(ctx);
+      if (pointPick && EDIT_END[pointPick.kind]) paintEditPick(ctx);
       if (ruler) paintRuler(ctx);
       if (active?.kind === 'stroke' && active.edge && active.edge.to >= active.edge.from) paintLength(ctx, active.edge);
       const cursor = active?.kind === 'erase' ? active.last : (tool === 'eraser' ? hover : null);
@@ -2373,6 +2377,9 @@ export function openDrawingEditor({
     function multiKind() {
       if (tool !== 'shape') return null;
       if (tools.shape === 'ellipse' && tools.ellipseMode === 'three') return 'circle3';
+      // Od 1.43: okrąg styczny do dwóch elementów i łamana punkt po punkcie.
+      if (tools.shape === 'ellipse' && tools.ellipseMode === 'ttr') return 'ttr';
+      if (tools.shape === 'polyline') return 'polyline';
       // Od 1.42 łuk także ze środka, początku i końca.
       if (tools.shape === 'arc') return tools.arcMode === 'center' ? 'arcCenter' : 'arc';
       if (tools.shape === 'dim' && tools.dimMode === 'angle') return 'angle';
@@ -2385,7 +2392,10 @@ export function openDrawingEditor({
       arc: ['Łuk: przeciągnij od początku do końca (albo dotknij obu)', 'Łuk: dotknij końca · Esc – od nowa', 'Łuk: dotknij punktu, przez który ma przejść · Esc – od nowa'],
       arcCenter: ['Łuk: dotknij środka (albo przeciągnij od środka do początku)', 'Łuk: dotknij początku – promień · Esc – od nowa',
         'Łuk: dotknij końca – łuk biegnie przeciwnie do ruchu wskazówek zegara · Esc – od nowa'],
-      angle: ['Kąt: przeciągnij od wierzchołka wzdłuż pierwszego ramienia', 'Kąt: dotknij punktu na pierwszym ramieniu · Esc – od nowa', 'Kąt: dotknij punktu na drugim ramieniu · Esc – od nowa']
+      angle: ['Kąt: przeciągnij od wierzchołka wzdłuż pierwszego ramienia', 'Kąt: dotknij punktu na pierwszym ramieniu · Esc – od nowa', 'Kąt: dotknij punktu na drugim ramieniu · Esc – od nowa'],
+      ttr: ['Okrąg styczny: dotknij pierwszej linii albo okręgu', 'Okrąg styczny: dotknij drugiej linii albo okręgu · Esc – od nowa', 'Okrąg styczny: promień w oknie'],
+      polyline: ['Łamana: dotknij pierwszego punktu (albo przeciągnij od pierwszego do drugiego)', 'Łamana: dotknij następnego punktu · Esc – od nowa',
+        'Łamana: następny punkt · ostatni jeszcze raz, Enter albo Esc – koniec · pierwszy – zamknięty wielokąt']
     };
     const DIM_HINTS = {
       linear: 'Wymiar: przeciągnij od punktu do punktu albo dotknij krawędzi', diameter: 'Średnica: dotknij okręgu albo łuku (albo przeciągnij przez średnicę)',
@@ -2519,6 +2529,15 @@ export function openDrawingEditor({
       button.setAttribute('aria-pressed', 'false');
       return [mode, button];
     }));
+    // Od 1.43: edycja geometrii – polecenia; wybrane czeka na dotknięcia elementów (narzędzie zostaje).
+    const EDIT_TOOLS = {
+      offset: ['Odsuń', 'offset'], fillet: ['Zaokrąglij', 'fillet'], chamfer: ['Fazuj', 'chamfer'], trim: ['Przytnij', 'trim'], extend: ['Wydłuż', 'extend']
+    };
+    const editButtons = new Map(Object.entries(EDIT_TOOLS).map(([kind, [label, iconName]]) => {
+      const button = menuButton(`edit:${kind}`, label, iconName, `drawing-edit-${kind}`);
+      button.setAttribute('aria-pressed', 'false');
+      return [kind, button];
+    }));
     const textButton = menuButton('text', 'Pole tekstowe', 'textBox', 'drawing-insert-text', 'Tekst');
     const mathButton = menuButton('math', 'Wzór', 'sigma', 'drawing-insert-math');
     mathButton.title = 'Wzór (zapis jak w notatce)';
@@ -2535,6 +2554,7 @@ export function openDrawingEditor({
       ['pen', penButton], ['highlighter', highlighterButton], ['eraser', eraserButton],
       ...[...kindButtons].map(([kind, button]) => [`shape:${kind}`, button]),
       ...[...dimButtons].map(([mode, button]) => [`dim:${mode}`, button]),
+      ...[...editButtons].map(([kind, button]) => [`edit:${kind}`, button]),
       ['text', textButton], ['math', mathButton], ['table', tableButton], ['sticky', stickyButton],
       ['gdt', gdtButton], ['datum', datumButton], ['roughness', roughnessButton]
     ]);
@@ -2616,7 +2636,7 @@ export function openDrawingEditor({
     // Wybór bez osobnego okna (tryb gumki, obszar i tryb zaznaczania) – pastylka pod menu.
     // Od 1.34: sposób rysowania okręgu i rodzaj wymiaru – wybór pod menu (makieta: „Ramka / Środek i R / 2 pkt / 3 pkt”).
     // Na telefonie – krótsze napisy (wybór mieści się obok kółka).
-    const ELLIPSE_SHORT = { frame: ['Ramka', 'Ramka'], center: ['Środek i R', 'Środek'], two: ['2 pkt', '2 pkt'], three: ['3 pkt', '3 pkt'] };
+    const ELLIPSE_SHORT = { frame: ['Ramka', 'Ramka'], center: ['Środek i R', 'Środek'], two: ['2 pkt', '2 pkt'], three: ['3 pkt', '3 pkt'], ttr: ['Styczny', 'Styczny'] };
     const modeChoices = (modes, labels, short, label, testID, key) => h('div', { class: 'drawing__group drawing__modes', role: 'radiogroup', 'aria-label': label },
       modes.map((mode) => h('button', {
         type: 'button', class: 'drawing__mode', role: 'radio', 'aria-label': labels[mode], title: labels[mode], dataset: { mode, testid: `${testID}-${mode}` },
@@ -2869,6 +2889,7 @@ export function openDrawingEditor({
       if (optionRow.hidden) setOptionsOpen(false);
       ellipseModes.hidden = !(tool === 'shape' && tools.shape === 'ellipse') || !toolInMenu;
       for (const button of ellipseModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.ellipseMode));
+      for (const [kind, button] of editButtons) button.setAttribute('aria-pressed', String(pointPick?.kind === kind));
       arcModes.hidden = !(tool === 'shape' && tools.shape === 'arc') || !toolInMenu;
       for (const button of arcModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.arcMode));
       dimAxes.hidden = !(tool === 'shape' && tools.shape === 'dim' && tools.dimMode === 'linear') || !toolInMenu;
@@ -2961,6 +2982,11 @@ export function openDrawingEditor({
         toggleShapePanel();
         return;
       }
+      if (item.startsWith('edit:') && pointPick?.kind === item.slice(5)) {
+        cancelPointPick(EDIT_END[pointPick.kind]);
+        updateToolbar();
+        return;
+      }
       applyItem(item);
     }
     function applyItem(item) {
@@ -3001,6 +3027,11 @@ export function openDrawingEditor({
       }
       if (isModeItem(item)) {
         setTool(item);
+        return;
+      }
+      if (item.startsWith('edit:')) {
+        closeSettings();
+        startEdit(item.slice(5));
         return;
       }
       closeSettings();
@@ -3820,8 +3851,11 @@ export function openDrawingEditor({
       curve: 'Strzałka po łuku: przeciągnij od początku do końca. Zaznaczona ma dwa punkty pośrednie – przeciągnij je, łuk przechodzi przez nie. '
         + 'Rodzaj linii i końce – pod menu.',
       ellipse: 'Okrąg i elipsa – wybór pod menu: Ramka (prostokąt przeciągnięcia), Środek i R (od środka do okręgu), 2 pkt (średnica – od punktu do punktu), '
-        + '3 pkt (okrąg przez trzy dotknięte punkty). Punkty przyciągają się do narożników, środków boków i kształtów, przecięć, krawędzi '
+        + '3 pkt (okrąg przez trzy dotknięte punkty), Styczny (dotknij dwóch linii albo okręgów i wpisz promień). Punkty przyciągają się do narożników, środków boków i kształtów, przecięć, krawędzi '
         + 'i końców kresek. Osie – pod menu: krzyż osi przez środek okręgu (znacznik środka). Średnicę okręgu wpiszesz w polu ⌀ przy ramce.',
+      // Od 1.43: łamana punkt po punkcie.
+      polyline: 'Łamana: dotykaj kolejnych wierzchołków (punkty przyciągają się jak końce odcinka). Koniec – ostatni punkt jeszcze raz, Enter albo Esc; '
+        + 'dotknięcie pierwszego punktu zamyka łamaną w wielokąt (z wypełnieniem narzędzia). Punkty zaznaczonej łamanej – przeciągnij je.',
       // Od 1.42: łuk ze środka, wymiar poziomy i pionowy, długość łuku.
       arc: 'Łuk – wybór pod menu: 3 pkt (przeciągnij od początku do końca albo dotknij obu, potem dotknij punktu, przez który ma przejść) albo '
         + 'Środek (dotknij środka, początku i końca – łuk biegnie od początku do końca przeciwnie do wskazówek zegara). '
@@ -3841,7 +3875,7 @@ export function openDrawingEditor({
         // Od 1.34: okrąg z punktów, łuk i wymiar – jak ich używać.
         SHAPE_TIPS[tools.shape] ? h('p', { class: 'field__hint' }, SHAPE_TIPS[tools.shape]) : null,
         // Opis ogólny – przy kształtach z ramką (punkt, prosta i strzałka po łuku mają własny).
-        ['point', 'xline', 'ray', 'ngon', 'curve', 'arc', 'dim'].includes(tools.shape) ? null : h('p', { class: 'field__hint' },
+        ['point', 'xline', 'ray', 'ngon', 'curve', 'arc', 'dim', 'polyline'].includes(tools.shape) ? null : h('p', { class: 'field__hint' },
           'Przeciągnij po stronie – kształt powstaje w prostokącie przeciągnięcia (odcinek i strzałka – od początku do końca); '
           + 'dotknięcie – kształt w tym miejscu. Kolor i grubość – jak pióra; rodzaj linii, wypełnienie (jasne jest przejrzyste) i końce – pod menu. '
           + 'Punkty zaznaczonego kształtu: narożniki i boki – szerokość i wysokość, romb na górnej krawędzi – pochylenie, kółko nad kształtem – obrót, '
@@ -5217,7 +5251,7 @@ export function openDrawingEditor({
     /** Podpowiedź wyboru – zostaje do końca wyboru (bez znikania po kilku sekundach). */
     function showPickHint() {
       clearTimeout(noticeTimer);
-      notice.textContent = PICK_HINTS[pointPick.kind][pointPick.first ? 1 : 0];
+      notice.textContent = EDIT_HINTS[pointPick.kind]?.(pointPick.step) ?? PICK_HINTS[pointPick.kind][pointPick.first ? 1 : 0];
       notice.hidden = false;
     }
     function startPointPick(kind) {
@@ -5232,9 +5266,221 @@ export function openDrawingEditor({
       pointPick = null;
       axisHover = null;
       edgeHover = null;
+      editHover = null;
       if (message) flash(message);
       else notice.hidden = true;
       requestLive();
+    }
+    // ---- edycja geometrii (od 1.43): odsuń, zaokrąglij, fazuj, przytnij, wydłuż
+    /** Komunikat na koniec (Esc, drugie dotknięcie polecenia) – jest tylko przy poleceniach edycji. */
+    const EDIT_END = { offset: 'Koniec odsuwania', fillet: 'Koniec zaokrąglania', chamfer: 'Koniec fazowania', trim: 'Koniec przycinania', extend: 'Koniec wydłużania' };
+    /** Wielkości poleceń (jednostki strony w ustawieniach narzędzi) i ich okna. */
+    const EDIT_VALUES = {
+      offset: { key: 'editOffset', title: 'Odsuń', label: 'Odległość', submit: 'Dalej',
+        hint: 'Kopia równoległa (okrąg, łuk – współśrodkowa; prostokąt i łamana – o tyle samo z każdej strony). Potem dotknij elementu i strony.' },
+      fillet: { key: 'editFillet', title: 'Zaokrąglij', label: 'Promień R', submit: 'Dalej', zero: true,
+        hint: 'Łuk styczny do dwóch odcinków; odcinki skracają się (albo wydłużają) do łuku. 0 – ostry narożnik w przecięciu.' },
+      chamfer: { key: 'editChamfer', title: 'Fazuj', label: 'Faza', submit: 'Dalej', hint: 'Faza 45° – odcinki skrócone o tyle od narożnika, między nimi nowy odcinek.' },
+      ttr: { key: 'ttrRadius', title: 'Okrąg styczny', label: 'Promień R', submit: 'Gotowe', hint: 'Okrąg styczny do obu dotkniętych elementów – po stronie dotknięć.' }
+    };
+    const editValueText = (kind) => lengthText(tools[EDIT_VALUES[kind].key], drawing.scale, dimFormat(drawing));
+    const EDIT_HINTS = {
+      offset: (step) => (step ? `Odsuń o ${editValueText('offset')}: dotknij strony, po której ma stanąć kopia (Esc – koniec)`
+        : `Odsuń o ${editValueText('offset')}: dotknij odcinka, okręgu, łuku, prostokąta albo łamanej (Esc – koniec)`),
+      fillet: (step) => `Zaokrąglij R ${editValueText('fillet')}: dotknij ${step ? 'drugiego' : 'pierwszego'} odcinka – w części, która zostaje (Esc – koniec)`,
+      chamfer: (step) => `Fazuj ${editValueText('chamfer')}: dotknij ${step ? 'drugiego' : 'pierwszego'} odcinka – w części, która zostaje (Esc – koniec)`,
+      trim: () => 'Przytnij: dotknij części elementu do usunięcia – między przecięciami z innymi (Esc – koniec)',
+      extend: () => 'Wydłuż: dotknij odcinka albo łuku przy końcu, który ma dojść do najbliższego elementu (Esc – koniec)'
+    };
+    /** Element pod wskaźnikiem albo podgląd odsunięcia (mysz) przy poleceniu edycji. */
+    let editHover = null;
+    /** Okno wielkości polecenia (w jednostkach liczb wymiarów); then(wartość w jednostkach strony), cancel – bez wartości. */
+    function askEditLength(kind, then, cancel = null) {
+      const spec = EDIT_VALUES[kind];
+      const format = dimFormat(drawing);
+      const factor = toScaleLength(1, drawing.scale) * dimFactor(drawing.scale, format);
+      let text = formatNumber(Math.round(tools[spec.key] * factor * 1000) / 1000);
+      let value = null;
+      openFormSheet({
+        title: spec.title,
+        submitLabel: spec.submit,
+        build: () => [
+          field(`${spec.label} (${dimUnitLabel(drawing.scale, format)})`, textInput({ value: text, testID: 'drawing-edit-value', onInput: (next) => { text = next; } }), { hint: spec.hint })
+        ],
+        onSubmit: () => {
+          const typed = parseDecimal(text);
+          if (typed === null || typed < 0 || (typed === 0 && !spec.zero)) throw new Error(spec.zero ? 'Wpisz liczbę: 0 albo więcej' : 'Wpisz liczbę większą od zera');
+          value = Math.round((typed / factor) * 100) / 100;
+          return true;
+        },
+        onClose: () => {
+          if (value === null) {
+            cancel?.();
+            return;
+          }
+          tools[spec.key] = value;
+          saveTools(tools);
+          then(value);
+        }
+      });
+    }
+    /**
+     * Polecenie edycji z menu: przycinanie i wydłużanie – od razu dotknięcia; odsunięcie, zaokrąglenie i faza – najpierw
+     * wielkość. Zaznaczone elementy, które pasują (jeden do odsunięcia, dwa odcinki), zastępują pierwsze dotknięcia.
+     */
+    function startEdit(kind) {
+      if (snip) return;
+      if (pointPick) cancelPointPick();
+      pending = null;
+      const chosen = orderedSelection();
+      if (kind === 'trim' || kind === 'extend') {
+        beginEditPick(kind);
+        return;
+      }
+      askEditLength(kind, () => {
+        if (kind === 'offset') {
+          beginEditPick(kind, chosen.length === 1 && canOffset(chosen[0]) ? { held: { target: chosen[0] }, step: 1 } : {});
+          return;
+        }
+        const segments = chosen.filter(isPlainSegment);
+        if (segments.length === 2 && chosen.length === 2) {
+          beginEditPick(kind);
+          finishCorner(kind, segments[0], null, segments[1], null);
+          return;
+        }
+        beginEditPick(kind, segments.length === 1 && chosen.length === 1 ? { held: { target: segments[0], point: null }, step: 1 } : {});
+      });
+    }
+    function beginEditPick(kind, extra = {}) {
+      clearSelection();
+      pointPick = { kind, step: 0, held: null, ...extra };
+      editHover = null;
+      showPickHint();
+      updateToolbar();
+      requestRender();
+    }
+    /** Komunikat o błędzie przy poleceniu – podpowiedź wraca po chwili. */
+    function editFail(message) {
+      const { kind } = pointPick;
+      flash(message);
+      setTimeout(() => {
+        if (pointPick?.kind === kind) showPickHint();
+      }, 2500);
+    }
+    /** Element pod punktem spełniający warunek (najwyższy). */
+    function editTargetAt(point, accept) {
+      const shown = shownStrokes();
+      return strokesAt(shown, point.x, point.y, HANDLE_HIT / view.scale).map((index) => shown[index]).find(accept) ?? null;
+    }
+    const editAccepts = (kind) => (kind === 'trim' ? canTrim : kind === 'extend' ? canExtend : kind === 'offset' ? canOffset
+      : (stroke) => isPlainSegment(stroke) && stroke !== pointPick?.held?.target);
+    /** Wynik edycji: elementy zastąpione kształtami (lista [element, [kształty]]), `added` – nowe na wierzchu; jeden krok cofania. */
+    function applyEdit(replacements, added = []) {
+      history.begin();
+      for (const [target, shapes] of replacements) {
+        const index = drawing.strokes.indexOf(target);
+        if (index >= 0) drawing.strokes.splice(index, 1, ...shapes);
+      }
+      drawing.strokes.push(...added);
+      commitStep();
+      changed = true;
+      editHover = null;
+      requestRender();
+    }
+    /** Zaokrąglenie albo faza dwóch odcinków (dotknięcia – która część zostaje; null – dalsza od narożnika). */
+    function finishCorner(kind, first, firstPoint, second, secondPoint) {
+      const picks = [firstPoint, secondPoint];
+      const result = kind === 'fillet' ? filletSegments(first, second, tools.editFillet, picks) : chamferSegments(first, second, tools.editChamfer, picks);
+      pointPick.held = null;
+      pointPick.step = 0;
+      if (result.error) {
+        editFail(result.error);
+        return;
+      }
+      const [one, two, ...extra] = result.shapes;
+      applyEdit([[first, [one]], [second, [two]]], extra);
+      showPickHint();
+    }
+    /** Dotknięcie przy poleceniu edycji. */
+    function editPickAt(point) {
+      const { kind } = pointPick;
+      const target = pointPick.held && kind === 'offset' ? null : editTargetAt(point, editAccepts(kind));
+      if (kind === 'trim' || kind === 'extend') {
+        if (!target) {
+          editFail(kind === 'trim' ? 'Dotknij odcinka, prostej, półprostej, okręgu albo łuku.' : 'Dotknij odcinka albo łuku przy końcu do wydłużenia.');
+          return;
+        }
+        const result = kind === 'trim' ? trimAt(shownStrokes(), target, point) : extendAt(shownStrokes(), target, point);
+        if (result.error) {
+          editFail(result.error);
+          return;
+        }
+        applyEdit([[target, result.shapes]]);
+        return;
+      }
+      if (kind === 'offset') {
+        if (!pointPick.held) {
+          if (!target) {
+            editFail('Dotknij odcinka, prostej, okręgu, łuku, prostokąta albo łamanej.');
+            return;
+          }
+          pointPick.held = { target };
+          pointPick.step = 1;
+          showPickHint();
+          requestLive();
+          return;
+        }
+        const result = offsetShape(pointPick.held.target, tools.editOffset, point);
+        pointPick.held = null;
+        pointPick.step = 0;
+        if (result.error) {
+          editFail(result.error);
+          return;
+        }
+        applyEdit([], result.shapes);
+        showPickHint();
+        return;
+      }
+      if (!target) {
+        editFail('Dotknij odcinka – zaokrąglić i fazować można dwa odcinki.');
+        return;
+      }
+      if (!pointPick.held) {
+        pointPick.held = { target, point };
+        pointPick.step = 1;
+        showPickHint();
+        requestLive();
+        return;
+      }
+      finishCorner(kind, pointPick.held.target, pointPick.held.point, target, point);
+    }
+    /** Pod myszą: element, którego dotyczy polecenie, albo (odsunięcie) kopia w miejscu wskaźnika. */
+    function editHoverAt(point) {
+      const { kind, held } = pointPick;
+      if (kind === 'offset' && held) {
+        const result = offsetShape(held.target, tools.editOffset, point);
+        return result.shapes ? { preview: result.shapes[0] } : null;
+      }
+      const target = editTargetAt(point, editAccepts(kind));
+      return target ? { target } : null;
+    }
+    /** Edycja: wybrany element (pierwszy odcinek, element do odsunięcia) i element pod myszą – podświetlone; kopia – przerywana. */
+    function paintEditPick(ctx) {
+      const options = { scale: drawing.scale, dimFormat: dimFormat(drawing) };
+      const glow = (stroke) => {
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        paintStroke(ctx, { ...stroke, color: '#0a84ff', size: stroke.size + 6 / view.scale, fill: undefined, hatch: undefined, label: undefined }, options);
+        ctx.restore();
+      };
+      if (pointPick.held?.target) glow(pointPick.held.target);
+      if (editHover?.target && editHover.target !== pointPick.held?.target) glow(editHover.target);
+      if (editHover?.preview) {
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        paintStroke(ctx, { ...editHover.preview, color: '#0a84ff', dash: 'dashed' }, options);
+        ctx.restore();
+      }
     }
     /**
      * Wymiar łańcuchowy albo od bazy (od 1.42) do punktu `point`: od końca ostatniego wymiaru (łańcuch) albo od początku
@@ -5276,6 +5522,10 @@ export function openDrawingEditor({
     }
     /** Dotknięcie przy wyborze: punkt osi (przyciągnięty do narożników i krawędzi) albo element – wzór stylu. */
     function pickPointAt(point, event) {
+      if (EDIT_END[pointPick.kind]) {
+        editPickAt(point);
+        return;
+      }
       if (pointPick.kind === 'chain' || pointPick.kind === 'baseline') {
         addLinkedDim(point, event);
         return;
@@ -6908,10 +7158,106 @@ export function openDrawingEditor({
       return angleDimFromPoints(a, b, c, shapeStyle());
     }
     /** Koniec gestu przy kształcie z punktów: nowy punkt; przy trzecim – kształt (jeden krok cofania), zostaje zaznaczony. */
+    /** Łamana z punktów strony (od 1.43) – zamknięta: wielokąt; ramka bez obrotu, styl narzędzia. */
+    function polylineFrom(points, closed) {
+      const xs = points.map((point) => point.x);
+      const ys = points.map((point) => point.y);
+      const frame = { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2, angle: 0 };
+      const style = shapeStyle();
+      return withDash(polyFromPoints(closed ? 'polygon' : 'polyline', points, frame, style), style.dash);
+    }
+    /** Koniec łamanej (Enter, Esc, ostatni punkt jeszcze raz) – zamknięta przez dotknięcie pierwszego punktu. */
+    function completePolyline(closed) {
+      const points = pending?.kind === 'polyline' ? pending.points : [];
+      pending = null;
+      pendingHover = null;
+      if (points.length >= (closed ? 3 : 2)) {
+        const shape = onActiveLayer(polylineFrom(points, closed));
+        history.add(shape);
+        changed = true;
+        selection = new Set([shape]);
+        selectionKind = 'whole';
+      }
+      updateShapeHint();
+      updateToolbar();
+      requestRender();
+    }
+    /** Punkt łamanej (od 1.43): dotknięcie – wierzchołek; ostatni jeszcze raz – koniec, pierwszy – wielokąt. */
+    function finishPolylinePoint(done) {
+      const { points } = pending;
+      const same = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) * view.scale < 10;
+      const at = points.length === 0 ? done.start : done.point;
+      if (points.length >= 2 && same(at, points.at(-1))) {
+        completePolyline(false);
+        return;
+      }
+      if (points.length >= 3 && same(at, points[0])) {
+        completePolyline(true);
+        return;
+      }
+      if (points.length === 0) {
+        points.push(done.start);
+        if (done.moved && !same(done.point, done.start)) points.push(done.point);
+      } else if (!same(at, points.at(-1))) {
+        points.push(at);
+      }
+      if (points.length >= POLY_NODES_MAX) {
+        completePolyline(false);
+        return;
+      }
+      updateShapeHint();
+    }
+    /** Okrąg styczny (od 1.43): dwa dotknięte elementy (linia – bok najbliższy dotknięciu, okrąg albo łuk), potem promień w oknie. */
+    function finishTangentPick(done) {
+      const point = done.moved ? done.point : done.start;
+      const shown = shownStrokes();
+      const stroke = strokesAt(shown, point.x, point.y, HANDLE_HIT / view.scale).map((index) => shown[index]).find((item) => edgesOf(item).length > 0);
+      if (!stroke) {
+        flash('Dotknij linii albo okręgu – do nich okrąg będzie styczny.');
+        return;
+      }
+      pending.points.push(point);
+      pending.targets = [...(pending.targets ?? []), tangentTarget(stroke, point)];
+      if (pending.points.length < 2) {
+        updateShapeHint();
+        return;
+      }
+      const { points, targets } = pending;
+      askEditLength('ttr', (radius) => {
+        pending = null;
+        const result = tangentCircle(targets[0], targets[1], radius, points, shapeStyle());
+        updateShapeHint();
+        if (result.error) {
+          flash(result.error);
+          requestLive();
+          return;
+        }
+        const [circle] = result.shapes;
+        history.add(onActiveLayer(circle));
+        changed = true;
+        selection = new Set([circle]);
+        selectionKind = 'whole';
+        updateToolbar();
+        requestRender();
+      }, () => {
+        // Okno zamknięte bez promienia – dotknięcia od nowa.
+        pending = null;
+        updateShapeHint();
+        requestLive();
+      });
+    }
     function finishPoints(done) {
       if (!pending || pending.kind !== multiKind()) return;
       // Dotknięcie przy zaznaczeniu tylko je zdejmuje (jak przy innych kształtach).
       if (done.hadSelection && !done.moved) return;
+      if (pending.kind === 'polyline') {
+        finishPolylinePoint(done);
+        return;
+      }
+      if (pending.kind === 'ttr') {
+        finishTangentPick(done);
+        return;
+      }
       const { points } = pending;
       const push = (point) => {
         const last = points.at(-1);
@@ -7123,17 +7469,18 @@ export function openDrawingEditor({
         } else {
           points.push(active.point);
         }
-      } else if (pendingHover && points.length > 0) {
+      } else if (pendingHover && points.length > 0 && kind !== 'ttr') {
         points.push(pendingHover);
       }
       if (points.length === 0) return;
-      const preview = points.length >= 3 ? pointsShape(kind, points.slice(0, 3)) : null;
+      const preview = kind === 'polyline' ? (points.length >= 2 ? polylineFrom(points, false) : null)
+        : kind === 'ttr' ? null : points.length >= 3 ? pointsShape(kind, points.slice(0, 3)) : null;
       if (preview) paintStroke(ctx, preview, { scale: drawing.scale, dimFormat: dimFormat(drawing) });
       ctx.save();
       ctx.strokeStyle = ZERO_COLOR;
       ctx.fillStyle = ZERO_COLOR;
       ctx.lineWidth = 1.5 / view.scale;
-      if (!preview && points.length >= 2) {
+      if (!preview && points.length >= 2 && kind !== 'ttr') {
         ctx.setLineDash([6 / view.scale, 4 / view.scale]);
         ctx.beginPath();
         ctx.moveTo(points[0].x, points[0].y);
@@ -7141,7 +7488,7 @@ export function openDrawingEditor({
         ctx.stroke();
         ctx.setLineDash([]);
       }
-      for (const point of points.slice(0, 3)) {
+      for (const point of kind === 'polyline' ? points : points.slice(0, 3)) {
         ctx.beginPath();
         ctx.arc(point.x, point.y, 4.5 / view.scale, 0, Math.PI * 2);
         ctx.fill();
@@ -7716,6 +8063,9 @@ export function openDrawingEditor({
         } else if (tool === 'eraser') {
           hover = toDrawing(event);
           requestLive();
+        } else if (pointPick && EDIT_END[pointPick.kind]) {
+          editHover = editHoverAt(toDrawing(event));
+          requestLive();
         } else if (pointPick && pointPick.kind !== 'match') {
           // Oś odbicia pod myszą; łańcuch i od bazy (od 1.42) – miejsce przyciągnięcia.
           const at = toDrawing(event);
@@ -7908,7 +8258,14 @@ export function openDrawingEditor({
       }
       if (event.key === 'Escape' && pointPick) {
         event.preventDefault();
-        cancelPointPick({ match: 'Bez przenoszenia stylu', chain: 'Koniec wymiarów łańcuchowych', baseline: 'Koniec wymiarów od bazy' }[pointPick.kind] ?? 'Bez odbicia');
+        cancelPointPick({ match: 'Bez przenoszenia stylu', chain: 'Koniec wymiarów łańcuchowych', baseline: 'Koniec wymiarów od bazy', ...EDIT_END }[pointPick.kind] ?? 'Bez odbicia');
+        updateToolbar();
+        return;
+      }
+      // Łamana (od 1.43): Enter i Esc kończą łamaną z co najmniej dwoma punktami.
+      if ((event.key === 'Escape' || event.key === 'Enter') && pending?.kind === 'polyline' && pending.points.length >= 2 && !typing(event.target)) {
+        event.preventDefault();
+        completePolyline(false);
         return;
       }
       // Kształt z punktów (od 1.34): Esc – od nowa.

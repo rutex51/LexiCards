@@ -210,6 +210,13 @@ const ICONS = {
   dimAligned: [p('M4 15l8-8'), p('M13 22l8-8'), p('M5.5 18.5l12-12'), p('M5.3 14.3l.2 4.2 4.2.2'), p('M13.8 6.3l3.7-.2-.2 3.7')],
   dimChain: [p('M3 8v10'), p('M12 8v10'), p('M21 8v10'), p('M3 13h18'), p('M5.5 11.2L3 13l2.5 1.8'), p('M9.5 11.2L12 13l-2.5 1.8'), p('M14.5 11.2L12 13l2.5 1.8'), p('M18.5 11.2L21 13l-2.5 1.8')],
   dimBaseline: [p('M3 5v15'), p('M12 13v7'), p('M21 7v13'), p('M3 15h9'), p('M3 9h18'), p('M9.5 13.2L12 15l-2.5 1.8'), p('M18.5 7.2L21 9l-2.5 1.8')],
+  // Od 1.43: łamana i edycja geometrii – odsuń, zaokrąglij, fazuj, przytnij, wydłuż.
+  shapePolyline: [p('M3.5 18.5l5-10 6 6 6-10'), dot(3.5, 18.5, 1.6), dot(8.5, 8.5, 1.6), dot(14.5, 14.5, 1.6), dot(20.5, 4.5, 1.6)],
+  offset: [p('M4 14l8-8 8 8'), { d: 'M4 20l8-8 8 8', 'stroke-dasharray': '2.2 2' }],
+  fillet: [p('M4 20v-8a8 8 0 0 1 8-8h8'), { d: 'M4 12V4h8', 'stroke-dasharray': '1.6 2' }],
+  chamfer: [p('M4 20v-8l8-8h8'), { d: 'M4 12V4h8', 'stroke-dasharray': '1.6 2' }],
+  trim: [p('M7 4v16'), p('M17 4v16'), p('M3 12h4'), p('M17 12h4'), { d: 'M8.5 12h7', 'stroke-dasharray': '1.6 2' }],
+  extend: [p('M20 4v16'), p('M3 12h8'), { d: 'M11 12h8', 'stroke-dasharray': '1.6 2' }, p('M15.5 9.3L19 12l-3.5 2.7')],
   rotate: [p('M19 12.5a7 7 0 1 1-2.2-5.1'), p('M17.6 3.4v4.2h-4.2'), dot(12, 12.5, 1.4)],
   finger: [
     p('M9 14.2V5.3a1.6 1.6 0 0 1 3.2 0V11'), p('M12.2 10.4a1.6 1.6 0 0 1 3.2 0v.9'),

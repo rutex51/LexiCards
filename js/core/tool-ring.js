@@ -10,7 +10,8 @@
 // Pozycje narzędzi w grupach: 'pen', 'highlighter', 'eraser' (narzędzia), 'shape:<rodzaj>' (kształt
 // – narzędzie „Kształty” z wybranym rodzajem), od 1.36 'dim:<rodzaj>' (wymiar: długość, kąt, promień,
 // średnica – kształt 'dim' z rodzajem) oraz polecenia otwierające okno: 'text', 'math', 'table',
-// 'sticky', 'gdt', 'datum', 'roughness' (narzędzie się nie zmienia).
+// 'sticky', 'gdt', 'datum', 'roughness' (narzędzie się nie zmienia); od 1.43 polecenia edycji geometrii
+// 'edit:<rodzaj>' (odsuń, zaokrąglij, fazuj, przytnij, wydłuż) – dotknięcia elementów, narzędzie zostaje.
 //
 // Od 1.33 grupy można dobrać (okno „Grupy narzędzi”, ustawienia narzędzi na urządzeniu): grupy
 // standardowe – które są na prawym kółku i w jakiej kolejności; lewe kółko – gotowe zestawy i własne
@@ -20,20 +21,24 @@ import { DIM_MODES, SHAPE_LABELS } from './shapes.js';
 
 /** Od 1.36 rodzaje wymiaru to osobne pozycje grupy Wymiary (do 1.35 jedna pozycja 'shape:dim' z wyborem pod menu). */
 export const DIM_ITEMS = Object.freeze(['dim:linear', 'dim:angle', 'dim:radius', 'dim:diameter', 'dim:arc']);
+/** Edycja geometrii (od 1.43, pakiet E planu): odsuń, zaokrąglij, fazuj, przytnij, wydłuż. */
+export const EDIT_ITEMS = Object.freeze(['edit:offset', 'edit:fillet', 'edit:chamfer', 'edit:trim', 'edit:extend']);
 
 export const TOOL_GROUPS = Object.freeze([
   { id: 'write', label: 'Pisanie', icon: 'pen', items: ['pen', 'highlighter', 'eraser'] },
   {
-    // Od 1.34 także łuk przez trzy punkty, od 1.40 wielokąt foremny.
+    // Od 1.34 także łuk przez trzy punkty, od 1.40 wielokąt foremny, od 1.43 łamana.
     id: 'shapes', label: 'Kształty', icon: 'shapeRect',
-    items: ['shape:line', 'shape:arrow', 'shape:rect', 'shape:ngon', 'shape:ellipse', 'shape:arc', 'shape:triangle', 'shape:diamond', 'shape:trapezoid', 'shape:curve']
+    items: ['shape:line', 'shape:arrow', 'shape:polyline', 'shape:rect', 'shape:ngon', 'shape:ellipse', 'shape:arc', 'shape:triangle', 'shape:diamond', 'shape:trapezoid', 'shape:curve']
   },
   // Od 1.40 także półprosta.
   { id: 'construct', label: 'Konstrukcja', icon: 'shapeXline', items: ['shape:xline', 'shape:ray', 'shape:point'] },
   { id: 'text', label: 'Tekst i wzory', icon: 'textBox', items: ['text', 'math', 'table', 'sticky'] },
   // Od 1.34: narzędzie „Wymiar”; od 1.36 jego rodzaje – osobne pozycje (długość, kąt, promień, średnica).
   { id: 'dims', label: 'Wymiary', icon: 'dimension', items: DIM_ITEMS },
-  { id: 'symbols', label: 'Symbole metrologiczne', icon: 'gdtFrame', items: ['gdt', 'datum', 'roughness'] }
+  { id: 'symbols', label: 'Symbole metrologiczne', icon: 'gdtFrame', items: ['gdt', 'datum', 'roughness'] },
+  // Od 1.43: edycja geometrii – na końcu (dotychczasowe grupy zostają na swoich miejscach kółka).
+  { id: 'edit', label: 'Edycja', icon: 'trim', items: EDIT_ITEMS }
 ].map((group) => Object.freeze({ ...group, items: Object.freeze(group.items) })));
 
 /** Gotowe zestawy (od 1.33): w oknie „Grupy narzędzi” dotknięcie dodaje zestaw jako grupę na lewym kółku albo go usuwa. */
@@ -53,7 +58,8 @@ const COMMAND_LABELS = {
   pen: 'Pióro', highlighter: 'Zakreślacz', eraser: 'Gumka', text: 'Tekst', math: 'Wzór', table: 'Tabela', sticky: 'Karteczka',
   gdt: 'Ramka tolerancji', datum: 'Baza', roughness: 'Chropowatość',
   'dim:linear': 'Wymiar – długość', 'dim:angle': 'Wymiar – kąt', 'dim:radius': 'Wymiar – promień', 'dim:diameter': 'Wymiar – średnica',
-  'dim:arc': 'Wymiar – długość łuku'
+  'dim:arc': 'Wymiar – długość łuku',
+  'edit:offset': 'Odsuń', 'edit:fillet': 'Zaokrąglij', 'edit:chamfer': 'Fazuj', 'edit:trim': 'Przytnij', 'edit:extend': 'Wydłuż'
 };
 /** Nazwa pozycji w oknie „Grupy narzędzi” i w opisie grupy. */
 export const itemLabel = (item) => (item.startsWith('shape:') ? SHAPE_LABELS[item.slice(6)] : COMMAND_LABELS[item]) ?? item;

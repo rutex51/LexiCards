@@ -1781,6 +1781,39 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
 - **Ramka A4 pionowo**: `FRAME_FORMATS.A4V` (210 × 297 mm, `name: 'A4'` w tabliczce, `label` w wyborze); tabliczka
   180 mm – na całą szerokość ramki. `DRAWING_VERSION` 15.
 
+## Edycja geometrii (od 1.43)
+
+- **Geometria** (`js/core/geometry-edit.js`, bez przeglądarki): wynik `{ shapes }` albo `{ error }` (komunikat dla
+  użytkownika); nowe elementy bez `id` i `attach` (`fresh`), warstwy i sygnatury – ze źródła (`withLayersOf`).
+  - `offsetShape(element, odległość, strona)` – odcinek, prosta, półprosta: przesunięcie wzdłuż normalnej w stronę punktu;
+    okrąg (`isCircleShape`) i łuk – promień ± odległość (`arcOn` – łuk przez `arcFromPoints`); prostokąt bez pochylenia –
+    `w`, `h` ± 2·odległość, `corner.size` ± odległość (faza – ·(2 − √2)); łamana, wielokąt i figury zamknięte (obrys
+    `shapeOutline`) – `offsetPolyline` (boki równolegle, wierzchołki w przecięciach, strona – znak pola i `shapeContains`),
+    wynik `polyline`/`polygon`; bok odwrócony – „za duża odległość”.
+  - `filletSegments` / `chamferSegments` – `cornerOf`: przecięcie prostych P, dla każdego odcinka koniec, który zostaje
+    (dalszy od P po stronie dotknięcia), kierunek `u`; zaokrąglenie: odległość styczności R / tan(θ/2), środek na
+    dwusiecznej (R / sin(θ/2)), łuk `arcOn`; faza – punkty o wielkość od P i odcinek między nimi; zmieniony koniec
+    odklejony (`unlinkEnd`), zakończenia – tylko na zachowanych końcach (`segmentFrom`).
+  - Przecięcia: `edgesOf` – odcinki obrysu (prosta i półprosta – długie odcinki z `shapeOutline`), okręgi (`circle`; łuk
+    z zakresem kątów), kreski pióra; `lineHits` (prosta–odcinek, prosta–okrąg), `circleHits` (okrąg–odcinek, okrąg–okrąg).
+    `trimAt` – parametr t na odcinku (prosta: −∞…∞, półprosta: 0…∞) albo położenie na łuku/okręgu, kawałki poza
+    najbliższymi przecięciami po obu stronach dotknięcia (`piece` – odcinek albo półprosta `rayFrom`), pierwszy kawałek
+    zachowuje `id` (`keepIdentity`); `extendAt` – najbliższe przecięcie za końcem (łuk – po okręgu, poza samym łukiem).
+  - `tangentTarget(element, punkt)` – prosta (bok najbliższy dotknięciu) albo okrąg; `tangentCircle` – środki z przecięć
+    miejsc w odległości R (proste równoległe, okręgi r ± R), wybór – najbliższe punkty styczności do dotknięć.
+- **Edytor** (`js/ui/drawing.js`): grupa `edit` (`EDIT_ITEMS` w `tool-ring.js`, przyciski `drawing-edit-<rodzaj>`) –
+  polecenia, nie narzędzia: `startEdit` → okno wielkości (`askEditLength`, pole `drawing-edit-value`, wartości w
+  ustawieniach `editOffset`, `editFillet`, `editChamfer`, `ttrRadius` – jednostki strony) → `pointPick` z `step` i `held`;
+  dotknięcia – `editPickAt` (element – `strokesAt` + `canTrim` / `canExtend` / `canOffset` / `isPlainSegment`), wynik –
+  `applyEdit` (zastąpienie elementów w miejscu, nowe na wierzchu, `commitStep`). Podpowiedź `EDIT_HINTS` (z wielkością),
+  koniec – `EDIT_END` (Esc, ponowne dotknięcie polecenia, inne narzędzie). Mysz: `editHoverAt` – podświetlenie elementu
+  i przerywany podgląd kopii przy odsunięciu (`paintEditPick`).
+- **Okrąg styczny**: `ELLIPSE_MODES` + `ttr` (`multiKind` → `ttr`, `finishTangentPick`: dwa dotknięte elementy
+  z krawędziami, okno promienia, `tangentCircle`).
+- **Łamana**: `SHAPES` + `polyline` (narzędzie; `multiKind` → `polyline`), `finishPolylinePoint` – wierzchołki,
+  ostatni jeszcze raz – koniec, pierwszy – `polygon`, `POLY_NODES_MAX`; Enter i Esc – `completePolyline`; podgląd –
+  `polylineFrom` w `paintPending`. Format rysunku bez zmian (15).
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).
@@ -1867,7 +1900,8 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   złożona, chropowatość z kierunkiem struktury, odnośnik; od 1.39 kółko przesuwane i obroty fiszki; od 1.40 wielokąt
   foremny, półprosta, narożniki, kreskowanie, pole i obwód, kolejność rysowania, DXF z łukami i kreskowaniem; od 1.41
   odbicie względem prostej, skalowanie, styl jak…, ramka rysunkowa i jej DXF; od 1.42 przyciąganie do środka kształtu,
-  środka boku, przecięć i kresek pióra, wymiar poziomy i pionowy, długość łuku, łuk ze środka, osie okręgu, A4 pionowo),
+  środka boku, przecięć i kresek pióra, wymiar poziomy i pionowy, długość łuku, łuk ze środka, osie okręgu, A4 pionowo;
+  od 1.43 odsunięcie, zaokrąglenie i faza, przycinanie i wydłużanie, okrąg styczny),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.
