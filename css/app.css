@@ -6303,6 +6303,14 @@ svg.icon--note { color: var(--note-icon); }
   cursor: text;
 }
 
+/* Znak ⌀ przed polem średnicy okręgu (od 1.42). */
+.drawing__dim-prefix {
+  padding-left: 4px;
+  font-weight: 600;
+}
+
+.drawing__dim-prefix[hidden] { display: none; }
+
 /*
  * Oko (od 1.19): wymiar widoczny na rysunku na stałe – kółko na prawym górnym rogu pola, nie zmienia
  * jego wielkości (pole zostaje na środku linii ramki); większe pole dotyku niż samo kółko.

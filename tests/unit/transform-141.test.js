@@ -99,7 +99,7 @@ test('rysunek 1.41: „Styl jak…” – kolor, grubość, rodzaj linii, wypeł
 });
 
 test('rysunek 1.41: ramka rysunkowa – arkusz A4 i A3 na kartce, tabliczka 180 mm, skala z kratki, zapis tylko bez zdjęcia', () => {
-  assert.equal(DRAWING_VERSION, 14, 'od 1.41 – ramka rysunkowa');
+  assert.equal(DRAWING_VERSION, 15, 'od 1.42 – wymiar długości łuku, kierunek wymiaru, osie okręgu; 1.41 – ramka rysunkowa');
   assert.equal(cleanFrame({ format: 'A5' }), null);
   assert.equal(cleanFrame(null), null);
   assert.deepEqual(cleanFrame({ format: 'A3', title: '  Wałek   stopniowany ', number: 'x'.repeat(60), scale: '', extra: 1 }),

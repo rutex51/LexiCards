@@ -1,15 +1,19 @@
 // Ramka rysunkowa z tabliczką (od 1.41) – bez przeglądarki. Kartka bez zdjęcia jest arkuszem A4 albo A3
-// w poziomie wpasowanym w stronę (wyśrodkowanym): ramka 20 mm od lewego brzegu arkusza i 10 mm od
+// w poziomie (od 1.42 także A4 pionowo – 'A4V') wpasowanym w stronę (wyśrodkowanym): ramka 20 mm od lewego brzegu arkusza i 10 mm od
 // pozostałych (ISO 5457), tabliczka 180 × 34 mm w prawym dolnym rogu ramki (układ uproszczony według
 // ISO 7200): rysował, data, skala, format; tytuł; materiał, numer rysunku.
 //
-// Ramka w rysunku: frame { format: 'A4' | 'A3', title?, number?, material?, scale?, date?, author? } –
+// Ramka w rysunku: frame { format: 'A4' | 'A4V' | 'A3', title?, number?, material?, scale?, date?, author? } –
 // napisy tabliczki; scale pusta – skala liczona z kratki rysunku i formatu arkusza (frameScaleText).
 
 import { PAPER_STEP, SCALE_UNITS, cleanScale, formatNumber } from './drawing.js';
 
-/** Arkusze w poziomie: szerokość i wysokość w mm. */
-export const FRAME_FORMATS = Object.freeze({ A4: Object.freeze({ width: 297, height: 210 }), A3: Object.freeze({ width: 420, height: 297 }) });
+/** Arkusze: szerokość i wysokość w mm, nazwa w tabliczce i w wyborze (od 1.42 – A4 pionowo). */
+export const FRAME_FORMATS = Object.freeze({
+  A4: Object.freeze({ width: 297, height: 210, name: 'A4', label: 'A4 poziomo' }),
+  A4V: Object.freeze({ width: 210, height: 297, name: 'A4', label: 'A4 pionowo' }),
+  A3: Object.freeze({ width: 420, height: 297, name: 'A3', label: 'A3 poziomo' })
+});
 /** Pola tabliczki, ich nazwy i najdłuższe napisy. */
 export const FRAME_FIELDS = Object.freeze(['title', 'number', 'material', 'scale', 'date', 'author']);
 export const FRAME_FIELD_LABELS = Object.freeze({ title: 'Tytuł', number: 'Nr rysunku', material: 'Materiał', scale: 'Skala', date: 'Data', author: 'Rysował' });
@@ -64,7 +68,8 @@ export function frameLayout(frame, pageWidth, pageHeight, scale) {
   };
   const height = BLOCK.rows.reduce((sum, row) => sum + row, 0);
   const block = { x: border.x + border.w - BLOCK.width * mm, y: border.y + border.h - height * mm, w: BLOCK.width * mm, h: height * mm };
-  const value = (key) => (key === 'scale' ? frame.scale || frameScaleText(frame.format, pageWidth, pageHeight, scale) : key === 'format' ? frame.format : frame[key] ?? '');
+  const value = (key) => (key === 'scale' ? frame.scale || frameScaleText(frame.format, pageWidth, pageHeight, scale)
+    : key === 'format' ? FRAME_FORMATS[frame.format].name : frame[key] ?? '');
   // Wiersze: [klucz, szerokość mm], …
   const rows = [
     [['author', 55], ['date', 40], ['scale', 35], ['format', 50]],

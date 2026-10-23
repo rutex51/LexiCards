@@ -19,7 +19,7 @@
 import { DIM_MODES, SHAPE_LABELS } from './shapes.js';
 
 /** Od 1.36 rodzaje wymiaru to osobne pozycje grupy Wymiary (do 1.35 jedna pozycja 'shape:dim' z wyborem pod menu). */
-export const DIM_ITEMS = Object.freeze(['dim:linear', 'dim:angle', 'dim:radius', 'dim:diameter']);
+export const DIM_ITEMS = Object.freeze(['dim:linear', 'dim:angle', 'dim:radius', 'dim:diameter', 'dim:arc']);
 
 export const TOOL_GROUPS = Object.freeze([
   { id: 'write', label: 'Pisanie', icon: 'pen', items: ['pen', 'highlighter', 'eraser'] },
@@ -52,7 +52,8 @@ export const ALL_ITEMS = Object.freeze(TOOL_GROUPS.flatMap((group) => group.item
 const COMMAND_LABELS = {
   pen: 'Pióro', highlighter: 'Zakreślacz', eraser: 'Gumka', text: 'Tekst', math: 'Wzór', table: 'Tabela', sticky: 'Karteczka',
   gdt: 'Ramka tolerancji', datum: 'Baza', roughness: 'Chropowatość',
-  'dim:linear': 'Wymiar – długość', 'dim:angle': 'Wymiar – kąt', 'dim:radius': 'Wymiar – promień', 'dim:diameter': 'Wymiar – średnica'
+  'dim:linear': 'Wymiar – długość', 'dim:angle': 'Wymiar – kąt', 'dim:radius': 'Wymiar – promień', 'dim:diameter': 'Wymiar – średnica',
+  'dim:arc': 'Wymiar – długość łuku'
 };
 /** Nazwa pozycji w oknie „Grupy narzędzi” i w opisie grupy. */
 export const itemLabel = (item) => (item.startsWith('shape:') ? SHAPE_LABELS[item.slice(6)] : COMMAND_LABELS[item]) ?? item;

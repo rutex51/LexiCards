@@ -3165,7 +3165,7 @@ const ITEM_GROUPS = {
   'drawing-shape-xline': 'construct', 'drawing-shape-point': 'construct', 'drawing-shape-ray': 'construct',
   'drawing-insert-text': 'text', 'drawing-insert-math': 'text', 'drawing-insert-table': 'text', 'drawing-insert-sticky': 'text',
   'drawing-symbol-gdt': 'symbols', 'drawing-symbol-datum': 'symbols', 'drawing-symbol-roughness': 'symbols',
-  'drawing-measure-linear': 'dims', 'drawing-measure-angle': 'dims', 'drawing-measure-radius': 'dims', 'drawing-measure-diameter': 'dims'
+  'drawing-measure-linear': 'dims', 'drawing-measure-angle': 'dims', 'drawing-measure-radius': 'dims', 'drawing-measure-diameter': 'dims', 'drawing-measure-arc': 'dims'
 };
 const groupOfItem = (testID) => ITEM_GROUPS[testID] ?? (testID.startsWith('drawing-shape-') ? 'shapes' : null);
 const OPTION_IDS = /^drawing-(color-|width-|eraser-size-|select-all$|paste$)/;
@@ -6519,13 +6519,13 @@ test('rysunek 1.22: koniec strzałki i odcinka przyciągany do narożnika i kraw
   await page.keyboard.down('Alt');
   await drag([300, 700], [606, 594]);
   await page.keyboard.up('Alt');
-  // Odcinek do prawej krawędzi (daleko od narożników) – koniec na krawędzi. Drugi Esc zdejmuje zaznaczenie
-  // strzałki – od 1.30 (przycisk „Odbij”) jej polecenia sięgają początku odcinka.
+  // Odcinek do prawej krawędzi (daleko od narożników i – od 1.42 – od środka boku) – koniec na krawędzi. Drugi Esc
+  // zdejmuje zaznaczenie strzałki – od 1.30 (przycisk „Odbij”) jej polecenia sięgają początku odcinka.
   await shape('line');
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia strzałki');
-  await drag([1200, 500], [906, 502]);
+  await drag([1200, 545], [906, 547]);
   await expectText(selectionCount, 'Odcinek');
   assert.equal(await magnet.isVisible(), true, 'magnes przy zaznaczonym odcinku');
   assert.equal(await magnet.getAttribute('aria-pressed'), 'true');
@@ -6534,17 +6534,17 @@ test('rysunek 1.22: koniec strzałki i odcinka przyciągany do narożnika i kraw
   await select([750, 500]);
   await expectText(selectionCount, 'Prostokąt');
   await drag([750, 500], [850, 560]);
-  await waitUntil(async () => (await darkest(page, ...frame.at(1003, 562), 8)) < 110, 'Koniec odcinka przy przesuniętej krawędzi');
+  await waitUntil(async () => (await darkest(page, ...frame.at(1003, 607), 8)) < 110, 'Koniec odcinka przy przesuniętej krawędzi');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-przyciaganie-przesuniety.png') });
   // Cofnij – prostokąt i przyklejone końce razem wracają (jeden krok); ponów – znów za prostokątem.
   await editor.locator('[data-testid=drawing-undo]').click();
-  await waitUntil(async () => (await darkest(page, ...frame.at(903, 502), 8)) < 110, 'Koniec odcinka z powrotem przy krawędzi');
-  assert.ok((await darkest(page, ...frame.at(1003, 562), 8)) > 150, 'po cofnięciu – nie w nowym miejscu');
+  await waitUntil(async () => (await darkest(page, ...frame.at(903, 547), 8)) < 110, 'Koniec odcinka z powrotem przy krawędzi');
+  assert.ok((await darkest(page, ...frame.at(1003, 607), 8)) > 150, 'po cofnięciu – nie w nowym miejscu');
   await editor.locator('[data-testid=drawing-redo]').click();
-  await waitUntil(async () => (await darkest(page, ...frame.at(1003, 562), 8)) < 110, 'Po ponowieniu – znów za prostokątem');
+  await waitUntil(async () => (await darkest(page, ...frame.at(1003, 607), 8)) < 110, 'Po ponowieniu – znów za prostokątem');
 
   // Magnes wyłączony (pasek zaznaczenia) – strzałka obok narożnika zostaje obok; włączony z panelu kształtów.
-  await select([1100, 531]);
+  await select([1100, 576]);
   await expectText(selectionCount, 'Odcinek');
   await magnet.click();
   await expectText(magnet, 'Przyciąganie wył.');
@@ -6586,7 +6586,7 @@ test('rysunek 1.22: koniec strzałki i odcinka przyciągany do narożnika i kraw
   near(end(free, 1), 606, 594, 2, 'z Alt – koniec przy kursorze');
   assert.equal(free.attach, undefined);
   assert.ok(Math.abs(end(toEdge, 1).x - right) < 0.05, `odcinek na prawej krawędzi (${end(toEdge, 1).x} / ${right})`);
-  near(end(toEdge, 1), right, 662, 2.5, 'odcinek – to samo miejsce krawędzi');
+  near(end(toEdge, 1), right, 707, 2.5, 'odcinek – to samo miejsce krawędzi');
   assert.equal(toEdge.attach.end.id, rect.id);
   assert.equal(toEdge.attach.end.kind, 'edge');
   near(end(snapOff, 1), 706, 664, 2, 'magnes wyłączony – koniec przy kursorze');
@@ -6864,9 +6864,9 @@ test('rysunek 1.22.1: ramka tolerancji (pozycja, ⌀, Ⓜ, bazy A i B; płaskoś
   await sheetSubmit(page).click();
   await closed();
   await expectText(notice, 'Dotknij krawędzi albo narożnika');
-  // Najechanie myszą – znacznik; kliknięcie 4 jednostki obok prawej krawędzi – strzałka na krawędzi.
-  await page.mouse.move(...frame.screen(904, 520));
-  await page.mouse.click(...frame.screen(904, 520));
+  // Najechanie myszą – znacznik; kliknięcie 4 jednostki obok prawej krawędzi (od 1.42 z dala od środka boku) – strzałka na krawędzi.
+  await page.mouse.move(...frame.screen(904, 545));
+  await page.mouse.click(...frame.screen(904, 545));
   await expectText(selectionCount, 'Pozycja');
   assert.equal(await editor.locator('[data-testid=drawing-selection-magnet]').isVisible(), true, 'magnes przy ramce');
 
@@ -6926,7 +6926,7 @@ test('rysunek 1.22.1: ramka tolerancji (pozycja, ⌀, Ⓜ, bazy A i B; płaskoś
   const bottom = rect.y + rect.h / 2;
   const top = rect.y - rect.h / 2;
   assert.deepEqual([gdt.symbol, gdt.value, gdt.diameter, gdt.modifier, gdt.datums], ['position', '0,05', true, 'M', ['A', 'B']]);
-  assert.ok(Math.abs(gdt.leader.x - right) < 0.05 && Math.abs(gdt.leader.y - (520 + 50)) < 3, `strzałka ramki na przesuniętej prawej krawędzi (${JSON.stringify(gdt.leader)})`);
+  assert.ok(Math.abs(gdt.leader.x - right) < 0.05 && Math.abs(gdt.leader.y - (545 + 50)) < 3, `strzałka ramki na przesuniętej prawej krawędzi (${JSON.stringify(gdt.leader)})`);
   assert.equal(gdt.attach.leader.id, rect.id);
   assert.ok(gdt.x > right, 'ramka na prawo od prostokąta (prostopadle do krawędzi)');
   assert.ok(Math.abs(datum.leader.y - bottom) < 0.05 && datum.y > bottom, 'trójkąt bazy na dolnej krawędzi, kwadrat pod nią');
@@ -8745,7 +8745,8 @@ test('rysunek 1.32: kółka narzędzi – grupy w górnym menu, obrót kółkiem
   // Metrologia (lewe kółko): od 1.34 wymiar, odcinek, prosta, punkt i symbole; lewe duże kółko – wybrane narzędzie, prawe – ikona grupy.
   await pickGroup(editor, 'metrology');
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Metrologia');
-  assert.deepEqual(await rowLabels(editor), ['Wymiar – długość', 'Wymiar – kąt', 'Wymiar – promień', 'Wymiar – średnica', 'Odcinek', 'Prosta', 'Punkt', 'Ramka tolerancji', 'Baza', 'Chropowatość']);
+  // Od 1.42 Metrologia ma też długość łuku.
+  assert.deepEqual(await rowLabels(editor), ['Wymiar – długość', 'Wymiar – kąt', 'Wymiar – promień', 'Wymiar – średnica', 'Wymiar – długość łuku', 'Odcinek', 'Prosta', 'Punkt', 'Ramka tolerancji', 'Baza', 'Chropowatość']);
   assert.equal(await editor.locator('[data-testid=drawing-measure-linear]').getAttribute('aria-pressed'), 'true', 'pierwsze narzędzie zestawu');
   assert.match(await ringMain(editor, 'left').getAttribute('aria-label'), /^Wymiar/);
   assert.equal(await ringMain(editor, 'right').getAttribute('aria-label'), 'Narzędzia standardowe: Pisanie');
@@ -9108,7 +9109,8 @@ test('rysunek 1.34: okrąg – ramka, środek i promień, dwa punkty, trzy punkt
   await mouse.drag([400, 300], [488, 300]);
   await expectText(count, 'Elipsa');
   await nearValue(editor.locator('[data-testid=drawing-dim-width]'), 4);
-  await nearValue(editor.locator('[data-testid=drawing-dim-height]'), 4, 'okrąg');
+  // Od 1.42 okrąg ma jedno pole ⌀ (szerokość) – bez pola wysokości.
+  assert.equal(await editor.locator('[data-testid=drawing-dim-box-height]').isHidden(), true, 'okrąg – bez pola wysokości');
   // Dwa punkty – średnica od punktu do punktu.
   await editor.locator('[data-testid=drawing-ellipse-two]').click();
   await mouse.drag([900, 650], [1076, 650]);
@@ -9188,7 +9190,8 @@ test('rysunek 1.34: narzędzie „Wymiar” – krawędź dotknięciem, od punkt
   await pickGroup(editor, 'dims');
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Wymiary');
   assert.equal(await editor.locator('[data-testid=drawing-measure-linear]').getAttribute('aria-pressed'), 'true');
-  assert.deepEqual(await editor.locator('[data-testid=drawing-tool-row] .drawing__tool-label').allTextContents(), ['Długość', 'Kąt', 'Promień', 'Średnica']);
+  // Od 1.42 także długość łuku.
+  assert.deepEqual(await editor.locator('[data-testid=drawing-tool-row] .drawing__tool-label').allTextContents(), ['Długość', 'Kąt', 'Promień', 'Średnica', 'Dł. łuku']);
   await expectText(hint, 'Wymiar: przeciągnij od punktu do punktu albo dotknij krawędzi');
   // Dotknięcie dolnej krawędzi prostokąta (pierwsze zdejmuje zaznaczenie): wymiar pod prostokątem, 4 cm.
   await mouse.tap([300, 300]);
@@ -9630,7 +9633,7 @@ test('rysunek 1.36: trzeci pasek tylko przy narzędziu z grupy pokazanej w menu 
   await editor.locator('[data-testid=drawing-ellipse-frame]').waitFor();
   // Wymiary: Długość, Kąt, Promień, Średnica w górnym menu (do 1.35 – wybór pod menu); Symbole – bez trzeciego paska.
   await pickGroup(editor, 'dims');
-  assert.deepEqual(await editor.locator('[data-testid=drawing-tool-row] .drawing__tool-label').allTextContents(), ['Długość', 'Kąt', 'Promień', 'Średnica']);
+  assert.deepEqual(await editor.locator('[data-testid=drawing-tool-row] .drawing__tool-label').allTextContents(), ['Długość', 'Kąt', 'Promień', 'Średnica', 'Dł. łuku']);
   await press(editor, 'drawing-measure-angle');
   assert.equal(await editor.locator('[data-testid=drawing-measure-angle]').getAttribute('aria-pressed'), 'true');
   assert.equal(await editor.locator('[data-testid=drawing-measure-linear]').getAttribute('aria-pressed'), 'false');
@@ -10404,7 +10407,7 @@ test('rysunek 1.41: kopia odbita względem prostej przez dwa punkty, skalowanie 
   await page.locator('[data-testid=drawing-frame-material]').fill('S235JR');
   await page.locator('[data-testid=drawing-frame-author]').fill('Konstruktor');
   await sheetSubmit(page).click();
-  await expectText(notice, 'Ramka A4 z tabliczką');
+  await expectText(notice, 'Ramka A4 poziomo z tabliczką');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-141-ramka-a4.png') });
   // Ramka – linia w miejscu 20 mm od lewego brzegu arkusza (A4 na kartce 1600 × 1100: 5,24 jednostki na mm).
   const mm = 1100 / 210;
@@ -10425,6 +10428,205 @@ test('rysunek 1.41: kopia odbita względem prostej przez dwa punkty, skalowanie 
   assert.ok(Math.abs(rect.w - 400) < 3 && Math.abs(rect.h - 200) < 3, `prostokąt ×2 (${rect.w} × ${rect.h})`);
   assert.equal(rect.color, '#d70015', 'styl trójkąta');
 }, { device: DESKTOP });
+
+test('rysunek 1.42: przyciąganie do środka boku i środka kształtu, wymiar poziomy, od bazy i łańcuch, łuk ze środka, długość łuku, okrąg z osiami i polem ⌀, ramka A4 pionowo; zapis (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Zaległości A i B</p>');
+  const frame = await pageFrame(page);
+  const mouse = pageMouse(page, frame);
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  const hint = editor.locator('[data-testid=drawing-shape-hint]');
+  const drop = editor.locator('[data-testid=drawing-style-drop]');
+  const value = (key) => editor.locator(`[data-testid=drawing-dim-${key}]`);
+  // Liczba w polu wymiaru – dotknięcia pustej kartki trafiają w piksel ekranu (ok. 1,5 jednostki strony).
+  const about = (locator, expected) => waitUntil(async () => Math.abs(Number((await locator.inputValue()).replace(',', '.')) - expected) < 0.08, `≈ ${expected}`);
+  const deselect = async () => {
+    await page.keyboard.press('Escape');
+    await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  };
+  const liveMarkAt = (point) => page.locator('.drawing__canvas--live').evaluate((canvas, spot) => {
+    const box = canvas.getBoundingClientRect();
+    const ratio = canvas.width / box.width;
+    const data = canvas.getContext('2d').getImageData(Math.round((spot[0] - box.left) * ratio) - 8, Math.round((spot[1] - box.top) * ratio) - 8, 17, 17).data;
+    for (let index = 3; index < data.length; index += 4) if (data[index] > 0) return true;
+    return false;
+  }, frame.screen(...point));
+
+  // Prostokąt 10 × 5 cm (kratka 44 = 1 cm).
+  await press(editor, 'drawing-shape-rect');
+  await mouse.drag([300, 300], [740, 520]);
+  await expectText(count, 'Prostokąt');
+  await deselect();
+  // Odcinek od środka górnego boku (znacznik – trójkąt) do środka prostokąta (kółko z krzyżykiem); oba końce przyklejone.
+  await press(editor, 'drawing-shape-line');
+  await page.mouse.move(...frame.screen(523, 304), { steps: 3 });
+  await waitUntil(() => liveMarkAt([520, 300]), 'Znacznik środka boku');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-142-srodek-boku.png') });
+  await mouse.drag([523, 304], [516, 413]);
+  await expectText(count, 'Odcinek');
+  await deselect();
+
+  // Wymiar poziomy (wybór pod menu): od lewego górnego do prawego dolnego narożnika – 10 cm w poziomie.
+  await press(editor, 'drawing-measure-linear');
+  await editor.locator('[data-testid=drawing-dim-axis-h]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-dim-axis-h]').getAttribute('aria-checked'), 'true');
+  await expectText(hint, 'Wymiar: przeciągnij od punktu do punktu');
+  await mouse.drag([301, 301], [739, 519]);
+  await expectText(count, 'Wymiar');
+  await about(value('length'), 10);
+  // Trzecie menu: kierunek zaznaczonego wymiaru.
+  await editor.locator('[data-testid=drawing-style-axis]').click();
+  assert.equal(await drop.locator('[data-testid=drawing-axis-h]').getAttribute('aria-checked'), 'true');
+  await editor.locator('[data-testid=drawing-style-axis]').click();
+  // Od bazy: dwa dotknięcia – wymiary od lewego narożnika, każdy piętro wyżej (15 i 20 cm); Esc – koniec.
+  await editor.locator('[data-testid=drawing-selection-baseline]').click();
+  await expectText(notice, 'Od bazy: dotknij następnego punktu');
+  await mouse.tap([960, 400]);
+  await about(value('length'), 15);
+  await expectText(notice, 'Od bazy: dotknij następnego punktu');
+  await mouse.tap([1180, 450]);
+  await about(value('length'), 20);
+  await page.keyboard.press('Escape');
+  await expectText(notice, 'Koniec wymiarów od bazy');
+  await expectText(count, 'Wymiar');
+  // Łańcuch od ostatniego: 5 cm dalej w prawo, w tej samej linii.
+  await editor.locator('[data-testid=drawing-selection-chain]').click();
+  await expectText(notice, 'Łańcuch: dotknij następnego punktu');
+  await mouse.tap([1400, 330]);
+  await about(value('length'), 5);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-142-wymiary-od-bazy-lancuch.png') });
+  await page.keyboard.press('Escape');
+  await expectText(notice, 'Koniec wymiarów łańcuchowych');
+  await deselect();
+
+  // Łuk ze środka (wybór pod menu): środek, początek – promień 2 cm, koniec – kierunek; ćwiartka przeciwnie do wskazówek zegara.
+  await press(editor, 'drawing-shape-arc');
+  await editor.locator('[data-testid=drawing-arc-center]').click();
+  await expectText(hint, 'Łuk: dotknij środka');
+  await mouse.tap([1200, 800]);
+  await expectText(hint, 'Łuk: dotknij początku');
+  await mouse.tap([1288, 800]);
+  await expectText(hint, 'Łuk: dotknij końca');
+  await mouse.tap([1200, 650]);
+  await expectText(count, 'Łuk');
+  await deselect();
+  // Długość łuku: dotknięcie łuku (w połowie) – ⌒ π cm.
+  await press(editor, 'drawing-measure-arc');
+  await expectText(hint, 'Długość łuku: dotknij łuku');
+  await mouse.tap([1200 + 88 * Math.SQRT1_2, 800 - 88 * Math.SQRT1_2]);
+  await expectText(count, 'Wymiar długości łuku');
+  await about(value('arc'), Math.PI);
+  await deselect();
+
+  // Okrąg ze środka z osiami (trzecie menu „Osie”); zaznaczony – jedno pole ⌀, wpisane 3 cm zmienia oba boki.
+  await press(editor, 'drawing-shape-ellipse');
+  await editor.locator('[data-testid=drawing-ellipse-center]').click();
+  await editor.locator('[data-testid=drawing-style-axes]').click();
+  await drop.locator('[data-testid=drawing-axes-on]').click();
+  await waitUntil(async () => (await drop.locator('[data-testid=drawing-axes-on]').getAttribute('aria-checked')) === 'true', 'Osie');
+  await editor.locator('[data-testid=drawing-style-axes]').click();
+  await mouse.drag([500, 800], [588, 800]);
+  await expectText(count, 'Elipsa');
+  assert.equal(await editor.locator('[data-testid=drawing-dim-prefix-width]').isVisible(), true, 'znak ⌀ przed polem');
+  assert.equal(await editor.locator('[data-testid=drawing-dim-box-height]').isHidden(), true, 'okrąg – bez pola wysokości');
+  await value('width').fill('3');
+  await value('width').press('Enter');
+  await about(value('width'), 3);
+  await deselect();
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-142-luk-okrag-osie.png') });
+
+  // Ramka A4 pionowo (menu kartek).
+  await editor.locator('[data-testid=drawing-pages]').click();
+  await page.locator('[data-testid=drawing-frame]').click();
+  await page.locator('label.segmented__option', { hasText: 'A4 pionowo' }).click();
+  assert.equal(await page.locator('[data-testid=drawing-frame-scale]').getAttribute('placeholder'), '1,19:1 – z kratki');
+  await sheetSubmit(page).click();
+  await expectText(notice, 'Ramka A4 pionowo z tabliczką');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-142-ramka-a4-pionowo.png') });
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const saved = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  assert.equal(saved.frame.format, 'A4V');
+  const { strokes } = saved;
+  const rect = strokes.find((stroke) => stroke.shape === 'rect');
+  const line = strokes.find((stroke) => stroke.shape === 'line');
+  assert.ok(rect.id, 'prostokąt ma identyfikator – coś jest do niego przyklejone');
+  assert.deepEqual(line.attach, { start: { id: rect.id, kind: 'edge', index: 0, t: 0.5 }, end: { id: rect.id, kind: 'center' } });
+  assert.ok(near(line.x, 520, 0.5) && near(line.w, 110, 0.5), `odcinek od środka boku do środka: ${JSON.stringify(line)}`);
+  // Wymiary poziome: bazowy, dwa od bazy, łańcuchowy; linia wymiarowa – piętro wyżej co wymiar od bazy, łańcuch w tej samej linii.
+  const dims = strokes.filter((stroke) => stroke.shape === 'dim');
+  assert.equal(dims.length, 4);
+  assert.ok(dims.every((stroke) => stroke.axis === 'h'), 'wszystkie poziome');
+  const ends = (stroke) => [-1, 1].map((sign) => ({ x: stroke.x + (sign * stroke.w / 2) * Math.cos(stroke.angle), y: stroke.y + (sign * stroke.w / 2) * Math.sin(stroke.angle) }));
+  // Poziomy: linia wymiarowa nad wyższym punktem (odsunięcie dodatnie) albo pod niższym (ujemne).
+  const lineY = (stroke) => {
+    const ys = ends(stroke).map((point) => point.y);
+    const offset = stroke.dimOffsets.length;
+    return offset >= 0 ? Math.min(...ys) - offset : Math.max(...ys) - offset;
+  };
+  const spans = dims.map((stroke) => Math.abs(stroke.w * Math.cos(stroke.angle)));
+  for (const [index, expected] of [440, 660, 880, 220].entries()) assert.ok(near(spans[index], expected, 2), `wymiar ${index + 1}: ${spans[index]} ≈ ${expected}`);
+  const [first, second, third, chained] = dims.map(lineY);
+  // Od bazy – każdy dalej od mierzonych punktów (strona – jak wymiaru bazowego), o to samo piętro.
+  const tier = second - first;
+  assert.ok(Math.abs(tier) > 20, `piętro dalej (${first}, ${second})`);
+  assert.ok(near(third - second, tier, 0.5), `trzeci – kolejne piętro (${third})`);
+  assert.ok(near(chained, third, 0.5), `łańcuch w tej samej linii (${chained}, ${third})`);
+  // Łuk – ćwiartka o promieniu 88; wymiar długości łuku – te same punkty.
+  const arc = strokes.find((stroke) => stroke.shape === 'arc');
+  const arcDim = strokes.find((stroke) => stroke.shape === 'arcdim');
+  assert.deepEqual(arcDim.nodes, arc.nodes);
+  assert.deepEqual(arcDim.dims, ['arc']);
+  const circle = strokes.find((stroke) => stroke.shape === 'ellipse');
+  assert.equal(circle.axes, true);
+  assert.ok(near(circle.w, 132, 0.5) && near(circle.h, 132, 0.5), `okrąg ⌀ 3 cm: ${circle.w} × ${circle.h}`);
+}, { device: DESKTOP });
+
+test('rysunek 1.42 na telefonie: wybór kierunku wymiaru i sposobu rysowania łuku mieści się na ekranie; Łańcuch i Od bazy na pasku zaznaczenia', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const frame = await pageFrame(page);
+  const mouse = pageMouse(page, frame);
+  const choices = editor.locator('[data-testid=drawing-choices]');
+  const fits = () => choices.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const buttons = [...element.querySelectorAll('.drawing__modes:not([hidden]) button')];
+    return buttons.length > 0 && box.left >= 0 && box.right <= window.innerWidth + 1
+      && buttons.every((item) => {
+        const part = item.getBoundingClientRect();
+        return part.left >= 0 && part.right <= window.innerWidth + 1 && item.scrollWidth <= item.clientWidth + 1;
+      });
+  });
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  await mouse.drag([400, 300], [840, 520]);
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Prostokąt');
+  await page.keyboard.press('Escape');
+  await press(editor, 'drawing-shape-arc');
+  await editor.locator('[data-testid=drawing-arc-center]').waitFor();
+  assert.ok(await fits(), 'łuk: 3 pkt / Środek – w całości');
+  // Grupa Wymiary – od razu „Długość” (drugie dotknięcie narzędzia otworzyłoby jego ustawienia).
+  await pickGroup(editor, 'dims');
+  await editor.locator('[data-testid=drawing-dim-axis-v]').click();
+  assert.ok(await fits(), 'kierunek wymiaru – w całości');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-142-kierunek-wymiaru-telefon.png') });
+  // Wymiar pionowy prawej krawędzi (dotknięcie krawędzi) – 5 cm; na pasku zaznaczenia Łańcuch i Od bazy.
+  await mouse.tap([840, 420]);
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Wymiar');
+  await waitUntil(async () => Math.abs(Number((await editor.locator('[data-testid=drawing-dim-length]').inputValue()).replace(',', '.')) - 5) < 0.05, 'Wymiar pionowy 5 cm');
+  for (const id of ['drawing-selection-chain', 'drawing-selection-baseline']) {
+    const box = await editor.locator(`[data-testid=${id}]`).boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 391, `${id} na ekranie`);
+  }
+}, { device: PHONE });
 
 // ---------------------------------------------------------------- nauka z fiszkami
 

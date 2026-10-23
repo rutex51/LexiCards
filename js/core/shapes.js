@@ -41,17 +41,21 @@
 //   połowa krótszego boku); fill 'hatch' – kreskowanie hatch { angle – stopnie (45 – „/”, liczone jak
 //   na linijce), gap – odstęp linii (jednostki strony), cross – krzyżowe }, linie zaczepione w (0, 0)
 //   strony, więc sąsiednie kształty mają ciągłe kreskowanie.
+//   Od 1.42: elipsa z axes: true – osie (linie osiowe przez środek, poza obrysem); wymiar liniowy 'dim'
+//   z axis 'h' | 'v' – poziomy albo pionowy (rzut odległości mierzonych punktów; brak – równoległy);
+//   'arcdim' – wymiar długości łuku: nodes jak łuku (początek, punkt na łuku, koniec), łuk wymiarowy
+//   współśrodkowy, odsunięty na zewnątrz o dimOffsets.arc, liczba ze znakiem ⌒.
 
 export const SHAPES = Object.freeze(['line', 'arrow', 'rect', 'ellipse', 'triangle', 'diamond', 'trapezoid', 'xline', 'curve', 'point', 'arc', 'dim', 'ngon', 'ray']);
 export const SHAPE_LABELS = Object.freeze({
   line: 'Odcinek', arrow: 'Strzałka', rect: 'Prostokąt', ellipse: 'Elipsa', triangle: 'Trójkąt', diamond: 'Romb', trapezoid: 'Trapez',
   xline: 'Prosta', curve: 'Strzałka po łuku', point: 'Punkt', polyline: 'Łamana', polygon: 'Wielokąt', arc: 'Łuk', dim: 'Wymiar', angledim: 'Wymiar kąta',
-  ngon: 'Wielokąt foremny', ray: 'Półprosta'
+  ngon: 'Wielokąt foremny', ray: 'Półprosta', arcdim: 'Wymiar długości łuku'
 });
 /** Kształty z wierzchołkami (od 1.24) – tylko z rozpoznania odręcznego kształtu, nie z panelu kształtów. */
 export const POLY_SHAPES = Object.freeze(['polyline', 'polygon']);
 /** Z wierzchołkami w nodes: łamana, wielokąt, (od 1.27) strzałka po łuku, (od 1.34) łuk i wymiar kąta. */
-export const isPoly = (shape) => ['polyline', 'polygon', 'curve', 'arc', 'angledim'].includes(shape.shape);
+export const isPoly = (shape) => ['polyline', 'polygon', 'curve', 'arc', 'angledim', 'arcdim'].includes(shape.shape);
 /** Najwięcej wierzchołków łamanej i wielokąta. */
 export const POLY_NODES_MAX = 24;
 /** Kształty z dwoma końcami (bez wysokości); od 1.27 także prosta, od 1.34 wymiar (mierzone punkty), od 1.40 półprosta. */
@@ -62,13 +66,19 @@ export const isCurve = (shape) => shape.shape === 'curve';
 export const isPointShape = (shape) => shape.shape === 'point';
 export const isArc = (shape) => shape.shape === 'arc';
 /** Wymiar narzędzia „Wymiar” (od 1.34): liniowy, średnica, promień ('dim') albo kąt ('angledim') – rysowany sam wymiar. */
-export const isMeasure = (shape) => shape.shape === 'dim' || shape.shape === 'angledim';
-/** Rodzaje wymiaru 'dim' i kąt (wybór pod menu przy narzędziu „Wymiar”). */
-export const DIM_MODES = Object.freeze(['linear', 'diameter', 'radius', 'angle']);
-export const DIM_MODE_LABELS = Object.freeze({ linear: 'Liniowy', diameter: 'Średnica ⌀', radius: 'Promień R', angle: 'Kąt' });
+export const isMeasure = (shape) => shape.shape === 'dim' || shape.shape === 'angledim' || shape.shape === 'arcdim';
+/** Rodzaje wymiaru 'dim', kąt i (od 1.42) długość łuku – osobne narzędzia grupy Wymiary. */
+export const DIM_MODES = Object.freeze(['linear', 'diameter', 'radius', 'angle', 'arc']);
+export const DIM_MODE_LABELS = Object.freeze({ linear: 'Liniowy', diameter: 'Średnica ⌀', radius: 'Promień R', angle: 'Kąt', arc: 'Długość łuku' });
+/** Kierunek wymiaru liniowego (od 1.42): równoległy do mierzonych punktów, poziomy albo pionowy. */
+export const DIM_AXES = Object.freeze(['aligned', 'h', 'v']);
+export const DIM_AXIS_LABELS = Object.freeze({ aligned: 'Równoległy', h: 'Poziomy', v: 'Pionowy' });
 export const dimMode = (shape) => (shape.mode === 'diameter' || shape.mode === 'radius' ? shape.mode : 'linear');
 /** Sposób rysowania okręgu i elipsy (od 1.34): ramka, środek i promień, dwa punkty (średnica), trzy punkty. */
 export const ELLIPSE_MODES = Object.freeze(['frame', 'center', 'two', 'three']);
+/** Sposób rysowania łuku (od 1.42): przez trzy punkty albo ze środka, początku i końca. */
+export const ARC_MODES = Object.freeze(['three', 'center']);
+export const ARC_MODE_LABELS = Object.freeze({ three: 'Przez 3 punkty', center: 'Środek, początek, koniec' });
 export const ELLIPSE_MODE_LABELS = Object.freeze({ frame: 'Ramka', center: 'Środek i promień', two: '2 punkty', three: '3 punkty' });
 /** Kształty z zakończeniami (grot, trójkąt…): odcinek, strzałka i (od 1.27) strzałka po łuku – prosta ich nie ma. */
 export const hasCaps = (shape) => shape.shape === 'line' || shape.shape === 'arrow' || shape.shape === 'curve';
@@ -82,7 +92,7 @@ const DEFAULT_ADJUST = { triangle: 0.5, trapezoid: 0.25 };
 export const SHAPE_FILLS = Object.freeze(['none', 'light', 'solid', 'hatch']);
 export const SHAPE_FILL_LABELS = Object.freeze({ none: 'Brak', light: 'Jasne', solid: 'Pełne', hatch: 'Kreskowanie' });
 export const FILL_ALPHA = Object.freeze({ light: 0.22, solid: 1 });
-export const canFill = (shape) => !isSegment(shape) && !['polyline', 'curve', 'point', 'arc', 'angledim'].includes(shape.shape);
+export const canFill = (shape) => !isSegment(shape) && !['polyline', 'curve', 'point', 'arc', 'angledim', 'arcdim'].includes(shape.shape);
 
 // ---------------------------------------------------------------- rodzaj linii i punkt (od 1.27)
 
@@ -239,9 +249,27 @@ export function circleThrough(a, b, c) {
 /** Okrąg (elipsa o równych bokach) o środku `center` i promieniu `radius` w stylu `style`. */
 export function circleShape(center, radius, style) {
   const diameter = round(Math.max(MIN_SHAPE, radius * 2));
-  const shape = { tool: 'shape', shape: 'ellipse', color: style.color, size: style.size, x: round(center.x), y: round(center.y), w: diameter, h: diameter, angle: 0, skew: 0, adjust: 0 };
-  if (style.fill === 'light' || style.fill === 'solid') shape.fill = style.fill;
+  let shape = { tool: 'shape', shape: 'ellipse', color: style.color, size: style.size, x: round(center.x), y: round(center.y), w: diameter, h: diameter, angle: 0, skew: 0, adjust: 0 };
+  // Od 1.40 także kreskowanie, od 1.42 osie.
+  if (FILLED.includes(style.fill)) shape = withShapeFill(shape, style.fill, style.hatch);
+  if (style.axes) shape.axes = true;
   return withDash(shape, style.dash);
+}
+
+/**
+ * Łuk ze środka, początku i końca (od 1.42, jak w CAD): promień – od środka do początku, koniec – kierunek
+ * od środka; łuk przeciwnie do ruchu wskazówek zegara. null – początek w środku albo koniec na kierunku początku.
+ */
+export function arcFromCenter(center, start, end, style) {
+  const radius = Math.hypot(start.x - center.x, start.y - center.y);
+  if (radius < 1 || Math.hypot(end.x - center.x, end.y - center.y) < 1e-6) return null;
+  const from = Math.atan2(start.y - center.y, start.x - center.x);
+  const to = Math.atan2(end.y - center.y, end.x - center.x);
+  // Oś y strony w dół: przeciwnie do ruchu wskazówek zegara to malejący kąt.
+  const sweep = -((((from - to) % TAU) + TAU) % TAU);
+  if (Math.abs(sweep) < 1e-4) return null;
+  const at = (angle) => ({ x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius });
+  return arcFromPoints(start, at(from + sweep), at(from + sweep / 2), style);
 }
 
 /** Okrąg przez trzy punkty strony albo null (punkty na jednej prostej). */
@@ -329,8 +357,34 @@ export function dimFromPoints(mode, a, b, style, offset = DIM_OFFSET) {
     shape.dimTols = { length: { prefix: mode === 'diameter' ? '⌀' : 'R' } };
   } else {
     shape.dimOffsets = { length: clampSigned(offset) };
+    // Od 1.42 wymiar poziomy albo pionowy.
+    if (style.axis === 'h' || style.axis === 'v') shape.axis = style.axis;
   }
   return shape;
+}
+
+/** Kierunek wymiaru liniowego (od 1.42): 'h', 'v' albo null – równoległy. */
+export const dimAxis = (shape) => (shape.shape === 'dim' && dimMode(shape) === 'linear' && (shape.axis === 'h' || shape.axis === 'v') ? shape.axis : null);
+/** Wymiar z kierunkiem `axis` ('aligned' – równoległy) – nowy obiekt; tylko wymiar liniowy. */
+export function withDimAxis(shape, axis) {
+  const next = { ...shape };
+  delete next.axis;
+  if (shape.shape === 'dim' && dimMode(shape) === 'linear' && (axis === 'h' || axis === 'v')) next.axis = axis;
+  return next;
+}
+/** Kierunek „nad” wymiaru liniowego (dodatnie odsunięcie): poziomy – w górę strony, pionowy – w prawo, inny – jak kształt. */
+function dimUp(shape) {
+  const axis = dimAxis(shape);
+  if (axis === 'h') return [0, -1];
+  if (axis === 'v') return [1, 0];
+  return [Math.sin(shape.angle), -Math.cos(shape.angle)];
+}
+/** Mierzona długość wymiaru narzędzia „Wymiar” (od 1.42 – poziomy i pionowy: rzut odległości punktów). */
+export function measuredLength(shape) {
+  const axis = dimAxis(shape);
+  if (axis === 'h') return Math.abs(shape.w * Math.cos(shape.angle));
+  if (axis === 'v') return Math.abs(shape.w * Math.sin(shape.angle));
+  return shape.w;
 }
 
 /** Odsunięcie ze znakiem: wielkość w granicach DIM_OFFSET_LIMITS, znak zostaje (zero – dodatnie). */
@@ -342,7 +396,7 @@ function clampSigned(value) {
 /** Wymiar liniowy z linią wymiarową po stronie dalszej od punktu `point` (np. środka mierzonego kształtu). */
 export function dimAwayFrom(shape, point) {
   const offset = Math.abs(dimOffset(shape, 'length'));
-  const up = [Math.sin(shape.angle), -Math.cos(shape.angle)];
+  const up = dimUp(shape);
   const facing = (shape.x - point.x) * up[0] + (shape.y - point.y) * up[1];
   return { ...shape, dimOffsets: { ...(shape.dimOffsets ?? {}), length: facing < -1e-6 ? -offset : offset } };
 }
@@ -459,6 +513,22 @@ function ngonFrom(base, from, to, rawSides, { defaultSize, tap, lock }) {
     x: round(from.x + ox * cos - oy * sin), y: round(from.y + ox * sin + oy * cos),
     w: round(Math.max(MIN_SHAPE, unit.w * radius)), h: round(Math.max(MIN_SHAPE, unit.h * radius))
   };
+}
+
+/** Jak daleko osie okręgu wystają poza jego obrys (jednostki strony – ¼ kratki). */
+export const AXES_OVER = 11;
+/** Osie okręgu i elipsy (od 1.42): dwie linie osiowe przez środek, wzdłuż osi kształtu, poza obrysem; [[a, b], [c, d]] albo []. */
+export function shapeAxes(shape) {
+  if (shape.shape !== 'ellipse' || !shape.axes) return [];
+  const [ou, ov] = [0.5 + AXES_OVER / shape.w, 0.5 + AXES_OVER / shape.h];
+  return [[shapePoint(shape, -ou, 0), shapePoint(shape, ou, 0)], [shapePoint(shape, 0, -ov), shapePoint(shape, 0, ov)]];
+}
+/** Okrąg albo elipsa z osiami (true) albo bez – nowy obiekt. */
+export function withAxes(shape, axes) {
+  const next = { ...shape };
+  delete next.axes;
+  if (axes && shape.shape === 'ellipse') next.axes = true;
+  return next;
 }
 
 /** Wielokąt foremny o innej liczbie boków – ten sam środek okręgu opisanego i promień (rozciągnięty – w obu kierunkach). */
@@ -595,6 +665,35 @@ export function shapeHatch(shape) {
   for (let index = 0; index + 1 < points.length; index += 2) list.push({ x: points[index], y: points[index + 1] });
   const lines = hatchLines(list, hatch.angle, hatch.gap);
   return hatch.cross ? [...lines, ...hatchLines(list, hatch.angle + 90, hatch.gap)] : lines;
+}
+
+/**
+ * Środek kształtu do przyciągania (od 1.42): okrąg i elipsa – środek, łuk – środek okręgu, wielokąt foremny –
+ * środek okręgu opisanego, trójkąt i wielokąt – środek ciężkości, inne zamknięte – środek ramki; odcinki,
+ * łamana, strzałka po łuku, punkt i wymiary – null.
+ */
+export function shapeCenter(shape) {
+  if (shape.shape === 'ellipse') return { x: shape.x, y: shape.y };
+  if (isArc(shape)) return arcGeometry(shape)?.center ?? null;
+  if (!canFill(shape)) return null;
+  if (shape.shape === 'ngon') {
+    const unit = unitNgon(ngonSides(shape));
+    return shapePoint(shape, -unit.cx / unit.w, -unit.cy / unit.h);
+  }
+  if (shape.shape === 'triangle' || shape.shape === 'polygon') {
+    const points = polygonOf(shape).map(([u, v]) => shapePoint(shape, u, v));
+    let [area, cx, cy] = [0, 0, 0];
+    points.forEach((a, index) => {
+      const b = points[(index + 1) % points.length];
+      const cross = a.x * b.y - b.x * a.y;
+      area += cross;
+      cx += (a.x + b.x) * cross;
+      cy += (a.y + b.y) * cross;
+    });
+    if (Math.abs(area) < 1e-9) return { x: shape.x, y: shape.y };
+    return { x: cx / (3 * area), y: cy / (3 * area) };
+  }
+  return { x: shape.x, y: shape.y };
 }
 
 /** Pole wielokąta [{ x, y }, …] (wartość bezwzględna) i długość jego obwodu. */
@@ -843,7 +942,7 @@ export function shapeBounds(shape) {
   const xs = points.filter((_, index) => index % 2 === 0);
   const ys = points.filter((_, index) => index % 2 === 1);
   const half = shape.size / 2;
-  for (const point of [...capPoints(shape), ...labelCorners(shape), ...dimCorners(shape)]) {
+  for (const point of [...capPoints(shape), ...labelCorners(shape), ...dimCorners(shape), ...shapeAxes(shape).flat()]) {
     xs.push(point.x);
     ys.push(point.y);
   }
@@ -942,7 +1041,7 @@ function pointInPolygon(x, y, points) {
 /** Czy punkt leży wewnątrz kształtu (dotknięcie środka pustego prostokąta też go zaznacza). */
 export function shapeContains(shape, x, y) {
   if (isPointShape(shape)) return Math.hypot(x - shape.x, y - shape.y) <= shape.w / 2;
-  if (isSegment(shape) || ['polyline', 'curve', 'arc', 'angledim'].includes(shape.shape)) return false;
+  if (isSegment(shape) || ['polyline', 'curve', 'arc', 'angledim', 'arcdim'].includes(shape.shape)) return false;
   const { points } = shapeOutline(shape);
   let inside = false;
   for (let index = 0, previous = points.length - 2; index < points.length; previous = index, index += 2) {
@@ -999,6 +1098,8 @@ export function shapeFromDrag(kind, from, to, style, { defaultSize = 176, tap = 
   base = withDash(base, style.dash);
   // Od 1.40: wielokąt foremny – od środka do wierzchołka; prostokąt – z narożnikami narzędzia.
   if (kind === 'ngon') return ngonFrom(base, from, to, style.sides, { defaultSize, tap, lock });
+  // Od 1.42 okrąg i elipsa z osiami narzędzia.
+  if (kind === 'ellipse' && style.axes) base.axes = true;
   if (kind === 'rect' && style.corner) base.corner = { ...style.corner };
   if (Math.hypot(dx, dy) < tap) {
     return isSegment(base)
@@ -1040,7 +1141,7 @@ export function shapeHandles(shape, rotateGap) {
   // Punkt (od 1.27) – tylko przesuwanie.
   if (isPointShape(shape)) return [];
   // Wymiar kąta (od 1.34) – wierzchołek i ramiona.
-  if (shape.shape === 'angledim') return nodePairs(shape).map(([u, v], index) => ({ id: `v${index}`, kind: 'vertex', ...shapePoint(shape, u, v) }));
+  if (shape.shape === 'angledim' || shape.shape === 'arcdim') return nodePairs(shape).map(([u, v], index) => ({ id: `v${index}`, kind: 'vertex', ...shapePoint(shape, u, v) }));
   if (isSegment(shape)) {
     const [a, b] = [shapePoint(shape, -0.5, 0), shapePoint(shape, 0.5, 0)];
     return [{ id: 'start', kind: 'end', ...a }, { id: 'end', kind: 'end', ...b }];
@@ -1163,7 +1264,7 @@ function moveNode(shape, index, point, { lock = false } = {}) {
   if (index < 0 || index >= points.length) return shape;
   const closed = shape.shape === 'polygon';
   // Punkty strzałki po łuku (od 1.27), łuku i wymiaru kąta (od 1.34) – bez przyciągania kierunków.
-  if (isCurve(shape) || isArc(shape) || shape.shape === 'angledim') {
+  if (isCurve(shape) || isArc(shape) || shape.shape === 'angledim' || shape.shape === 'arcdim') {
     points[index] = point;
     return { ...polyFromPoints(shape.shape, points, shape, shape), ...keepExtras(shape) };
   }
@@ -1243,7 +1344,7 @@ export function setSegment(shape, { length = shape.w, degrees = segmentDegrees(s
 // ---------------------------------------------------------------- wymiary na rysunku (od 1.19)
 
 /** Wymiary kształtu: szerokość, wysokość i kąt pochylenia; odcinka i strzałki – długość i kąt. */
-export const dimKeys = (shape) => (isXline(shape) || shape.shape === 'angledim' ? ['angle'] : shape.shape === 'dim' ? ['length']
+export const dimKeys = (shape) => (isXline(shape) || shape.shape === 'angledim' ? ['angle'] : shape.shape === 'dim' ? ['length'] : shape.shape === 'arcdim' ? ['arc']
   : ['curve', 'point', 'arc'].includes(shape.shape) ? [] : isSegment(shape) ? ['length', 'angle'] : isPoly(shape) ? ['width', 'height'] : ['width', 'height', 'skew']);
 /** Wielkość czcionki stałego wymiaru i jego odstęp od linii ramki (jednostki strony; kratka ma 44). */
 export const DIM_FONT = 22;
@@ -1263,6 +1364,8 @@ export function dimPlaces(shape) {
   };
   // Wymiar kąta (od 1.34) – pole w miejscu liczby.
   if (shape.shape === 'angledim') return { angle: { point: dimGeometry(shape, 'angle').text, normal: [0, -1] } };
+  // Długość łuku (od 1.42) – pole w miejscu liczby.
+  if (shape.shape === 'arcdim') return { arc: { point: dimGeometry(shape, 'arc').text, normal: [0, -1] } };
   if (isSegment(shape)) {
     const flip = cos < -1e-9 || (Math.abs(cos) < 1e-9 && sin > 0) ? -1 : 1;
     return onlyDimKeys(shape, { length: { point: shapePoint(shape, 0, 0), normal: turn([0, flip]) }, angle: { point: shapePoint(shape, 0.5, 0), normal: [cos, sin] } });
@@ -1322,6 +1425,8 @@ export const DIM_STYLES = Object.freeze(['basic', 'reference', 'inspection']);
 /** Najwięcej miejsc po przecinku liczby wymiaru (od 1.38; bez pola – samoczynnie). */
 export const DIM_PLACES_MAX = 3;
 export const isLinearDim = (key) => key === 'width' || key === 'height' || key === 'length';
+/** Wymiar długości – także długość łuku (od 1.42; tolerancje w mm, pasowanie). */
+export const isLengthKey = (key) => isLinearDim(key) || key === 'arc';
 
 /** Domyślny promień łuku kąta: połowa ramienia (boku albo odcinka; wymiar kąta – krótszego ramienia), od 36 do 140. */
 function defaultArcRadius(shape, key) {
@@ -1333,7 +1438,8 @@ function defaultArcRadius(shape, key) {
 export function dimOffset(shape, key) {
   const saved = shape.dimOffsets?.[key];
   if (finite(saved)) return saved;
-  return isLinearDim(key) ? DIM_OFFSET : defaultArcRadius(shape, key);
+  // Długość łuku (od 1.42) – odsunięcie łuku wymiarowego od łuku.
+  return isLengthKey(key) ? DIM_OFFSET : defaultArcRadius(shape, key);
 }
 
 /**
@@ -1380,6 +1486,7 @@ function readableAngle(dx, dy) {
  */
 export function dimGeometry(shape, key, offset = dimOffset(shape, key)) {
   if (shape.shape === 'angledim') return angleDimGeometry(shape, offset);
+  if (shape.shape === 'arcdim') return arcDimGeometry(shape, offset);
   if (shape.shape === 'dim') return measureGeometry(shape, offset);
   if (!isLinearDim(key)) {
     // Pochylenie: przy lewym dolnym narożniku, od prostopadłej do podstawy do lewego boku;
@@ -1422,6 +1529,25 @@ export function dimGeometry(shape, key, offset = dimOffset(shape, key)) {
 
 /** Odsunięcie wskaźnika `point` od kształtu dla wymiaru `key` (przeciąganie liczby) – w granicach. */
 export function dimOffsetAt(shape, key, point) {
+  if (shape.shape === 'arcdim') {
+    // Długość łuku (od 1.42): łuk wymiarowy tam, gdzie liczba – na zewnątrz łuku.
+    const arc = arcGeometry(shape);
+    if (!arc) return DIM_OFFSET;
+    const away = Math.hypot(point.x - arc.center.x, point.y - arc.center.y) - arc.radius - (DIM_FONT * 0.5 + 5);
+    return clamp(Math.round(away), DIM_OFFSET_LIMITS.min, DIM_OFFSET_LIMITS.max);
+  }
+  if (dimAxis(shape)) {
+    // Poziomy i pionowy (od 1.42): strona – gdzie wskaźnik; odległość od skrajnego punktu po tej stronie.
+    const [a, b] = [shapePoint(shape, -0.5, 0), shapePoint(shape, 0.5, 0)];
+    const up = dimUp(shape);
+    const side = (point.x - shape.x) * up[0] + (point.y - shape.y) * up[1] >= 0 ? 1 : -1;
+    const normal = [up[0] * side, up[1] * side];
+    const along = (item) => item.x * normal[0] + item.y * normal[1];
+    // Liczba stoi nad linią w kierunku czytania: poziomy – w górę, pionowy – w lewo.
+    const reading = dimAxis(shape) === 'h' ? [0, -1] : [-1, 0];
+    const lift = (DIM_FONT * 0.5 + 5) * (reading[0] * normal[0] + reading[1] * normal[1] > 0 ? 1 : -1);
+    return clampSigned(side * (along(point) - Math.max(along(a), along(b)) - lift));
+  }
   if (shape.shape === 'dim') {
     // Wymiar narzędzia „Wymiar” (od 1.34): linia wymiarowa po tej stronie mierzonych punktów, po której jest wskaźnik.
     const up = [Math.sin(shape.angle), -Math.cos(shape.angle)];
@@ -1463,10 +1589,28 @@ function measureGeometry(shape, offset) {
       text: { x: at.x + reading[0] * lift, y: at.y + reading[1] * lift, angle }
     };
   }
-  const up = [Math.sin(shape.angle), -Math.cos(shape.angle)];
+  const up = dimUp(shape);
   const side = offset < 0 ? -1 : 1;
   const normal = [up[0] * side, up[1] * side];
   const distance = Math.abs(offset);
+  if (dimAxis(shape)) {
+    // Poziomy i pionowy (od 1.42): linia wymiarowa pozioma (pionowa) za skrajnym z mierzonych punktów.
+    const along = (point) => point.x * normal[0] + point.y * normal[1];
+    const base = Math.max(along(a), along(b)) + distance;
+    const foot = (point) => {
+      const reach = base - along(point);
+      return { x: point.x + normal[0] * reach, y: point.y + normal[1] * reach };
+    };
+    const [from, to] = [foot(a), foot(b)];
+    const ext = [[a, from], [b, to]].map(([point, end]) => {
+      const gap = Math.min(DIM_EXT_GAP, Math.max(0, base - along(point)));
+      return [{ x: point.x + normal[0] * gap, y: point.y + normal[1] * gap }, { x: end.x + normal[0] * DIM_EXT_OVER, y: end.y + normal[1] * DIM_EXT_OVER }];
+    });
+    const textAngle = dimAxis(shape) === 'h' ? 0 : -Math.PI / 2;
+    const upright = [Math.sin(textAngle), -Math.cos(textAngle)];
+    const middle = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+    return { kind: 'linear', from, to, ext, normal, text: { x: middle.x + upright[0] * lift, y: middle.y + upright[1] * lift, angle: textAngle } };
+  }
   const shift = (point, reach) => ({ x: point.x + normal[0] * reach, y: point.y + normal[1] * reach });
   const [from, to] = [shift(a, distance), shift(b, distance)];
   const gap = Math.min(DIM_EXT_GAP, distance);
@@ -1496,6 +1640,42 @@ function angleDimGeometry(shape, radius) {
     kind: 'angle', center: vertex, radius, start, sweep, exts,
     text: { x: vertex.x + Math.cos(middle) * away, y: vertex.y + Math.sin(middle) * away, angle: 0 }
   };
+}
+
+/**
+ * Geometria wymiaru długości łuku (od 1.42): łuk wymiarowy współśrodkowy z łukiem, o `offset` dalej od środka,
+ * linie pomocnicze wzdłuż promieni końców łuku, liczba na zewnątrz w połowie łuku, wzdłuż niego. Bez łuku (punkty na jednej
+ * prostej) – jak wymiar liniowy końców.
+ */
+function arcDimGeometry(shape, offset) {
+  const arc = arcGeometry(shape);
+  const [a, , b] = polyPoints(shape);
+  if (!arc) {
+    const middle = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    return { kind: 'linear', from: a, to: b, ext: [], normal: [0, -1], text: { x: middle.x, y: middle.y - DIM_FONT, angle: 0 } };
+  }
+  const { center, start, sweep } = arc;
+  const radius = arc.radius + offset;
+  const exts = [start, start + sweep].map((angle) => [
+    { x: center.x + Math.cos(angle) * (arc.radius + DIM_EXT_GAP), y: center.y + Math.sin(angle) * (arc.radius + DIM_EXT_GAP) },
+    { x: center.x + Math.cos(angle) * (radius + DIM_EXT_OVER), y: center.y + Math.sin(angle) * (radius + DIM_EXT_OVER) }
+  ]);
+  // Liczba wzdłuż łuku (jak w CAD), tuż nad łukiem wymiarowym – czytana od dołu albo od prawej.
+  const middle = start + sweep / 2;
+  const away = radius + DIM_FONT * 0.5 + 5;
+  const angle = readableAngle(-Math.sin(middle), Math.cos(middle));
+  return { kind: 'angle', center, radius, start, sweep, exts, text: { x: center.x + Math.cos(middle) * away, y: center.y + Math.sin(middle) * away, angle } };
+}
+/** Długość łuku wymiaru 'arcdim' (jednostki strony): promień × kąt; bez łuku – odległość końców. */
+export function arcDimLength(shape) {
+  const arc = arcGeometry(shape);
+  if (arc) return arc.radius * Math.abs(arc.sweep);
+  const [a, , b] = polyPoints(shape);
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+/** Wymiar długości łuku `arc` (od 1.42) – te same trzy punkty co łuk, styl wymiaru. */
+export function arcDimFromArc(arc, style) {
+  return { tool: 'shape', shape: 'arcdim', color: style.color, size: style.size, x: arc.x, y: arc.y, w: arc.w, h: arc.h, angle: arc.angle, skew: 0, adjust: 0, nodes: [...arc.nodes], dims: ['arc'] };
 }
 
 /** Widoczna linia wymiaru (obrys): linia wymiarowa albo łuk kąta – punkty strony. */
@@ -1568,7 +1748,7 @@ function dimCorners(shape) {
     corners.push({ x: text.x - width / 2, y: text.y - height / 2 }, { x: text.x + width / 2, y: text.y + height / 2 });
     if (geometry.kind === 'linear') {
       corners.push(geometry.from, geometry.to, ...geometry.ext.flat());
-    } else if (shape.shape === 'angledim') {
+    } else if (shape.shape === 'angledim' || shape.shape === 'arcdim') {
       // Wymiar kąta (od 1.34) – sam łuk i linie pomocnicze.
       corners.push(...measureLine(shape), ...geometry.exts.flat());
     } else {
@@ -1593,7 +1773,7 @@ function cleanDimExtras(raw, shape) {
   }
   if (raw.dimTols && typeof raw.dimTols === 'object') {
     for (const key of keys) {
-      const clean = cleanDimTolerance(raw.dimTols[key], isLinearDim(key));
+      const clean = cleanDimTolerance(raw.dimTols[key], isLengthKey(key));
       if (clean) tolerances[key] = clean;
     }
   }
@@ -1636,7 +1816,7 @@ export function scaleDimTolerances(shape, factor) {
   const exact = (value) => Number((value * factor).toPrecision(12));
   const tolerances = {};
   for (const [key, marks] of Object.entries(shape.dimTols)) {
-    if (!isLinearDim(key)) {
+    if (!isLengthKey(key)) {
       tolerances[key] = marks;
       continue;
     }
@@ -1653,7 +1833,7 @@ export function scaleDimTolerances(shape, factor) {
 export function withDimTolerance(shape, key, tolerance) {
   const next = { ...shape };
   const tolerances = { ...(shape.dimTols ?? {}) };
-  const clean = cleanDimTolerance(tolerance, isLinearDim(key));
+  const clean = cleanDimTolerance(tolerance, isLengthKey(key));
   if (clean) tolerances[key] = clean;
   else delete tolerances[key];
   if (Object.keys(tolerances).length > 0) next.dimTols = tolerances;
@@ -1697,13 +1877,13 @@ function cleanNodes(raw, least, most = POLY_NODES_MAX) {
 
 /** Sprawdzony kształt (zapis, kopia zapasowa) albo null. */
 export function cleanShape(raw, pageWidth, pageHeight, isColor) {
-  if (!raw || !(SHAPES.includes(raw.shape) || POLY_SHAPES.includes(raw.shape) || raw.shape === 'angledim') || !isColor(raw.color)) return null;
+  if (!raw || !(SHAPES.includes(raw.shape) || POLY_SHAPES.includes(raw.shape) || raw.shape === 'angledim' || raw.shape === 'arcdim') || !isColor(raw.color)) return null;
   if (![raw.x, raw.y, raw.w, raw.h, raw.angle, raw.size].every(finite)) return null;
   const segment = isSegment(raw);
   // Od 1.24: wierzchołki łamanej (co najmniej 2) i wielokąta (co najmniej 3) w układzie własnym; strzałka po łuku (od 1.27) –
   // dokładnie 4, łuk i wymiar kąta (od 1.34) – dokładnie 3.
   const poly = isPoly(raw);
-  const exact = { curve: 4, arc: 3, angledim: 3 }[raw.shape];
+  const exact = { curve: 4, arc: 3, angledim: 3, arcdim: 3 }[raw.shape];
   const nodes = poly ? cleanNodes(raw.nodes, exact ?? (raw.shape === 'polygon' ? 3 : 2), exact ?? POLY_NODES_MAX) : null;
   if (poly && !nodes) return null;
   const limit = Math.max(pageWidth, pageHeight) * 4;
@@ -1741,6 +1921,9 @@ export function cleanShape(raw, pageWidth, pageHeight, isColor) {
     ...(canDash(raw) && SHAPE_DASHES.includes(raw.dash) && raw.dash !== 'solid' ? { dash: raw.dash } : {}),
     ...(point ? { mark: pointMark(raw) } : {}),
     ...(raw.shape === 'dim' && dimMode(raw) !== 'linear' ? { mode: dimMode(raw) } : {}),
+    // Od 1.42: wymiar poziomy albo pionowy, osie okręgu.
+    ...(raw.shape === 'dim' && dimMode(raw) === 'linear' && (raw.axis === 'h' || raw.axis === 'v') ? { axis: raw.axis } : {}),
+    ...(raw.shape === 'ellipse' && raw.axes === true ? { axes: true } : {}),
     ...(dims ? { dims } : {}),
     // Od 1.22.1: odsunięcia linii wymiarowych i oznaczenia wymiarów (znak, tolerancja).
     ...cleanDimExtras(raw, { shape: raw.shape })

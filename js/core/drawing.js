@@ -41,8 +41,9 @@
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import { DEFAULT_RECENT_FITS, cleanRecentFits } from './fits.js';
 import {
-  CORNER_KINDS, DIM_MODES, DIM_OFFSET, DIM_OFFSET_LIMITS, ELLIPSE_MODES, FIT_RE, NGON_DEFAULT, NGON_SIDES, POINT_MARKS, SEGMENT_CAPS, SHAPES,
-  SHAPE_DASHES, SHAPE_FILLS, angleDimDegrees, capPoints, cleanHatch, cleanShape, isLinearDim, isShape, scaleDimTolerances, segmentDegrees,
+  ARC_MODES, CORNER_KINDS, DIM_AXES, DIM_MODES, DIM_OFFSET, DIM_OFFSET_LIMITS, ELLIPSE_MODES, FIT_RE, NGON_DEFAULT, NGON_SIDES, POINT_MARKS, SEGMENT_CAPS, SHAPES,
+  SHAPE_DASHES, SHAPE_FILLS, angleDimDegrees, arcDimLength, capPoints, cleanHatch, cleanShape, isLengthKey, isLinearDim, isShape, measuredLength,
+  scaleDimTolerances, segmentDegrees,
   shapeAsStroke, shapeBounds, shapeMeasure, shapeOutline, skewDegrees, touchesShape
 } from './shapes.js';
 import { keepLinks } from './attach.js';
@@ -60,9 +61,10 @@ import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './la
  * 8 – wymiary techniczne (odsunięcia, tolerancje, styl liczb) i symbole metrologiczne (1.22.1), 11 – warstwy (1.36),
  * 12 – wymiary graniczne, rodzaj wymiaru, miejsca po przecinku, ramka z Ⓟ i drugim wierszem, chropowatość
  * z kierunkiem struktury, odnośnik (1.38), 13 – wielokąt foremny, półprosta, narożniki prostokąta, kreskowanie (1.40),
- * 14 – ramka rysunkowa z tabliczką (1.41).
+ * 14 – ramka rysunkowa z tabliczką (1.41), 15 – wymiar długości łuku, wymiar poziomy i pionowy, osie okręgu,
+ * arkusz A4 pionowo (1.42).
  */
-export const DRAWING_VERSION = 14;
+export const DRAWING_VERSION = 15;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -118,13 +120,15 @@ export const SENSITIVITY_LABELS = Object.freeze({ off: 'Wył.', low: 'Mała', me
 export function dimensionParts(shape, key, scale, format = 'unit') {
   const marks = shape.dimTols?.[key] ?? null;
   const degrees = key === 'skew' ? skewDegrees(shape) : key === 'angle' ? (shape.shape === 'angledim' ? angleDimDegrees(shape) : segmentDegrees(shape)) : null;
-  const units = key === 'height' ? shape.h : shape.w;
+  // Od 1.42: długość łuku, wymiar poziomy i pionowy – rzut odległości punktów.
+  const units = key === 'height' ? shape.h : key === 'arc' ? arcDimLength(shape) : shape.shape === 'dim' ? measuredLength(shape) : shape.w;
   const technical = formatOf(format).style === 'technical';
   // Od 1.38 stała liczba miejsc po przecinku (0–3) zamiast samoczynnej.
   const places = Number.isInteger(marks?.places) ? marks.places : null;
   const value = degrees ?? toScaleLength(units, scale) * (technical ? dimFactor(scale, format) : 1);
   const after = degrees !== null ? '°' : technical ? '' : ` ${unitOf(cleanScale(scale).unit).label}`;
-  const prefix = marks?.prefix && isLinearDim(key) ? marks.prefix : '';
+  // Długość łuku (od 1.42) – znak ⌒ przed liczbą.
+  const prefix = key === 'arc' ? '⌒' : marks?.prefix && isLinearDim(key) ? marks.prefix : '';
   let main = `${prefix}${places === null ? formatNumber(value) : fixedNumber(value, places)}${after}`;
   const suffix = degrees !== null ? '°' : '';
   // Tolerancja długości: z milimetrów do jednostki liczby wymiaru; kąta – w stopniach.
@@ -248,7 +252,7 @@ export const dimUnitNote = (format) => (formatOf(format).style === 'technical' ?
  */
 export function hasMeasuredContent(drawing) {
   return drawing.strokes.some((stroke) => stroke.tool === 'gdt'
-    || (isShape(stroke) && Array.isArray(stroke.dims) && stroke.dims.some((key) => isLinearDim(key))));
+    || (isShape(stroke) && Array.isArray(stroke.dims) && stroke.dims.some((key) => isLengthKey(key))));
 }
 
 /** Liczba wpisana po polsku albo z kropką („4,5”, „ -12.5 cm”, „15°”) albo null. */
@@ -410,6 +414,10 @@ export function defaultToolSettings() {
     // Od 1.34: sposób rysowania okręgu (ramka, środek i promień, 2 albo 3 punkty) i rodzaj wymiaru narzędzia „Wymiar”.
     ellipseMode: 'frame',
     dimMode: 'linear',
+    // Od 1.42: kierunek wymiaru liniowego, sposób rysowania łuku, osie nowych okręgów.
+    dimAxis: 'aligned',
+    arcMode: 'three',
+    ellipseAxes: false,
     arrayKind: 'linear',
     // Od 1.21: kolor ostatnio dodanej karteczki.
     stickyColor: 'yellow',
@@ -561,6 +569,9 @@ export function cleanToolSettings(raw) {
     pointMark: POINT_MARKS.includes(raw.pointMark) ? raw.pointMark : base.pointMark,
     ellipseMode: ELLIPSE_MODES.includes(raw.ellipseMode) ? raw.ellipseMode : base.ellipseMode,
     dimMode: DIM_MODES.includes(raw.dimMode) ? raw.dimMode : base.dimMode,
+    dimAxis: DIM_AXES.includes(raw.dimAxis) ? raw.dimAxis : base.dimAxis,
+    arcMode: ARC_MODES.includes(raw.arcMode) ? raw.arcMode : base.arcMode,
+    ellipseAxes: typeof raw.ellipseAxes === 'boolean' ? raw.ellipseAxes : base.ellipseAxes,
     arrayKind: ARRAY_KINDS.includes(raw.arrayKind) ? raw.arrayKind : base.arrayKind,
     stickyColor: STICKY_COLORS.some((color) => color.id === raw.stickyColor) ? raw.stickyColor : base.stickyColor,
     edgeSnap: typeof raw.edgeSnap === 'boolean' ? raw.edgeSnap : base.edgeSnap,

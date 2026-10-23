@@ -1745,6 +1745,42 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   `.drawing__selection-head` (na telefonie `display: contents` – pole i obwód w osobnym wierszu); po zmierzeniu wyższy niż
   `SELECTION_ROW` (60 px) – klasa `drawing__selection--compact` (same ikony).
 
+## Przyciąganie i wymiary – zaległości pakietów A i B (od 1.42)
+
+- **Przyciąganie** (`js/core/attach.js`, `findSnap`): punkty szczególne (`offer`, promień × 1,4) – narożnik, `center`
+  (`snapGeometry` zamkniętych kształtów ma `center: shapeCenter(…)`: ramka, środek ciężkości trójkąta i wielokąta,
+  środek okręgu opisanego wielokąta foremnego), `mid` – środek boku dłuższego niż dwa promienie (zapis
+  `{ kind: 'edge', index, t: 0.5 }`, odcinek – bez, ma środek wśród narożników), `intersection` – przecięcie odcinków linii
+  dwóch elementów w pobliżu (`linesNear`: obrys kształtu, prosta przez stronę, ramka, kreska pióra; najwyżej 24 elementy;
+  `crossing`), zapis – miejsce na krawędzi elementu, na którym punkt leży (`edgeSnapOf`), inaczej `ref: null`; kreska
+  pióra (`isInk`) – końce i linia z `ref: null`. `linkEnds` w edytorze pomija `ref: null` (koniec wolny), `snapNormal`
+  kreski – w górę w prawo, `mid` – prostopadle do boku. Znaczniki: kwadrat, kółko, trójkąt (`mid`), × (`intersection`),
+  kółko z krzyżykiem (`center`).
+- **Wymiar poziomy i pionowy** (`js/core/shapes.js`): `axis: 'h' | 'v'` wymiaru liniowego `dim` (`dimFromPoints` ze
+  `style.axis`, `withDimAxis`, `dimAxis`), `measuredLength` – rzut odległości (`dimensionParts`, pole `length`),
+  `dimUp` – strona „nad”; `measureGeometry` – linia wymiarowa pozioma (pionowa) o odsunięcie za skrajnym punktem, liczba
+  prosto (pionowy – czytana od dołu); `dimOffsetAt` – odsunięcie z uchwytu względem skrajnego punktu. Edytor: wybór pod
+  menu `drawing-dim-axis-<aligned|h|v>` (`tools.dimAxis`), trzecie menu `drawing-style-axis` (zaznaczone).
+- **Łańcuch i od bazy** (`js/ui/drawing.js`): `drawing-selection-chain` / `drawing-selection-baseline` przy jednym
+  wymiarze długości, `pointPick` `chain` / `baseline` (`base`, `last`); `addLinkedDim` – od końca ostatniego (łańcuch)
+  albo początku bazowego (od bazy), ten sam kierunek; linia – w linii ostatniego albo `DIM_TIER` dalej (poziomy, pionowy –
+  dokładnie, równoległy – to samo odsunięcie); koniec przyciągnięty i przyklejony; jeden krok cofania na wymiar.
+- **Długość łuku**: kształt `arcdim` (trzy punkty jak łuk, `dims: ['arc']`; `isMeasure`, `isPoly`, `cleanShape` – dokładnie
+  3 punkty), `arcDimLength` = promień × kąt, `arcDimGeometry` – łuk wymiarowy `kind: 'angle'` o `dimOffsets.arc` dalej
+  od środka, linie pomocnicze wzdłuż promieni, liczba wzdłuż łuku; `isLengthKey` (długość, łuk) – tolerancje w mm,
+  `dimensionParts` – znak ⌒. Narzędzie `dim:arc` (`DIM_ITEMS`, zestaw Metrologia), `measureAt` – łuk pod palcem
+  (`arcDimFromArc`, bez przyklejenia – wymiar nie idzie za przesuniętym łukiem).
+- **Łuk ze środka**: `arcFromCenter(środek, początek, koniec)` – promień od początku, koniec – kierunek, kąt malejący
+  w układzie strony (przeciwnie do ruchu wskazówek zegara na ekranie); trzy punkty łuku przez `arcFromPoints`. Edytor:
+  `tools.arcMode` (`drawing-arc-three` / `drawing-arc-center`), `multiKind` → `arcCenter`.
+- **Osie okręgu**: `axes: true` elipsy (`withAxes`, `circleShape` i `shapeFromDrag` ze `style.axes`), `shapeAxes` – dwie linie
+  przez środek, `AXES_OVER` (11) poza obrysem; w `shapeBounds`, malowanie linią osiową (`drawing-paint.js`), DXF – `LINE`
+  z rodzajem `CENTER`. Trzecie menu `drawing-style-axes` (`drawing-axes-on|off`, `tools.ellipseAxes`). Zaznaczony okrąg –
+  pole `drawing-dim-width` ze znakiem ⌀ (`drawing-dim-prefix-width`), bez pola wysokości; wpisana wartość zmienia oba boki.
+  `circleShape` zachowuje kreskowanie (w 1.40 ginęło przy okręgu ze środka i z punktów).
+- **Ramka A4 pionowo**: `FRAME_FORMATS.A4V` (210 × 297 mm, `name: 'A4'` w tabliczce, `label` w wyborze); tabliczka
+  180 mm – na całą szerokość ramki. `DRAWING_VERSION` 15.
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).
@@ -1830,7 +1866,8 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   zamiana na elementy, zapis i odczyt z powrotem, strony kodowe; od 1.38 wymiary graniczne, rodzaj wymiaru, ramka
   złożona, chropowatość z kierunkiem struktury, odnośnik; od 1.39 kółko przesuwane i obroty fiszki; od 1.40 wielokąt
   foremny, półprosta, narożniki, kreskowanie, pole i obwód, kolejność rysowania, DXF z łukami i kreskowaniem; od 1.41
-  odbicie względem prostej, skalowanie, styl jak…, ramka rysunkowa i jej DXF),
+  odbicie względem prostej, skalowanie, styl jak…, ramka rysunkowa i jej DXF; od 1.42 przyciąganie do środka kształtu,
+  środka boku, przecięć i kresek pióra, wymiar poziomy i pionowy, długość łuku, łuk ze środka, osie okręgu, A4 pionowo),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

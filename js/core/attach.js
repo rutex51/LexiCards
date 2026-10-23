@@ -10,8 +10,11 @@
 // chropowatości { tip? } – przyklejony wierzchołek przesuwa cały symbol.
 // Od 1.34 środek okręgu (elipsy) i łuku – { id, kind: 'center' }; końce wymiaru przyklejają się jak
 // końce odcinka (wymiar idzie za mierzonym kształtem). Do wymiaru nic się nie przyciąga.
+// Od 1.42 przyciąganie także do środka zamkniętego kształtu ({ kind: 'center' }), środka boku
+// (miejsce 'mid' – zapis { kind: 'edge', index, t: 0,5 }), przecięcia dwóch linii ('intersection' –
+// zapis jako miejsce na krawędzi jednego z elementów) i kresek pióra (końce i linia – bez przyklejania).
 
-import { arcGeometry, isMeasure, isSegment, isShape, shapeOutline, shapePoint } from './shapes.js';
+import { arcGeometry, isMeasure, isSegment, isShape, shapeCenter, shapeOutline, shapePoint } from './shapes.js';
 
 const ID_RE = /^[a-z0-9]{6,16}$/;
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
@@ -54,9 +57,10 @@ export function snapGeometry(stroke, boxOf = plainBox) {
     const { points, closed } = shapeOutline(stroke);
     const corners = [];
     for (let index = 0; index < points.length; index += 2) corners.push({ x: points[index], y: points[index + 1] });
-    // Łamana (od 1.24) – bez boku od ostatniego wierzchołka do pierwszego.
+    // Łamana (od 1.24) – bez boku od ostatniego wierzchołka do pierwszego; zamknięty kształt (od 1.42) – ze środkiem.
     const edges = corners.map((corner, index) => [corner, corners[(index + 1) % corners.length]]);
-    return { corners, edges: closed ? edges : edges.slice(0, -1) };
+    const center = closed ? shapeCenter(stroke) : null;
+    return { corners, edges: closed ? edges : edges.slice(0, -1), ...(center ? { center } : {}) };
   }
   if (isFramed(stroke)) {
     const box = boxOf(stroke);
@@ -96,42 +100,136 @@ function onEllipse(point, shape) {
   return best;
 }
 
+/** Kreska pióra albo zakreślacza (od 1.42 – przyciąga się do niej, ale nic się do niej nie przykleja). */
+const isInk = (stroke) => (stroke?.tool === 'pen' || stroke?.tool === 'highlighter') && Array.isArray(stroke.points);
+/** Punkty kreski pióra [{ x, y }, …]. */
+const inkPoints = (stroke) => Array.from({ length: Math.floor(stroke.points.length / 3) }, (_, index) => ({ x: stroke.points[index * 3], y: stroke.points[index * 3 + 1] }));
+
+/** Najbliższe miejsce na krawędziach elementu (z jego geometrią): { x, y, kind: 'edge', target, ref, distance } albo null. */
+function edgeSnapOf(target, geometry, point, radius) {
+  let edge = null;
+  geometry.edges.forEach(([a, b], index) => {
+    const near = onSegment(point, a, b);
+    if (near.distance <= radius && (!edge || near.distance < edge.distance)) {
+      edge = { x: near.x, y: near.y, kind: 'edge', target, ref: { kind: 'edge', index, t: Math.round(near.t * 10000) / 10000 }, distance: near.distance };
+    }
+  });
+  if (geometry.ellipse) {
+    const near = onEllipse(point, geometry.ellipse);
+    if (near.distance <= radius && (!edge || near.distance < edge.distance)) {
+      edge = { x: near.x, y: near.y, kind: 'edge', target, ref: { kind: 'edge', angle: Math.round(near.angle * 10000) / 10000 }, distance: near.distance };
+    }
+  }
+  return edge;
+}
+
+/** Odcinki linii elementu w pobliżu punktu (do przecięć, od 1.42): obrys kształtu (prosta – przez całą stronę), ramka, kreska pióra. */
+function linesNear(stroke, point, reach, boxOf) {
+  let points = null;
+  let closed = false;
+  if (isShape(stroke)) {
+    if (isMeasure(stroke) || stroke.shape === 'point') return [];
+    const outline = shapeOutline(stroke);
+    points = [];
+    for (let index = 0; index + 1 < outline.points.length; index += 2) points.push({ x: outline.points[index], y: outline.points[index + 1] });
+    closed = outline.closed;
+  } else if (isFramed(stroke)) {
+    const geometry = snapGeometry(stroke, boxOf);
+    points = geometry.corners;
+    closed = true;
+  } else if (isInk(stroke)) {
+    points = inkPoints(stroke);
+  } else {
+    return [];
+  }
+  const out = [];
+  const count = closed ? points.length : points.length - 1;
+  for (let index = 0; index < count; index += 1) {
+    const [a, b] = [points[index], points[(index + 1) % points.length]];
+    if (onSegment(point, a, b).distance <= reach) out.push([a, b]);
+  }
+  return out;
+}
+
+/** Punkt przecięcia odcinków a–b i c–d (z końcami) albo null (równoległe). */
+function crossing([a, b], [c, d]) {
+  const [rx, ry, sx, sy] = [b.x - a.x, b.y - a.y, d.x - c.x, d.y - c.y];
+  const denominator = rx * sy - ry * sx;
+  if (Math.abs(denominator) < 1e-9) return null;
+  const t = ((c.x - a.x) * sy - (c.y - a.y) * sx) / denominator;
+  const u = ((c.x - a.x) * ry - (c.y - a.y) * rx) / denominator;
+  if (t < -1e-9 || t > 1 + 1e-9 || u < -1e-9 || u > 1 + 1e-9) return null;
+  return { x: a.x + rx * t, y: a.y + ry * t };
+}
+
 /**
  * Miejsce przyciągnięcia dla punktu `point` w promieniu `radius` (jednostki strony): najbliższy
- * narożnik (szukany w nieco większym promieniu – ma pierwszeństwo), inaczej najbliższe miejsce na
- * krawędzi. Wynik { x, y, kind, target, ref } – ref do zapisania w `attach` (bez id) – albo null.
- * exclude – elementy pomijane (np. przesuwany odcinek).
+ * punkt szczególny – narożnik, środek okręgu, łuku i (od 1.42) zamkniętego kształtu, środek boku,
+ * przecięcie dwóch linii, koniec kreski pióra (szukany w nieco większym promieniu – ma pierwszeństwo),
+ * inaczej najbliższe miejsce na krawędzi. Wynik { x, y, kind, target, ref } – ref do zapisania
+ * w `attach` (bez id; null – bez przyklejania, np. kreska pióra) – albo null. exclude – elementy
+ * pomijane (np. przesuwany odcinek).
  */
 export function findSnap(strokes, point, radius, { exclude = new Set(), boxOf = plainBox } = {}) {
   let corner = null;
   let edge = null;
+  const near = [];
+  const offer = (candidate) => {
+    const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y);
+    if (distance <= radius * 1.4 && (!corner || distance < corner.distance)) corner = { ...candidate, distance };
+  };
   for (const target of strokes) {
     if (exclude.has(target)) continue;
+    // Kreska pióra (od 1.42): końce i najbliższe miejsce na linii – bez przyklejania.
+    if (isInk(target)) {
+      const points = inkPoints(target);
+      if (points.length === 0) continue;
+      for (const end of [points[0], points.at(-1)]) offer({ x: end.x, y: end.y, kind: 'corner', target, ref: null });
+      for (let index = 1; index < points.length; index += 1) {
+        const spot = onSegment(point, points[index - 1], points[index]);
+        if (spot.distance <= radius && (!edge || spot.distance < edge.distance)) edge = { x: spot.x, y: spot.y, kind: 'edge', target, ref: null, distance: spot.distance };
+      }
+      near.push(target);
+      continue;
+    }
     const geometry = snapGeometry(target, boxOf);
     if (!geometry) continue;
-    geometry.corners.forEach((candidate, index) => {
-      const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y);
-      if (distance <= radius * 1.4 && (!corner || distance < corner.distance)) {
-        corner = { x: candidate.x, y: candidate.y, kind: 'corner', target, ref: { kind: 'corner', index }, distance };
-      }
-    });
-    // Środek okręgu i łuku (od 1.34) – jak narożnik.
-    if (geometry.center) {
-      const distance = Math.hypot(point.x - geometry.center.x, point.y - geometry.center.y);
-      if (distance <= radius * 1.4 && (!corner || distance < corner.distance)) {
-        corner = { x: geometry.center.x, y: geometry.center.y, kind: 'center', target, ref: { kind: 'center' }, distance };
-      }
+    geometry.corners.forEach((candidate, index) => offer({ x: candidate.x, y: candidate.y, kind: 'corner', target, ref: { kind: 'corner', index } }));
+    // Środek okręgu i łuku (od 1.34), od 1.42 też zamkniętego kształtu – jak narożnik.
+    if (geometry.center) offer({ x: geometry.center.x, y: geometry.center.y, kind: 'center', target, ref: { kind: 'center' } });
+    // Środek boku (od 1.42) – boki dłuższe niż dwa promienie (bez gęstych punktów łuków); odcinek ma środek wśród narożników.
+    if (!(isShape(target) && isSegment(target))) {
+      geometry.edges.forEach(([a, b], index) => {
+        if (Math.hypot(b.x - a.x, b.y - a.y) > radius * 2) offer({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, kind: 'mid', target, ref: { kind: 'edge', index, t: 0.5 } });
+      });
     }
-    geometry.edges.forEach(([a, b], index) => {
-      const near = onSegment(point, a, b);
-      if (near.distance <= radius && (!edge || near.distance < edge.distance)) {
-        edge = { x: near.x, y: near.y, kind: 'edge', target, ref: { kind: 'edge', index, t: Math.round(near.t * 10000) / 10000 }, distance: near.distance };
-      }
-    });
-    if (geometry.ellipse) {
-      const near = onEllipse(point, geometry.ellipse);
-      if (near.distance <= radius && (!edge || near.distance < edge.distance)) {
-        edge = { x: near.x, y: near.y, kind: 'edge', target, ref: { kind: 'edge', angle: Math.round(near.angle * 10000) / 10000 }, distance: near.distance };
+    const spot = edgeSnapOf(target, geometry, point, radius);
+    if (spot && (!edge || spot.distance < edge.distance)) edge = spot;
+    near.push(target);
+  }
+  // Przecięcia (od 1.42): linie dwóch różnych elementów w pobliżu punktu; przyklejenie – do krawędzi
+  // tego z nich, na którym punkt przecięcia da się zapisać (prosta i kreska pióra – nie).
+  const reach = radius * 1.4;
+  const lines = near.map((target) => ({ target, lines: linesNear(target, point, reach, boxOf) })).filter((item) => item.lines.length > 0).slice(0, 24);
+  for (let first = 0; first < lines.length; first += 1) {
+    for (let second = first + 1; second < lines.length; second += 1) {
+      for (const one of lines[first].lines) {
+        for (const two of lines[second].lines) {
+          const spot = crossing(one, two);
+          if (!spot) continue;
+          const distance = Math.hypot(point.x - spot.x, point.y - spot.y);
+          if (distance > reach || (corner && corner.distance <= distance)) continue;
+          let anchor = null;
+          for (const target of [lines[first].target, lines[second].target]) {
+            const geometry = isInk(target) ? null : snapGeometry(target, boxOf);
+            const on = geometry ? edgeSnapOf(target, geometry, spot, 1) : null;
+            if (on && Math.hypot(on.x - spot.x, on.y - spot.y) < 0.5) {
+              anchor = on;
+              break;
+            }
+          }
+          corner = { x: spot.x, y: spot.y, kind: 'intersection', target: anchor?.target ?? lines[first].target, ref: anchor?.ref ?? null, distance };
+        }
       }
     }
   }
@@ -145,6 +243,8 @@ export function findSnap(strokes, point, radius, { exclude = new Set(), boxOf = 
  */
 export function snapNormal(snap, boxOf = plainBox) {
   const { target } = snap;
+  // Kreska pióra (od 1.42) – w górę w prawo, jak bez krawędzi.
+  if (isInk(target)) return [Math.SQRT1_2, -Math.SQRT1_2];
   const box = isShape(target) ? null : boxOf(target);
   const center = box ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : { x: target.x, y: target.y };
   const away = [snap.x - center.x, snap.y - center.y];
@@ -153,7 +253,7 @@ export function snapNormal(snap, boxOf = plainBox) {
     return length > 1e-9 ? [x / length, y / length] : [0, -1];
   };
   const geometry = snapGeometry(target, boxOf);
-  const side = snap.kind === 'edge' && Number.isInteger(snap.ref?.index) ? geometry?.edges[snap.ref.index] : null;
+  const side = (snap.kind === 'edge' || snap.kind === 'mid') && Number.isInteger(snap.ref?.index) ? geometry?.edges[snap.ref.index] : null;
   if (!side) return unit(away);
   const [a, b] = side;
   let normal = unit([a.y - b.y, b.x - a.x]);

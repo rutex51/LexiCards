@@ -16,7 +16,7 @@ import { PAPER_STEP, SCALE_UNITS, cleanScale, dimFormat, dimensionParts, dimensi
 import { drawingLayers, elementLayers, layersOf } from './layers.js';
 import { frameLayout } from './title-block.js';
 import {
-  arcFromPoints, arcGeometry, circleShape, cornerSize, curveSamples, dimGeometry, dimKeys, isMeasure, polyFromPoints, polyPoints, shapeHatch,
+  arcFromPoints, arcGeometry, circleShape, cornerSize, curveSamples, dimGeometry, dimKeys, isMeasure, polyFromPoints, polyPoints, shapeAxes, shapeHatch,
   shapeOutline, shapePoint, shownDims, DIM_ARROW, DIM_FONT, POLY_NODES_MAX
 } from './shapes.js';
 
@@ -852,8 +852,9 @@ export function drawingToDxf(drawing) {
     }
     // Stałe wymiary kształtu (od 1.22.1) – jak wymiary narzędzia „Wymiar”.
     for (const key of shownDims(stroke)) writeDim(stroke, key);
-    // Kreskowanie (od 1.40) – odcinki linią ciągłą.
+    // Kreskowanie (od 1.40) – odcinki linią ciągłą; osie okręgu (od 1.42) – linią osiową.
     for (const [a, b] of shapeHatch(stroke)) line({ ...stroke, dash: 'solid' }, pt(a), pt(b));
+    for (const [a, b] of shapeAxes(stroke)) line({ ...stroke, dash: 'center' }, pt(a), pt(b));
     switch (stroke.shape) {
       case 'ray': {
         // Półprosta (od 1.40) – od pierwszego punktu do brzegu strony i dalej (DXF R12 nie ma RAY).

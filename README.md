@@ -1,4 +1,4 @@
-# LexiCards 1.41
+# LexiCards 1.42
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -50,8 +50,9 @@ Rysunek: wymiary graniczne, teoretycznie dokładny w ramce, pomocniczy w nawiasi
 Rysunek: kółko narzędzi przesuwane przytrzymaniem (w środku ekranu cały okrąg, schowanie – stałe miejsce), kółko od razu wyżej po zwinięciu menu, rząd 2 i 3 menu na iPhonie w osobnej pastylce, kształty tylko na kartce; fiszki: 1, 2 albo 3 obroty z wyborem treści każdej strony (wersja 1.39): [docs/RELEASE-1.39.md](docs/RELEASE-1.39.md).
 Rysunek – etap D, część 1: wielokąt foremny (3–12 boków), półprosta, zaokrąglenie R i faza narożników prostokąta, kreskowanie (kąt, odstęp, krzyżowe), pole i obwód zaznaczonego kształtu, kolejność rysowania (na wierzch, wyżej, niżej, na spód), DXF z łukami narożników i kreskowaniem (wersja 1.40): [docs/RELEASE-1.40.md](docs/RELEASE-1.40.md).
 Rysunek – etap D, część 2: odbicie i kopia odbita względem prostej przez dwa punkty, skalowanie o współczynnik, „Styl jak…” (kolor, grubość, linia, wypełnienie z dotkniętego elementu), ramka rysunkowa A4 albo A3 z tabliczką (tytuł, numer, materiał, skala, data, rysował; także w DXF) (wersja 1.41): [docs/RELEASE-1.41.md](docs/RELEASE-1.41.md).
+Rysunek – zaległości pakietów A i B planu: przyciąganie do środka kształtu, środka boku, przecięć i kresek pióra; wymiar poziomy i pionowy, wymiary łańcuchowe i od bazy, wymiar długości łuku; łuk ze środka, początku i końca; okrąg z osiami (znacznik środka) i polem ⌀; ramka A4 pionowo (wersja 1.42): [docs/RELEASE-1.42.md](docs/RELEASE-1.42.md).
 
-## Co potrafi wersja 1.41
+## Co potrafi wersja 1.42
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -153,7 +154,10 @@ Rysunek – etap D, część 2: odbicie i kopia odbita względem prostej przez d
   od środka do wierzchołka), **półprosta**, prostokąt z **zaokrągleniem R** albo **fazą**, **kreskowanie** (kąt,
   odstęp, krzyżowe), **pole i obwód** zaznaczonego kształtu i **kolejność rysowania** (na wierzch, wyżej, niżej,
   na spód). Od 1.41: odbicie i **kopia odbita względem prostej** przez dwa punkty, **skalowanie** o współczynnik,
-  **Styl jak…** (styl dotkniętego elementu na zaznaczonych) i **ramka rysunkowa** A4 albo A3 z tabliczką. Od 1.24.1 kartka w edytorze wygląda
+  **Styl jak…** (styl dotkniętego elementu na zaznaczonych) i **ramka rysunkowa** A4 albo A3 z tabliczką. Od 1.42:
+  przyciąganie do **środka kształtu**, **środka boku**, **przecięć** i kresek pióra, wymiar **poziomy** i **pionowy**,
+  wymiary **łańcuchowe** i **od bazy**, wymiar **długości łuku**, **łuk ze środka**, okrąg z **osiami** i polem **⌀**,
+  ramka **A4 pionowo**. Od 1.24.1 kartka w edytorze wygląda
   jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
@@ -871,6 +875,20 @@ dolnym rogu: Rysował, Data (na start dzisiejsza), Skala, Format, Tytuł, Materi
 z kratki rysunku i wielkości arkusza (np. kratka = 1 cm na A4 – „1:1,19”). Ramka jest częścią tła kartki (ukrycie tła
 w warstwach ukrywa i ją), widać ją na obrazie w notatce i w PDF, a w DXF – na osobnej warstwie **RAMKA** (łamane, linie,
 teksty); format rysunku – 14.
+**Przyciąganie i wymiary – uzupełnienia** (od 1.42): punkty odcinka, wymiaru, okręgu i łuku przyciągają się także do
+**środka kształtu** (prostokąt, wielokąt, trójkąt – środek ciężkości, wielokąt foremny – środek okręgu opisanego; znacznik
+– kółko z krzyżykiem), **środka boku** (trójkąt; koniec przyklejony zostaje na środku, gdy bok się wydłuża), **przecięcia**
+dwóch linii (×; przyklejone do krawędzi jednej z nich) i **kresek pióra** (koniec i linia – bez przyklejania). Wymiar
+**Długość** ma pod menu kierunek: **Równoległy**, **Poziomy** albo **Pionowy** – poziomy mierzy odległość w poziomie,
+linia wymiarowa biegnie poziomo za wyższym (niższym) punktem; zaznaczonemu wymiarowi kierunek zmienisz w trzecim menu
+(**Kierunek**). Nad zaznaczonym wymiarem długości: **Łańcuch** – każde dotknięcie punktu dodaje wymiar od końca poprzedniego
+w tej samej linii; **Od bazy** – od początku wymiaru bazowego, każdy piętro dalej (Esc – koniec; każdy wymiar to jeden
+krok cofania). Nowe narzędzie **Dł. łuku** w grupie Wymiary (i w zestawie Metrologia): dotknij łuku – łuk wymiarowy
+współśrodkowy na zewnątrz i liczba ze znakiem **⌒** wzdłuż łuku (tolerancje jak wymiaru długości). **Łuk** ma pod menu
+**3 pkt** albo **Środek** (środek, początek – promień, koniec – kierunek; łuk przeciwnie do ruchu wskazówek zegara).
+**Okrąg** i elipsa – **Osie** w trzecim menu: krzyż linii osiowych przez środek, wystający poza obrys (znacznik środka;
+także w DXF – linią CENTER); zaznaczony okrąg ma jedno pole **⌀** – wpisana średnica zmienia oba boki. Ramka rysunkowa
+także **A4 pionowo** (arkusz 210 × 297 mm, tabliczka na całą szerokość ramki). Format rysunku – 15.
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę

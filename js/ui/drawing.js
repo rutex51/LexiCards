@@ -80,7 +80,9 @@ import {
   segmentCaps, segmentDegrees, setSegment, shapeContains, shapeFromDrag, shapeHandles, shapePoint, shownDims, skewDegrees, touchesShape,
   withCaps, withDims, ELLIPSE_MODES, ELLIPSE_MODE_LABELS, angleDimFromPoints, arcFromPoints, arcGeometry,
   angleDimDegrees, circleFromPoints, dimAwayFrom, dimFromPoints, dimMode, isArc, isMeasure,
-  CORNER_LABELS, HATCH_ANGLES, HATCH_GAPS, HATCH_GAP_LABELS, NGON_SIDES, cleanHatch, ngonSides, withCorner, withNgonSides, withShapeFill
+  CORNER_LABELS, HATCH_ANGLES, HATCH_GAPS, HATCH_GAP_LABELS, NGON_SIDES, cleanHatch, ngonSides, withCorner, withNgonSides, withShapeFill,
+  ARC_MODES, ARC_MODE_LABELS, DIM_AXES, DIM_AXIS_LABELS, DIM_OFFSET_LIMITS, DIM_TIER, arcDimFromArc, arcDimLength, arcFromCenter, dimAxis, measuredLength,
+  withAxes, withDimAxis
 } from '../core/shapes.js';
 import {
   DEFAULT_PAPER_LEVEL, DEFAULT_TEMPLATE_LEVEL, LEVEL_LABELS, PAPER_COLORS, TEMPLATE_ALPHA, TEMPLATE_CORNERS, TEMPLATE_LABELS, centerTemplate,
@@ -853,6 +855,9 @@ export function openDrawingEditor({
     // Od 1.41: skalowanie o współczynnik i „Styl jak…” – styl dotkniętego elementu na zaznaczonych.
     const scaleButton = selectionButton('drawing-selection-scale', 'scale', 'Skaluj', 'Skaluj o współczynnik – wokół środka zaznaczenia', () => openScaleSheet());
     const matchButton = selectionButton('drawing-selection-match', 'brush', 'Styl jak…', 'Styl jak… – dotknij elementu, którego kolor, grubość, linię i wypełnienie przenieść na zaznaczone', () => startPointPick('match'));
+    // Od 1.42: wymiary łańcuchowe i od bazy – po zaznaczonym wymiarze liniowym kolejne dotknięcia dodają wymiary.
+    const chainButton = selectionButton('drawing-selection-chain', 'dimChain', 'Łańcuch', 'Wymiary łańcuchowe – każde dotknięcie dodaje wymiar od końca poprzedniego (Esc – koniec)', () => startPointPick('chain'));
+    const baselineButton = selectionButton('drawing-selection-baseline', 'dimBaseline', 'Od bazy', 'Wymiary od bazy – każde dotknięcie dodaje wymiar od początku tego wymiaru, piętro wyżej (Esc – koniec)', () => startPointPick('baseline'));
     // Od 1.40: kolejność rysowania – na wierzch, wyżej, niżej, na spód (menu).
     const orderButton = selectionButton('drawing-selection-order', 'order', 'Kolejność', 'Kolejność rysowania – na wierzch, wyżej, niżej, na spód', () => openOrderMenu());
     orderButton.setAttribute('aria-haspopup', 'menu');
@@ -874,7 +879,7 @@ export function openDrawingEditor({
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
       // Od 1.41 nazwa i pole z obwodem w jednej kolumnie (na telefonie – pole i obwód w osobnym wierszu).
       h('span', { class: 'drawing__selection-head' }, selectionCount, selectionMeasure), moveButton, editButton, collapseButton, shapeTextButton, magnetButton, layersSelectionButton, copyButton, duplicateButton,
-      mirrorButton, scaleButton, matchButton, orderButton, arrayButton, explodeButton, embedButton, deleteButton);
+      chainButton, baselineButton, mirrorButton, scaleButton, matchButton, orderButton, arrayButton, explodeButton, embedButton, deleteButton);
     // Pola wymiarów zaznaczonego kształtu (od 1.17): na liniach ramki konstrukcyjnej, wpisywane z klawiatury.
     const dims = h('div', { class: 'drawing__dims', hidden: true, dataset: { testid: 'drawing-dims' } });
     // Od 1.22: animacja przewracania kartki (zdjęcia stron nad płótnem, tylko w trakcie).
@@ -1525,7 +1530,9 @@ export function openDrawingEditor({
     // (jeden krok cofania), Esc – bez zmiany. Od 1.19 oko przy polu: wymiar widoczny na rysunku na stałe.
     const DIM_FIELDS = [
       ['width', 'Szerokość', 'length'], ['height', 'Wysokość', 'length'], ['skew', 'Kąt pochylenia', 'angle'],
-      ['length', 'Długość', 'length'], ['angle', 'Kąt', 'angle']
+      ['length', 'Długość', 'length'], ['angle', 'Kąt', 'angle'],
+      // Od 1.42: wymiar długości łuku (liczba tylko do odczytu).
+      ['arc', 'Długość łuku', 'length']
     ];
     const dimFields = Object.fromEntries(DIM_FIELDS.map(([key, label, kind]) => {
       const input = h('input', {
@@ -1533,6 +1540,8 @@ export function openDrawingEditor({
         autocomplete: 'off', spellcheck: 'false', 'aria-label': label, dataset: { testid: `drawing-dim-${key}` }
       });
       const unit = h('span', { class: 'drawing__dim-unit', 'aria-hidden': 'true' });
+      // Od 1.42: znak ⌀ przed polem szerokości okręgu.
+      const prefix = h('span', { class: 'drawing__dim-prefix', hidden: true, 'aria-hidden': 'true', dataset: { testid: `drawing-dim-prefix-${key}` } }, '⌀');
       const eye = h('button', {
         type: 'button', class: 'drawing__dim-eye', 'aria-pressed': 'false', dataset: { testid: `drawing-dim-eye-${key}` },
         onPointerdown: (event) => event.stopPropagation(),
@@ -1550,8 +1559,8 @@ export function openDrawingEditor({
         title: 'Przeciągnij – odsunięcie linii wymiarowej (następne wymiary dostaną ten sam odstęp)', dataset: { testid: `drawing-dim-grip-${key}` },
         onPointerdown: (event) => startDimDrag(event, key)
       }, icon('dimDrag', { size: 14 }));
-      const box = h('div', { class: 'drawing__dim', hidden: true, dataset: { testid: `drawing-dim-box-${key}` } }, h('label', { class: 'drawing__dim-field', title: label }, input, unit), eye, marks, grip);
-      const field = { key, kind, label, box, input, unit, eye, marks, grip, shown: null, dirty: false };
+      const box = h('div', { class: 'drawing__dim', hidden: true, dataset: { testid: `drawing-dim-box-${key}` } }, h('label', { class: 'drawing__dim-field', title: label }, prefix, input, unit), eye, marks, grip);
+      const field = { key, kind, label, box, input, unit, prefix, eye, marks, grip, shown: null, dirty: false };
       input.addEventListener('input', () => { field.dirty = true; });
       input.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
@@ -1580,7 +1589,10 @@ export function openDrawingEditor({
     /** Wartość pola dla kształtu (długości w skali rysunku – od 1.22.1 w stylu technicznym w mm, kąty w stopniach). */
     function dimValue(key, shape) {
       const factor = dimFactor(drawing.scale, dimFormat(drawing));
-      if (key === 'width' || key === 'length') return toScaleLength(shape.w, drawing.scale) * factor;
+      // Od 1.42: wymiar poziomy i pionowy – rzut, długość łuku – po łuku.
+      if (key === 'length') return toScaleLength(shape.shape === 'dim' ? measuredLength(shape) : shape.w, drawing.scale) * factor;
+      if (key === 'arc') return toScaleLength(arcDimLength(shape), drawing.scale) * factor;
+      if (key === 'width') return toScaleLength(shape.w, drawing.scale) * factor;
       if (key === 'height') return toScaleLength(shape.h, drawing.scale) * factor;
       if (key === 'skew') return skewDegrees(shape);
       // Wymiar kąta (od 1.34) – zmierzony kąt.
@@ -1602,7 +1614,9 @@ export function openDrawingEditor({
       }
       const units = fromScaleLength(value / dimFactor(drawing.scale, dimFormat(drawing)), drawing.scale);
       let next;
-      if (field.key === 'width') next = resizeShape(shape, { w: units });
+      // Od 1.42 okrąg zostaje okręgiem: pole ⌀ zmienia szerokość i wysokość.
+      if ((field.key === 'width' || field.key === 'height') && isCircle(shape)) next = resizeShape(shape, { w: units, h: units });
+      else if (field.key === 'width') next = resizeShape(shape, { w: units });
       else if (field.key === 'height') next = resizeShape(shape, { h: units });
       else if (field.key === 'length') next = setSegment(shape, { length: units });
       else if (field.key === 'angle') next = setSegment(shape, { degrees: value });
@@ -1630,9 +1644,12 @@ export function openDrawingEditor({
       dims.classList.toggle('drawing__dims--busy', Boolean(active) && active.kind !== 'dim-offset');
       const places = dimPlaces(shape);
       const shown = shownDims(shape);
+      // Od 1.42 okrąg: jedno pole ⌀ (szerokość), bez wysokości i pochylenia – chyba że widoczne na rysunku.
+      const circle = isCircle(shape);
       for (const field of Object.values(dimFields)) {
-        const place = places[field.key];
+        const place = (circle && (field.key === 'height' || field.key === 'skew') && !shown.includes(field.key)) ? null : places[field.key];
         field.box.hidden = !place;
+        field.prefix.hidden = !(circle && field.key === 'width');
         if (!place) continue;
         if (document.activeElement !== field.input && !field.dirty) {
           field.input.value = formatNumber(dimValue(field.key, shape));
@@ -2327,6 +2344,9 @@ export function openDrawingEditor({
       mirrorButton.hidden = Boolean(snip) || !canTurn(items);
       orderButton.hidden = Boolean(snip) || selectionKind !== 'whole' || items.length === drawing.strokes.length;
       scaleButton.hidden = Boolean(snip) || selectionKind !== 'whole' || !canTurn(items);
+      const linearMeasure = Boolean(shape) && shape.shape === 'dim' && dimMode(shape) === 'linear';
+      chainButton.hidden = !linearMeasure;
+      baselineButton.hidden = !linearMeasure;
       matchButton.hidden = Boolean(snip) || selectionKind !== 'whole' || !items.some((stroke) => hasStyle(stroke) || isArray(stroke));
       deleteButton.hidden = Boolean(snip);
       embedButton.hidden = !onEmbed;
@@ -2353,7 +2373,8 @@ export function openDrawingEditor({
     function multiKind() {
       if (tool !== 'shape') return null;
       if (tools.shape === 'ellipse' && tools.ellipseMode === 'three') return 'circle3';
-      if (tools.shape === 'arc') return 'arc';
+      // Od 1.42 łuk także ze środka, początku i końca.
+      if (tools.shape === 'arc') return tools.arcMode === 'center' ? 'arcCenter' : 'arc';
       if (tools.shape === 'dim' && tools.dimMode === 'angle') return 'angle';
       return null;
     }
@@ -2362,11 +2383,14 @@ export function openDrawingEditor({
     const POINT_HINTS = {
       circle3: ['Okrąg przez 3 punkty: dotknij pierwszego punktu (albo przeciągnij od pierwszego do drugiego)', 'Okrąg: dotknij drugiego punktu · Esc – od nowa', 'Okrąg: dotknij trzeciego punktu · Esc – od nowa'],
       arc: ['Łuk: przeciągnij od początku do końca (albo dotknij obu)', 'Łuk: dotknij końca · Esc – od nowa', 'Łuk: dotknij punktu, przez który ma przejść · Esc – od nowa'],
+      arcCenter: ['Łuk: dotknij środka (albo przeciągnij od środka do początku)', 'Łuk: dotknij początku – promień · Esc – od nowa',
+        'Łuk: dotknij końca – łuk biegnie przeciwnie do ruchu wskazówek zegara · Esc – od nowa'],
       angle: ['Kąt: przeciągnij od wierzchołka wzdłuż pierwszego ramienia', 'Kąt: dotknij punktu na pierwszym ramieniu · Esc – od nowa', 'Kąt: dotknij punktu na drugim ramieniu · Esc – od nowa']
     };
     const DIM_HINTS = {
       linear: 'Wymiar: przeciągnij od punktu do punktu albo dotknij krawędzi', diameter: 'Średnica: dotknij okręgu albo łuku (albo przeciągnij przez średnicę)',
-      radius: 'Promień: dotknij okręgu albo łuku (albo przeciągnij od środka do okręgu)'
+      radius: 'Promień: dotknij okręgu albo łuku (albo przeciągnij od środka do okręgu)',
+      arc: 'Długość łuku: dotknij łuku'
     };
     /** Podpowiedź przy narzędziach z punktów (od 1.34): co dotknąć teraz. */
     function updateShapeHint() {
@@ -2485,9 +2509,13 @@ export function openDrawingEditor({
       return [kind, button];
     }));
     // Od 1.36 rodzaje wymiaru – osobne narzędzia w górnym menu (do 1.35 wybór pod menu).
-    const DIM_TOOLS = { linear: ['Długość', 'dimension'], angle: ['Kąt', 'dimAngle'], radius: ['Promień', 'dimRadius'], diameter: ['Średnica', 'dimDiameter'] };
-    const dimButtons = new Map(Object.entries(DIM_TOOLS).map(([mode, [label, iconName]]) => {
-      const button = menuButton(`dim:${mode}`, `Wymiar – ${label.toLowerCase()}`, iconName, `drawing-measure-${mode}`, label);
+    // Od 1.42 także długość łuku.
+    const DIM_TOOLS = {
+      linear: ['Długość', 'dimension'], angle: ['Kąt', 'dimAngle'], radius: ['Promień', 'dimRadius'], diameter: ['Średnica', 'dimDiameter'],
+      arc: ['Długość łuku', 'dimArc', 'Dł. łuku']
+    };
+    const dimButtons = new Map(Object.entries(DIM_TOOLS).map(([mode, [label, iconName, short]]) => {
+      const button = menuButton(`dim:${mode}`, `Wymiar – ${label.toLowerCase()}`, iconName, `drawing-measure-${mode}`, short ?? label);
       button.setAttribute('aria-pressed', 'false');
       return [mode, button];
     }));
@@ -2602,11 +2630,15 @@ export function openDrawingEditor({
       }, short[mode][0] === short[mode][1] ? short[mode][0]
         : [h('span', { class: 'drawing__wide-label' }, short[mode][0]), h('span', { class: 'drawing__narrow-label' }, short[mode][1])])));
     const ellipseModes = modeChoices(ELLIPSE_MODES, ELLIPSE_MODE_LABELS, ELLIPSE_SHORT, 'Okrąg i elipsa', 'drawing-ellipse', 'ellipseMode');
+    // Od 1.42: łuk przez 3 punkty albo ze środka; wymiar liniowy równoległy, poziomy albo pionowy.
+    const arcModes = modeChoices(ARC_MODES, ARC_MODE_LABELS, { three: ['3 pkt', '3 pkt'], center: ['Środek, początek, koniec', 'Środek'] }, 'Łuk', 'drawing-arc', 'arcMode');
+    const dimAxes = modeChoices(DIM_AXES, DIM_AXIS_LABELS, { aligned: ['Równoległy', 'Równol.'], h: ['Poziomy', 'Poziomy'], v: ['Pionowy', 'Pionowy'] },
+      'Wymiar liniowy', 'drawing-dim-axis', 'dimAxis');
     // Od 1.35 trzecie menu kształtów: styl nowych kształtów (i zaznaczonych) – znacznik punktu, rodzaj linii,
     // wypełnienie, zakończenia; kilka grup – przyciski z rozwijanym wyborem; ⓘ rozwija w dół resztę (przełączniki, opis).
     const styleRow = h('div', { class: 'drawing__group drawing__style-row', hidden: true, dataset: { testid: 'drawing-style-row' } });
     const styleDrop = h('div', { class: 'drawing__style-drop', hidden: true, dataset: { testid: 'drawing-style-drop' } });
-    const choices = h('div', { class: 'drawing__choices', dataset: { testid: 'drawing-choices' } }, eraserModes, ellipseModes, styleRow);
+    const choices = h('div', { class: 'drawing__choices', dataset: { testid: 'drawing-choices' } }, eraserModes, ellipseModes, arcModes, dimAxes, styleRow);
     // Od 1.35 wybór narzędzi ogólnych (zaznaczanie: obszar, tryb, „Wklej”, „Zaznacz wszystko”) – nad dolnym paskiem.
     const dockChoices = h('div', { class: 'drawing__choices drawing__choices--dock', hidden: true, dataset: { testid: 'drawing-dock-choices' } }, selectShapes, selectModes, selectGroup);
     const topHandle = h('button', {
@@ -2837,9 +2869,13 @@ export function openDrawingEditor({
       if (optionRow.hidden) setOptionsOpen(false);
       ellipseModes.hidden = !(tool === 'shape' && tools.shape === 'ellipse') || !toolInMenu;
       for (const button of ellipseModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.ellipseMode));
+      arcModes.hidden = !(tool === 'shape' && tools.shape === 'arc') || !toolInMenu;
+      for (const button of arcModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.arcMode));
+      dimAxes.hidden = !(tool === 'shape' && tools.shape === 'dim' && tools.dimMode === 'linear') || !toolInMenu;
+      for (const button of dimAxes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.dimAxis));
       for (const [mode, button] of dimButtons) button.setAttribute('aria-pressed', String(tool === 'shape' && tools.shape === 'dim' && tools.dimMode === mode));
       renderStyleRow();
-      choices.hidden = [eraserModes, ellipseModes, styleRow].every((group) => group.hidden);
+      choices.hidden = [eraserModes, ellipseModes, arcModes, dimAxes, styleRow].every((group) => group.hidden);
       dockChoices.hidden = [selectShapes, selectModes, selectGroup].every((group) => group.hidden);
       updateShapeHint();
       for (const button of selectShapes.children) button.setAttribute('aria-checked', String(button.dataset.shape === tools.selectShape));
@@ -3784,12 +3820,16 @@ export function openDrawingEditor({
       curve: 'Strzałka po łuku: przeciągnij od początku do końca. Zaznaczona ma dwa punkty pośrednie – przeciągnij je, łuk przechodzi przez nie. '
         + 'Rodzaj linii i końce – pod menu.',
       ellipse: 'Okrąg i elipsa – wybór pod menu: Ramka (prostokąt przeciągnięcia), Środek i R (od środka do okręgu), 2 pkt (średnica – od punktu do punktu), '
-        + '3 pkt (okrąg przez trzy dotknięte punkty). Punkty przyciągają się do narożników, krawędzi i środków okręgów.',
-      arc: 'Łuk przez trzy punkty: przeciągnij od początku do końca (albo dotknij obu), potem dotknij punktu, przez który ma przejść. '
+        + '3 pkt (okrąg przez trzy dotknięte punkty). Punkty przyciągają się do narożników, środków boków i kształtów, przecięć, krawędzi '
+        + 'i końców kresek. Osie – pod menu: krzyż osi przez środek okręgu (znacznik środka). Średnicę okręgu wpiszesz w polu ⌀ przy ramce.',
+      // Od 1.42: łuk ze środka, wymiar poziomy i pionowy, długość łuku.
+      arc: 'Łuk – wybór pod menu: 3 pkt (przeciągnij od początku do końca albo dotknij obu, potem dotknij punktu, przez który ma przejść) albo '
+        + 'Środek (dotknij środka, początku i końca – łuk biegnie od początku do końca przeciwnie do wskazówek zegara). '
         + 'Punkty zaznaczonego łuku: początek, środek łuku i koniec – przeciągnij je.',
-      dim: 'Wymiar – wybór pod menu: Liniowy (przeciągnij od punktu do punktu albo dotknij krawędzi), Średnica ⌀ i Promień R (dotknij okręgu albo łuku), '
-        + 'Kąt (wierzchołek i po punkcie na ramionach). Końce przyciągnięte do kształtu idą za nim. Liczba mierzy rysunek w jego skali; ± przy liczbie – znak '
-        + 'i tolerancja, uchwyt przy liczbie – odsunięcie (także na drugą stronę).'
+      dim: 'Wymiar – wybór pod menu: Liniowy (przeciągnij od punktu do punktu albo dotknij krawędzi; kierunek pod menu – wzdłuż, poziomy, pionowy), '
+        + 'Średnica ⌀ i Promień R (dotknij okręgu albo łuku), Kąt (wierzchołek i po punkcie na ramionach), Długość łuku (dotknij łuku). '
+        + 'Końce przyciągnięte do kształtu idą za nim. Zaznaczony wymiar liniowy: Łańcuch i Od bazy – kolejne wymiary jednym dotknięciem punktu. '
+        + 'Liczba mierzy rysunek w jego skali; ± przy liczbie – znak i tolerancja, uchwyt przy liczbie – odsunięcie (także na drugą stronę).'
     };
     function renderShapePanel() {
       if (shapePanel.hidden) return;
@@ -3816,7 +3856,9 @@ export function openDrawingEditor({
     let styleKey = '';
     /** Narzędzie jest w grupie pokazywanej w górnym menu (od 1.36 – inaczej trzeci pasek tylko w trybie edycji). */
     let toolInMenu = true;
-    const STYLE_LABELS = { mark: 'Znacznik', dash: 'Linia', fill: 'Wypełnienie', caps: 'Końce', sides: 'Boki', corner: 'Narożniki' };
+    const STYLE_LABELS = { mark: 'Znacznik', dash: 'Linia', fill: 'Wypełnienie', caps: 'Końce', sides: 'Boki', corner: 'Narożniki', axes: 'Osie', axis: 'Kierunek' };
+    /** Wymiar liniowy narzędzia „Wymiar” (od 1.42 – kierunek do wyboru). */
+    const isLinearMeasure = (shape) => shape.shape === 'dim' && dimMode(shape) === 'linear';
     /** Narożniki jako napis do porównań ('none' – ostre, 'round:11'). */
     const cornerKey = (corner) => (corner ? `${corner.kind}:${corner.size}` : 'none');
     const cornerOfKey = (key) => (!key || key === 'none' ? null : { kind: key.split(':')[0], size: Number(key.split(':')[1]) });
@@ -3848,7 +3890,10 @@ export function openDrawingEditor({
           caps,
           // Od 1.40: liczba boków wielokąta foremnego i narożniki prostokąta.
           sides: pick((shape) => shape.shape === 'ngon', ngonSides, tools.ngonSides),
-          corner: pick((shape) => shape.shape === 'rect', (shape) => cornerKey(shape.corner), cornerKey(tools.rectCorner))
+          corner: pick((shape) => shape.shape === 'rect', (shape) => cornerKey(shape.corner), cornerKey(tools.rectCorner)),
+          // Od 1.42: osie okręgu i elipsy; kierunek zaznaczonego wymiaru liniowego (nowego – w wyborze pod menu).
+          axes: pick((shape) => shape.shape === 'ellipse', (shape) => Boolean(shape.axes), tools.ellipseAxes),
+          axis: targets.length > 0 ? pick(isLinearMeasure, (shape) => dimAxis(shape) ?? 'aligned', tools.dimAxis) : undefined
         }
       };
     }
@@ -3858,6 +3903,8 @@ export function openDrawingEditor({
       if (key === 'dash') return DASH_ICONS[value ?? 'solid'];
       if (key === 'caps') return CAP_ICONS[value?.end ?? 'none'];
       if (key === 'sides') return 'shapeNgon';
+      if (key === 'axes') return 'centerMark';
+      if (key === 'axis') return value === 'v' ? 'dimVertical' : value === 'h' ? 'dimension' : 'dimAligned';
       if (key === 'corner') return CORNER_ICONS[cornerOfKey(value)?.kind ?? 'none'];
       return value === 'hatch' ? 'hatch' : 'fill';
     }
@@ -3895,6 +3942,7 @@ export function openDrawingEditor({
         if (key === 'hatch') tools.shapeStyles = withShapeToolStyle(tools, state.kind, 'hatch', cleanHatch({ ...toolHatch(state.kind), ...value })).shapeStyles;
         if (key === 'sides') tools.ngonSides = value;
         if (key === 'corner') tools.rectCorner = value;
+        if (key === 'axes') tools.ellipseAxes = value;
         saveTools(tools);
       }
       if (key === 'mark') restyle(isPointShape, (shape) => ({ ...shape, mark: value }));
@@ -3904,6 +3952,8 @@ export function openDrawingEditor({
       if (key === 'hatch') restyle((shape) => canFill(shape) && shape.fill === 'hatch', (shape) => ({ ...shape, hatch: cleanHatch({ ...cleanHatch(shape.hatch), ...value }) }));
       if (key === 'sides') restyle((shape) => shape.shape === 'ngon', (shape) => withNgonSides(shape, value));
       if (key === 'corner') restyle((shape) => shape.shape === 'rect', (shape) => withCorner(shape, value));
+      if (key === 'axes') restyle((shape) => shape.shape === 'ellipse', (shape) => withAxes(shape, value));
+      if (key === 'axis') restyle(isLinearMeasure, (shape) => withDimAxis(shape, value));
       updateToolbar();
       requestLive();
     }
@@ -3965,6 +4015,14 @@ export function openDrawingEditor({
       }
       if (key === 'sides') return sidesTiles(value);
       if (key === 'corner') return cornerTiles(value);
+      if (key === 'axes') {
+        return h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Osie okręgu' }, [[false, 'Bez osi', 'off'], [true, 'Osie', 'on']].map(([axes, label, id]) => segmentButton(
+          label, value === axes, `drawing-axes-${id}`, () => pickStyle('axes', axes))));
+      }
+      if (key === 'axis') {
+        return h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Kierunek wymiaru' }, DIM_AXES.map((axis) => segmentButton(
+          DIM_AXIS_LABELS[axis], value === axis, `drawing-axis-${axis}`, () => pickStyle('axis', axis))));
+      }
       const fills = h('div', { class: 'drawing__segmented drawing__segmented--wrap', role: 'radiogroup', 'aria-label': 'Wypełnienie' }, SHAPE_FILLS.map((fill) => h('button', {
         type: 'button', role: 'radio', 'aria-checked': String(fill === value), dataset: { testid: `drawing-fill-default-${fill}` },
         onClick: () => pickStyle('fill', fill)
@@ -4771,7 +4829,9 @@ export function openDrawingEditor({
           { label: 'Wczytaj DXF…', icon: 'upload', testID: 'drawing-dxf-import', onSelect: () => importDxf() },
           { label: 'Zapisz kartkę jako DXF', icon: 'download', testID: 'drawing-dxf-export', onSelect: () => exportDxf() },
           // Od 1.41: ramka rysunkowa z tabliczką (kartka bez zdjęcia).
-          drawing.photo ? null : { label: drawing.frame ? `Ramka rysunkowa ${drawing.frame.format}…` : 'Ramka rysunkowa…', icon: 'titleBlock', testID: 'drawing-frame', onSelect: () => editFrame() },
+          drawing.photo ? null : {
+            label: drawing.frame ? `Ramka rysunkowa ${FRAME_FORMATS[drawing.frame.format].label}…` : 'Ramka rysunkowa…', icon: 'titleBlock', testID: 'drawing-frame', onSelect: () => editFrame()
+          },
           added ? 'separator' : null,
           added ? { label: 'Usuń tę kartkę', icon: 'trash', destructive: true, testID: 'drawing-page-delete', onSelect: () => deletePage() } : null
         ]
@@ -4794,7 +4854,7 @@ export function openDrawingEditor({
         build: () => [
           segmented({
             name: 'drawing-frame-format', value: draft.format, label: 'Arkusz',
-            options: [{ value: 'none', label: 'Bez ramki' }, ...Object.keys(FRAME_FORMATS).map((format) => ({ value: format, label: `${format} poziomo` }))],
+            options: [{ value: 'none', label: 'Bez ramki' }, ...Object.entries(FRAME_FORMATS).map(([format, size]) => ({ value: format, label: size.label }))],
             onChange: (value) => {
               draft.format = value;
               if (FRAME_FORMATS[value]) inputs.scale.placeholder = autoScale(value);
@@ -4826,7 +4886,7 @@ export function openDrawingEditor({
           changed = true;
           updateToolbar();
           requestRender();
-          flash(next ? `Ramka ${next.format} z tabliczką` : 'Bez ramki rysunkowej');
+          flash(next ? `Ramka ${FRAME_FORMATS[next.format].label} z tabliczką` : 'Bez ramki rysunkowej');
         }
       });
     }
@@ -5150,7 +5210,9 @@ export function openDrawingEditor({
     const PICK_HINTS = {
       mirror: ['Odbicie: dotknij pierwszego punktu osi (Esc – bez odbicia)', 'Odbicie: dotknij drugiego punktu osi (Esc – bez odbicia)'],
       'mirror-copy': ['Kopia odbita: dotknij pierwszego punktu osi (Esc – bez kopii)', 'Kopia odbita: dotknij drugiego punktu osi (Esc – bez kopii)'],
-      match: ['Dotknij elementu, którego styl przenieść na zaznaczone (Esc – bez zmian)']
+      match: ['Dotknij elementu, którego styl przenieść na zaznaczone (Esc – bez zmian)'],
+      chain: ['Łańcuch: dotknij następnego punktu – wymiar od końca poprzedniego (Esc – koniec)'],
+      baseline: ['Od bazy: dotknij następnego punktu – wymiar od początku bazowego, piętro dalej (Esc – koniec)']
     };
     /** Podpowiedź wyboru – zostaje do końca wyboru (bez znikania po kilku sekundach). */
     function showPickHint() {
@@ -5160,7 +5222,9 @@ export function openDrawingEditor({
     }
     function startPointPick(kind) {
       if (selection.size === 0 || snip) return;
-      pointPick = { kind, first: null };
+      const [only] = selection;
+      // Łańcuch i od bazy (od 1.42): base – wymiar bazowy, last – ostatnio dodany.
+      pointPick = { kind, first: null, ...(kind === 'chain' || kind === 'baseline' ? { base: only, last: only } : {}) };
       showPickHint();
       requestLive();
     }
@@ -5172,8 +5236,50 @@ export function openDrawingEditor({
       else notice.hidden = true;
       requestLive();
     }
+    /**
+     * Wymiar łańcuchowy albo od bazy (od 1.42) do punktu `point`: od końca ostatniego wymiaru (łańcuch) albo od początku
+     * bazowego (od bazy), ten sam kierunek; linia wymiarowa w jednej linii z poprzednią (łańcuch) albo piętro dalej (od bazy).
+     * Jeden krok cofania; nowy wymiar zaznaczony, wybór trwa.
+     */
+    function addLinkedDim(point, event) {
+      const snap = edgeSnapAt(point, event);
+      const at = snap ? { x: snap.x, y: snap.y } : point;
+      const { kind, base, last } = pointPick;
+      const from = kind === 'chain' ? shapePoint(last, 0.5, 0) : shapePoint(base, -0.5, 0);
+      if (Math.hypot(at.x - from.x, at.y - from.y) * view.scale < 8) {
+        flash('Dotknij innego punktu niż początek wymiaru.');
+        return;
+      }
+      const axis = dimAxis(base);
+      const previous = dimGeometry(last, 'length');
+      const normal = previous.normal;
+      const along = (item) => item.x * normal[0] + item.y * normal[1];
+      const line = along(previous.from) + (kind === 'baseline' ? DIM_TIER : 0);
+      const direction = Math.atan2(at.y - from.y, at.x - from.x);
+      const up = axis === 'h' ? [0, -1] : axis === 'v' ? [1, 0] : [Math.sin(direction), -Math.cos(direction)];
+      const side = up[0] * normal[0] + up[1] * normal[1] >= 0 ? 1 : -1;
+      // Poziomy i pionowy – linia wymiarowa dokładnie w linii (piętrze); równoległy – to samo odsunięcie (od bazy – dalej).
+      const reach = axis ? line - Math.max(along(from), along(at)) : Math.abs(dimOffset(last, 'length')) + (kind === 'baseline' ? DIM_TIER : 0);
+      const style = { color: base.color, size: base.size, axis: axis ?? 'aligned' };
+      const shape = dimFromPoints('linear', from, at, style, side * Math.max(DIM_OFFSET_LIMITS.min, reach));
+      history.begin();
+      const added = onActiveLayer(linkEnds(shape, [['start', edgeSnapAt(from, event)], ['end', snap]]));
+      drawing.strokes.push(added);
+      commitStep();
+      changed = true;
+      pointPick.last = added;
+      selection = new Set([added]);
+      selectionKind = 'whole';
+      showPickHint();
+      updateToolbar();
+      requestRender();
+    }
     /** Dotknięcie przy wyborze: punkt osi (przyciągnięty do narożników i krawędzi) albo element – wzór stylu. */
     function pickPointAt(point, event) {
+      if (pointPick.kind === 'chain' || pointPick.kind === 'baseline') {
+        addLinkedDim(point, event);
+        return;
+      }
       if (pointPick.kind === 'match') {
         const shown = shownStrokes();
         const [index] = strokesAt(shown, point.x, point.y, HANDLE_HIT / view.scale);
@@ -6722,12 +6828,16 @@ export function openDrawingEditor({
       return {
         color: inkHex(tools.penColor), size: Math.round(((width.min + width.max) / 2) * 10) / 10, fill: own.fill, caps: segmentDefaultCaps(),
         // Od 1.27: rodzaj linii i znacznik punktu; od 1.40 kreskowanie, boki wielokąta foremnego i narożniki prostokąta.
-        dash: own.dash, mark: tools.pointMark, hatch: own.hatch, sides: tools.ngonSides, corner: tools.rectCorner
+        dash: own.dash, mark: tools.pointMark, hatch: own.hatch, sides: tools.ngonSides, corner: tools.rectCorner,
+        // Od 1.42: osie okręgu, kierunek wymiaru liniowego.
+        axes: tools.ellipseAxes, axis: tools.dimAxis
       };
     };
     /** Styl nowego kształtu z rodzajem wymiaru i wzorem odsunięcia (od 1.34) – dla narzędzia „Wymiar”. */
     const newShapeStyle = () => ({ ...shapeStyle(), mode: tools.dimMode, offset: tools.dimOffset });
-    const dragShape = (from, to, event) => shapeFromDrag(tools.shape, from, to, newShapeStyle(), { tap: 0, lock: locked(event), mode: tools.ellipseMode });
+    // Długość łuku (od 1.42) – tylko dotknięcie łuku, bez kształtu z przeciągnięcia.
+    const dragShape = (from, to, event) => (tools.shape === 'dim' && tools.dimMode === 'arc' ? null
+      : shapeFromDrag(tools.shape, from, to, newShapeStyle(), { tap: 0, lock: locked(event), mode: tools.ellipseMode }));
     const common = (event, point) => ({ id: event.pointerId, touch: event.pointerType === 'touch', start: point, client: local(event) });
     /** Punkt poza kartką (od 1.39 nowe elementy powstają tylko na niej); `margin` – zapas w jednostkach strony. */
     const offPage = (point, margin = 0) => point.x < -margin || point.y < -margin || point.x > drawing.width + margin || point.y > drawing.height + margin;
@@ -6794,6 +6904,7 @@ export function openDrawingEditor({
     function pointsShape(kind, [a, b, c]) {
       if (kind === 'circle3') return circleFromPoints(a, b, c, shapeStyle());
       if (kind === 'arc') return arcFromPoints(a, b, c, shapeStyle());
+      if (kind === 'arcCenter') return arcFromCenter(a, b, c, shapeStyle());
       return angleDimFromPoints(a, b, c, shapeStyle());
     }
     /** Koniec gestu przy kształcie z punktów: nowy punkt; przy trzecim – kształt (jeden krok cofania), zostaje zaznaczony. */
@@ -6816,7 +6927,8 @@ export function openDrawingEditor({
         const shape = pointsShape(pending.kind, points.slice(0, 3));
         if (!shape) {
           points.splice(2);
-          flash(pending.kind === 'angle' ? 'Ramię kąta bez długości – dotknij innego punktu.' : 'Trzy punkty na jednej prostej – dotknij innego trzeciego punktu.');
+          flash(pending.kind === 'angle' ? 'Ramię kąta bez długości – dotknij innego punktu.'
+            : pending.kind === 'arcCenter' ? 'Koniec w kierunku początku – dotknij innego punktu.' : 'Trzy punkty na jednej prostej – dotknij innego trzeciego punktu.');
         } else {
           pending = null;
           history.add(onActiveLayer(shape));
@@ -6850,6 +6962,11 @@ export function openDrawingEditor({
     function measureAt(point) {
       const reach = HANDLE_HIT / view.scale;
       const style = newShapeStyle();
+      // Długość łuku (od 1.42): łuk pod palcem – wymiar na zewnątrz, z tymi samymi punktami co łuk.
+      if (tools.dimMode === 'arc') {
+        const target = [...shownStrokes()].reverse().find((stroke) => isShape(stroke) && isArc(stroke) && touchesShape(stroke, point.x, point.y, reach));
+        return target && arcGeometry(target) ? { shape: arcDimFromArc(target, style), links: [] } : null;
+      }
       if (tools.dimMode === 'diameter' || tools.dimMode === 'radius') {
         const target = [...shownStrokes()].reverse().find((stroke) => isShape(stroke) && (isArc(stroke) || isCircle(stroke)) && touchesShape(stroke, point.x, point.y, reach));
         const circle = target ? (isArc(target) ? arcGeometry(target) : { center: { x: target.x, y: target.y }, radius: target.w / 2 }) : null;
@@ -6865,7 +6982,8 @@ export function openDrawingEditor({
         return { shape: dimFromPoints('diameter', edge(-1), edge(1), style), links: isArc(target) ? [] : [['start', snapOn(target, edge(-1))], ['end', snapOn(target, edge(1))]] };
       }
       const snap = findSnap(shownStrokes(), point, reach, { boxOf: elementBox });
-      if (!snap || snap.kind !== 'edge' || !Number.isInteger(snap.ref.index)) return null;
+      // Od 1.42 także środek boku (to samo miejsce na krawędzi).
+      if (!snap || (snap.kind !== 'edge' && snap.kind !== 'mid') || !Number.isInteger(snap.ref?.index)) return null;
       const { target } = snap;
       if (isShape(target) && (isArc(target) || target.shape === 'curve' || target.shape === 'xline' || target.shape === 'ray')) return null;
       const geometry = snapGeometry(target, elementBox);
@@ -6879,11 +6997,13 @@ export function openDrawingEditor({
     /** Koniec gestu narzędzia „Wymiar” (od 1.34): przeciągnięcie – wymiar między punktami, dotknięcie – measureAt. */
     function finishDim(done) {
       let made = null;
-      if (!done.moved) {
-        if (done.hadSelection) return;
-        made = measureAt(done.start);
+      // Długość łuku (od 1.42) – zawsze dotknięcie (przeciągnięcie – w miejscu puszczenia).
+      if (!done.moved || tools.dimMode === 'arc') {
+        if (done.hadSelection && !done.moved) return;
+        made = measureAt(done.moved ? done.point : done.start);
         if (!made) {
-          flash(tools.dimMode === 'linear' ? 'Wymiar: przeciągnij od punktu do punktu albo dotknij krawędzi kształtu.' : 'Dotknij linii okręgu albo łuku.');
+          flash(tools.dimMode === 'linear' ? 'Wymiar: przeciągnij od punktu do punktu albo dotknij krawędzi kształtu.'
+            : tools.dimMode === 'arc' ? 'Dotknij linii łuku.' : 'Dotknij linii okręgu albo łuku.');
           return;
         }
       } else if (done.shape) {
@@ -6973,7 +7093,8 @@ export function openDrawingEditor({
     function linkEnds(stroke, links) {
       const ids = new Map();
       let next = stroke;
-      for (const [end, snap] of links) next = withLink(next, end, snap ? { ...snap.ref, id: ensureId(snap.target, ids) } : null);
+      // Od 1.42 miejsce bez zapisu (kreska pióra, przecięcie prostych) – koniec wolny.
+      for (const [end, snap] of links) next = withLink(next, end, snap?.ref ? { ...snap.ref, id: ensureId(snap.target, ids) } : null);
       return next;
     }
     /** Zastępuje element poprawionym z przyklejonymi albo odklejonymi końcami – jeden krok cofania. */
@@ -7027,7 +7148,7 @@ export function openDrawingEditor({
       }
       ctx.restore();
     }
-    /** Znacznik miejsca przyciągnięcia: kwadrat – narożnik, kółko – krawędź. */
+    /** Znacznik miejsca przyciągnięcia: kwadrat – narożnik, kółko – krawędź; od 1.42 trójkąt – środek boku, × – przecięcie. */
     function paintSnapMarker(ctx, snap) {
       const point = toScreen(snap);
       ctx.save();
@@ -7037,8 +7158,18 @@ export function openDrawingEditor({
       ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
       ctx.beginPath();
       if (snap.kind === 'corner') ctx.rect(point.x - 6, point.y - 6, 12, 12);
-      else ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
-      ctx.fill();
+      else if (snap.kind === 'mid') {
+        ctx.moveTo(point.x, point.y - 7);
+        ctx.lineTo(point.x + 7, point.y + 5);
+        ctx.lineTo(point.x - 7, point.y + 5);
+        ctx.closePath();
+      } else if (snap.kind === 'intersection') {
+        ctx.moveTo(point.x - 7, point.y - 7);
+        ctx.lineTo(point.x + 7, point.y + 7);
+        ctx.moveTo(point.x + 7, point.y - 7);
+        ctx.lineTo(point.x - 7, point.y + 7);
+      } else ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+      if (snap.kind !== 'intersection') ctx.fill();
       // Środek okręgu albo łuku (od 1.34) – kółko z krzyżykiem.
       if (snap.kind === 'center') {
         ctx.moveTo(point.x - 9, point.y);
@@ -7156,7 +7287,7 @@ export function openDrawingEditor({
           if (active.moved) active.shape = dragShape(active.start, point, event);
           // Koniec odcinka przyciągnięty (od 1.22) – dokładnie w tym miejscu, bez przyciągania kąta; od 1.34 także wymiaru i okręgu.
           active.endSnap = active.moved && snapsPoints() ? edgeSnapAt(point, event) : null;
-          if (active.endSnap) {
+          if (active.endSnap && active.shape) {
             active.shape = isSegment(active.shape) ? segmentBetween(active.shape, active.start, active.endSnap)
               : dragShape(active.start, { x: active.endSnap.x, y: active.endSnap.y }, event);
           }
@@ -7585,7 +7716,8 @@ export function openDrawingEditor({
         } else if (tool === 'eraser') {
           hover = toDrawing(event);
           requestLive();
-        } else if (pointPick?.first) {
+        } else if (pointPick && pointPick.kind !== 'match') {
+          // Oś odbicia pod myszą; łańcuch i od bazy (od 1.42) – miejsce przyciągnięcia.
           const at = toDrawing(event);
           const snap = edgeSnapAt(at, event);
           axisHover = snap ? { x: snap.x, y: snap.y } : at;
@@ -7776,7 +7908,7 @@ export function openDrawingEditor({
       }
       if (event.key === 'Escape' && pointPick) {
         event.preventDefault();
-        cancelPointPick(pointPick.kind === 'match' ? 'Bez przenoszenia stylu' : 'Bez odbicia');
+        cancelPointPick({ match: 'Bez przenoszenia stylu', chain: 'Koniec wymiarów łańcuchowych', baseline: 'Koniec wymiarów od bazy' }[pointPick.kind] ?? 'Bez odbicia');
         return;
       }
       // Kształt z punktów (od 1.34): Esc – od nowa.

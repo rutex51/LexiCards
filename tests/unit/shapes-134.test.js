@@ -171,8 +171,8 @@ test('rysunek 1.34: przyciąganie do środka okręgu i łuku, przyklejony promie
 test('rysunek 1.34: grupy – łuk w Kształtach, grupa Wymiary przed Symbolami, Metrologia z wymiarem (także zapisana z 1.33), ustawienia narzędzi', () => {
   assert.deepEqual(TOOL_GROUPS.map((group) => group.id), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols']);
   assert.ok(findGroup('right', 'shapes').items.includes('shape:arc'));
-  // Od 1.36 rodzaje wymiaru – osobne pozycje (do 1.35 jedna pozycja 'shape:dim').
-  assert.deepEqual(findGroup('right', 'dims').items, ['dim:linear', 'dim:angle', 'dim:radius', 'dim:diameter']);
+  // Od 1.36 rodzaje wymiaru – osobne pozycje (do 1.35 jedna pozycja 'shape:dim'); od 1.42 także długość łuku.
+  assert.deepEqual(findGroup('right', 'dims').items, ['dim:linear', 'dim:angle', 'dim:radius', 'dim:diameter', 'dim:arc']);
   assert.equal(PRESETS[0].items[0], 'dim:linear');
   // Metrologia zapisana w 1.33 (bez zmian użytkownika) dostaje wymiar; zmieniona – zostaje jak jest.
   const old = cleanToolGroups({ order: ['write', 'shapes', 'construct', 'text', 'symbols'], mine: [
