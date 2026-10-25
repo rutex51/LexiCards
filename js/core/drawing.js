@@ -42,6 +42,8 @@
 //   tylko kartka bez zdjęcia).
 //   Od 1.45 (format 17) kształty schematu blokowego i łącznik (core/shapes.js), diagramy 'vsm', 'timeline', 'defects',
 //   układ 'lanes' (tory); w ustawieniach narzędzi – zakończenia łącznika (connectorCaps).
+//   Od 1.47 (format 18) w strokes bryły { tool: 'solid', kind, x, y, dims, q, … } (core/solids.js) – rzut prostokątny
+//   bryły obracanej w przestrzeni.
 
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import { DEFAULT_RECENT_FITS, cleanRecentFits } from './fits.js';
@@ -57,6 +59,7 @@ import { cleanTable } from './tables.js';
 import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
 import { cleanFrame } from './title-block.js';
 import { cleanDiagram } from './diagrams.js';
+import { cleanSolid, solidBox } from './solids.js';
 import { cleanLayout } from './page-layouts.js';
 import { cleanRingPositions, cleanToolGroups, cleanUiHidden, defaultToolGroups } from './tool-ring.js';
 import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './layers.js';
@@ -70,9 +73,9 @@ import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './la
  * z kierunkiem struktury, odnośnik (1.38), 13 – wielokąt foremny, półprosta, narożniki prostokąta, kreskowanie (1.40),
  * 14 – ramka rysunkowa z tabliczką (1.41), 15 – wymiar długości łuku, wymiar poziomy i pionowy, osie okręgu,
  * arkusz A4 pionowo (1.42), 16 – diagramy Ishikawy i 5 × Dlaczego, układ kartki (1.44), 17 – kształty schematu blokowego,
- * łącznik, symbole i oś czasu VSM, legenda wad, tory (1.45).
+ * łącznik, symbole i oś czasu VSM, legenda wad, tory (1.45), 18 – bryły (1.47).
  */
-export const DRAWING_VERSION = 17;
+export const DRAWING_VERSION = 18;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -259,7 +262,7 @@ export const dimUnitNote = (format) => (formatOf(format).style === 'technical' ?
  * tolerancji (od 1.25).
  */
 export function hasMeasuredContent(drawing) {
-  return drawing.strokes.some((stroke) => stroke.tool === 'gdt'
+  return drawing.strokes.some((stroke) => stroke.tool === 'gdt' || (stroke.tool === 'solid' && stroke.showDims === true)
     || (isShape(stroke) && Array.isArray(stroke.dims) && stroke.dims.some((key) => isLengthKey(key))));
 }
 
@@ -339,7 +342,7 @@ export const TEXT_SIZE_LABELS = Object.freeze(['Mała', 'Średnia', 'Duża', 'Ba
 export const ELEMENT_TEXT_MAX = 2000;
 
 /** Czy to pole tekstowe, wzór, (od 1.15) kształt, (od 1.19) szyk albo (od 1.21) tabela lub karteczka – a nie kreska z punktami. */
-export const isElement = (stroke) => ['text', 'math', 'shape', 'array', 'table', 'sticky', 'gdt', 'datum', 'roughness', 'diagram'].includes(stroke?.tool);
+export const isElement = (stroke) => ['text', 'math', 'shape', 'array', 'table', 'sticky', 'gdt', 'datum', 'roughness', 'diagram', 'solid'].includes(stroke?.tool);
 
 // ---------------------------------------------------------------- tabele i karteczki (od 1.21)
 
@@ -361,13 +364,15 @@ export const STICKY_MIN = Object.freeze({ width: 160, height: 120 });
 export const STICKY_TEXT_MAX = 1000;
 /** Kolory karteczki { fill, ink } – według koloru karteczki; od 1.36 także gotowe kolory (karteczka z nasyceniem warstwy). */
 export const stickyColor = (id) => (id && typeof id === 'object' ? id : STICKY_COLORS.find((color) => color.id === id) ?? STICKY_COLORS[0]);
-/** Tabela, karteczka, (od 1.22.1) symbol metrologiczny i (od 1.44) diagram jakości – element z oknem poprawki. */
-export const isBox = (stroke) => stroke?.tool === 'table' || stroke?.tool === 'sticky' || isSymbol(stroke) || stroke?.tool === 'diagram';
+/** Tabela, karteczka, (od 1.22.1) symbol metrologiczny, (od 1.44) diagram jakości i (od 1.47) bryła – element z oknem poprawki. */
+export const isBox = (stroke) => stroke?.tool === 'table' || stroke?.tool === 'sticky' || isSymbol(stroke) || stroke?.tool === 'diagram' || stroke?.tool === 'solid';
 
 /** Prostokąt elementu { x, y, width, height }: zwinięta karteczka (od 1.21) – sama ikona. */
 export function elementBox(element) {
   if (element.tool === 'sticky' && element.collapsed) return { x: element.x, y: element.y, width: STICKY_ICON, height: STICKY_ICON };
   if (isSymbol(element)) return symbolBox(element);
+  // Bryła (od 1.47): (x, y) to jej środek – prostokąt z rzutu (z wymiarami).
+  if (element.tool === 'solid') return solidBox(element);
   return { x: element.x, y: element.y, width: element.width, height: element.height };
 }
 
@@ -939,6 +944,12 @@ export function pathLengthText(strokes, scale, format = 'unit') {
   if (lengths.length === 0) return null;
   return { count: lengths.length, text: lengthText(lengths.reduce((total, length) => total + length, 0), scale, format) };
 }
+/** Liczba wymiaru bryły (od 1.47): długość w jednostkach strony jak liczba wymiaru kształtu („⌀40”; opisowo – „⌀4 cm”). */
+export function solidDimText(dim, scale, format = 'unit') {
+  const technical = formatOf(format).style === 'technical';
+  const value = toScaleLength(dim.value, scale) * (technical ? dimFactor(scale, format) : 1);
+  return `${dim.prefix ?? ''}${formatNumber(value)}${technical ? '' : ` ${unitOf(cleanScale(scale).unit).label}`}`;
+}
 /** Długość w jednostkach strony jako napis w jednostce liczb wymiarów rysunku („2,5 mm”). */
 export const lengthText = (units, scale, format = 'unit') => `${formatNumber(toScaleLength(units, scale) * dimFactor(scale, format))} ${dimUnitLabel(scale, format)}`;
 
@@ -1413,6 +1424,7 @@ function cleanElementData(raw, pageWidth, pageHeight) {
   if (raw.tool === 'table' || raw.tool === 'sticky') return cleanBox(raw, pageWidth, pageHeight);
   if (isSymbol(raw)) return cleanSymbol(raw, pageWidth, pageHeight);
   if (raw.tool === 'diagram') return cleanDiagram(raw, pageWidth, pageHeight);
+  if (raw.tool === 'solid') return cleanSolid(raw, pageWidth, pageHeight);
   const content = raw.tool === 'text' ? raw.text : raw.source;
   if (typeof content !== 'string' || content.trim() === '' || !HEX.test(raw.color ?? '')) return null;
   if (![raw.x, raw.y, raw.size, raw.width, raw.height].every(finite)) return null;

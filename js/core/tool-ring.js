@@ -12,7 +12,8 @@
 // średnica – kształt 'dim' z rodzajem) oraz polecenia otwierające okno: 'text', 'math', 'table',
 // 'sticky', 'gdt', 'datum', 'roughness' (narzędzie się nie zmienia); od 1.43 polecenia edycji geometrii
 // 'edit:<rodzaj>' (odsuń, zaokrąglij, fazuj, przytnij, wydłuż) – dotknięcia elementów, narzędzie zostaje; od 1.44
-// jakość: 'diagram:fishbone', 'diagram:whys', 'sipoc' (okna) i 'layout' (układ kartki).
+// jakość: 'diagram:fishbone', 'diagram:whys', 'sipoc' (okna) i 'layout' (układ kartki); od 1.47 bryły 'solid:<rodzaj>'
+// (wstawienie bryły na środku widocznej części strony).
 //
 // Od 1.33 grupy można dobrać (okno „Grupy narzędzi”, ustawienia narzędzi na urządzeniu): grupy
 // standardowe – które są na prawym kółku i w jakiej kolejności; lewe kółko – gotowe zestawy i własne
@@ -30,6 +31,8 @@ export const QUALITY_ITEMS = Object.freeze(['diagram:fishbone', 'diagram:whys', 
 export const PROCESS_ITEMS = Object.freeze([
   'shape:terminator', 'shape:data', 'shape:document', 'shape:subprocess', 'shape:connector', 'vsm', 'diagram:timeline', 'diagram:defects'
 ]);
+/** Od 1.47: bryły – prostopadłościan, walec, stożek, ostrosłup, graniastosłup, kula. */
+export const SOLID_ITEMS = Object.freeze(['solid:box', 'solid:cylinder', 'solid:cone', 'solid:pyramid', 'solid:prism', 'solid:sphere']);
 
 export const TOOL_GROUPS = Object.freeze([
   { id: 'write', label: 'Pisanie', icon: 'pen', items: ['pen', 'highlighter', 'eraser'] },
@@ -49,7 +52,9 @@ export const TOOL_GROUPS = Object.freeze([
   // Od 1.44: jakość i Lean – na końcu.
   { id: 'quality', label: 'Jakość', icon: 'fishbone', items: QUALITY_ITEMS },
   // Od 1.45: procesy – na końcu.
-  { id: 'process', label: 'Procesy', icon: 'flowchart', items: PROCESS_ITEMS }
+  { id: 'process', label: 'Procesy', icon: 'flowchart', items: PROCESS_ITEMS },
+  // Od 1.47: bryły – na końcu.
+  { id: 'solids', label: 'Bryły', icon: 'solidBox', items: SOLID_ITEMS }
 ].map((group) => Object.freeze({ ...group, items: Object.freeze(group.items) })));
 
 /** Gotowe zestawy (od 1.33): w oknie „Grupy narzędzi” dotknięcie dodaje zestaw jako grupę na lewym kółku albo go usuwa. */
@@ -80,13 +85,15 @@ const COMMAND_LABELS = {
   'dim:arc': 'Wymiar – długość łuku',
   'edit:offset': 'Odsuń', 'edit:fillet': 'Zaokrąglij', 'edit:chamfer': 'Fazuj', 'edit:trim': 'Przytnij', 'edit:extend': 'Wydłuż',
   'diagram:fishbone': 'Diagram Ishikawy', 'diagram:whys': '5 × Dlaczego', sipoc: 'SIPOC', layout: 'Układ kartki',
-  vsm: 'Symbol VSM', 'diagram:timeline': 'Oś czasu VSM', 'diagram:defects': 'Legenda wad'
+  vsm: 'Symbol VSM', 'diagram:timeline': 'Oś czasu VSM', 'diagram:defects': 'Legenda wad',
+  'solid:box': 'Prostopadłościan', 'solid:cylinder': 'Walec', 'solid:cone': 'Stożek', 'solid:pyramid': 'Ostrosłup', 'solid:prism': 'Graniastosłup',
+  'solid:sphere': 'Kula'
 };
 /** Nazwa pozycji w oknie „Grupy narzędzi” i w opisie grupy. */
 export const itemLabel = (item) => (item.startsWith('shape:') ? SHAPE_LABELS[item.slice(6)] : COMMAND_LABELS[item]) ?? item;
 
 /** Ikony do wyboru dla własnej grupy. */
-export const GROUP_ICONS = Object.freeze(['star', 'caliper', 'sketch', 'geometry', 'notes', 'ruler', 'tag', 'sparkles', 'fishbone', 'flowchart']);
+export const GROUP_ICONS = Object.freeze(['star', 'caliper', 'sketch', 'geometry', 'notes', 'ruler', 'tag', 'sparkles', 'fishbone', 'flowchart', 'solidBox']);
 /** Najwięcej własnych grup, pozycji w grupie i znaków nazwy. */
 export const GROUP_LIMITS = Object.freeze({ groups: 8, items: 12, label: 30 });
 const GROUP_ID = /^[a-z0-9-]{1,24}$/;

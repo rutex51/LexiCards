@@ -2,6 +2,7 @@
 // Pełne opisy – docs/RELEASE-<wersja>.md. Pierwsza pozycja to bieżąca wersja aplikacji (sprawdza to test).
 
 export const CHANGELOG = Object.freeze([
+  ['1.47', 'Rysunek – bryły: prostopadłościan, walec, stożek, ostrosłup, graniastosłup i kula; swobodny obrót, kostka widoków, krawędzie niewidoczne, wymiary, DXF.'],
   ['1.45.2', 'Ustawienia: zajęte miejsce (aplikacja, dane, obrazy i załączniki) i ta historia zmian.'],
   ['1.45.1', 'iPad w pionie – układ jak na komputerze (panel boczny zamiast zakładek).'],
   ['1.45', 'Rysunek – schematy procesów: schemat blokowy, łącznik pod kątem prostym, tory, mapa strumienia wartości (VSM) z osią czasu, koncentracja wad, długość tras.'],

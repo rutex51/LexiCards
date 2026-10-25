@@ -1878,6 +1878,42 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   (`startGroup` → `showGroup`), narzędzie Punkt ze znacznikiem i kolorem wady. Narzędzie Punkt: przy zaznaczonych samych
   punktach dotknięcie obok od razu stawia kolejny (`startShape` – `hadSelection`). Format rysunku 17.
 
+## Bryły (od 1.47)
+
+- **Element** `{ tool: 'solid', kind, x, y, dims, q, color, size, edges, shade?, showDims?, axes? }` (`js/core/solids.js`):
+  (x, y) – środek bryły na stronie (`elementBox` → `solidBox` – prostokąt rzutu z wymiarami), `dims` – w jednostkach strony
+  (liczby na rysunku przez skalę – `solidDimText` w `core/drawing.js`), `q` – kwaternion [w, x, y, z] (jednostkowy, w ≥ 0).
+  Układ bryły: x w prawo, y w górę, z do patrzącego; oś walca, stożka, ostrosłupa i graniastosłupa – y; graniastosłup ma
+  ścianę z przodu. `isBox` (okno poprawki), `isElement`, bez szyku. Format rysunku 18.
+- **Położenie**: `quatFromAngles(yaw, pitch, roll)` = Rz(roll)·Rx(pitch)·Ry(−yaw) – obrót wokół osi pionowej bryły,
+  pochylenie, obrót na kartce; `solidAngles` – z powrotem (pochylenie ±90° – bez obrotu na kartce). `SOLID_VIEWS` (izometria
+  45°/35,264°, dimetria 20,705°/19,471°, przód, góra, boki, tył, dół), `viewQuat`, `solidView`, `quatSlerp` (płynne
+  przejście, 0,35 s w edytorze – `animateSolid`). `orbitQuat(q, dx, dy, rate, free)`: swobodny – obrót wokół osi (dy, dx, 0)
+  układu widoku mnożony z lewej (jak kula pod palcem, bez ograniczeń); wokół pionu – Rx(dy)·q·Ry(dx).
+- **Rzut** (`solidGeometry`, zapamiętany dla elementu z podpisem danych – poprawiony w miejscu liczy się od nowa): siatka
+  `solidMesh` (pierścienie po 72 odcinki, normalne Newella na zewnątrz), krawędzie ostre (ściany pod kątem > 20°) i gładkie.
+  Bryły są wypukłe: ściana zwrócona do patrzącego (normalna z > 0) jest widoczna, ostra krawędź – widoczna, gdy widać jedną
+  z jej ścian, gładka – tylko jako zarys (ściany po obu stronach – różnie zwrócone). `chainEdges` łączy odcinki w łamane
+  (przerywana linia biegnie dalej). Kula – zarys, równik i południk (tylna połowa niewidoczna), cieniowanie – gradient.
+  Ściany od patrzącego – `light` (światło z lewej, z góry, z przodu) → `solidTone`. Osie: walec, stożek, ostrosłup,
+  graniastosłup – wzdłuż y (widok wzdłuż osi – krzyż), kula – krzyż.
+- **Wymiary** (`meshDims`): prostopadłościan – krawędź zarysu wzdłuż każdej osi (najbliżej dołu i lewej, krótsza niż 20 – bez),
+  ostrosłup – boki podstawy, bryły z osią – wysokość równolegle do osi obok zarysu i średnice w poprzek elipsy podstawy
+  (walec – podstawa od patrzącego; stożek ścięty – też góra), kula – S⌀. `solidDimParts` – linie, groty, liczba (czytelna).
+- **Przekształcenia** (`core/transform.js`): bryła nie stoi prosto (`isUpright` – nie) – obrót zaznaczenia obraca ją na
+  kartce (`turnSolid`: Rz(−kąt)·q i środek), odbicie – `mirrorSolid`: F·M·L (odbicie widoku względem prostej i lustro x
+  bryły – bryły są symetryczne względem x = 0, wynik jest obrotem), skala – wymiary. Styl jak… – kolor i grubość.
+- **Edytor** (`js/ui/drawing.js`, `js/ui/drawing-solids.js`): grupa `solids` (`SOLID_ITEMS` – polecenia `solid:<rodzaj>`,
+  `insertSolid` → `putSolid`: miejsce jak dla elementów, środek z prostokąta); `paintSolid` (ściany, niewidoczne, osie,
+  widoczne, wymiary z jasną obwódką liczb). Uchwyty `boxHandles`: narożnik (`scaleSolid` wokół środka) i kostka widoków
+  (`cubeAnchor` – przy prawym górnym rogu ramki, przy krawędzi ekranu – przy lewym; w trakcie obrotu stoi w miejscu;
+  `paintViewCube`, `cubeFaceAt`). Przeciąganie kostki i „Obracaj” (`orbitMode`; przeciągnięcie bryły – uchwyt 'orbit') –
+  `box-edit` z przyrostami px ekranu; dotknięcie ściany – `animateSolid`. Menu „Widok” (`openSolidViewMenu`), okno
+  `editSolid` (wymiary przez `dimFactor` i skalę). `live.dataset.cube` – środek kostki i bryły (testy). Od 1.47 `touchend`
+  na płótnie – `preventDefault` (bez kliknięcia po dotknięciu w okno otwarte tym dotknięciem).
+- **DXF** (`writeSolid`): widoczne – POLYLINE, niewidoczne – DASHED (albo ciągłe), osie – LINE CENTER, wymiary – LINE,
+  groty SOLID, TEXT wyśrodkowany.
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).
@@ -1967,7 +2003,8 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   środka boku, przecięć i kresek pióra, wymiar poziomy i pionowy, długość łuku, łuk ze środka, osie okręgu, A4 pionowo;
   od 1.43 odsunięcie, zaokrąglenie i faza, przycinanie i wydłużanie, okrąg styczny; od 1.44 diagram Ishikawy
   i 5 × Dlaczego – rozkład, przyczyny z tekstu, miejsca dotknięcia, zapis – układ kartki i jego DXF; od 1.45 kształty
-  schematu blokowego, łącznik i jego przebieg, długość linii, tory, symbole i oś czasu VSM, legenda wad, ich DXF),
+  schematu blokowego, łącznik i jego przebieg, długość linii, tory, symbole i oś czasu VSM, legenda wad, ich DXF; od 1.47
+  bryły – dane, kąty i kwaterniony, obrót z przeciągnięcia, rzut z krawędziami niewidocznymi, wymiary, przekształcenia, DXF),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

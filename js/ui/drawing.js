@@ -74,6 +74,11 @@ import {
 } from '../core/diagrams.js';
 import { COLUMN_DEFAULTS, LAYOUT_KINDS, LAYOUT_LABELS, MATRIX_DEFAULT, cleanLayout } from '../core/page-layouts.js';
 import { paintDiagram, paintPageLayout } from './drawing-diagrams.js';
+import {
+  SOLID_EDGES, SOLID_EDGE_LABELS, SOLID_FIELDS, SOLID_KINDS, SOLID_LABELS, SOLID_LINE_LABELS, SOLID_LINE_WIDTHS, SOLID_VIEWS, cleanSolid, cleanSolidDims, hasAxis,
+  newSolid, orbitQuat, quatFromAngles, quatSlerp, scaleSolid, solidAngles, solidBox, solidLabel, solidView, viewQuat, withQuat
+} from '../core/solids.js';
+import { CUBE_GAP, CUBE_HALF, cubeFaceAt, paintSolid, paintViewCube } from './drawing-solids.js';
 import { openFitTable } from './fit-table.js';
 import { RING_SIDES, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPartHidden } from '../core/tool-ring.js';
 import { openToolGroups } from './drawing-groups.js';
@@ -372,6 +377,8 @@ function remeasure(stroke) {
   if (stroke.tool === 'datum') return stroke;
   // Diagram jakości (od 1.44) – wielkość z rozkładu.
   if (stroke.tool === 'diagram') return withDiagramSize(stroke);
+  // Bryła (od 1.47) – nic do mierzenia.
+  if (stroke.tool === 'solid') return stroke;
   // Tabela i karteczka (od 1.21): wysokość z treści.
   if (stroke.tool === 'table') return { ...stroke, ...measureTable(stroke) };
   if (stroke.tool === 'sticky') return { ...stroke, ...measureSticky(stroke) };
@@ -429,6 +436,11 @@ export function paintStroke(ctx, stroke, options = {}) {
   // Diagram Ishikawy i 5 × Dlaczego (od 1.44).
   if (stroke.tool === 'diagram') {
     paintDiagram(ctx, stroke, options.strokes ?? null);
+    return;
+  }
+  // Bryła (od 1.47) – rzut z krawędziami niewidocznymi, cieniowaniem i wymiarami.
+  if (stroke.tool === 'solid') {
+    paintSolid(ctx, stroke, { scale: options.scale, dimFormat: options.dimFormat });
     return;
   }
   if (stroke.tool === 'sticky') {
@@ -860,6 +872,19 @@ export function openDrawingEditor({
       else if (isBox(only)) editBox(only);
     });
     editButton.hidden = true;
+    // Od 1.47: bryła – gotowy widok (menu) i „Obracaj”: przeciąganie bryły obraca ją zamiast przesuwać.
+    const solidViewButton = selectionButton('drawing-selection-solid-view', 'viewCube', 'Widok', 'Widok bryły – izometria, dimetria, przód, góra, boki', () => openSolidViewMenu());
+    solidViewButton.setAttribute('aria-haspopup', 'menu');
+    let orbitMode = false;
+    const orbitButton = selectionButton('drawing-selection-orbit', 'orbit', 'Obracaj', 'Obracaj bryłę – przeciągnięcie bryły obraca ją w przestrzeni (dotknij ponownie, żeby skończyć)', () => {
+      orbitMode = !orbitMode;
+      if (orbitMode) moveMode = false;
+      orbitButton.setAttribute('aria-pressed', String(orbitMode));
+      stage.classList.toggle('drawing__stage--orbit', orbitMode);
+      updateToolbar();
+      requestLive();
+    });
+    orbitButton.setAttribute('aria-pressed', 'false');
     // Od 1.21: karteczka zwinięta do ikony albo rozwinięta – jednym dotknięciem.
     const collapseButton = selectionButton('drawing-selection-collapse', 'minus', 'Zwiń', 'Zwiń karteczkę do ikony', () => toggleCollapsed());
     // Od 1.17: tekst i wypełnienie zaznaczonego kształtu, „Osadź” – obraz zaznaczenia albo wycinka w notatce.
@@ -902,6 +927,7 @@ export function openDrawingEditor({
     let moveMode = false;
     const moveButton = selectionButton('drawing-selection-move', 'move', 'Przesuń', 'Przesuń – przeciągnij w dowolnym miejscu strony (dotknij ponownie, żeby skończyć)', () => {
       moveMode = !moveMode;
+      if (moveMode) orbitMode = false;
       moveButton.setAttribute('aria-pressed', String(moveMode));
       stage.classList.toggle('drawing__stage--moving', moveMode);
       updateToolbar();
@@ -910,7 +936,8 @@ export function openDrawingEditor({
     moveButton.setAttribute('aria-pressed', 'false');
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
       // Od 1.41 nazwa i pole z obwodem w jednej kolumnie (na telefonie – pole i obwód w osobnym wierszu).
-      h('span', { class: 'drawing__selection-head' }, selectionCount, selectionMeasure), moveButton, editButton, collapseButton, shapeTextButton, magnetButton, layersSelectionButton, copyButton, duplicateButton,
+      h('span', { class: 'drawing__selection-head' }, selectionCount, selectionMeasure), moveButton, editButton, solidViewButton, orbitButton, collapseButton, shapeTextButton, magnetButton,
+      layersSelectionButton, copyButton, duplicateButton,
       whyButton, chainButton, baselineButton, mirrorButton, scaleButton, matchButton, orderButton, arrayButton, explodeButton, embedButton, deleteButton);
     // Pola wymiarów zaznaczonego kształtu (od 1.17): na liniach ramki konstrukcyjnej, wpisywane z klawiatury.
     const dims = h('div', { class: 'drawing__dims', hidden: true, dataset: { testid: 'drawing-dims' } });
@@ -2246,6 +2273,7 @@ export function openDrawingEditor({
       // Tabela i karteczka (od 1.21): narożnik do zmiany wielkości i koniec strzałki karteczki.
       const box = editedBox();
       if (box) paintBoxHandles(ctx, box);
+      if (box?.tool !== 'solid' && live.dataset.cube) delete live.dataset.cube;
       if (snip) {
         // Wycinek (od 1.17): obrys obszaru – fioletowy, kreskowany.
         ctx.save();
@@ -2338,7 +2366,7 @@ export function openDrawingEditor({
       selectionCount.textContent = snip ? 'Wycinek' : selectionKind === 'region' ? 'Fragment' : only?.tool === 'text' ? 'Pole tekstowe' : only?.tool === 'math' ? 'Wzór'
         : only?.tool === 'table' ? 'Tabela' : only?.tool === 'sticky' ? `Karteczka ${stickyNumber(drawing, only)}`
         : only?.tool === 'gdt' ? gdtSymbol(only.symbol).label : only?.tool === 'datum' ? `Baza ${only.letter}` : only?.tool === 'roughness' ? 'Chropowatość'
-        : only?.tool === 'diagram' ? diagramLabel(only)
+        : only?.tool === 'diagram' ? diagramLabel(only) : only?.tool === 'solid' ? solidLabel(only)
         : isShape(only) ? SHAPE_LABELS[only.shape] : isArray(only) ? `${ARRAY_LABELS[only.kind]} · ${arraySize(only)}`
         : items.some(isElement) ? plural(items.length, 'element', 'elementy', 'elementów') : plural(items.length, 'kreska', 'kreski', 'kresek');
       // Wycinek (od 1.17): tylko kopiuj i osadź – rysunek się nie zmienia.
@@ -2346,6 +2374,13 @@ export function openDrawingEditor({
       editButton.hidden = Boolean(snip) || !(isTextual(only) || isBox(only));
       const sticky = !snip && only?.tool === 'sticky' ? only : null;
       collapseButton.hidden = !sticky;
+      // Bryła (od 1.47): widok i obracanie; bez jednej bryły – koniec obracania.
+      const solid = !snip && selection.size === 1 && only?.tool === 'solid' ? only : null;
+      if (!solid) orbitMode = false;
+      solidViewButton.hidden = !solid;
+      orbitButton.hidden = !solid;
+      orbitButton.setAttribute('aria-pressed', String(orbitMode));
+      stage.classList.toggle('drawing__stage--orbit', orbitMode);
       if (sticky) {
         const label = sticky.collapsed ? 'Rozwiń' : 'Zwiń';
         collapseButton.querySelector('.drawing__selection-label').textContent = label;
@@ -2593,6 +2628,11 @@ export function openDrawingEditor({
     const vsmButton = menuButton('vsm', 'Symbol VSM – proces, zapas, dostawca, supermarket, push, kaizen, operator, transport', 'vsm', 'drawing-insert-vsm', 'VSM');
     const timelineButton = menuButton('diagram:timeline', 'Oś czasu VSM – oczekiwanie i praca, czas przejścia, PCE', 'timeline', 'drawing-insert-timeline', 'Oś czasu');
     const defectsButton = menuButton('diagram:defects', 'Legenda wad – liczy znaczniki wad na kartce', 'defects', 'drawing-insert-defects', 'Wady');
+    // Od 1.47: bryły – wstawienie na środku widocznej części strony.
+    const SOLID_ICONS = { box: 'solidBox', cylinder: 'solidCylinder', cone: 'solidCone', pyramid: 'solidPyramid', prism: 'solidPrism', sphere: 'solidSphere' };
+    const SOLID_SHORT = { box: 'Prostop.', cylinder: 'Walec', cone: 'Stożek', pyramid: 'Ostrosłup', prism: 'Graniast.', sphere: 'Kula' };
+    const solidButtons = new Map(SOLID_KINDS.map((kind) => [kind,
+      menuButton(`solid:${kind}`, `${SOLID_LABELS[kind]} – bryła do obracania`, SOLID_ICONS[kind], `drawing-insert-solid-${kind}`, SOLID_SHORT[kind])]));
     /** Pozycja grupy → przycisk (ten sam przycisk w kilku grupach – pokazywana jest jedna grupa naraz). */
     const itemButtons = new Map([
       ['pen', penButton], ['highlighter', highlighterButton], ['eraser', eraserButton],
@@ -2602,7 +2642,8 @@ export function openDrawingEditor({
       ['text', textButton], ['math', mathButton], ['table', tableButton], ['sticky', stickyButton],
       ['gdt', gdtButton], ['datum', datumButton], ['roughness', roughnessButton],
       ['diagram:fishbone', fishboneButton], ['diagram:whys', whysButton], ['sipoc', sipocButton], ['layout', layoutButton],
-      ['vsm', vsmButton], ['diagram:timeline', timelineButton], ['diagram:defects', defectsButton]
+      ['vsm', vsmButton], ['diagram:timeline', timelineButton], ['diagram:defects', defectsButton],
+      ...[...solidButtons].map(([kind, button]) => [`solid:${kind}`, button])
     ]);
     const rulerButton = h('button', {
       type: 'button', class: 'drawing__tool', 'aria-label': 'Linijka', title: 'Linijka', 'aria-pressed': 'false', dataset: { testid: 'drawing-ruler' },
@@ -2801,7 +2842,7 @@ export function openDrawingEditor({
     });
     // ---- edycja zaznaczonego (od 1.35): kolor, grubość i styl z menu zmieniają zaznaczone elementy
     /** Element z kolorem do zmiany: kreska pióra i zakreślacza, kształt, pole tekstowe, wzór, symbol. */
-    const hasPaint = (stroke) => ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness', 'diagram'].includes(stroke.tool);
+    const hasPaint = (stroke) => ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness', 'diagram', 'solid'].includes(stroke.tool);
     /** Element z grubością linii: kreska pióra i zakreślacza, kształt (bez wymiaru). */
     const hasLineWidth = (stroke) => stroke.tool === 'pen' || stroke.tool === 'highlighter' || (isShape(stroke) && !isMeasure(stroke));
     /**
@@ -3085,7 +3126,8 @@ export function openDrawingEditor({
       const open = { text: () => editElement('text'), math: () => editElement('math'), table: () => editTable(), sticky: () => editSticky(),
         gdt: () => editGdt(), datum: () => editDatum(), roughness: () => editRoughness(),
         'diagram:fishbone': () => editDiagram(null, 'fishbone'), 'diagram:whys': () => editDiagram(null, 'whys'), sipoc: () => editTable(null, SIPOC_TABLE), layout: () => editLayout(),
-        vsm: () => editVsm(), 'diagram:timeline': () => editTimeline(), 'diagram:defects': () => editDefects() }[item];
+        vsm: () => editVsm(), 'diagram:timeline': () => editTimeline(), 'diagram:defects': () => editDefects(),
+        ...Object.fromEntries(SOLID_KINDS.map((kind) => [`solid:${kind}`, () => insertSolid(kind)])) }[item];
       open?.();
     }
     /** Wygląd dużego kółka (wariant C): wypełnienie w kolorze narzędzia, obwódka biała; narzędzie bez koloru – kolor aplikacji. */
@@ -6149,7 +6191,7 @@ export function openDrawingEditor({
     const inkChoice = (hex) => INK_COLORS.find((color) => color.hex === hex)?.id ?? (isHexColor(hex) ? hex : tools.penColor);
 
     /** Wielkość i kolor pola tekstowego albo wzoru (w oknie wstawiania i poprawiania). */
-    function elementOptions(choice, sizeLabels = TEXT_SIZE_LABELS) {
+    function elementOptions(choice, sizeLabels = TEXT_SIZE_LABELS, sizeTitle = 'Wielkość') {
       const colors = [
         ...INK_COLORS.map((color) => ({ value: color.id, hex: color.hex, label: color.label, testID: `drawing-element-color-${color.id}` })),
         ...tools.customColors.map((hex, index) => ({ value: hex, hex, label: `Własny kolor ${hex.toUpperCase()}`, testID: `drawing-element-color-custom-${index}` }))
@@ -6166,8 +6208,8 @@ export function openDrawingEditor({
         }
       }));
       return h('div', { class: 'drawing__element-options' },
-        field('Wielkość', segmented({
-          name: `drawing-element-size-${Date.now()}`, label: 'Wielkość', value: String(choice.size),
+        field(sizeTitle, segmented({
+          name: `drawing-element-size-${Date.now()}`, label: sizeTitle, value: String(choice.size),
           options: sizeLabels.map((label, index) => ({ value: String(index), label })),
           onChange: (value) => { choice.size = Number(value); }
         })),
@@ -6291,7 +6333,7 @@ export function openDrawingEditor({
     // ---- tabele i karteczki (od 1.21)
     /** Poprawka zaznaczonej tabeli albo karteczki. */
     const editBox = (element, point = null) => (element.tool === 'table' ? editTable(element) : element.tool === 'sticky' ? editSticky(element)
-      : element.tool === 'diagram' ? editDiagramElement(element, point)
+      : element.tool === 'diagram' ? editDiagramElement(element, point) : element.tool === 'solid' ? editSolid(element)
       : element.tool === 'gdt' ? editGdt(element) : element.tool === 'datum' ? editDatum(element) : editRoughness(element));
     /** Nowy albo poprawiony element zaznaczony – od razu można go przesunąć. */
     function selectOnly(element) {
@@ -6443,6 +6485,171 @@ export function openDrawingEditor({
     /** Zapis diagramu z okna: nowy (element = null) albo poprawka – z tym samym identyfikatorem i warstwami. */
     function putDiagram(element, saved) {
       putBox(element, element ? { ...saved, ...(element.id ? { id: element.id } : {}), ...(element.layers ? { layers: element.layers } : {}) } : saved);
+    }
+    // ---- bryły (od 1.47)
+    /** Nowa bryła na środku widocznej części strony (pod innymi elementami, gdy tam zajęte) – zaznaczona. */
+    function insertSolid(kind) {
+      clearSelection();
+      putSolid(null, newSolid(kind, { color: inkHex(tools.penColor), size: SOLID_LINE_WIDTHS[1] }));
+      flash(`${SOLID_LABELS[kind]}: kostka obok obraca bryłę, ściana kostki – widok, dotknięcie bryły – wymiary`);
+    }
+    /** Zapis bryły: nowa (element = null) albo poprawka – z tym samym identyfikatorem i warstwami. */
+    function putSolid(element, next) {
+      if (element) {
+        const kept = { ...next, ...(element.id ? { id: element.id } : {}), ...(element.layers ? { layers: element.layers } : {}) };
+        replaceElement(element, kept);
+        selectOnly(kept);
+        return;
+      }
+      // Miejsce jak dla innych elementów (lewy górny róg prostokąta), (x, y) bryły – jej środek.
+      const placed = { ...next };
+      placeElement(placed);
+      const box = solidBox({ ...next, x: 0, y: 0 });
+      const solid = { ...next, x: Math.round(placed.x - box.x), y: Math.round(placed.y - box.y) };
+      history.add(onActiveLayer(solid));
+      changed = true;
+      selectOnly(solid);
+    }
+    /** Płynne przejście bryły do położenia `q` (ok. 0,35 s) – jeden krok cofania. */
+    function animateSolid(element, q) {
+      const from = element.q;
+      const started = performance.now();
+      active = { kind: 'box-edit', id: null, touch: false, start: { x: element.x, y: element.y }, handle: 'view', original: element, preview: element, moved: true, animating: true };
+      const step = (now) => {
+        if (active?.animating !== true || active.original !== element) return;
+        const t = Math.min(1, (now - started) / 350);
+        active.preview = withQuat(element, t === 1 ? q : quatSlerp(from, q, 1 - (1 - t) ** 3));
+        if (t < 1) {
+          requestLive();
+          requestAnimationFrame(step);
+          return;
+        }
+        const done = active;
+        active = null;
+        replaceShape(done.original, done.preview);
+        updateToolbar();
+        requestRender();
+      };
+      requestAnimationFrame(step);
+    }
+    /** Menu „Widok” zaznaczonej bryły – gotowe widoki (bieżący zaznaczony). */
+    function openSolidViewMenu() {
+      const [only] = selection;
+      if (only?.tool !== 'solid') return;
+      const current = solidView(only.q);
+      openMenu({
+        title: 'Widok bryły',
+        items: SOLID_VIEWS.map((view) => ({
+          label: view.label, checked: view.id === current, testID: `drawing-solid-view-${view.id}`,
+          onSelect: () => animateSolid(only, viewQuat(view.id))
+        }))
+      });
+    }
+    /**
+     * Okno bryły: rodzaj, wymiary (w jednostce liczb wymiarów rysunku), położenie (obrót wokół osi pionowej, pochylenie,
+     * obrót na kartce) z gotowymi widokami, krawędzie niewidoczne, cieniowanie, wymiary, osie, grubość i kolor.
+     */
+    function editSolid(element) {
+      const format = dimFormat(drawing);
+      const factor = dimFactor(drawing.scale, format);
+      const unit = dimUnitLabel(drawing.scale, format);
+      const shown = (key, value) => (key === 'n' ? String(value) : formatNumber(toScaleLength(value, drawing.scale) * factor));
+      const units = (value) => fromScaleLength(value / factor, drawing.scale);
+      const width = SOLID_LINE_WIDTHS.reduce((best, value, index) => (Math.abs(value - element.size) < Math.abs(SOLID_LINE_WIDTHS[best] - element.size) ? index : best), 0);
+      const choice = { size: width, color: inkChoice(element.color) };
+      const angles = solidAngles(element.q);
+      const draft = {
+        kind: element.kind, edges: element.edges, shade: element.shade === true, showDims: element.showDims === true, axes: element.axes === true,
+        angles: { yaw: String(angles.yaw).replace('.', ','), pitch: String(angles.pitch).replace('.', ','), roll: String(angles.roll).replace('.', ',') },
+        // Teksty pól wymiarów każdego rodzaju (zmiana rodzaju i powrót – te same liczby).
+        dims: Object.fromEntries(SOLID_KINDS.map((kind) => {
+          const values = kind === element.kind ? element.dims : cleanSolidDims(kind, {});
+          return [kind, Object.fromEntries(SOLID_FIELDS[kind].map(([key]) => [key, shown(key, values[key])]))];
+        }))
+      };
+      const dimsBox = h('div', { class: 'drawing__solid-grid' });
+      const axesRow = h('div', { class: 'drawing__settings-switch' }, toggle({ checked: draft.axes, label: 'Osie symetrii', onChange: (checked) => { draft.axes = checked; } }));
+      const renderDims = () => {
+        replaceChildren(dimsBox, SOLID_FIELDS[draft.kind].map(([key, name]) => {
+          const input = textInput({ value: draft.dims[draft.kind][key], testID: `drawing-solid-dim-${key}`, onInput: (value) => { draft.dims[draft.kind][key] = value; } });
+          input.inputMode = 'decimal';
+          return field(key === 'n' ? name : `${name} (${unit})`, input);
+        }));
+        axesRow.hidden = !hasAxis({ kind: draft.kind });
+      };
+      renderDims();
+      const kindButtons = SOLID_KINDS.map((kind) => h('button', {
+        type: 'button', class: 'drawing__solid-kind', 'aria-pressed': String(kind === draft.kind), dataset: { kind, testid: `drawing-solid-kind-${kind}` },
+        onClick: () => {
+          draft.kind = kind;
+          for (const button of kindButtons) button.setAttribute('aria-pressed', String(button.dataset.kind === kind));
+          renderDims();
+        }
+      }, icon({ box: 'solidBox', cylinder: 'solidCylinder', cone: 'solidCone', pyramid: 'solidPyramid', prism: 'solidPrism', sphere: 'solidSphere' }[kind], { size: 22 }),
+      h('span', null, SOLID_LABELS[kind])));
+      const angleInput = (key, name) => {
+        const input = textInput({ value: draft.angles[key], testID: `drawing-solid-${key}`, onInput: (value) => { draft.angles[key] = value; } });
+        input.inputMode = 'decimal';
+        return { input, field: field(name, input) };
+      };
+      const yaw = angleInput('yaw', 'Obrót wokół osi pionowej (°)');
+      const pitch = angleInput('pitch', 'Pochylenie (°)');
+      const roll = angleInput('roll', 'Obrót na kartce (°)');
+      const viewButtons = SOLID_VIEWS.map((view) => h('button', {
+        type: 'button', class: 'button button--plain drawing__solid-view', dataset: { testid: `drawing-solid-preset-${view.id}` },
+        onClick: () => {
+          for (const [key, entry, value] of [['yaw', yaw, view.yaw], ['pitch', pitch, view.pitch], ['roll', roll, 0]]) {
+            draft.angles[key] = String(Math.round(value * 10) / 10).replace('.', ',');
+            entry.input.value = draft.angles[key];
+          }
+        }
+      }, view.label));
+      let saved = false;
+      openFormSheet({
+        title: solidLabel(element),
+        submitLabel: 'Zapisz',
+        build: () => [
+          group({ title: 'Rodzaj' }, h('div', { class: 'drawing__solid-kinds', role: 'group', 'aria-label': 'Rodzaj bryły' }, kindButtons)),
+          group({ title: 'Wymiary' }, dimsBox),
+          group({ title: 'Położenie' }, h('div', { class: 'drawing__solid-grid' }, yaw.field, pitch.field, roll.field),
+            h('div', { class: 'drawing__solid-views', role: 'group', 'aria-label': 'Gotowe widoki' }, viewButtons)),
+          group({ title: 'Wygląd' },
+            field('Krawędzie niewidoczne', segmented({
+              name: `drawing-solid-edges-${Date.now()}`, label: 'Krawędzie niewidoczne', value: draft.edges,
+              options: SOLID_EDGES.map((value) => ({ value, label: SOLID_EDGE_LABELS[value] })), onChange: (value) => { draft.edges = value; }
+            })),
+            h('div', { class: 'drawing__settings-switch' }, toggle({ checked: draft.shade, label: 'Cieniowanie', onChange: (checked) => { draft.shade = checked; } })),
+            h('div', { class: 'drawing__settings-switch' }, toggle({ checked: draft.showDims, label: 'Wymiary', onChange: (checked) => { draft.showDims = checked; } })),
+            axesRow,
+            elementOptions(choice, SOLID_LINE_LABELS, 'Grubość linii')),
+          h('p', { class: 'field__hint' }, 'Bryłę obracasz kostką obok ramki (ściana kostki – widok) albo przyciskiem „Obracaj”; z Shift – tylko wokół osi pionowej. '
+            + 'Krawędzie niewidoczne – linią przerywaną, wymiary – jak przy kształtach (skala i jednostka rysunku).')
+        ],
+        onSubmit: () => {
+          saved = true;
+          return true;
+        },
+        onClose: () => {
+          if (!saved) return;
+          const number = (text, fallback) => {
+            const value = parseDecimal(text);
+            return value === null ? fallback : value;
+          };
+          const old = draft.kind === element.kind ? element.dims : cleanSolidDims(draft.kind, {});
+          const dims = Object.fromEntries(SOLID_FIELDS[draft.kind].map(([key]) => {
+            const value = number(draft.dims[draft.kind][key], null);
+            return [key, value === null ? old[key] : key === 'n' ? value : units(value)];
+          }));
+          const next = cleanSolid({
+            ...element, kind: draft.kind, dims,
+            q: quatFromAngles(number(draft.angles.yaw, angles.yaw), number(draft.angles.pitch, angles.pitch), number(draft.angles.roll, angles.roll)),
+            color: inkHex(choice.color), size: SOLID_LINE_WIDTHS[choice.size], edges: draft.edges, shade: draft.shade, showDims: draft.showDims, axes: draft.axes
+          }, drawing.width, drawing.height);
+          if (!next) return;
+          putSolid(element, next);
+          flash('Bryła zmieniona');
+        }
+      });
     }
     /** Opisy symboli VSM w oknie. */
     const VSM_HINTS = {
@@ -7223,6 +7430,11 @@ export function openDrawingEditor({
      * i (od 1.26) granice kolumn tabeli na górnej krawędzi – szerokość dwóch sąsiednich kolumn.
      */
     function boxHandles(element) {
+      // Bryła (od 1.47): narożnik – wielkość (proporcjonalnie), kostka widoków obok ramki.
+      if (element.tool === 'solid') {
+        const box = solidBox(element);
+        return [{ id: 'resize', x: box.x + box.width, y: box.y + box.height }, { id: 'cube', ...cubeAnchor(element) }];
+      }
       // Symbol metrologiczny (od 1.22.1): bez narożnika – tylko koniec strzałki albo wierzchołek chropowatości.
       if (element.tool === 'roughness') return [{ id: 'target', x: element.x, y: element.y }];
       if (isSymbol(element)) return element.leader ? [{ id: 'target', x: element.leader.x, y: element.leader.y }] : [];
@@ -7244,9 +7456,20 @@ export function openDrawingEditor({
       let best = null;
       for (const handle of boxHandles(element)) {
         const distance = Math.hypot(handle.x - point.x, handle.y - point.y) * view.scale;
-        if (distance <= HANDLE_HIT && (!best || distance < best.distance)) best = { ...handle, distance, element };
+        // Kostka widoków (od 1.47) – cała tarcza.
+        const reach = handle.id === 'cube' ? CUBE_HALF * 2 : HANDLE_HIT;
+        if (distance <= reach && (!best || distance < best.distance)) best = { ...handle, distance, element };
       }
       return best;
+    }
+    /** Miejsce kostki widoków bryły (jednostki strony): przy prawym górnym rogu ramki, a gdy tam brak miejsca – przy lewym. */
+    function cubeAnchor(element) {
+      if (active?.kind === 'box-edit' && active.cube && active.original === element) return active.cube;
+      const box = solidBox(element);
+      const reach = (SELECTION_PAD + CUBE_GAP + CUBE_HALF * 2) / view.scale;
+      const right = box.x + box.width + reach;
+      const x = toScreen({ x: right, y: 0 }).x + CUBE_HALF * 2 > view.width ? box.x - reach : right;
+      return { x, y: box.y + (CUBE_HALF * 2) / view.scale };
     }
     function paintBoxHandles(ctx, element) {
       ctx.save();
@@ -7256,6 +7479,14 @@ export function openDrawingEditor({
       ctx.fillStyle = '#ffffff';
       for (const handle of boxHandles(element)) {
         const point = toScreen(handle);
+        if (handle.id === 'cube') {
+          paintViewCube(ctx, element.q, point, view.dpr, { active: active?.kind === 'box-edit' && active.handle !== 'resize' });
+          // Środek kostki i bryły (px płótna) – dla testów.
+          const middle = toScreen(element);
+          const where = `${Math.round(point.x)},${Math.round(point.y)},${Math.round(middle.x)},${Math.round(middle.y)}`;
+          if (live.dataset.cube !== where) live.dataset.cube = where;
+          continue;
+        }
         ctx.beginPath();
         if (handle.id === 'target') ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
         else if (handle.id.startsWith('col-')) ctx.roundRect(point.x - 4, point.y - 11, 8, 22, 4);
@@ -7267,10 +7498,23 @@ export function openDrawingEditor({
     }
     function startBoxEdit(event, handle) {
       active = { kind: 'box-edit', ...common(event, toDrawing(event)), handle: handle.id, original: handle.element, preview: handle.element, moved: false };
+      // Kostka widoków i „Obracaj” (od 1.47): kostka stoi w miejscu, dotknięta ściana – widok po dotknięciu bez ruchu.
+      if (handle.id === 'cube' || handle.id === 'orbit') {
+        const anchor = cubeAnchor(handle.element);
+        active.cube = anchor;
+        active.last = local(event);
+        active.face = handle.id === 'cube' ? cubeFaceAt(handle.element.q, toScreen(anchor), toScreen(toDrawing(event))) : null;
+      }
       requestRender();
     }
     /** Element po przeciągnięciu uchwytu: narożnik – szerokość (tabela) albo wielkość (karteczka), koniec strzałki – nowe miejsce. */
     function editBoxHandle(original, handle, point) {
+      // Bryła (od 1.47): narożnik powiększa ją proporcjonalnie wokół środka.
+      if (original.tool === 'solid') {
+        const box = solidBox(original);
+        const reach = Math.max(1, Math.hypot(box.x + box.width - original.x, box.y + box.height - original.y));
+        return scaleSolid(original, original.x, original.y, Math.max(0.05, Math.hypot(point.x - original.x, point.y - original.y) / reach));
+      }
       // Wierzchołek chropowatości (od 1.22.1) przesuwa cały symbol.
       if (handle === 'target' && original.tool === 'roughness') return { ...original, x: Math.round(point.x * 100) / 100, y: Math.round(point.y * 100) / 100 };
       if (handle === 'target') return { ...original, leader: { x: Math.round(point.x), y: Math.round(point.y) } };
@@ -7494,6 +7738,12 @@ export function openDrawingEditor({
     function startSelect(event, snipping = false) {
       const point = toDrawing(event);
       const adding = !snipping && (Boolean(event.shiftKey) || shiftDown) && !snip && selectionKind === 'whole';
+      // „Obracaj” (od 1.47): przeciągnięcie bryły obraca ją w przestrzeni.
+      const [solid] = selection;
+      if (!snipping && !adding && orbitMode && selection.size === 1 && solid?.tool === 'solid' && selectionHit(point)) {
+        startBoxEdit(event, { id: 'orbit', element: solid });
+        return;
+      }
       if (!snipping && !adding && selectionHit(point)) {
         active = { kind: 'move', id: event.pointerId, touch: event.pointerType === 'touch', start: point, dx: 0, dy: 0, client: local(event) };
         requestRender();
@@ -8131,6 +8381,16 @@ export function openDrawingEditor({
           break;
         case 'box-edit': {
           if (!active.moved && Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale < TAP_SLOP) break;
+          if (active.handle === 'cube' || active.handle === 'orbit') {
+            // Obrót bryły (od 1.47): swobodny – jak kula pod palcem; z Shift – wokół osi pionowej bryły.
+            const at = local(event);
+            const [dx, dy] = [at.clientX - active.last.clientX, at.clientY - active.last.clientY];
+            active.last = at;
+            active.moved = true;
+            active.preview = withQuat(active.preview, orbitQuat(active.preview.q, dx, dy, 0.5, !(event.shiftKey || shiftDown)));
+            requestLive();
+            break;
+          }
           active.moved = true;
           // Koniec strzałki karteczki (od 1.22) – też przyciągany.
           active.snap = active.handle === 'target' ? edgeSnapAt(point, event, new Set([active.original])) : null;
@@ -8291,6 +8551,12 @@ export function openDrawingEditor({
       } else if (done.kind === 'turn' && !cancelled && done.moved && done.angle !== 0) {
         const { center, angle } = done;
         replaceSelection(done.items, transformStrokes(done.items, (stroke) => rotateStroke(stroke, center.x, center.y, angle), elementBox));
+      } else if (done.kind === 'box-edit' && !cancelled && !done.moved && done.handle === 'cube' && done.face) {
+        // Dotknięta ściana kostki (od 1.47) – płynnie do widoku.
+        animateSolid(done.original, viewQuat(done.face));
+      } else if (done.kind === 'box-edit' && !cancelled && !done.moved && done.handle === 'orbit') {
+        // „Obracaj”: dotknięcie bryły bez ruchu – jej okno (jak bez obracania).
+        editBox(done.original, done.start);
       } else if (done.kind === 'box-edit' && !cancelled && done.moved) {
         if (done.handle === 'target') replaceLinked(done.original, done.preview, [[done.original.tool === 'roughness' ? 'tip' : 'leader', done.snap]]);
         else replaceShape(done.original, done.preview);
@@ -8571,6 +8837,9 @@ export function openDrawingEditor({
     live.addEventListener('pointercancel', (event) => release(event, true));
     // Prawy przycisk na płótnie zaznacza – bez menu przeglądarki.
     live.addEventListener('contextmenu', (event) => event.preventDefault());
+    // Od 1.47: dotknięcie, które otwiera okno (bryła, tabela, diagram), nie „klika” potem w okno pod palcem
+    // (przeglądarka po dotknięciu wysyła jeszcze click w to samo miejsce – już nad nowym oknem).
+    live.addEventListener('touchend', (event) => event.preventDefault());
     live.addEventListener('pointerleave', () => {
       if (!hover && !pickHover && !edgeHover && !pendingHover) return;
       hover = null;

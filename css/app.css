@@ -7554,6 +7554,22 @@ button.drawing__pill .icon { color: var(--text-2); }
 .drawing__timeline-step .drawing__diagram-remove { grid-column: 1 / -1; }
 .drawing__defect-look { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 .drawing__defect-actions { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+/* Od 1.47: okno bryły – rodzaje z ikonami, pola wymiarów i kątów w rzędzie, gotowe widoki. */
+.drawing__solid-kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 10px 12px; }
+.drawing__solid-kind {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 64px; padding: 8px 4px;
+  border: 1px solid var(--separator); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; font-size: var(--size-sub);
+  cursor: pointer;
+}
+.drawing__solid-kind[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.drawing__solid-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 10px 12px; align-items: end; }
+.drawing__solid-grid .field { margin: 0; }
+.drawing__solid-views { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 0 12px 10px; }
+.drawing__solid-view { padding: 4px 10px; border-radius: 14px; background: var(--fill-tertiary, rgba(118, 118, 128, 0.12)); }
+.drawing__stage--orbit .drawing__canvas--live { cursor: grab; }
+@media (max-width: 699px) {
+  .drawing__solid-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .drawing__corner-size {
   width: 6.5em;
   min-height: 34px;

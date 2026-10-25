@@ -265,13 +265,13 @@ test('rysunek 1.45: grupa Procesy i zestaw „Procesy / VSM”, format rysunku 1
   const group = TOOL_GROUPS.find((item) => item.id === 'process');
   assert.equal(group.label, 'Procesy');
   assert.deepEqual(group.items, [...PROCESS_ITEMS]);
-  assert.equal(TOOL_GROUPS.at(-1).id, 'process', 'na końcu – dotychczasowe grupy zostają na swoich miejscach');
+  assert.equal(TOOL_GROUPS.at(-2).id, 'process', 'za Jakością – dotychczasowe grupy zostają na swoich miejscach (od 1.47 za nią Bryły)');
   assert.deepEqual(PROCESS_ITEMS.map(itemLabel), ['Początek / koniec', 'Dane', 'Dokument', 'Podproces', 'Łącznik', 'Symbol VSM', 'Oś czasu VSM', 'Legenda wad']);
   const preset = PRESETS.find((item) => item.id === 'process-map');
   assert.equal(preset.label, 'Procesy / VSM');
   assert.ok(preset.items.every((item) => ALL_ITEMS.includes(item)));
   assert.equal(preset.items.length, 12);
-  assert.equal(DRAWING_VERSION, 17);
+  assert.ok(DRAWING_VERSION >= 17, 'od 1.45 (1.47 – 18)');
   assert.deepEqual(defaultToolSettings().connectorCaps, { start: 'none', end: 'arrow' });
   assert.deepEqual(cleanToolSettings({ connectorCaps: { start: 'circle', end: 'zły' } }).connectorCaps, { start: 'circle', end: 'arrow' });
 });

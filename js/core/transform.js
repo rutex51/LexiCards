@@ -10,11 +10,13 @@
 // i kreski rosną, elementy stojące prosto zmieniają tylko miejsce) i przenoszenie stylu elementu.
 // Kształt odbity zostaje tym samym rodzajem kształtu: zmienia się kąt, pochylenie, wierzchołek
 // trójkąta i wierzchołki łamanej; odcinek i strzałka – tylko kąt (początek zostaje początkiem).
+// Bryła (od 1.47) obraca się na kartce (obrót wokół osi patrzenia), odbija (to samo w innym położeniu) i skaluje.
 
 import { isArray, polarStep, rotateItem } from './arrays.js';
 import { endPoint, findSnap, keepLinksTo, withLink } from './attach.js';
 import { elementBox, isElement, translateStroke } from './drawing.js';
 import { MIN_SHAPE, canDash, canFill, isMeasure, isSegment, isShape, withDash, withShapeFill } from './shapes.js';
+import { isSolid, mirrorSolid, scaleSolid, turnSolid } from './solids.js';
 
 export const MIRROR_AXES = Object.freeze(['horizontal', 'vertical']);
 export const MIRROR_LABELS = Object.freeze({ horizontal: 'W poziomie', vertical: 'W pionie' });
@@ -31,8 +33,8 @@ function normalAngle(angle) {
   return value <= -Math.PI + 1e-12 ? Math.PI : value;
 }
 
-/** Element stojący prosto: pole tekstowe, wzór, tabela, karteczka, symbol metrologiczny. */
-export const isUpright = (stroke) => isElement(stroke) && !isShape(stroke) && !isArray(stroke);
+/** Element stojący prosto: pole tekstowe, wzór, tabela, karteczka, symbol metrologiczny (bryła – nie: obraca się). */
+export const isUpright = (stroke) => isElement(stroke) && !isShape(stroke) && !isArray(stroke) && !isSolid(stroke);
 
 /** Czy obrót albo odbicie coś zmieni: kilka elementów albo jeden, który się obraca (nie stoi prosto). */
 export const canTurn = (strokes) => strokes.length > 1 || (strokes.length === 1 && !isUpright(strokes[0]));
@@ -94,6 +96,7 @@ export function rotateStroke(stroke, cx, cy, angle) {
     return { ...stroke, items, cx: round(center.x), cy: round(center.y) };
   }
   if (isUpright(stroke)) return placeUpright(stroke, spin);
+  if (isSolid(stroke)) return turnSolid(stroke, cx, cy, angle);
   return turnHatch(rotateItem(stroke, cx, cy, angle), (-angle * 180) / Math.PI);
 }
 
@@ -148,6 +151,7 @@ export function mirrorStroke(stroke, axis, at) {
   if (isArray(stroke)) return mirrorArray(stroke, axis, at);
   if (isUpright(stroke)) return placeUpright(stroke, flip);
   if (isShape(stroke)) return mirrorShape(stroke, horizontal, flip);
+  if (isSolid(stroke)) return mirrorSolid(stroke, horizontal ? { x: at, y: 0 } : { x: 0, y: at }, horizontal ? Math.PI / 2 : 0);
   const points = stroke.points.slice();
   const offset = horizontal ? 0 : 1;
   for (let index = offset; index < points.length; index += 3) points[index] = round(2 * at - points[index], 1);
@@ -225,6 +229,7 @@ export function scaleStroke(stroke, cx, cy, factor) {
   }
   if (isUpright(stroke)) return placeUpright(stroke, map);
   if (isShape(stroke)) return scaleShape(stroke, map, factor);
+  if (isSolid(stroke)) return scaleSolid(stroke, cx, cy, factor);
   const points = stroke.points.slice();
   for (let index = 0; index < points.length; index += 3) {
     points[index] = round(cx + (points[index] - cx) * factor, 1);
@@ -235,10 +240,10 @@ export function scaleStroke(stroke, cx, cy, factor) {
 
 const HEX = /^#[0-9a-f]{6}$/i;
 /** Elementy z kolorem do przeniesienia: kreski, kształty, pola tekstowe, wzory i symbole. */
-const STYLED = ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness', 'diagram'];
-/** Grubość linii: kształtu – size, kreski – średnia szerokość punktów; inne – null. */
+const STYLED = ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness', 'diagram', 'solid'];
+/** Grubość linii: kształtu i (od 1.47) bryły – size, kreski – średnia szerokość punktów; inne – null. */
 export function lineWidthOf(stroke) {
-  if (isShape(stroke)) return stroke.size;
+  if (isShape(stroke) || isSolid(stroke)) return stroke.size;
   if (stroke.tool !== 'pen' && stroke.tool !== 'highlighter') return null;
   let sum = 0;
   for (let index = 2; index < stroke.points.length; index += 3) sum += stroke.points[index];
@@ -259,6 +264,7 @@ export function withStyleOf(target, source) {
   let next = { ...target, color: source.color.toLowerCase() };
   const width = lineWidthOf(source);
   if (width !== null && isShape(next) && !isMeasure(next)) next.size = round(Math.min(40, Math.max(0.5, width)), 1);
+  if (width !== null && isSolid(next)) next.size = round(Math.min(20, Math.max(0.5, width)), 1);
   if (width !== null && (next.tool === 'pen' || next.tool === 'highlighter') && source.tool !== 'highlighter' && next.tool !== 'highlighter') {
     const factor = width / Math.max(0.1, lineWidthOf(next));
     next.points = next.points.map((value, at) => (at % 3 === 2 ? round(Math.min(40, Math.max(0.5, value * factor))) : value));

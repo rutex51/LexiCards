@@ -7,16 +7,16 @@ import { test } from 'node:test';
 import { cleanToolSettings, defaultToolSettings } from '../../js/core/drawing.js';
 import { DIM_MODES, SHAPES } from '../../js/core/shapes.js';
 import {
-  EDIT_ITEMS, QUALITY_ITEMS, RING_CENTER, TOOL_GROUPS, USER_GROUPS, clampRotation, cleanUiHidden, findGroup, isModeItem, ringItems, ringStep, rotationFor,
+  EDIT_ITEMS, QUALITY_ITEMS, RING_CENTER, SOLID_ITEMS, TOOL_GROUPS, USER_GROUPS, clampRotation, cleanUiHidden, findGroup, isModeItem, ringItems, ringStep, rotationFor,
   snapRotation, startGroup, toolItem, uiPartHidden
 } from '../../js/core/tool-ring.js';
 
 // Od 1.43 także polecenia edycji geometrii.
-const COMMANDS = ['text', 'math', 'table', 'sticky', 'gdt', 'datum', 'roughness', ...EDIT_ITEMS, ...QUALITY_ITEMS, 'vsm', 'diagram:timeline', 'diagram:defects'];
+const COMMANDS = ['text', 'math', 'table', 'sticky', 'gdt', 'datum', 'roughness', ...EDIT_ITEMS, ...QUALITY_ITEMS, 'vsm', 'diagram:timeline', 'diagram:defects', ...SOLID_ITEMS];
 
 test('kółka 1.32: grupy – każdy kształt i polecenie w grupie standardowej, Metrologia z symbolami, pozycje bez powtórzeń', () => {
   // Od 1.34 także Wymiary, od 1.43 Edycja.
-  assert.deepEqual(TOOL_GROUPS.map((group) => group.id), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality', 'process']);
+  assert.deepEqual(TOOL_GROUPS.map((group) => group.id), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality', 'process', 'solids']);
   const items = TOOL_GROUPS.flatMap((group) => group.items);
   assert.equal(new Set(items).size, items.length, 'pozycja w jednej grupie standardowej');
   // Od 1.36 wymiar – cztery pozycje 'dim:<rodzaj>' zamiast 'shape:dim'.

@@ -3217,7 +3217,8 @@ const ITEM_GROUPS = {
   'drawing-edit-offset': 'edit', 'drawing-edit-fillet': 'edit', 'drawing-edit-chamfer': 'edit', 'drawing-edit-trim': 'edit', 'drawing-edit-extend': 'edit',
   'drawing-insert-fishbone': 'quality', 'drawing-insert-whys': 'quality', 'drawing-insert-sipoc': 'quality', 'drawing-insert-layout': 'quality',
   'drawing-shape-terminator': 'process', 'drawing-shape-data': 'process', 'drawing-shape-document': 'process', 'drawing-shape-subprocess': 'process',
-  'drawing-shape-connector': 'process', 'drawing-insert-vsm': 'process', 'drawing-insert-timeline': 'process', 'drawing-insert-defects': 'process'
+  'drawing-shape-connector': 'process', 'drawing-insert-vsm': 'process', 'drawing-insert-timeline': 'process', 'drawing-insert-defects': 'process',
+  ...Object.fromEntries(['box', 'cylinder', 'cone', 'pyramid', 'prism', 'sphere'].map((kind) => [`drawing-insert-solid-${kind}`, 'solids']))
 };
 const groupOfItem = (testID) => ITEM_GROUPS[testID] ?? (testID.startsWith('drawing-shape-') ? 'shapes' : null);
 const OPTION_IDS = /^drawing-(color-|width-|eraser-size-|select-all$|paste$)/;
@@ -8993,13 +8994,13 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Grupy</p>');
   // Ostatnie małe kółko każdego kółka – „Grupy narzędzi”.
   // Od 1.43 na końcu grupa Edycja, od 1.44 – Jakość.
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality', 'process']);
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality', 'process', 'solids']);
   assert.deepEqual(await ringGroupIds(editor, 'left'), ['metrology']);
   assert.equal(await editor.locator('[data-testid=drawing-ring-left-edit]').evaluate((element) => element.style.opacity), '1', 'przy jednej grupie widać je od razu');
   let groups = await openToolGroupsFrom(editor, 'right');
   const standardOrder = () => groups.locator('[data-testid=tool-groups-standard] [data-testid^=tool-groups-on-]')
     .evaluateAll((inputs) => inputs.map((input) => input.dataset.testid.replace('tool-groups-on-', '')));
-  assert.deepEqual(await standardOrder(), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality', 'process']);
+  assert.deepEqual(await standardOrder(), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality', 'process', 'solids']);
   await expectText(groups.locator('[data-testid=tool-groups-standard]'), 'Pióro · Zakreślacz · Gumka');
   assert.equal(await groups.locator('[data-testid=tool-groups-preset-metrology]').getAttribute('aria-pressed'), 'true', 'Metrologia już na lewym kółku');
   await expectText(groups.locator('[data-testid=tool-groups-editor]'), 'Grupa „Metrologia” – narzędzia');
@@ -9009,14 +9010,14 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await groups.locator('[data-testid=tool-groups-on-write]').uncheck();
   await groups.locator('.sheet__header .button--plain').click();
   await groups.waitFor({ state: 'detached' });
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality', 'process'], 'Anuluj zostawia grupy');
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['write', 'shapes', 'construct', 'text', 'dims', 'symbols', 'edit', 'quality', 'process', 'solids'], 'Anuluj zostawia grupy');
 
   groups = await openToolGroupsFrom(editor, 'right');
   // Symbole – poza kółkiem; Tekst na początek (strzałki na uchwycie ≡), Konstrukcja przeciągnięta nad Pisanie.
   await groups.locator('[data-testid=tool-groups-on-symbols]').uncheck();
   await groups.locator('[data-testid=tool-groups-move-text]').focus();
   for (let step = 0; step < 3; step += 1) await page.keyboard.press('ArrowUp');
-  assert.deepEqual(await standardOrder(), ['text', 'write', 'shapes', 'construct', 'dims', 'symbols', 'edit', 'quality', 'process']);
+  assert.deepEqual(await standardOrder(), ['text', 'write', 'shapes', 'construct', 'dims', 'symbols', 'edit', 'quality', 'process', 'solids']);
   assert.equal(await groups.locator('[data-testid=tool-groups-move-text]').evaluate((element) => element === document.activeElement), true, 'fokus zostaje na uchwycie');
   const grip = await groups.locator('[data-testid=tool-groups-move-construct]').boundingBox();
   const rowHeight = (await groups.locator('[data-testid=tool-groups-move-write]').boundingBox()).y - (await groups.locator('[data-testid=tool-groups-move-text]').boundingBox()).y;
@@ -9024,11 +9025,11 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await page.mouse.down();
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 - rowHeight * 2, { steps: 8 });
   await page.mouse.up();
-  await waitUntil(async () => (await standardOrder()).join() === 'text,construct,write,shapes,dims,symbols,edit,quality,process', 'Przeciągnięcie ≡ zmienia kolejność');
+  await waitUntil(async () => (await standardOrder()).join() === 'text,construct,write,shapes,dims,symbols,edit,quality,process,solids', 'Przeciągnięcie ≡ zmienia kolejność');
   // Na kółku zostaje co najmniej jedna grupa: po odznaczeniu pozostałych ostatnia jest zablokowana.
-  for (const id of ['text', 'write', 'shapes', 'dims', 'edit', 'quality', 'process']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).uncheck();
+  for (const id of ['text', 'write', 'shapes', 'dims', 'edit', 'quality', 'process', 'solids']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).uncheck();
   assert.equal(await groups.locator('[data-testid=tool-groups-on-construct]').isDisabled(), true, 'ostatnia grupa zostaje');
-  for (const id of ['text', 'write', 'shapes', 'dims', 'edit', 'quality', 'process']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).check();
+  for (const id of ['text', 'write', 'shapes', 'dims', 'edit', 'quality', 'process', 'solids']) await groups.locator(`[data-testid=tool-groups-on-${id}]`).check();
   assert.equal(await groups.locator('[data-testid=tool-groups-on-construct]').isDisabled(), false);
 
   // Zestawy: Geometria dochodzi (i otwiera się do edycji), Metrologia odchodzi.
@@ -9052,7 +9053,7 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await groups.waitFor({ state: 'detached' });
 
   // Kółka po „Gotowe”: prawe w nowej kolejności bez Symboli, lewe – Geometria i Ulubione.
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit', 'quality', 'process']);
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit', 'quality', 'process', 'solids']);
   assert.deepEqual(await ringGroupIds(editor, 'left'), ['geometry', 'own-1']);
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Pisanie', 'pokazana grupa zostaje');
   assert.equal(await editor.locator('[data-testid=drawing-group-write]').getAttribute('aria-pressed'), 'true');
@@ -9064,7 +9065,7 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   assert.match(await ringMain(editor, 'left').getAttribute('aria-label'), /^Elipsa/);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-grupy-kolka-ipad.png') });
   const saved = await storedGroups(page);
-  assert.deepEqual(saved.order, ['text', 'construct', 'write', 'shapes', 'dims', 'symbols', 'edit', 'quality', 'process']);
+  assert.deepEqual(saved.order, ['text', 'construct', 'write', 'shapes', 'dims', 'symbols', 'edit', 'quality', 'process', 'solids']);
   assert.deepEqual(saved.off, ['symbols']);
   assert.deepEqual(saved.mine.map((group) => [group.id, group.label, group.icon, group.items.join()]),
     [['geometry', 'Geometria', 'geometry', 'shape:line,shape:ellipse,shape:xline,shape:point'], ['own-1', 'Ulubione', 'sparkles', 'shape:ellipse,pen,gdt']]);
@@ -9075,7 +9076,7 @@ test('rysunek 1.33: grupy narzędzi – okno z kółka: grupy standardowe (schow
   await noteObjectsDialog(page).locator('[data-testid=note-image-draw]').click();
   await editor.waitFor();
   await waitUntil(async () => (await ringGroupIds(editor, 'left')).join() === 'geometry,own-1', 'Grupy po ponownym otwarciu');
-  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit', 'quality', 'process']);
+  assert.deepEqual(await ringGroupIds(editor, 'right'), ['text', 'construct', 'write', 'shapes', 'dims', 'edit', 'quality', 'process', 'solids']);
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Ulubione');
 
   // Z lewego kółka okno otwiera się z jego grupą; usunięcie pokazanej grupy – menu wraca do grupy z narzędziem.
@@ -11328,7 +11329,8 @@ test('ustawienia 1.45.2: zajęte miejsce – aplikacja, dane, obrazy i załączn
   assert.equal(await items.count(), 5);
   await expectText(items.first().locator('.changelog__version'), CHANGELOG[0].version);
   const version = await page.locator('.row--static', { hasText: 'Wersja' }).locator('.row__value').textContent();
-  assert.ok(version.startsWith(`${CHANGELOG[0].version} `), `historia zaczyna się od bieżącej wersji (${version})`);
+  // Wydanie x.y.0 (od 1.47) – w historii „x.y”.
+  assert.equal(version.split(' ')[0].replace(/\.0$/, ''), CHANGELOG[0].version, `historia zaczyna się od bieżącej wersji (${version})`);
   await changes.screenshot({ path: path.join(OUTPUT, 'ustawienia-1452-historia.png') });
   await changes.locator('[data-testid=changelog-toggle]').click();
   await waitUntil(async () => (await items.count()) === CHANGELOG.length, 'Wszystkie wersje');
@@ -11336,6 +11338,250 @@ test('ustawienia 1.45.2: zajęte miejsce – aplikacja, dane, obrazy i załączn
   assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
   await changes.locator('[data-testid=changelog-toggle]').click();
   await waitUntil(async () => (await items.count()) === 5, 'Znów najnowsze');
+}, { device: PHONE });
+
+test('rysunek 1.47: grupa Bryły – wstawienie, kostka widoków (przeciąganie – swobodny obrót, ściana – widok), „Obracaj”, menu „Widok”, okno bryły (rodzaj, wymiary, kąty, krawędzie, cieniowanie), odbicie, sześć brył na kartce, zapis i DXF (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Bryły</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  const closed = () => waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+  const shot = async (name) => {
+    await nextFrames(page);
+    await page.screenshot({ path: path.join(OUTPUT, `rysunek-147-${name}.png`) });
+  };
+  const deselect = async () => {
+    await page.keyboard.press('Escape');
+    await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  };
+  /** Środek kostki widoków i zaznaczonej bryły na ekranie. */
+  const where = async () => {
+    await waitUntil(async () => Boolean(await canvas.getAttribute('data-cube')), 'Kostka widoków');
+    const [x, y, sx, sy] = (await canvas.getAttribute('data-cube')).split(',').map(Number);
+    const box = await canvas.boundingBox();
+    return { cube: [box.x + x, box.y + y], solid: [box.x + sx, box.y + sy] };
+  };
+  const drag = async (from, to, steps = 10) => {
+    await page.mouse.move(...from);
+    await page.mouse.down();
+    for (let step = 1; step <= steps; step += 1) await page.mouse.move(from[0] + ((to[0] - from[0]) * step) / steps, from[1] + ((to[1] - from[1]) * step) / steps);
+    await page.mouse.up();
+  };
+  /** Kąty zaznaczonej bryły z jej okna (dotknięcie bryły); okno zostaje otwarte. */
+  const angles = async () => {
+    await page.mouse.click(...(await where()).solid);
+    await expectText(sheet(page).locator('.sheet__title'), 'Bryła: ');
+    const read = (key) => page.locator(`[data-testid=drawing-solid-${key}]`).inputValue();
+    return { yaw: await read('yaw'), pitch: await read('pitch'), roll: await read('roll') };
+  };
+  const cancel = async () => {
+    await sheet(page).getByRole('button', { name: 'Anuluj' }).click();
+    await closed();
+  };
+  const settledAnimation = () => waitUntil(async () => (await canvas.getAttribute('data-cube')) !== null && page.evaluate(() => new Promise((done) => setTimeout(done, 450)).then(() => true)), 'Koniec obrotu');
+
+  await pickGroup(editor, 'solids');
+  await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Bryły');
+  assert.deepEqual(await editor.locator('[data-testid=drawing-tool-row] .drawing__tool-label').allTextContents(),
+    ['Prostop.', 'Walec', 'Stożek', 'Ostrosłup', 'Graniast.', 'Kula']);
+  await editor.locator('[data-testid=drawing-insert-solid-box]').click();
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await expectText(notice, 'Prostopadłościan: kostka obok obraca bryłę, ściana kostki – widok, dotknięcie bryły – wymiary');
+  assert.deepEqual(await angles(), { yaw: '45', pitch: '35,3', roll: '0' }, 'nowa bryła – izometria');
+  await cancel();
+  await shot('prostopadloscian');
+
+  // Przeciągnięcie kostki – swobodny obrót (bryła zostaje w miejscu).
+  const before = await where();
+  await drag(before.cube, [before.cube[0] + 80, before.cube[1] + 30]);
+  const turned = await angles();
+  assert.notDeepEqual(turned, { yaw: '45', pitch: '35,3', roll: '0' }, `obrót kostką: ${JSON.stringify(turned)}`);
+  await cancel();
+  const after = await where();
+  assert.deepEqual(after.solid, before.solid, 'środek bryły w tym samym miejscu');
+
+  // Menu „Widok” – izometria (płynne przejście), potem ściana GÓRA kostki – widok z góry.
+  await editor.locator('[data-testid=drawing-selection-solid-view]').click();
+  await page.locator('[data-testid=drawing-solid-view-iso]').click();
+  await settledAnimation();
+  assert.deepEqual(await angles(), { yaw: '45', pitch: '35,3', roll: '0' }, 'izometria z menu');
+  await cancel();
+  const { cube } = await where();
+  await page.mouse.click(cube[0], cube[1] - 14);
+  await settledAnimation();
+  assert.deepEqual(await angles(), { yaw: '0', pitch: '90', roll: '0' }, 'ściana GÓRA – widok z góry');
+  await cancel();
+  await editor.locator('[data-testid=drawing-selection-solid-view]').click();
+  assert.equal(await page.locator('[data-testid=drawing-solid-view-top]').getAttribute('aria-checked'), 'true', 'bieżący widok zaznaczony');
+  await page.locator('[data-testid=drawing-solid-view-front]').click();
+  await settledAnimation();
+
+  // „Obracaj”: przeciągnięcie bryły obraca ją (zamiast przesuwać); ponowne dotknięcie – koniec.
+  await editor.locator('[data-testid=drawing-selection-orbit]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-selection-orbit]').getAttribute('aria-pressed'), 'true');
+  const center = (await where()).solid;
+  await drag([center[0] - 30, center[1]], [center[0] + 60, center[1]]);
+  const orbited = await angles();
+  assert.equal(orbited.pitch, '0', 'poziomy ruch – bez pochylenia');
+  assert.ok(Number(orbited.yaw.replace(',', '.')) < -20, `obrót wokół pionu: ${orbited.yaw}`);
+  await cancel();
+  assert.deepEqual((await where()).solid, center, 'bryła nie przesunięta');
+  await editor.locator('[data-testid=drawing-selection-orbit]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-selection-orbit]').getAttribute('aria-pressed'), 'false');
+
+  // Okno bryły: walec ⌀5 × 6 cm, kąty, bez krawędzi niewidocznych, bez cieniowania.
+  await angles();
+  await page.locator('[data-testid=drawing-solid-kind-cylinder]').click();
+  assert.equal(await page.locator('[data-testid=drawing-solid-dim-d]').inputValue(), '4', 'domyślna średnica 4 cm');
+  await page.locator('[data-testid=drawing-solid-dim-d]').fill('5');
+  await page.locator('[data-testid=drawing-solid-dim-h]').fill('6');
+  await page.locator('[data-testid=drawing-solid-preset-dimetric]').click();
+  assert.equal(await page.locator('[data-testid=drawing-solid-yaw]').inputValue(), '20,7');
+  await page.locator('[data-testid=drawing-solid-roll]').fill('15');
+  await sheet(page).locator('.segmented__option', { hasText: 'Ukryte' }).click();
+  await sheet(page).getByRole('switch', { name: 'Cieniowanie' }).uncheck({ force: true });
+  await shot('okno');
+  await sheetSubmit(page).click();
+  await closed();
+  await expectText(count, 'Bryła: Walec');
+  assert.deepEqual(await angles(), { yaw: '20,7', pitch: '19,5', roll: '15' });
+  await cancel();
+
+  // Odbicie w poziomie: ta sama bryła w lustrzanym położeniu (obrót wokół pionu i na kartce – z przeciwnym znakiem).
+  await editor.locator('[data-testid=drawing-selection-mirror]').click();
+  await page.locator('[data-testid=drawing-mirror-horizontal]').click();
+  assert.deepEqual(await angles(), { yaw: '-20,7', pitch: '19,5', roll: '-15' }, 'odbicie lustrzane');
+  await cancel();
+
+  // Pozostałe bryły – każda nowa pod poprzednią albo na środku; przesunięte w swoje miejsca.
+  const frame = await pageFrame(page);
+  const moveTo = async (x, y) => {
+    const { solid } = await where();
+    await drag(solid, frame.screen(x, y), 6);
+    await deselect();
+  };
+  await moveTo(260, 300);
+  for (const [kind, x, y] of [['box', 640, 280], ['cone', 1040, 300], ['pyramid', 1400, 300], ['prism', 420, 780], ['sphere', 900, 800]]) {
+    await editor.locator(`[data-testid=drawing-insert-solid-${kind}]`).click();
+    await expectText(count, 'Bryła: ');
+    await moveTo(x, y);
+  }
+  await editor.locator('[data-testid=drawing-hide-ui]').click();
+  await waitUntil(() => notice.isHidden(), 'Komunikat zniknął');
+  await shot('sześć-brył');
+  await editor.locator('[data-testid=drawing-hide-ui]').click();
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const strokes = await savedStrokes(page, ids.statements);
+  const solids = strokes.filter((stroke) => stroke.tool === 'solid');
+  assert.deepEqual(solids.map((stroke) => stroke.kind), ['cylinder', 'box', 'cone', 'pyramid', 'prism', 'sphere']);
+  const [cylinder] = solids;
+  assert.deepEqual(cylinder.dims, { d: 220, h: 264 }, 'wymiary w jednostkach strony (kratka 1 cm = 44)');
+  assert.equal(cylinder.edges, 'none');
+  assert.equal(cylinder.shade, undefined, 'bez cieniowania');
+  assert.ok(Math.abs(Math.hypot(...cylinder.q) - 1) < 1e-5, 'kwaternion jednostkowy');
+  const { solidAngles } = await import('../../js/core/solids.js');
+  assert.deepEqual(solidAngles(cylinder.q), { yaw: -20.7, pitch: 19.5, roll: -15 });
+  // DXF: krawędzie, niewidoczne linią przerywaną, osie punktową, wymiary z liczbami.
+  const { drawingToDxf, parseDxf } = await import('../../js/core/dxf.js');
+  const drawingData = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  const exported = drawingToDxf(drawingData);
+  const parsed = parseDxf(exported.text);
+  assert.equal(exported.skipped, 0, 'bryły zapisane');
+  assert.ok(parsed.entities.some((item) => item.linetype === 'DASHED'), 'krawędzie niewidoczne');
+  assert.ok(parsed.entities.some((item) => item.linetype === 'CENTER'), 'osie');
+  assert.ok(parsed.entities.some((item) => item.type === 'TEXT' && item.first(1) === '6 cm'), 'wymiar prostopadłościanu');
+}, { device: DESKTOP });
+
+test('rysunek 1.47 na iPadzie: kostka widoków palcem – przeciągnięcie obraca stożek, dotknięcie ściany PRZÓD – widok z przodu; „Obracaj” palcem na bryle', async ({ open, context }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Stożek</p>');
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  const closed = () => waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+  const where = async () => {
+    await waitUntil(async () => Boolean(await canvas.getAttribute('data-cube')), 'Kostka widoków');
+    const [x, y, sx, sy] = (await canvas.getAttribute('data-cube')).split(',').map(Number);
+    const box = await canvas.boundingBox();
+    return { cube: [box.x + x, box.y + y], solid: [box.x + sx, box.y + sy] };
+  };
+  const angles = async () => {
+    await page.touchscreen.tap(...(await where()).solid);
+    await expectText(sheet(page).locator('.sheet__title'), 'Bryła: Stożek');
+    const read = (key) => page.locator(`[data-testid=drawing-solid-${key}]`).inputValue();
+    const result = { yaw: await read('yaw'), pitch: await read('pitch'), roll: await read('roll') };
+    await sheet(page).getByRole('button', { name: 'Anuluj' }).tap();
+    await closed();
+    return result;
+  };
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-cone]').tap();
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Bryła: Stożek');
+  const { cube } = await where();
+  const finger = await touchAt(context, page, ...cube);
+  await finger.move(cube[0] - 60, cube[1] + 50);
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-147-ipad-obrot-palcem.png') });
+  await finger.end();
+  const turned = await angles();
+  assert.notDeepEqual(turned, { yaw: '45', pitch: '35,3', roll: '0' }, `obrót palcem: ${JSON.stringify(turned)}`);
+  // Widok z menu (izometria), potem ściana PRZÓD (lewa dolna ściana kostki w izometrii).
+  await editor.locator('[data-testid=drawing-selection-solid-view]').tap();
+  await page.locator('[data-testid=drawing-solid-view-iso]').tap();
+  await page.waitForTimeout(500);
+  const iso = await where();
+  await page.touchscreen.tap(iso.cube[0] - 12, iso.cube[1] + 10);
+  await page.waitForTimeout(500);
+  assert.deepEqual(await angles(), { yaw: '0', pitch: '0', roll: '0' }, 'ściana PRZÓD');
+  // „Obracaj”: palec na bryle obraca ją, bryła zostaje w miejscu.
+  await editor.locator('[data-testid=drawing-selection-orbit]').tap();
+  const { solid } = await where();
+  const drag = await touchAt(context, page, solid[0], solid[1] - 20);
+  await drag.move(solid[0], solid[1] + 60);
+  await drag.end();
+  await nextFrames(page);
+  assert.deepEqual((await where()).solid, solid, 'bryła w tym samym miejscu');
+  const tilted = await angles();
+  assert.equal(tilted.yaw, '0');
+  assert.ok(Number(tilted.pitch.replace(',', '.')) > 20, `pochylenie palcem w dół: ${tilted.pitch}`);
+}, { device: IPAD });
+
+test('rysunek 1.47 na telefonie: grupa Bryły w górnym menu, kostka widoków na ekranie, okno bryły w szerokości ekranu', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  await pickGroup(editor, 'solids');
+  for (const kind of ['box', 'sphere']) {
+    await editor.locator(`[data-testid=drawing-insert-solid-${kind}]`).scrollIntoViewIfNeeded();
+    const box = await editor.locator(`[data-testid=drawing-insert-solid-${kind}]`).boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 391, `${kind} na ekranie`);
+  }
+  await editor.locator('[data-testid=drawing-insert-solid-box]').click();
+  await waitUntil(async () => Boolean(await canvas.getAttribute('data-cube')), 'Kostka widoków');
+  const [x, , sx, sy] = (await canvas.getAttribute('data-cube')).split(',').map(Number);
+  const frame = await canvas.boundingBox();
+  assert.ok(frame.x + x + 24 <= 390 && frame.x + x - 24 >= 0, `kostka w szerokości ekranu: ${x}`);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-147-telefon.png') });
+  await page.touchscreen.tap(frame.x + sx, frame.y + sy);
+  await page.locator('[data-testid=drawing-solid-dim-a]').waitFor();
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  // Dotknięcie bryły otwiera okno i nie „klika” potem w okno pod palcem (rodzaj zostaje).
+  assert.equal(await page.locator('[data-testid=drawing-solid-kind-box]').getAttribute('aria-pressed'), 'true', 'rodzaj bez zmiany');
+  assert.equal(await overflowX(page), 0, 'okno bez przewijania w bok');
+  for (const id of ['drawing-solid-dim-c', 'drawing-solid-roll', 'drawing-solid-kind-sphere']) {
+    const box = await page.locator(`[data-testid=${id}]`).boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= 390, `${id} w szerokości ekranu`);
+  }
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-147-okno-telefon.png') });
 }, { device: PHONE });
 
 // ---------------------------------------------------------------- nauka z fiszkami

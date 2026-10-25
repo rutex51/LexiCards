@@ -12,10 +12,11 @@
 // Bez przeglądarki – testy w Node.js.
 
 import { isArray, expandArray } from './arrays.js';
-import { PAPER_STEP, SCALE_UNITS, cleanScale, dimFormat, dimensionParts, dimensionText, leaderStart, stickyColor } from './drawing.js';
+import { PAPER_STEP, SCALE_UNITS, cleanScale, dimFormat, dimensionParts, dimensionText, leaderStart, solidDimText, stickyColor } from './drawing.js';
 import { drawingLayers, elementLayers, layersOf } from './layers.js';
 import { frameLayout } from './title-block.js';
 import { diagramLayout, textWidth } from './diagrams.js';
+import { solidDimParts, solidGeometry } from './solids.js';
 import { pageLayoutGeometry } from './page-layouts.js';
 import {
   arcFromPoints, arcGeometry, circleShape, cornerSize, curveSamples, dimGeometry, dimKeys, isMeasure, polyFromPoints, polyPoints, shapeAxes, shapeHatch,
@@ -848,6 +849,24 @@ export function drawingToDxf(drawing) {
       }
     }
   };
+  const writeSolid = (stroke) => {
+    const geometry = solidGeometry(stroke);
+    const solid = { ...stroke, dash: 'solid' };
+    for (const item of geometry.visible) polyline(solid, item.points.map(pt), item.closed);
+    if (stroke.edges !== 'none') {
+      const hidden = { ...stroke, dash: stroke.edges === 'dashed' ? 'dashed' : 'solid' };
+      for (const item of geometry.hidden) polyline(hidden, item.points.map(pt), item.closed);
+    }
+    for (const [a, b] of geometry.axes) line({ ...stroke, dash: 'center' }, pt(a), pt(b));
+    for (const dim of geometry.dims) {
+      const parts = solidDimParts(dim, solidDimText(dim, drawing.scale, format));
+      for (const [a, b] of parts.lines) line(solid, pt(a), pt(b));
+      for (const arrow of parts.arrows) arrowHead(solid, arrow.tip, arrow.angle);
+      const at = pt(parts.label);
+      add([...head('TEXT', solid), [10, fixed(at.x)], [20, fixed(at.y)], [30, 0], [40, fixed(parts.label.size * 0.7 * mm)],
+        [1, dxfString(parts.label.text)], [50, degrees(-parts.label.angle)], [72, 1], [11, fixed(at.x)], [21, fixed(at.y)], [31, 0], [73, 2]]);
+    }
+  };
   const writeStroke = (stroke) => {
     if (isArray(stroke)) {
       for (const item of expandArray(stroke)) writeStroke({ ...item, layers: stroke.layers ?? item.layers });
@@ -884,6 +903,11 @@ export function drawingToDxf(drawing) {
     // Diagram jakości (od 1.44): linie, strzałki, ramki i napisy rozkładu.
     if (stroke.tool === 'diagram') {
       writeGeometry(stroke, diagramLayout(stroke, { strokes: drawing.strokes }));
+      return;
+    }
+    // Bryła (od 1.47): rzut – krawędzie widoczne, niewidoczne (DASHED albo ciągłe), osie (CENTER) i wymiary.
+    if (stroke.tool === 'solid') {
+      writeSolid(stroke);
       return;
     }
     if (stroke.tool !== 'shape') {

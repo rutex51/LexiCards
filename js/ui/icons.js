@@ -226,6 +226,16 @@ const ICONS = {
   flowchart: [p('M8 2.5h8a2.5 2.5 0 0 1 0 5H8a2.5 2.5 0 0 1 0-5z'), p('M12 7.5v2'), p('M12 9.5l4.5 3.5-4.5 3.5-4.5-3.5z'), p('M12 16.5v2'), p('M7.5 18.5h9v3h-9z')],
   vsm: [p('M3 4h12v4H3z'), p('M3 8h12v7H3z'), p('M5.5 11h7'), p('M18.5 13l3 6h-6z')],
   timeline: [p('M2.5 8h4.5v8h5V8h5v8h4.5')],
+  // Bryły (od 1.47).
+  solidBox: [p('M4 8.2 12 4.2l8 4v8.2l-8 4-8-4z'), p('M4 8.2l8 4 8-4'), p('M12 12.2v8.2')],
+  solidCylinder: [p('M5 6.2a7 2.6 0 1 0 14 0a7 2.6 0 1 0-14 0'), p('M5 6.2v11.6'), p('M19 6.2v11.6'), p('M5 17.8a7 2.6 0 0 0 14 0')],
+  solidCone: [p('M12 3 5 18'), p('M12 3l7 15'), p('M5 18a7 2.6 0 0 0 14 0'), { d: 'M5 18a7 2.6 0 0 1 14 0', 'stroke-dasharray': '2 2' }],
+  solidPyramid: [p('M12 3 4 16.5l9 4 7-5.5z'), p('M12 3l1 17.5')],
+  solidPrism: [p('M6 6.5 9 4.5h6l3 2-3 2H9z'), p('M6 6.5v11l3 2h6l3-2v-11'), p('M9 8.5v11'), p('M15 8.5v11')],
+  solidSphere: [{ tag: 'circle', cx: 12, cy: 12, r: 8 }, p('M4 12a8 3 0 0 0 16 0'), { d: 'M4 12a8 3 0 0 1 16 0', 'stroke-dasharray': '2 2' }],
+  // Obrót bryły w przestrzeni (od 1.47): kula z orbitą i strzałką.
+  orbit: [{ tag: 'circle', cx: 12, cy: 12, r: 4.5 }, p('M3.5 13.5c1.2 3 6 4.6 11 3.4 4.2-1 6.6-3.6 5.8-6.2-.5-1.6-2.3-2.8-4.8-3.3'), p('M14 5.6l2.6 1.8-1.9 2.4')],
+  viewCube: [p('M4 8.2 12 4.2l8 4v8.2l-8 4-8-4z'), p('M4 8.2l8 4 8-4'), p('M12 12.2v8.2'), { d: 'M12 12.2 4 8.2l8-4 8 4z', fill: 'currentColor', 'fill-opacity': '0.3', stroke: 'none' }],
   defects: [p('M3.5 3.5h17v17h-17z'), p('M7 8l3 3m0-3l-3 3'), p('M15 14.5l2.5 2.5m0-2.5L15 17'), p('M15.5 7.5a1.5 1.5 0 1 0 .01 0')],
   // Od 1.43: łamana i edycja geometrii – odsuń, zaokrąglij, fazuj, przytnij, wydłuż.
   shapePolyline: [p('M3.5 18.5l5-10 6 6 6-10'), dot(3.5, 18.5, 1.6), dot(8.5, 8.5, 1.6), dot(14.5, 14.5, 1.6), dot(20.5, 4.5, 1.6)],

@@ -55,7 +55,8 @@ test('ustawienia 1.45.2: zajęte miejsce razem z obrazami i załącznikami; szac
 });
 
 test('ustawienia 1.45.2: historia zmian – od bieżącej wersji do 1.0, bez powtórzeń, od najnowszej, każda w jednym zdaniu', () => {
-  assert.equal(CHANGELOG[0].version, pkg.version, 'pierwsza pozycja – bieżąca wersja (package.json)');
+  // Wydanie główne („1.47.0”) – w historii bez „.0” („1.47”).
+  assert.equal(CHANGELOG[0].version, pkg.version.replace(/\.0$/, ''), 'pierwsza pozycja – bieżąca wersja (package.json)');
   assert.equal(CHANGELOG.at(-1).version, '1.0');
   const versions = CHANGELOG.map((entry) => entry.version);
   assert.equal(new Set(versions).size, versions.length);
@@ -66,8 +67,11 @@ test('ustawienia 1.45.2: historia zmian – od bieżącej wersji do 1.0, bez pow
     return 0;
   };
   for (let index = 1; index < versions.length; index += 1) assert.ok(compare(versions[index - 1], versions[index]) > 0, `${versions[index - 1]} przed ${versions[index]}`);
-  // Każda wersja główna od 1.0 do bieżącej.
-  for (let minor = 0; minor <= parts(pkg.version)[1]; minor += 1) assert.ok(versions.includes(`1.${minor}`), `wersja 1.${minor}`);
+  // Każda wersja główna od 1.0 do bieżącej – poza 1.46, zarezerwowaną na wykresy z tabel (po niej od razu 1.47).
+  for (let minor = 0; minor <= parts(pkg.version)[1]; minor += 1) {
+    if (minor !== 46) assert.ok(versions.includes(`1.${minor}`), `wersja 1.${minor}`);
+  }
+  assert.ok(!versions.includes('1.46'), '1.46 – jeszcze nie wydana');
   assert.ok(CHANGELOG.every((entry) => entry.summary.length > 10 && entry.summary.length <= 200 && entry.summary.endsWith('.')));
   assert.equal(CHANGELOG_SHOWN, 5);
 });
