@@ -1914,6 +1914,43 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
 - **DXF** (`writeSolid`): widoczne – POLYLINE, niewidoczne – DASHED (albo ciągłe), osie – LINE CENTER, wymiary – LINE,
   groty SOLID, TEXT wyśrodkowany.
 
+## Bryły ze szkicu i rzuty 2D (od 1.48)
+
+- **Element**: bryła (`tool: 'solid'`) rodzaju `extrude` albo `revolve` (`MODEL_KINDS`, `isModel`) z polami `profile`
+  `{ islands: [{ outer, holes }] }` (punkty [x, y] względem środka bryły, y w górę; obrys przeciwnie do wskazówek zegara,
+  otwory – zgodnie; `cleanProfile`, `PROFILE_LIMITS`), `dims` – `{ h }` (wyciągnięcie od −h/2 do h/2 wzdłuż z) albo
+  `{ angle }` (10–360°, obrót wokół osi x układu bryły; profil obrotowy – y ≥ 0), `sketch` – kształty szkicu względem
+  środka, `sketchAngle` – kierunek osi szkicu na stronie, `sketchMirror` – bryła odbita. Format rysunku 19.
+- **Profil** (`profileFromShapes`): `shapeLoop` – punkty obrysu zamkniętego kształtu (elipsa – 72), zagnieżdżenie pętli
+  (parzyste – wyspa, nieparzyste – otwór najbliższej wyspy). Wyciągnięcie – układ środka szkicu; obrót – układ osi (zaznaczony
+  odcinek / prosta – `axisOf` w edytorze, bez niej – pozioma przez najniższy punkt): x wzdłuż osi, y – odległość od osi.
+  Błędy (brak zamkniętego kształtu, profil przecina oś, za krótka oś) – komunikat.
+- **Siatka** (`modelMesh`, zapamiętana dla profilu i wymiarów): ściany jako pętle [obrys, ...otwory]; wyciągnięcie – dwie
+  podstawy i boki; obrót – pierścienie co 5° (punkty na osi – jeden wierzchołek), przy kącie < 360° – ściany przekroju.
+  Normalne Newella na zewnątrz z kolejności punktów.
+- **Rzut** (`modelGeometry`): bryła może być wklęsła – krawędź (ostra albo zarys) próbkowana co ok. 3 jednostki, punkt
+  widoczny, gdy nie zasłania go żadna ściana zwrócona do patrzącego (siatka komórek 16 jednostek, poza ścianami tej
+  krawędzi); granice – bisekcją (8 kroków). Łamane widoczne i niewidoczne łączone osobno, `offset` – ciągłość kresek.
+  Ściany mają płaszczyznę z = aX + bY + c na stronie – `paintDepth` (`js/ui/drawing-solids.js`) wypełnia je wierszami
+  pikseli z buforem głębokości i kładzie obraz w pikselach płótna. Wymiary (`modelDims`): wyciągnięcie – długość wzdłuż z,
+  obrotowa – długość wzdłuż osi i największa średnica; osie (`modelAxes`) – oś obrotu.
+- **Rzuty 2D** (`solidProjections`, `projectionShapes`): widoki `front`, `top`, `left` w wymiarach bryły, układ europejski
+  (góra pod przodem, lewy bok z prawej, odstęp `PROJECTION_GAP` – dwie kratki). Linie najpierw dłuższe; krótsze leżące na
+  przyjętych odpadają (`apartFrom` – próbki co 2 jednostki, tolerancja 0,6; części dochodzą do linii widocznych),
+  niewidoczne – także na widocznych. Kształty: okrąg (`circleOf` – łamana zamknięta o stałym promieniu) – elipsa, dwa
+  punkty albo łamana na prostej – odcinek, reszta – łamana / wielokąt; niewidoczne – `dash: 'dashed'`, osie – `'center'`,
+  obie o połowę cieńsze.
+- **Przekształcenia**: `mirrorSolid` odbija też profil (x → −x, kierunki pętli poprawione) i przełącza `sketchMirror`;
+  `scaleSolid` – profil i wymiar, `scaleStroke` (transform.js) – szkic względem środka.
+- **Edytor**: przyciski zaznaczenia **Wyciągnij** / **Obróć wokół osi** (same kształty, co najmniej jeden zamknięty –
+  `isProfileShape`) → `createModel`: szkic usunięty z kartki (tablica zmieniana w miejscu, bryła w miejscu pierwszego
+  kształtu), bryła z przodu → `animateSolid` do izometrii / dimetrii. **Rzuty** → `projectSolid` (kształty obok bryły,
+  zaznaczone). Uchwyt `extent` w `boxHandles` (`extentHandle`: ramię od ściany wzdłuż z / koniec obrotu najdalszego punktu
+  profilu; przeciąganie – przyrost wzdłuż kierunku na stronie; kierunek prawie na patrzącego – bez uchwytu;
+  `live.dataset.extent` – testy). Okno `editSolid`: dla brył
+  ze szkicu bez wyboru rodzaju, grupa „Historia modelu” i „Edytuj szkic” (`restoreSketch` – szkic na miejsce bryły,
+  odbity, gdy `sketchMirror`).
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).
@@ -2004,7 +2041,9 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   od 1.43 odsunięcie, zaokrąglenie i faza, przycinanie i wydłużanie, okrąg styczny; od 1.44 diagram Ishikawy
   i 5 × Dlaczego – rozkład, przyczyny z tekstu, miejsca dotknięcia, zapis – układ kartki i jego DXF; od 1.45 kształty
   schematu blokowego, łącznik i jego przebieg, długość linii, tory, symbole i oś czasu VSM, legenda wad, ich DXF; od 1.47
-  bryły – dane, kąty i kwaterniony, obrót z przeciągnięcia, rzut z krawędziami niewidocznymi, wymiary, przekształcenia, DXF),
+  bryły – dane, kąty i kwaterniony, obrót z przeciągnięcia, rzut z krawędziami niewidocznymi, wymiary, przekształcenia, DXF;
+  od 1.48 bryły ze szkicu – profil z kształtów i oś, siatki zamknięte, krawędzie niewidoczne brył wklęsłych, ściany
+  z płaszczyznami, wymiary, odbicie i skala z profilem, rzuty 2D, DXF),
   układ wzoru na płótnie, spójność plików wydania.
 - `tests/fixtures/` – pliki testowe wygenerowane w openpyxl i LibreOffice
   (`tools/gen_fixtures.py`), żeby odczyt nie był sprawdzany wyłącznie na plikach własnych.

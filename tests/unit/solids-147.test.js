@@ -238,7 +238,7 @@ test('bryły 1.47: przekształcenia zaznaczenia – obrót na kartce, odbicie (w
 });
 
 test('bryły 1.47: rysunek – zapis (format 18), DXF: krawędzie, linie przerywane i osiowe, wymiary; grupa Bryły', () => {
-  assert.equal(DRAWING_VERSION, 18);
+  assert.ok(DRAWING_VERSION >= 18, 'od 1.47 (1.48 – 19)');
   const drawing = { ...emptyDrawing(), dimStyle: 'technical', strokes: [at('box', 'iso'), at('cylinder', 'front', { edges: 'all' }), at('sphere', 'iso', { color: '#d70015' })] };
   const clean = cleanDrawing(drawing);
   assert.equal(clean.strokes.length, 3);

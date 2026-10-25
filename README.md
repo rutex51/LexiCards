@@ -1,4 +1,4 @@
-# LexiCards 1.47
+# LexiCards 1.48
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -55,8 +55,9 @@ Rysunek – edycja geometrii (pakiet E planu): grupa Edycja – odsuń, zaokrąg
 Rysunek – szablony jakości (Six Sigma / Lean): grupa Jakość – diagram Ishikawy (6M, przyczyny i podprzyczyny), 5 × Dlaczego, tabela SIPOC, układ kartki (raport A3, PDCA, macierz 2×2, Kanban, diagram pokrewieństwa); zestaw „Jakość / Lean” (wersja 1.44): [docs/RELEASE-1.44.md](docs/RELEASE-1.44.md).
 Rysunek – schematy procesów: grupa Procesy – kształty schematu blokowego (początek / koniec, dane, dokument, podproces), łącznik pod kątem prostym przyklejany do kształtów, tory (swimlanes), symbole i oś czasu VSM (czas przejścia, PCE), legenda wad liczona ze znaczników, długość zaznaczonych tras („spaghetti”); zestaw „Procesy / VSM” (wersja 1.45); iPad w pionie – układ jak na komputerze (1.45.1); zajęte miejsce i historia zmian w Ustawieniach (1.45.2): [docs/RELEASE-1.45.md](docs/RELEASE-1.45.md).
 Rysunek – bryły: prostopadłościan, walec, stożek, ostrosłup, graniastosłup, kula; swobodny obrót kostką widoków albo przyciskiem „Obracaj”, gotowe widoki (izometria, dimetria, przód, góra, boki), krawędzie niewidoczne przerywane, cieniowanie, wymiary i osie, DXF (wersja 1.47; numer 1.46 – zarezerwowany na wykresy z tabel): [docs/RELEASE-1.47.md](docs/RELEASE-1.47.md).
+Rysunek – bryły ze szkicu: zaznaczone kształty → „Wyciągnij” albo „Obróć wokół osi” (kształty w kształtach – otwory), niebieski uchwyt długości i kąta, historia modelu z „Edytuj szkic”, „Rzuty” – przód, góra i lewy bok metodą europejską jako kształty do wymiarowania (wersja 1.48): [docs/RELEASE-1.48.md](docs/RELEASE-1.48.md).
 
-## Co potrafi wersja 1.47
+## Co potrafi wersja 1.48
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -167,7 +168,9 @@ Rysunek – bryły: prostopadłościan, walec, stożek, ostrosłup, graniastosł
   **Procesy**: **schemat blokowy** z **łącznikami** pod kątem prostym, **tory**, **mapa strumienia wartości** (symbole i oś czasu)
   i **koncentracja wad** (legenda liczy znaczniki), a zaznaczone linie pokazują **długość trasy**. Od 1.47 grupa **Bryły**:
   prostopadłościan, walec, stożek, ostrosłup, graniastosłup i kula – obracane swobodnie **kostką widoków**, z krawędziami
-  niewidocznymi, cieniowaniem i wymiarami. Od 1.24.1 kartka w edytorze wygląda
+  niewidocznymi, cieniowaniem i wymiarami. Od 1.48 **bryły ze szkicu**: zaznaczone kształty **wyciągnięte** albo **obrócone
+  wokół osi** (kształty w kształtach – otwory), szkic zostaje w bryle do poprawy, a **Rzuty** dają przód, górę i lewy bok
+  do wymiarowania. Od 1.24.1 kartka w edytorze wygląda
   jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
@@ -949,6 +952,20 @@ linia przerywana, osie – punktowa, wymiary – jak przy kształtach (średnice
 uchwyt nad ramką obraca ją na kartce, **Odbij** daje lustrzane położenie. Bryły są na obrazie w notatce, w PDF i w DXF
 (niewidoczne – DASHED, osie – CENTER). Każda bryła rysuje się osobno – nachodzące na siebie zasłania kolejność rysowania.
 Format rysunku – 18.
+**Bryły ze szkicu** (od 1.48): narysuj zamknięte kształty (prostokąt, okrąg, wielokąt, łamaną zamkniętą…) – kształt
+wewnątrz innego to **otwór**, kształt w otworze – znów materiał. Zaznacz je i wybierz **Wyciągnij** (profil wyciągnięty
+prostopadle do kartki) albo **Obróć wokół osi** – osią jest zaznaczony razem z profilem odcinek albo prosta, a bez niej –
+pozioma linia przez najniższy punkt szkicu (profil musi leżeć po jednej stronie osi). Kształty znikają z kartki i zostają
+w bryle jako szkic; bryła powstaje z przodu i płynnie obraca się do izometrii (obrotowa – do dimetrii). **Niebieski uchwyt**
+przy bryle zmienia długość wyciągnięcia (druga ściana zostaje w miejscu) albo kąt obrotu (10–360°, z Shift – co 15°).
+Okno bryły ma **Historię modelu**: „1. Szkic” z liczbą kształtów i otworów i przyciskiem **Edytuj szkic** (bryła znika,
+szkic wraca na kartkę zaznaczony – poprawiasz go i wyciągasz albo obracasz jeszcze raz) oraz „2. Wyciągnięcie” / „2. Obrót
+wokół osi”; pod nią długość albo kąt, położenie i wygląd jak przy innych bryłach. Bryły ze szkicu mogą być wklęsłe
+i z otworami – krawędzie niewidoczne liczone są z zasłaniania przez ściany, cieniowanie – z buforem głębokości. **Rzuty**
+nad zaznaczoną bryłą wstawiają obok niej trzy rzuty metodą europejską (przód, pod nim rzut z góry, z prawej strony – rzut
+z lewej) jako zwykłe kształty: krawędzie – linią ciągłą, okręgi – okręgami, niewidoczne – przerywaną, osie – osiową; każda
+kreska raz (niewidoczne pokrywające się z widocznymi odpadają). Rzuty można od razu wymiarować. Odbicie odbija też profil
+i szkic, skala zmienia profil, wymiar i szkic. Format rysunku – 19.
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę

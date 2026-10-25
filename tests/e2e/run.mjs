@@ -92,7 +92,9 @@ const title = (page) => page.locator('.screen__title');
 const backupFooter = (page) => page.locator('.group__footer').filter({ hasText: 'Przeniesienie to dwa pliki' });
 const sheet = (page) => page.locator('dialog.sheet[open]').last();
 /** Otwarte okna formularzy bez okien notatki (od 1.29 notatka ma okno podglądu, tekstu i obiektów). */
-const formSheets = (page) => page.locator('dialog.sheet[open]:not(.note-dialog)').count();
+// Od 1.48 liczone okna jeszcze w dokumencie, nie tylko otwarte: dialog.close() od razu zdejmuje „open”, a zdarzenie close
+// (zapis zmian i usunięcie okna) przychodzi w następnym zadaniu – test nie może wtedy już naciskać Esc ani dotykać kartki.
+const formSheets = (page) => page.locator('dialog.sheet:not(.note-dialog)').count();
 const termRows = (page) => page.locator('.terms > .term');
 
 async function tab(page, name) {
@@ -11582,6 +11584,272 @@ test('rysunek 1.47 na telefonie: grupa Bryły w górnym menu, kostka widoków na
     assert.ok(box.x >= 0 && box.x + box.width <= 390, `${id} w szerokości ekranu`);
   }
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-147-okno-telefon.png') });
+}, { device: PHONE });
+
+test('rysunek 1.48: szkic → „Wyciągnij” (płytka z dwoma otworami), uchwyt długości, okno – historia modelu, „Rzuty” (przód, góra, lewy bok), „Edytuj szkic”, „Obróć wokół osi” (tuleja z osią z odcinka), kąt obrotu, zapis i DXF (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Szkic</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  const button = (name) => editor.locator(`[data-testid=drawing-selection-${name}]`);
+  const closed = () => waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+  const shot = async (name) => {
+    await nextFrames(page);
+    await page.screenshot({ path: path.join(OUTPUT, `rysunek-148-${name}.png`) });
+  };
+  const frame = await pageFrame(page);
+  const drag = async (from, to, steps = 8) => {
+    await page.mouse.move(...from);
+    await page.mouse.down();
+    await page.mouse.move(...to, { steps });
+    await page.mouse.up();
+  };
+  /** Środek zaznaczonej bryły i jej uchwyt długości albo kąta (ekran). */
+  const where = async () => {
+    await waitUntil(async () => Boolean(await canvas.getAttribute('data-cube')), 'Kostka widoków');
+    const box = await canvas.boundingBox();
+    const [, , sx, sy] = (await canvas.getAttribute('data-cube')).split(',').map(Number);
+    const extent = await canvas.getAttribute('data-extent');
+    const [ex, ey] = extent ? extent.split(',').map(Number) : [NaN, NaN];
+    return { solid: [box.x + sx, box.y + sy], extent: extent ? [box.x + ex, box.y + ey] : null };
+  };
+  const settled = () => page.waitForTimeout(500);
+  const openSolid = async (title) => {
+    await page.mouse.click(...(await where()).solid);
+    await expectText(sheet(page).locator('.sheet__title'), title);
+  };
+  const cancel = async () => {
+    await sheet(page).getByRole('button', { name: 'Anuluj' }).click();
+    await closed();
+  };
+
+  // Szkic: dwa okręgi ⌀ ok. 100, wokół nich prostokąt 400 × 240.
+  for (const [x, y] of [[420, 370], [580, 370]]) {
+    await shapeTool(editor);
+    await press(editor, 'drawing-shape-ellipse');
+    await page.keyboard.down('Shift');
+    await drag(frame.screen(x - 50, y - 50), frame.screen(x + 50, y + 50));
+    await page.keyboard.up('Shift');
+    await expectText(count, 'Elipsa');
+  }
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  await drag(frame.screen(300, 250), frame.screen(700, 490));
+  await expectText(count, 'Prostokąt');
+  // Same zaznaczone kształty, w tym zamknięte – „Wyciągnij” i „Obróć wokół osi”; „Rzuty” – tylko przy bryle.
+  await page.keyboard.press('Control+a');
+  await expectText(count, '3 ');
+  assert.equal(await button('extrude').isVisible(), true, 'Wyciągnij');
+  assert.equal(await button('revolve').isVisible(), true, 'Obróć wokół osi');
+  assert.equal(await button('projections').isVisible(), false);
+  await shot('szkic');
+  await button('extrude').click();
+  await expectText(count, 'Bryła: wyciągnięcie');
+  await expectText(notice, 'Wyciągnięcie – niebieski uchwyt zmienia długość');
+  await settled();
+  assert.equal(await button('extrude').isVisible(), false, 'bryła – bez „Wyciągnij”');
+  assert.equal(await button('projections').isVisible(), true);
+
+  // Okno: historia modelu (szkic: 3 kształty, 2 otwory; wyciągnięcie), bez wyboru rodzaju; długość – połowa mniejszego
+  // wymiaru szkicu (240 / 2 = 120 jednostek ≈ 2,7 cm), zmieniona na 3 cm.
+  await openSolid('Bryła: wyciągnięcie');
+  const history = sheet(page).locator('.drawing__solid-history');
+  assert.deepEqual((await history.allTextContents()).map((text) => text.trim()), ['1. Szkic – 3 kształty, 2 otworyEdytuj szkic', '2. Wyciągnięcie']);
+  assert.equal(await page.locator('[data-testid=drawing-solid-kind-box]').count(), 0, 'bez zmiany rodzaju');
+  const first = Number((await page.locator('[data-testid=drawing-solid-dim-h]').inputValue()).replace(',', '.'));
+  assert.ok(Math.abs(first - 120 / 44) < 0.06, `długość ok. 2,7 cm: ${first}`);
+  await page.locator('[data-testid=drawing-solid-dim-h]').fill('3');
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  await shot('okno');
+  await sheetSubmit(page).click();
+  await closed();
+
+  // Uchwyt długości: przeciągnięty dalej od bryły – dłuższa.
+  const before = await where();
+  assert.ok(before.extent, 'uchwyt długości');
+  const away = [before.extent[0] - before.solid[0], before.extent[1] - before.solid[1]];
+  const reach = Math.hypot(...away);
+  await drag(before.extent, [before.extent[0] + (away[0] / reach) * 50, before.extent[1] + (away[1] / reach) * 50]);
+  await openSolid('Bryła: wyciągnięcie');
+  const longer = Number((await page.locator('[data-testid=drawing-solid-dim-h]').inputValue()).replace(',', '.'));
+  assert.ok(longer > 3.5, `dłuższa po przeciągnięciu uchwytu: ${longer} cm`);
+  await cancel();
+  await shot('plytka');
+
+  // „Rzuty”: przód, góra i lewy bok obok bryły – zwykłe kształty, zaznaczone.
+  await button('projections').click();
+  await expectText(notice, 'Rzuty: przód, góra i lewy bok');
+  await expectText(count, 'element');
+  await page.keyboard.press('Escape');
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  await shot('rzuty');
+
+  // „Edytuj szkic”: bryła znika, szkic wraca na kartkę zaznaczony; ponowne „Wyciągnij”.
+  await page.mouse.click(...frame.screen(500, 370));
+  await expectText(count, 'Bryła: wyciągnięcie');
+  await openSolid('Bryła: wyciągnięcie');
+  await page.locator('[data-testid=drawing-solid-sketch]').click();
+  await closed();
+  await expectText(count, '3 ');
+  await expectText(notice, 'Szkic na kartce');
+  assert.equal(await canvas.getAttribute('data-cube'), null, 'bryły nie ma');
+  await shot('edytuj-szkic');
+  await button('extrude').click();
+  await expectText(count, 'Bryła: wyciągnięcie');
+  await settled();
+  await page.keyboard.press('Escape');
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+
+  // Obrót wokół osi (w wolnym miejscu pod rzutami): prostokąt nad odcinkiem (oś) – tuleja; kąt 270° – przekrój.
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  await drag(frame.screen(1300, 560), frame.screen(1500, 640));
+  await expectText(count, 'Prostokąt');
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-line');
+  await drag(frame.screen(1270, 700), frame.screen(1530, 700));
+  await expectText(count, 'Odcinek');
+  await press(editor, 'drawing-tool-select');
+  await drag(frame.screen(1250, 530), frame.screen(1580, 740));
+  await expectText(count, '2 ');
+  await button('revolve').click();
+  await expectText(count, 'Bryła: obrotowa');
+  await expectText(notice, 'Bryła obrotowa – niebieski uchwyt zmienia kąt');
+  await settled();
+  await openSolid('Bryła: obrotowa');
+  assert.deepEqual((await sheet(page).locator('.drawing__solid-history').allTextContents()).map((text) => text.trim()),
+    ['1. Szkic – 2 kształtyEdytuj szkic', '2. Obrót wokół osi']);
+  assert.equal(await page.locator('[data-testid=drawing-solid-dim-angle]').inputValue(), '360');
+  await page.locator('[data-testid=drawing-solid-dim-angle]').fill('270');
+  await sheetSubmit(page).click();
+  await closed();
+  assert.ok((await where()).extent, 'uchwyt kąta');
+  await page.keyboard.press('Escape');
+  await editor.locator('[data-testid=drawing-hide-ui]').click();
+  await waitUntil(() => notice.isHidden(), 'Komunikat zniknął');
+  await shot('bryly-ze-szkicu');
+  await editor.locator('[data-testid=drawing-hide-ui]').click();
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const strokes = await savedStrokes(page, ids.statements);
+  const solids = strokes.filter((stroke) => stroke.tool === 'solid');
+  assert.deepEqual(solids.map((stroke) => stroke.kind), ['extrude', 'revolve']);
+  const [plate, tube] = solids;
+  assert.equal(plate.profile.islands.length, 1);
+  assert.equal(plate.profile.islands[0].holes.length, 2, 'dwa otwory');
+  assert.deepEqual(plate.sketch.map((shape) => shape.shape).sort(), ['ellipse', 'ellipse', 'rect']);
+  assert.ok(Math.abs(plate.dims.h - 120) < 3, `ponowne wyciągnięcie – domyślna długość: ${plate.dims.h}`);
+  assert.equal(tube.dims.angle, 270);
+  const radii = tube.profile.islands[0].outer.map(([, y]) => y);
+  assert.ok(Math.abs(Math.min(...radii) - 60) < 3 && Math.abs(Math.max(...radii) - 140) < 3, `promienie tulei: ${Math.min(...radii)}–${Math.max(...radii)}`);
+  const shapes = strokes.filter((stroke) => stroke.tool === 'shape');
+  assert.ok(shapes.filter((stroke) => stroke.shape === 'ellipse').length >= 2, 'rzut z przodu – okręgi otworów');
+  assert.ok(shapes.some((stroke) => stroke.dash === 'dashed'), 'rzuty – linie niewidoczne');
+  const { drawingToDxf, parseDxf } = await import('../../js/core/dxf.js');
+  const drawingData = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  const exported = drawingToDxf(drawingData);
+  assert.equal(exported.skipped, 0, 'bryły ze szkicu zapisane');
+  assert.ok(parseDxf(exported.text).entities.some((item) => item.linetype === 'DASHED'), 'krawędzie niewidoczne');
+}, { device: DESKTOP });
+
+test('rysunek 1.48 na iPadzie: „Wyciągnij” palcem, uchwyt długości palcem, „Edytuj szkic” palcem', async ({ open, context }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>iPad</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  const closed = () => waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+  const frame = await pageFrame(page);
+  const where = async () => {
+    await waitUntil(async () => Boolean(await canvas.getAttribute('data-extent')), 'Uchwyt długości');
+    const box = await canvas.boundingBox();
+    const [, , sx, sy] = (await canvas.getAttribute('data-cube')).split(',').map(Number);
+    const [ex, ey] = (await canvas.getAttribute('data-extent')).split(',').map(Number);
+    return { solid: [box.x + sx, box.y + sy], extent: [box.x + ex, box.y + ey] };
+  };
+  const length = async () => {
+    await page.touchscreen.tap(...(await where()).solid);
+    await expectText(sheet(page).locator('.sheet__title'), 'Bryła: wyciągnięcie');
+    const value = Number((await page.locator('[data-testid=drawing-solid-dim-h]').inputValue()).replace(',', '.'));
+    await sheet(page).getByRole('button', { name: 'Anuluj' }).tap();
+    await closed();
+    return value;
+  };
+  // Szkic myszą (kształt), dalej palcem.
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  await page.mouse.move(...frame.screen(500, 300));
+  await page.mouse.down();
+  await page.mouse.move(...frame.screen(800, 500), { steps: 8 });
+  await page.mouse.up();
+  await expectText(count, 'Prostokąt');
+  await editor.locator('[data-testid=drawing-selection-extrude]').tap();
+  await expectText(count, 'Bryła: wyciągnięcie');
+  await page.waitForTimeout(500);
+  // Długość – połowa mniejszego wymiaru szkicu (200 / 2 = 100 jednostek ≈ 2,3 cm).
+  const first = await length();
+  assert.ok(Math.abs(first - 100 / 44) < 0.06, `długość ok. 2,3 cm: ${first}`);
+  const { solid, extent } = await where();
+  const away = [extent[0] - solid[0], extent[1] - solid[1]];
+  const reach = Math.hypot(...away);
+  const finger = await touchAt(context, page, ...extent);
+  await finger.move(extent[0] + (away[0] / reach) * 60, extent[1] + (away[1] / reach) * 60);
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-148-ipad-uchwyt.png') });
+  await finger.end();
+  const longer = await length();
+  assert.ok(longer > first + 0.5, `dłuższa palcem: ${longer} cm`);
+  await page.touchscreen.tap(...(await where()).solid);
+  await page.locator('[data-testid=drawing-solid-sketch]').tap();
+  await closed();
+  await expectText(count, 'Prostokąt');
+  assert.equal(await canvas.getAttribute('data-cube'), null, 'szkic zamiast bryły');
+}, { device: IPAD });
+
+test('rysunek 1.48 na telefonie: „Wyciągnij” i „Obróć wokół osi” na pasku zaznaczenia, okno bryły ze szkicu w szerokości ekranu', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  const frame = await pageFrame(page);
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  await page.mouse.move(...frame.screen(500, 300));
+  await page.mouse.down();
+  await page.mouse.move(...frame.screen(900, 560), { steps: 8 });
+  await page.mouse.up();
+  await expectText(count, 'Prostokąt');
+  for (const name of ['extrude', 'revolve']) {
+    const target = editor.locator(`[data-testid=drawing-selection-${name}]`);
+    await target.scrollIntoViewIfNeeded();
+    const box = await target.boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 391, `${name} na ekranie`);
+  }
+  await editor.locator('[data-testid=drawing-selection-revolve]').click();
+  await expectText(count, 'Bryła: obrotowa');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-148-telefon.png') });
+  await waitUntil(async () => Boolean(await canvas.getAttribute('data-cube')), 'Kostka widoków');
+  const [, , sx, sy] = (await canvas.getAttribute('data-cube')).split(',').map(Number);
+  const box = await canvas.boundingBox();
+  await page.touchscreen.tap(box.x + sx, box.y + sy);
+  await page.locator('[data-testid=drawing-solid-dim-angle]').waitFor();
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  assert.equal(await overflowX(page), 0, 'okno bez przewijania w bok');
+  for (const id of ['drawing-solid-sketch', 'drawing-solid-dim-angle', 'drawing-solid-roll']) {
+    const item = await page.locator(`[data-testid=${id}]`).boundingBox();
+    assert.ok(item.x >= 0 && item.x + item.width <= 390, `${id} w szerokości ekranu`);
+  }
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-148-okno-telefon.png') });
 }, { device: PHONE });
 
 // ---------------------------------------------------------------- nauka z fiszkami

@@ -75,8 +75,9 @@ import {
 import { COLUMN_DEFAULTS, LAYOUT_KINDS, LAYOUT_LABELS, MATRIX_DEFAULT, cleanLayout } from '../core/page-layouts.js';
 import { paintDiagram, paintPageLayout } from './drawing-diagrams.js';
 import {
-  SOLID_EDGES, SOLID_EDGE_LABELS, SOLID_FIELDS, SOLID_KINDS, SOLID_LABELS, SOLID_LINE_LABELS, SOLID_LINE_WIDTHS, SOLID_VIEWS, cleanSolid, cleanSolidDims, hasAxis,
-  newSolid, orbitQuat, quatFromAngles, quatSlerp, scaleSolid, solidAngles, solidBox, solidLabel, solidView, viewQuat, withQuat
+  SOLID_EDGES, SOLID_EDGE_LABELS, SOLID_FIELDS, SOLID_KINDS, SOLID_LABELS, SOLID_LIMITS, SOLID_LINE_LABELS, SOLID_LINE_WIDTHS, SOLID_VIEWS, cleanSolid, cleanSolidDims,
+  hasAxis, isModel, newModel, newSolid, orbitQuat, profileFromShapes, projectionShapes, quatFromAngles, quatMatrix, quatSlerp, scaleSolid, shapeLoop,
+  solidAngles, solidBox, solidLabel, solidProjections, solidView, viewQuat, withQuat, PROJECTION_GAP
 } from '../core/solids.js';
 import { CUBE_GAP, CUBE_HALF, cubeFaceAt, paintSolid, paintViewCube } from './drawing-solids.js';
 import { openFitTable } from './fit-table.js';
@@ -885,6 +886,12 @@ export function openDrawingEditor({
       requestLive();
     });
     orbitButton.setAttribute('aria-pressed', 'false');
+    // Od 1.48: bryła ze szkicu – zaznaczone zamknięte kształty (z otworami) wyciągnięte albo obrócone wokół osi
+    // (zaznaczony odcinek albo prosta; bez niego – pozioma linia pod szkicem); rzuty 2D zaznaczonej bryły.
+    const extrudeButton = selectionButton('drawing-selection-extrude', 'extrude', 'Wyciągnij', 'Wyciągnij – bryła z zaznaczonego profilu (kształty w kształtach – otwory)', () => createModel('extrude'));
+    const revolveButton = selectionButton('drawing-selection-revolve', 'revolve', 'Obróć wokół osi',
+      'Obróć wokół osi – bryła obrotowa z profilu; oś – zaznaczony odcinek albo prosta (bez niej – pozioma linia pod szkicem)', () => createModel('revolve'));
+    const projectButton = selectionButton('drawing-selection-projections', 'projections', 'Rzuty', 'Rzuty 2D – przód, góra i lewy bok (metoda europejska) jako linie do wymiarowania', () => projectSolid());
     // Od 1.21: karteczka zwinięta do ikony albo rozwinięta – jednym dotknięciem.
     const collapseButton = selectionButton('drawing-selection-collapse', 'minus', 'Zwiń', 'Zwiń karteczkę do ikony', () => toggleCollapsed());
     // Od 1.17: tekst i wypełnienie zaznaczonego kształtu, „Osadź” – obraz zaznaczenia albo wycinka w notatce.
@@ -936,7 +943,8 @@ export function openDrawingEditor({
     moveButton.setAttribute('aria-pressed', 'false');
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
       // Od 1.41 nazwa i pole z obwodem w jednej kolumnie (na telefonie – pole i obwód w osobnym wierszu).
-      h('span', { class: 'drawing__selection-head' }, selectionCount, selectionMeasure), moveButton, editButton, solidViewButton, orbitButton, collapseButton, shapeTextButton, magnetButton,
+      h('span', { class: 'drawing__selection-head' }, selectionCount, selectionMeasure), moveButton, editButton, solidViewButton, orbitButton, projectButton, extrudeButton, revolveButton,
+      collapseButton, shapeTextButton, magnetButton,
       layersSelectionButton, copyButton, duplicateButton,
       whyButton, chainButton, baselineButton, mirrorButton, scaleButton, matchButton, orderButton, arrayButton, explodeButton, embedButton, deleteButton);
     // Pola wymiarów zaznaczonego kształtu (od 1.17): na liniach ramki konstrukcyjnej, wpisywane z klawiatury.
@@ -2274,6 +2282,7 @@ export function openDrawingEditor({
       const box = editedBox();
       if (box) paintBoxHandles(ctx, box);
       if (box?.tool !== 'solid' && live.dataset.cube) delete live.dataset.cube;
+      if (box?.tool !== 'solid' && live.dataset.extent) delete live.dataset.extent;
       if (snip) {
         // Wycinek (od 1.17): obrys obszaru – fioletowy, kreskowany.
         ctx.save();
@@ -2379,6 +2388,11 @@ export function openDrawingEditor({
       if (!solid) orbitMode = false;
       solidViewButton.hidden = !solid;
       orbitButton.hidden = !solid;
+      projectButton.hidden = !solid;
+      // Profil bryły (od 1.48): same kształty, co najmniej jeden zamknięty (pozostałe – np. oś obrotu).
+      const profile = !snip && selectionKind === 'whole' && items.every(isShape) && items.some(isProfileShape);
+      extrudeButton.hidden = !profile;
+      revolveButton.hidden = !profile;
       orbitButton.setAttribute('aria-pressed', String(orbitMode));
       stage.classList.toggle('drawing__stage--orbit', orbitMode);
       if (sticky) {
@@ -6510,6 +6524,127 @@ export function openDrawingEditor({
       changed = true;
       selectOnly(solid);
     }
+    // ---- bryły ze szkicu i rzuty (od 1.48)
+    /** Kształt zamknięty – część profilu (okrąg, prostokąt, wielokąt…; bez wymiarów). */
+    const isProfileShape = (stroke) => isShape(stroke) && !isMeasure(stroke) && canFill(stroke) && Boolean(shapeLoop(stroke));
+    /** Oś obrotu: zaznaczony odcinek, strzałka albo prosta – dwa punkty na stronie. */
+    const axisOf = (strokes) => {
+      const line = strokes.find((stroke) => isShape(stroke) && isSegment(stroke) && !isMeasure(stroke));
+      return line ? { a: shapePoint(line, -0.5, 0), b: shapePoint(line, 0.5, 0) } : null;
+    };
+    /**
+     * Bryła z zaznaczonych kształtów: profil (otwory – kształty w kształtach), dla obrotu – oś; kształty znikają z kartki
+     * i zostają w bryle jako szkic („Edytuj szkic”). Bryła powstaje z przodu (jak szkic) i płynnie przechodzi do izometrii.
+     */
+    function createModel(kind) {
+      const items = orderedSelection();
+      const shapes = items.filter(isProfileShape);
+      const axis = kind === 'revolve' ? axisOf(items) : null;
+      const made = profileFromShapes(shapes, kind, axis);
+      if (made.error) {
+        flash(made.error);
+        return;
+      }
+      const sketch = items.map((stroke) => {
+        const copy = translateStroke(stroke, -made.center.x, -made.center.y);
+        delete copy.id;
+        delete copy.attach;
+        delete copy.layers;
+        return copy;
+      });
+      const [first] = items;
+      const solid = newModel(kind, made.profile, {
+        x: made.center.x, y: made.center.y, color: first.color ?? inkHex(tools.penColor), size: SOLID_LINE_WIDTHS[1], sketch, sketchAngle: made.angle
+      });
+      // Obrót: oś na kartce pod kątem – bryła obrócona tak samo (z przodu oś leży wzdłuż osi szkicu).
+      if (kind === 'revolve' && made.angle !== 0) solid.q = quatFromAngles(0, 0, -made.angle * (180 / Math.PI));
+      const placed = cleanSolid(solid, drawing.width, drawing.height);
+      if (!placed) return;
+      // Bryła w miejscu szkicu (kolejność rysowania); tablica zmieniana w miejscu, jak przy usuwaniu.
+      history.begin();
+      const at = Math.min(...items.map((stroke) => drawing.strokes.indexOf(stroke)).filter((index) => index >= 0));
+      for (let index = drawing.strokes.length - 1; index >= 0; index -= 1) {
+        if (items.includes(drawing.strokes[index])) drawing.strokes.splice(index, 1);
+      }
+      drawing.strokes.splice(Math.min(at, drawing.strokes.length), 0, onActiveLayer(placed));
+      commitStep();
+      changed = true;
+      selectOnly(placed);
+      flash(kind === 'extrude' ? 'Wyciągnięcie – niebieski uchwyt zmienia długość, dotknięcie bryły – okno' : 'Bryła obrotowa – niebieski uchwyt zmienia kąt, dotknięcie bryły – okno');
+      animateSolid(placed, viewQuat(kind === 'revolve' ? 'dimetric' : 'iso'));
+    }
+    /** Szkic bryły z powrotem na kartce (bryła znika) – poprawisz go i wyciągniesz albo obrócisz jeszcze raz. */
+    function restoreSketch(element) {
+      if (!element.sketch?.length) return;
+      let shapes = element.sketch.map((shape) => translateStroke(shape, element.x, element.y));
+      // Bryła odbita lustrzanie – szkic też (względem prostej przez środek, prostopadłej do osi szkicu).
+      if (element.sketchMirror) {
+        const angle = (element.sketchAngle ?? 0) + Math.PI / 2;
+        const [a, b] = [{ x: element.x, y: element.y }, { x: element.x + Math.cos(angle), y: element.y + Math.sin(angle) }];
+        shapes = shapes.map((shape) => mirrorAcross(shape, a, b));
+      }
+      const index = drawing.strokes.indexOf(element);
+      if (index < 0) return;
+      history.begin();
+      drawing.strokes.splice(index, 1, ...shapes.map(onActiveLayer));
+      commitStep();
+      changed = true;
+      if (tool !== 'select') setTool('select');
+      selection = new Set(shapes);
+      selectionKind = 'whole';
+      updateToolbar();
+      requestRender();
+      flash('Szkic na kartce – popraw go i wybierz „Wyciągnij” albo „Obróć wokół osi”');
+    }
+    /** Rzuty 2D zaznaczonej bryły (przód, góra, lewy bok) obok niej – zwykłe kształty, zaznaczone (przesuniesz je razem). */
+    function projectSolid() {
+      const [only] = selection;
+      if (only?.tool !== 'solid') return;
+      const { bounds } = solidProjections(only);
+      const box = solidBox(only);
+      const width = bounds.maxX - bounds.minX;
+      // Po prawej stronie bryły, gdy się mieści; inaczej po lewej, a gdy i tam brak miejsca – od lewej krawędzi kartki.
+      let x = box.x + box.width + PROJECTION_GAP - bounds.minX;
+      if (x + bounds.maxX > drawing.width) x = box.x - PROJECTION_GAP - bounds.maxX;
+      if (x + bounds.minX < 0) x = PROJECTION_GAP - bounds.minX;
+      const y = Math.min(Math.max(only.y, PROJECTION_GAP - bounds.minY), Math.max(PROJECTION_GAP - bounds.minY, drawing.height - PROJECTION_GAP - bounds.maxY));
+      const shapes = projectionShapes(only, { x, y }, { color: only.color, size: only.size });
+      if (shapes.length === 0) return;
+      history.begin();
+      for (const shape of shapes) drawing.strokes.push(onActiveLayer(shape));
+      commitStep();
+      changed = true;
+      selection = new Set(shapes);
+      selectionKind = 'whole';
+      updateToolbar();
+      requestRender();
+      flash(`Rzuty: przód, góra i lewy bok – ${plural(shapes.length, 'linia', 'linie', 'linii')}${width > drawing.width ? ' (szersze niż kartka – zmniejsz „Skaluj”)' : ''}`);
+    }
+    /** Uchwyt długości wyciągnięcia albo kąta obrotu (strona): punkt uchwytu, kierunek przeciągania na stronie (na jednostkę). */
+    function extentHandle(element) {
+      const m = quatMatrix(element.q);
+      const at = (point) => {
+        const v = [m[0] * point[0] + m[1] * point[1] + m[2] * point[2], m[3] * point[0] + m[4] * point[1] + m[5] * point[2]];
+        return { x: element.x + v[0], y: element.y - v[1] };
+      };
+      if (element.kind === 'extrude') {
+        const half = element.dims.h / 2;
+        const [face, ahead] = [at([0, 0, half]), at([0, 0, half + 1])];
+        const along = { x: ahead.x - face.x, y: ahead.y - face.y };
+        const length = Math.hypot(along.x, along.y);
+        if (length < 0.15) return null;
+        const reach = 36 / view.scale;
+        return { x: face.x + (along.x / length) * reach, y: face.y + (along.y / length) * reach, base: face, along };
+      }
+      const points = element.profile.islands.flatMap((island) => island.outer);
+      const far = points.reduce((best, point) => (point[1] > best[1] ? point : best));
+      const turn = (element.dims.angle * Math.PI) / 180;
+      const [tip, next] = [at([far[0], far[1] * Math.cos(turn), far[1] * Math.sin(turn)]), at([far[0], far[1] * Math.cos(turn + 0.01), far[1] * Math.sin(turn + 0.01)])];
+      const along = { x: (next.x - tip.x) / 0.01, y: (next.y - tip.y) / 0.01 };
+      // Koniec łuku biegnie prawie na patrzącego – kąt z przeciągnięcia skakałby; bez uchwytu (okno albo inny widok).
+      if (Math.hypot(along.x, along.y) < far[1] * 0.2) return null;
+      return { x: tip.x, y: tip.y, base: tip, along };
+    }
     /** Płynne przejście bryły do położenia `q` (ok. 0,35 s) – jeden krok cofania. */
     function animateSolid(element, q) {
       const from = element.q;
@@ -6553,7 +6688,9 @@ export function openDrawingEditor({
       const format = dimFormat(drawing);
       const factor = dimFactor(drawing.scale, format);
       const unit = dimUnitLabel(drawing.scale, format);
-      const shown = (key, value) => (key === 'n' ? String(value) : formatNumber(toScaleLength(value, drawing.scale) * factor));
+      const shown = (key, value) => (key === 'n' ? String(value) : key === 'angle' ? formatNumber(value) : formatNumber(toScaleLength(value, drawing.scale) * factor));
+      const model = isModel(element);
+      const holes = model ? element.profile.islands.reduce((sum, island) => sum + island.holes.length, 0) : 0;
       const units = (value) => fromScaleLength(value / factor, drawing.scale);
       const width = SOLID_LINE_WIDTHS.reduce((best, value, index) => (Math.abs(value - element.size) < Math.abs(SOLID_LINE_WIDTHS[best] - element.size) ? index : best), 0);
       const choice = { size: width, color: inkChoice(element.color) };
@@ -6562,7 +6699,7 @@ export function openDrawingEditor({
         kind: element.kind, edges: element.edges, shade: element.shade === true, showDims: element.showDims === true, axes: element.axes === true,
         angles: { yaw: String(angles.yaw).replace('.', ','), pitch: String(angles.pitch).replace('.', ','), roll: String(angles.roll).replace('.', ',') },
         // Teksty pól wymiarów każdego rodzaju (zmiana rodzaju i powrót – te same liczby).
-        dims: Object.fromEntries(SOLID_KINDS.map((kind) => {
+        dims: Object.fromEntries((model ? [element.kind] : SOLID_KINDS).map((kind) => {
           const values = kind === element.kind ? element.dims : cleanSolidDims(kind, {});
           return [kind, Object.fromEntries(SOLID_FIELDS[kind].map(([key]) => [key, shown(key, values[key])]))];
         }))
@@ -6573,7 +6710,7 @@ export function openDrawingEditor({
         replaceChildren(dimsBox, SOLID_FIELDS[draft.kind].map(([key, name]) => {
           const input = textInput({ value: draft.dims[draft.kind][key], testID: `drawing-solid-dim-${key}`, onInput: (value) => { draft.dims[draft.kind][key] = value; } });
           input.inputMode = 'decimal';
-          return field(key === 'n' ? name : `${name} (${unit})`, input);
+          return field(key === 'n' || key === 'angle' ? name : `${name} (${unit})`, input);
         }));
         axesRow.hidden = !hasAxis({ kind: draft.kind });
       };
@@ -6605,12 +6742,25 @@ export function openDrawingEditor({
         }
       }, view.label));
       let saved = false;
-      openFormSheet({
+      let restore = false;
+      const sheet = openFormSheet({
         title: solidLabel(element),
         submitLabel: 'Zapisz',
         build: () => [
-          group({ title: 'Rodzaj' }, h('div', { class: 'drawing__solid-kinds', role: 'group', 'aria-label': 'Rodzaj bryły' }, kindButtons)),
-          group({ title: 'Wymiary' }, dimsBox),
+          model ? null : group({ title: 'Rodzaj' }, h('div', { class: 'drawing__solid-kinds', role: 'group', 'aria-label': 'Rodzaj bryły' }, kindButtons)),
+          // Od 1.48: historia bryły ze szkicu – szkic (do poprawy na kartce) i operacja.
+          model ? group({ title: 'Historia modelu' },
+            h('div', { class: 'drawing__solid-history' },
+              h('span', null, `1. Szkic – ${plural(element.sketch?.length ?? 0, 'kształt', 'kształty', 'kształtów')}${holes > 0 ? `, ${plural(holes, 'otwór', 'otwory', 'otworów')}` : ''}`),
+              element.sketch?.length ? h('button', {
+                type: 'button', class: 'button button--plain', dataset: { testid: 'drawing-solid-sketch' },
+                onClick: () => {
+                  restore = true;
+                  sheet.close();
+                }
+              }, 'Edytuj szkic') : null),
+            h('div', { class: 'drawing__solid-history' }, h('span', null, `2. ${element.kind === 'extrude' ? 'Wyciągnięcie' : 'Obrót wokół osi'}`))) : null,
+          group({ title: model ? 'Operacja' : 'Wymiary' }, dimsBox),
           group({ title: 'Położenie' }, h('div', { class: 'drawing__solid-grid' }, yaw.field, pitch.field, roll.field),
             h('div', { class: 'drawing__solid-views', role: 'group', 'aria-label': 'Gotowe widoki' }, viewButtons)),
           group({ title: 'Wygląd' },
@@ -6630,6 +6780,11 @@ export function openDrawingEditor({
           return true;
         },
         onClose: () => {
+          // Od 1.48: „Edytuj szkic” – szkic na kartce zamiast bryły.
+          if (restore) {
+            restoreSketch(element);
+            return;
+          }
           if (!saved) return;
           const number = (text, fallback) => {
             const value = parseDecimal(text);
@@ -6638,7 +6793,7 @@ export function openDrawingEditor({
           const old = draft.kind === element.kind ? element.dims : cleanSolidDims(draft.kind, {});
           const dims = Object.fromEntries(SOLID_FIELDS[draft.kind].map(([key]) => {
             const value = number(draft.dims[draft.kind][key], null);
-            return [key, value === null ? old[key] : key === 'n' ? value : units(value)];
+            return [key, value === null ? old[key] : key === 'n' || key === 'angle' ? value : units(value)];
           }));
           const next = cleanSolid({
             ...element, kind: draft.kind, dims,
@@ -7433,7 +7588,9 @@ export function openDrawingEditor({
       // Bryła (od 1.47): narożnik – wielkość (proporcjonalnie), kostka widoków obok ramki.
       if (element.tool === 'solid') {
         const box = solidBox(element);
-        return [{ id: 'resize', x: box.x + box.width, y: box.y + box.height }, { id: 'cube', ...cubeAnchor(element) }];
+        // Od 1.48: bryła ze szkicu – uchwyt długości wyciągnięcia albo kąta obrotu.
+        const extent = isModel(element) ? extentHandle(element) : null;
+        return [{ id: 'resize', x: box.x + box.width, y: box.y + box.height }, { id: 'cube', ...cubeAnchor(element) }, ...(extent ? [{ id: 'extent', x: extent.x, y: extent.y }] : [])];
       }
       // Symbol metrologiczny (od 1.22.1): bez narożnika – tylko koniec strzałki albo wierzchołek chropowatości.
       if (element.tool === 'roughness') return [{ id: 'target', x: element.x, y: element.y }];
@@ -7477,8 +7634,37 @@ export function openDrawingEditor({
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = SELECT_COLORS.whole;
       ctx.fillStyle = '#ffffff';
-      for (const handle of boxHandles(element)) {
+      const handles = boxHandles(element);
+      // Uchwyt długości albo kąta (px płótna) – dla testów; bez uchwytu (np. wyciągnięcie widziane od czoła) – brak.
+      const extentAt = handles.find((handle) => handle.id === 'extent');
+      const extentWhere = extentAt ? `${Math.round(toScreen(extentAt).x)},${Math.round(toScreen(extentAt).y)}` : null;
+      if (extentWhere === null) delete live.dataset.extent;
+      else if (live.dataset.extent !== extentWhere) live.dataset.extent = extentWhere;
+      for (const handle of handles) {
         const point = toScreen(handle);
+        if (handle.id === 'extent') {
+          // Od 1.48: niebieska kula na ramieniu od ściany (wyciągnięcie) albo na końcu obrotu.
+          const extent = extentHandle(element);
+          const base = toScreen(extent.base);
+          ctx.save();
+          ctx.strokeStyle = SELECT_COLORS.whole;
+          ctx.fillStyle = SELECT_COLORS.whole;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(base.x, base.y);
+          ctx.lineTo(point.x, point.y);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 10, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 4.5, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+          continue;
+        }
         if (handle.id === 'cube') {
           paintViewCube(ctx, element.q, point, view.dpr, { active: active?.kind === 'box-edit' && active.handle !== 'resize' });
           // Środek kostki i bryły (px płótna) – dla testów.
@@ -8381,6 +8567,27 @@ export function openDrawingEditor({
           break;
         case 'box-edit': {
           if (!active.moved && Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale < TAP_SLOP) break;
+          if (active.handle === 'extent') {
+            // Od 1.48: długość wyciągnięcia (ściana idzie za wskaźnikiem, druga zostaje) albo kąt obrotu.
+            const original = active.original;
+            const extent = extentHandle(original);
+            if (!extent) break;
+            const move = { x: point.x - active.start.x, y: point.y - active.start.y };
+            const units = (move.x * extent.along.x + move.y * extent.along.y) / (extent.along.x ** 2 + extent.along.y ** 2);
+            active.moved = true;
+            if (original.kind === 'extrude') {
+              const h = Math.round(Math.min(SOLID_LIMITS.max, Math.max(SOLID_LIMITS.min, original.dims.h + units)) * 10) / 10;
+              const shift = (h - original.dims.h) / 2;
+              const m = quatMatrix(original.q);
+              active.preview = { ...original, dims: { h }, x: Math.round((original.x + m[2] * shift) * 100) / 100, y: Math.round((original.y - m[5] * shift) * 100) / 100 };
+            } else {
+              let angle = original.dims.angle + (units * 180) / Math.PI;
+              angle = locked(event) ? Math.round(angle / 15) * 15 : angle > 355 ? 360 : Math.round(angle);
+              active.preview = { ...original, dims: { angle: Math.min(360, Math.max(10, angle)) } };
+            }
+            requestLive();
+            break;
+          }
           if (active.handle === 'cube' || active.handle === 'orbit') {
             // Obrót bryły (od 1.47): swobodny – jak kula pod palcem; z Shift – wokół osi pionowej bryły.
             const at = local(event);

@@ -1,21 +1,90 @@
 // Bryły (od 1.47) na płótnie: ściany cieniowane, krawędzie niewidoczne (przerywane), osie, krawędzie widoczne i wymiary
 // z rozkładu (core/solids.js); kostka widoków przy zaznaczonej bryle – przeciąganie obraca, ściana ustawia widok.
+// Od 1.48 bryły ze szkicu (mogą być wklęsłe) – ściany z buforem głębokości w pikselach płótna.
 
 import { solidDimText } from '../core/drawing.js';
 import { SOLID_DIM, quatMatrix, solidDimParts, solidGeometry, solidTone } from '../core/solids.js';
 import { textFont } from './canvas-text.js';
 
-/** Łamane w jednej ścieżce każda (przerywana linia biegnie dalej przez kolejne odcinki okręgu). */
+/** Łamane w jednej ścieżce każda (przerywana linia biegnie dalej przez kolejne odcinki okręgu; od 1.48 – od miejsca na krawędzi). */
 function strokeLines(ctx, lines, width, dash) {
   ctx.lineWidth = width;
   ctx.setLineDash(dash);
   for (const line of lines) {
+    ctx.lineDashOffset = line.offset ?? 0;
     ctx.beginPath();
     line.points.forEach((point, index) => (index === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y)));
     if (line.closed) ctx.closePath();
     ctx.stroke();
   }
   ctx.setLineDash([]);
+  ctx.lineDashOffset = 0;
+}
+
+/**
+ * Ściany bryły ze szkicu (od 1.48) z buforem głębokości: każda ściana – wielokąt z otworami wypełniany wierszami pikseli,
+ * z(x, y) z jej płaszczyzny (faces[].plane na stronie, przeliczona na piksele przez przekształcenie płótna); obraz
+ * kładziony w pikselach płótna (przezroczystość warstwy działa jak przy innych elementach).
+ */
+function paintDepth(ctx, faces, color) {
+  const m = ctx.getTransform();
+  const toPixel = (point) => ({ x: m.a * point.x + m.c * point.y + m.e, y: m.b * point.x + m.d * point.y + m.f });
+  const pixels = faces.flatMap((face) => face.loops.flat().map(toPixel));
+  if (pixels.length === 0) return;
+  const x0 = Math.max(0, Math.floor(Math.min(...pixels.map((p) => p.x))) - 1);
+  const y0 = Math.max(0, Math.floor(Math.min(...pixels.map((p) => p.y))) - 1);
+  const w = Math.min(ctx.canvas.width, Math.ceil(Math.max(...pixels.map((p) => p.x))) + 2) - x0;
+  const h = Math.min(ctx.canvas.height, Math.ceil(Math.max(...pixels.map((p) => p.y))) + 2) - y0;
+  if (w <= 0 || h <= 0 || w * h > 16e6) return;
+  const image = ctx.createImageData(w, h);
+  const buffer = new Uint32Array(image.data.buffer);
+  const depth = new Float32Array(w * h).fill(-Infinity);
+  const inv = m.inverse();
+  for (const face of faces) {
+    const [r, g, b] = [1, 3, 5].map((start) => parseInt(solidTone(color, face.light).slice(start, start + 2), 16));
+    const value = ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
+    const { a: pa, b: pb, c: pc } = face.plane;
+    // z w pikselach (px, py) – przez stronę.
+    const [A, B, C] = [pa * inv.a + pb * inv.b, pa * inv.c + pb * inv.d, pa * inv.e + pb * inv.f + pc];
+    const rings = face.loops.map((loop) => loop.map((point) => {
+      const pixel = toPixel(point);
+      return { x: pixel.x - x0, y: pixel.y - y0 };
+    }));
+    let [top, bottom] = [Infinity, -Infinity];
+    for (const point of rings[0]) {
+      top = Math.min(top, point.y);
+      bottom = Math.max(bottom, point.y);
+    }
+    for (let row = Math.max(0, Math.ceil(top - 0.5)); row <= Math.min(h - 1, Math.floor(bottom - 0.5)); row += 1) {
+      const center = row + 0.5;
+      const crossings = [];
+      for (const ring of rings) {
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const [p, q] = [ring[i], ring[j]];
+          if ((p.y <= center) !== (q.y <= center)) crossings.push(p.x + ((center - p.y) * (q.x - p.x)) / (q.y - p.y));
+        }
+      }
+      crossings.sort((u, v) => u - v);
+      for (let at = 0; at + 1 < crossings.length; at += 2) {
+        for (let column = Math.max(0, Math.ceil(crossings[at] - 0.5)); column <= Math.min(w - 1, Math.floor(crossings[at + 1] - 0.5)); column += 1) {
+          const z = A * (column + x0 + 0.5) + B * (center + y0) + C;
+          const index = row * w + column;
+          if (z > depth[index] + 1e-4) {
+            depth[index] = z;
+            buffer[index] = value;
+          }
+        }
+      }
+    }
+  }
+  const sheet = document.createElement('canvas');
+  sheet.width = w;
+  sheet.height = h;
+  sheet.getContext('2d').putImageData(image, 0, 0);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(sheet, x0, y0);
+  ctx.restore();
 }
 
 function arrowHead(ctx, tip, angle) {
@@ -39,7 +108,9 @@ export function paintSolid(ctx, element, { scale = null, dimFormat = 'unit' } = 
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  if (element.shade) {
+  if (element.shade && geometry.depth) {
+    paintDepth(ctx, geometry.faces, color);
+  } else if (element.shade) {
     if (geometry.sphere) {
       const { x, y, r } = geometry.sphere;
       const gradient = ctx.createRadialGradient(x - r * 0.38, y - r * 0.42, r * 0.08, x, y, r);

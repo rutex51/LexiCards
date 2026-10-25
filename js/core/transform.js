@@ -229,7 +229,12 @@ export function scaleStroke(stroke, cx, cy, factor) {
   }
   if (isUpright(stroke)) return placeUpright(stroke, map);
   if (isShape(stroke)) return scaleShape(stroke, map, factor);
-  if (isSolid(stroke)) return scaleSolid(stroke, cx, cy, factor);
+  if (isSolid(stroke)) {
+    // Szkic bryły (od 1.48) – razem z nią (współrzędne względem jej środka).
+    const next = scaleSolid(stroke, cx, cy, factor);
+    if (stroke.sketch) next.sketch = stroke.sketch.map((shape) => scaleStroke(shape, 0, 0, factor));
+    return next;
+  }
   const points = stroke.points.slice();
   for (let index = 0; index < points.length; index += 3) {
     points[index] = round(cx + (points[index] - cx) * factor, 1);

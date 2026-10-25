@@ -7567,6 +7567,9 @@ button.drawing__pill .icon { color: var(--text-2); }
 .drawing__solid-views { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 0 12px 10px; }
 .drawing__solid-view { padding: 4px 10px; border-radius: 14px; background: var(--fill-tertiary, rgba(118, 118, 128, 0.12)); }
 .drawing__stage--orbit .drawing__canvas--live { cursor: grab; }
+/* Od 1.48: historia bryły ze szkicu – wiersz z poleceniem. */
+.drawing__solid-history { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; }
+.drawing__solid-history + .drawing__solid-history { border-top: 1px solid var(--separator); }
 @media (max-width: 699px) {
   .drawing__solid-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

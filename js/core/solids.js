@@ -11,6 +11,16 @@
 // gładkie (pobocznica walca i stożka) – tylko zarys. Bryły są wypukłe: ściany zwrócone do patrzącego nie zasłaniają się
 // nawzajem, krawędź widać, gdy widać jedną z jej ścian. Rozkład (linie, ściany do cieniowania, osie, wymiary) – ten sam
 // dla płótna, granic zaznaczenia i pliku DXF.
+//
+// Od 1.48 bryły ze szkicu: wyciągnięcie { kind: 'extrude', profile, dims: { h } } – profil (wyspy z otworami, x w prawo,
+// y w górę, środek w (0, 0)) wyciągnięty wzdłuż z od −h/2 do h/2; bryła obrotowa { kind: 'revolve', profile, dims: { angle } }
+// – profil (x wzdłuż osi, y – odległość od osi ≥ 0) obrócony wokół osi x o kąt (10–360°). sketch – kształty szkicu
+// (względem środka bryły) do „Edytuj szkic”, sketchAngle – kierunek osi obrotu na kartce, sketchMirror – szkic odbity.
+// Takie bryły mogą być wklęsłe i mieć otwory: krawędź jest próbkowana co kilka jednostek, a każdy punkt sprawdzany, czy
+// nie zasłania go ściana bliżej patrzącego (siatka komórek), granice widocznych odcinków – dokładnie (bisekcja);
+// cieniowanie – z buforem głębokości (płaszczyzny ścian na stronie, faces[].plane).
+
+import { cleanShape, polyFromPoints, shapeOutline, shapePoint } from './shapes.js';
 
 /** Kratka strony (drawing.js PAPER_STEP) – wymiary nowej bryły. */
 const STEP = 44;
@@ -21,7 +31,15 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const round = (value, digits = 2) => Math.round(value * 10 ** digits) / 10 ** digits;
 
 export const SOLID_KINDS = Object.freeze(['box', 'cylinder', 'cone', 'pyramid', 'prism', 'sphere']);
-export const SOLID_LABELS = Object.freeze({ box: 'Prostopadłościan', cylinder: 'Walec', cone: 'Stożek', pyramid: 'Ostrosłup', prism: 'Graniastosłup', sphere: 'Kula' });
+/** Od 1.48: bryły ze szkicu – wyciągnięcie i bryła obrotowa. */
+export const MODEL_KINDS = Object.freeze(['extrude', 'revolve']);
+const ALL_KINDS = [...SOLID_KINDS, ...MODEL_KINDS];
+export const SOLID_LABELS = Object.freeze({
+  box: 'Prostopadłościan', cylinder: 'Walec', cone: 'Stożek', pyramid: 'Ostrosłup', prism: 'Graniastosłup', sphere: 'Kula',
+  extrude: 'Wyciągnięcie', revolve: 'Bryła obrotowa'
+});
+/** Bryła ze szkicu (od 1.48). */
+export const isModel = (element) => MODEL_KINDS.includes(element?.kind);
 /** Wymiary rodzaju bryły: [klucz, nazwa w oknie]. */
 export const SOLID_FIELDS = Object.freeze({
   box: Object.freeze([['a', 'Długość a'], ['b', 'Szerokość b'], ['c', 'Wysokość c']]),
@@ -29,7 +47,9 @@ export const SOLID_FIELDS = Object.freeze({
   cone: Object.freeze([['d', 'Podstawa ⌀'], ['t', 'Góra ⌀ (0 – ostry)'], ['h', 'Wysokość h']]),
   pyramid: Object.freeze([['a', 'Podstawa a'], ['b', 'Podstawa b'], ['h', 'Wysokość h']]),
   prism: Object.freeze([['n', 'Liczba boków'], ['d', 'Średnica opisana ⌀'], ['h', 'Wysokość h']]),
-  sphere: Object.freeze([['d', 'Średnica ⌀']])
+  sphere: Object.freeze([['d', 'Średnica ⌀']]),
+  extrude: Object.freeze([['h', 'Długość wyciągnięcia']]),
+  revolve: Object.freeze([['angle', 'Kąt obrotu (°)']])
 });
 /** Wymiary nowej bryły (jednostki strony – kratki). */
 export const SOLID_DEFAULTS = Object.freeze({
@@ -38,10 +58,14 @@ export const SOLID_DEFAULTS = Object.freeze({
   cone: Object.freeze({ d: 4 * STEP, t: 0, h: 5 * STEP }),
   pyramid: Object.freeze({ a: 4 * STEP, b: 4 * STEP, h: 4.5 * STEP }),
   prism: Object.freeze({ n: 6, d: 4 * STEP, h: 2.5 * STEP }),
-  sphere: Object.freeze({ d: 4 * STEP })
+  sphere: Object.freeze({ d: 4 * STEP }),
+  extrude: Object.freeze({ h: 2 * STEP }),
+  revolve: Object.freeze({ angle: 360 })
 });
 /** Wymiary: najmniej i najwięcej (jednostki strony), liczba boków graniastosłupa. */
-export const SOLID_LIMITS = Object.freeze({ min: 4, max: 6000, sides: Object.freeze([3, 12]) });
+export const SOLID_LIMITS = Object.freeze({ min: 4, max: 6000, sides: Object.freeze([3, 12]), angle: Object.freeze([10, 360]) });
+/** Profil bryły ze szkicu: najwięcej wysp, pętli (obrysów i otworów) i punktów. */
+export const PROFILE_LIMITS = Object.freeze({ islands: 20, loops: 60, points: 4000, sketch: 200 });
 /** Krawędzie niewidoczne: przerywane, ukryte, jak widoczne. */
 export const SOLID_EDGES = Object.freeze(['dashed', 'none', 'all']);
 export const SOLID_EDGE_LABELS = Object.freeze({ dashed: 'Przerywane', none: 'Ukryte', all: 'Widoczne' });
@@ -173,15 +197,17 @@ export function orbitQuat(q, dx, dy, rate = 0.5, free = true) {
 
 /** Nowa bryła z wymiarami domyślnymi, w izometrii, cieniowana, z wymiarami i osiami. */
 export function newSolid(kind, { x = 0, y = 0, color = '#1d1d1f', size = SOLID_LINE_WIDTHS[1] } = {}) {
+  // Bryły ze szkicu (od 1.48) – z profilu (newModel).
   return {
     tool: 'solid', kind: SOLID_KINDS.includes(kind) ? kind : 'box', x, y, dims: { ...SOLID_DEFAULTS[SOLID_KINDS.includes(kind) ? kind : 'box'] },
     q: viewQuat('iso'), color, size, edges: 'dashed', shade: true, showDims: true, axes: true
   };
 }
 export const isSolid = (stroke) => stroke?.tool === 'solid';
-export const solidLabel = (element) => `Bryła: ${SOLID_LABELS[element.kind] ?? 'bryła'}`;
-/** Czy bryła ma oś symetrii (osie: walec, stożek, ostrosłup, graniastosłup, kula). */
-export const hasAxis = (element) => element.kind !== 'box';
+export const solidLabel = (element) => (element.kind === 'extrude' ? 'Bryła: wyciągnięcie' : element.kind === 'revolve' ? 'Bryła: obrotowa'
+  : `Bryła: ${SOLID_LABELS[element.kind] ?? 'bryła'}`);
+/** Czy bryła ma oś symetrii (osie: walec, stożek, ostrosłup, graniastosłup, kula; od 1.48 bryła obrotowa). */
+export const hasAxis = (element) => element.kind !== 'box' && element.kind !== 'extrude';
 
 /** Sprawdzone wymiary rodzaju bryły (brakujące – domyślne). */
 export function cleanSolidDims(kind, raw) {
@@ -190,6 +216,7 @@ export function cleanSolidDims(kind, raw) {
     const value = raw?.[key];
     const fallback = SOLID_DEFAULTS[kind][key];
     if (key === 'n') dims.n = finite(value) ? clamp(Math.round(value), ...SOLID_LIMITS.sides) : fallback;
+    else if (key === 'angle') dims.angle = finite(value) ? round(clamp(value, ...SOLID_LIMITS.angle), 1) : fallback;
     else if (key === 't') dims.t = finite(value) && value > 0 ? round(clamp(value, SOLID_LIMITS.min, SOLID_LIMITS.max)) : 0;
     else dims[key] = finite(value) && value > 0 ? round(clamp(value, SOLID_LIMITS.min, SOLID_LIMITS.max)) : fallback;
   }
@@ -198,7 +225,13 @@ export function cleanSolidDims(kind, raw) {
 
 /** Sprawdzona bryła (zapis, kopia zapasowa) albo null. */
 export function cleanSolid(raw, pageWidth, pageHeight) {
-  if (!raw || !SOLID_KINDS.includes(raw.kind) || !finite(raw.x) || !finite(raw.y) || !HEX.test(raw.color ?? '')) return null;
+  if (!raw || !ALL_KINDS.includes(raw.kind) || !finite(raw.x) || !finite(raw.y) || !HEX.test(raw.color ?? '')) return null;
+  // Od 1.48: bryła ze szkicu – profil (bez poprawnego profilu – odrzucona), kształty szkicu.
+  const model = isModel(raw);
+  const profile = model ? cleanProfile(raw.profile, raw.kind) : null;
+  if (model && !profile) return null;
+  const sketch = model && Array.isArray(raw.sketch)
+    ? raw.sketch.slice(0, PROFILE_LIMITS.sketch).map((shape) => cleanShape(shape, pageWidth, pageHeight, (color) => HEX.test(color ?? ''))).filter(Boolean) : [];
   const q = Array.isArray(raw.q) && raw.q.length === 4 && raw.q.every(finite) && Math.hypot(...raw.q) > 1e-6 ? quatNorm(raw.q).map((value) => round(value, 6)) : viewQuat('iso');
   return {
     tool: 'solid',
@@ -212,7 +245,133 @@ export function cleanSolid(raw, pageWidth, pageHeight) {
     edges: SOLID_EDGES.includes(raw.edges) ? raw.edges : 'dashed',
     ...(raw.shade === true ? { shade: true } : {}),
     ...(raw.showDims === true ? { showDims: true } : {}),
-    ...(raw.axes === true ? { axes: true } : {})
+    ...(raw.axes === true ? { axes: true } : {}),
+    ...(profile ? { profile } : {}),
+    ...(sketch.length > 0 ? { sketch } : {}),
+    ...(sketch.length > 0 && finite(raw.sketchAngle) && raw.sketchAngle !== 0 ? { sketchAngle: round(raw.sketchAngle, 6) } : {}),
+    ...(sketch.length > 0 && raw.sketchMirror === true ? { sketchMirror: true } : {})
+  };
+}
+
+// ---------------------------------------------------------------- profil (od 1.48)
+
+/** Pole ze znakiem (y w górę: dodatnie – przeciwnie do wskazówek zegara). */
+export const signedArea = (loop) => loop.reduce((sum, [x, y], index) => {
+  const [u, v] = loop[(index + 1) % loop.length];
+  return sum + x * v - u * y;
+}, 0) / 2;
+const oriented = (loop, ccw) => ((signedArea(loop) > 0) === ccw ? loop : loop.slice().reverse());
+function cleanLoop(raw) {
+  if (!Array.isArray(raw)) return null;
+  const points = raw.slice(0, PROFILE_LIMITS.points).filter((point) => Array.isArray(point) && finite(point[0]) && finite(point[1]))
+    .map(([x, y]) => [round(clamp(x, -SOLID_LIMITS.max, SOLID_LIMITS.max)), round(clamp(y, -SOLID_LIMITS.max, SOLID_LIMITS.max))])
+    // Bez powtórzonych sąsiednich punktów.
+    .filter((point, index, all) => index === 0 || point[0] !== all[index - 1][0] || point[1] !== all[index - 1][1]);
+  if (points.length > 1 && points[0][0] === points.at(-1)[0] && points[0][1] === points.at(-1)[1]) points.pop();
+  return points.length >= 3 && Math.abs(signedArea(points)) > 1 ? points : null;
+}
+/** Sprawdzony profil { islands: [{ outer, holes }] } (obrys przeciwnie do wskazówek zegara, otwory – zgodnie) albo null; obrotowy – nad osią (y ≥ 0). */
+export function cleanProfile(raw, kind) {
+  if (!raw || !Array.isArray(raw.islands)) return null;
+  const islands = [];
+  let total = 0;
+  let loops = 0;
+  for (const island of raw.islands.slice(0, PROFILE_LIMITS.islands)) {
+    const outer = cleanLoop(island?.outer);
+    if (!outer) continue;
+    const holes = (Array.isArray(island.holes) ? island.holes : []).map(cleanLoop).filter(Boolean);
+    total += outer.length + holes.reduce((sum, hole) => sum + hole.length, 0);
+    loops += 1 + holes.length;
+    if (total > PROFILE_LIMITS.points || loops > PROFILE_LIMITS.loops) break;
+    islands.push({ outer: oriented(outer, true), holes: holes.map((hole) => oriented(hole, false)) });
+  }
+  if (islands.length === 0) return null;
+  if (kind === 'revolve' && islands.some((island) => island.outer.some(([, y]) => y < -0.01))) return null;
+  return { islands };
+}
+
+const insideLoop = (x, y, loop) => {
+  let inside = false;
+  for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+    const [a, b] = [loop[i], loop[j]];
+    if ((a[1] > y) !== (b[1] > y) && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
+  }
+  return inside;
+};
+/** Punkty obrysu zamkniętego kształtu (strona) – okrąg i elipsa: 72 punkty; otwarty kształt – null. */
+export function shapeLoop(shape) {
+  if (shape.shape === 'ellipse') return Array.from({ length: 72 }, (_, index) => {
+    const point = shapePoint(shape, 0.5 * Math.cos((index / 72) * Math.PI * 2), 0.5 * Math.sin((index / 72) * Math.PI * 2));
+    return [point.x, point.y];
+  });
+  const { points, closed } = shapeOutline(shape);
+  if (!closed || points.length < 6) return null;
+  return Array.from({ length: points.length / 2 }, (_, index) => [points[index * 2], points[index * 2 + 1]]);
+}
+/**
+ * Profil z zamkniętych kształtów szkicu (od 1.48): pętle w pętlach – otwory (parzyste zagnieżdżenie – wyspa, nieparzyste –
+ * otwór najbliższej wyspy). Wyciągnięcie – względem środka szkicu (y w górę); obrót – w układzie osi `axis` { a, b } (strona;
+ * brak – pozioma prosta przez najniższy punkt szkicu): x wzdłuż osi, y – odległość od niej (cały profil po jednej stronie).
+ * Wynik: { profile, center – środek bryły na stronie, angle – kierunek osi na stronie } albo { error }.
+ */
+export function profileFromShapes(shapes, kind, axis = null) {
+  const loops = shapes.map(shapeLoop).filter(Boolean);
+  if (loops.length === 0) return { error: 'Zaznacz zamknięty kształt (prostokąt, okrąg, wielokąt…) – profil bryły' };
+  if (loops.length > PROFILE_LIMITS.loops || loops.reduce((sum, loop) => sum + loop.length, 0) > PROFILE_LIMITS.points) return { error: 'Za duży szkic' };
+  const xs = loops.flat().map(([x]) => x);
+  const ys = loops.flat().map(([, y]) => y);
+  let frame;
+  if (kind === 'revolve') {
+    const a = axis?.a ?? { x: Math.min(...xs), y: Math.max(...ys) };
+    const b = axis?.b ?? { x: Math.max(...xs), y: Math.max(...ys) };
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (length < 1) return { error: 'Oś obrotu za krótka' };
+    const u = { x: (b.x - a.x) / length, y: (b.y - a.y) / length };
+    const along = loops.flat().map(([x, y]) => (x - a.x) * u.x + (y - a.y) * u.y);
+    const across = loops.flat().map(([x, y]) => u.x * (y - a.y) - u.y * (x - a.x));
+    const side = across.reduce((sum, value) => sum + value, 0) < 0 ? -1 : 1;
+    if (across.some((value) => value * side < -0.5)) return { error: 'Profil przecina oś obrotu – cały musi leżeć po jednej stronie osi' };
+    const middle = (Math.min(...along) + Math.max(...along)) / 2;
+    frame = {
+      center: { x: a.x + u.x * middle, y: a.y + u.y * middle }, angle: Math.atan2(u.y, u.x),
+      local: ([x, y]) => [(x - a.x) * u.x + (y - a.y) * u.y - middle, Math.max(0, side * (u.x * (y - a.y) - u.y * (x - a.x)))]
+    };
+  } else {
+    const center = { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
+    frame = { center, angle: 0, local: ([x, y]) => [x - center.x, center.y - y] };
+  }
+  // Zagnieżdżenie: ile innych pętli zawiera pętlę (pierwszy punkt w środku i większe pole).
+  const areas = loops.map((loop) => Math.abs(signedArea(loop)));
+  const parents = loops.map((loop, index) => loops.map((other, at) => at).filter((at) => at !== index && areas[at] > areas[index] && insideLoop(loop[0][0], loop[0][1], loops[at])));
+  const islands = [];
+  const islandOf = new Map();
+  loops.forEach((loop, index) => {
+    if (parents[index].length % 2 === 0) {
+      islandOf.set(index, islands.length);
+      islands.push({ outer: loop.map(frame.local), holes: [] });
+    }
+  });
+  loops.forEach((loop, index) => {
+    if (parents[index].length % 2 === 1) {
+      // Najbliższa (najmniejsza) zawierająca wyspa.
+      const owner = parents[index].filter((at) => islandOf.has(at)).sort((p, q) => areas[p] - areas[q])[0];
+      if (owner !== undefined) islands[islandOf.get(owner)].holes.push(loop.map(frame.local));
+    }
+  });
+  const profile = cleanProfile({ islands }, kind);
+  if (!profile) return { error: kind === 'revolve' ? 'Profil przecina oś obrotu – cały musi leżeć po jednej stronie osi' : 'Za mały profil' };
+  return { profile, center: { x: round(frame.center.x), y: round(frame.center.y) }, angle: frame.angle };
+}
+
+/** Nowa bryła ze szkicu (od 1.48): wyciągnięcie (domyślnie połowa krótszego boku szkicu) albo obrót o 360°, z przodu. */
+export function newModel(kind, profile, { x = 0, y = 0, color = '#1d1d1f', size = SOLID_LINE_WIDTHS[1], sketch = [], sketchAngle = 0 } = {}) {
+  const points = profile.islands.flatMap((island) => island.outer);
+  const [w, h] = [Math.max(...points.map(([px]) => px)) - Math.min(...points.map(([px]) => px)), Math.max(...points.map(([, py]) => py)) - Math.min(...points.map(([, py]) => py))];
+  return {
+    tool: 'solid', kind, x, y,
+    dims: kind === 'extrude' ? { h: round(clamp(Math.min(w, h) / 2, SOLID_LIMITS.min, SOLID_LIMITS.max)) } : { angle: 360 },
+    q: viewQuat('front'), color, size, edges: 'dashed', shade: true, showDims: true, axes: true, profile,
+    ...(sketch.length > 0 ? { sketch } : {}), ...(sketch.length > 0 && sketchAngle !== 0 ? { sketchAngle: round(sketchAngle, 6) } : {})
   };
 }
 
@@ -241,12 +400,28 @@ export function mirrorSolid(element, at, angle) {
   // Środek – odbity względem prostej.
   const [dx, dy] = [element.x - at.x, element.y - at.y];
   const [cos2, sin2] = [Math.cos(2 * angle), Math.sin(2 * angle)];
-  return { ...withQuat(element, quatFromMatrix(next)), x: round(at.x + dx * cos2 + dy * sin2), y: round(at.y + dx * sin2 - dy * cos2) };
+  const mirrored = { ...withQuat(element, quatFromMatrix(next)), x: round(at.x + dx * cos2 + dy * sin2), y: round(at.y + dx * sin2 - dy * cos2) };
+  if (!isModel(element)) return mirrored;
+  // Bryła ze szkicu (od 1.48) nie musi być symetryczna – jej profil też odbity (x → −x), szkic – oznaczony.
+  const across = (loop, ccw) => oriented(loop.map(([x, y]) => [x === 0 ? 0 : -x, y]), ccw);
+  mirrored.profile = { islands: element.profile.islands.map((island) => ({ outer: across(island.outer, true), holes: island.holes.map((hole) => across(hole, false)) })) };
+  if (element.sketch) {
+    if (element.sketchMirror) delete mirrored.sketchMirror;
+    else mirrored.sketchMirror = true;
+  }
+  return mirrored;
 }
 /** Bryła powiększona `factor` razy wokół (cx, cy). */
 export function scaleSolid(element, cx, cy, factor) {
-  const dims = Object.fromEntries(Object.entries(element.dims).map(([key, value]) => [key, key === 'n' ? value : round(clamp(value * factor, key === 't' && value === 0 ? 0 : SOLID_LIMITS.min, SOLID_LIMITS.max))]));
-  return { ...element, dims, x: round(cx + (element.x - cx) * factor), y: round(cy + (element.y - cy) * factor) };
+  const dims = Object.fromEntries(Object.entries(element.dims).map(([key, value]) => [key,
+    key === 'n' || key === 'angle' ? value : round(clamp(value * factor, key === 't' && value === 0 ? 0 : SOLID_LIMITS.min, SOLID_LIMITS.max))]));
+  const next = { ...element, dims, x: round(cx + (element.x - cx) * factor), y: round(cy + (element.y - cy) * factor) };
+  // Bryła ze szkicu (od 1.48) – profil razem z nią (kształty szkicu skaluje transform.js).
+  if (isModel(element)) {
+    const scale = (loop) => loop.map(([x, y]) => [round(x * factor), round(y * factor)]);
+    next.profile = { islands: element.profile.islands.map((island) => ({ outer: scale(island.outer), holes: island.holes.map(scale) })) };
+  }
+  return next;
 }
 
 // ---------------------------------------------------------------- siatka (ściany i krawędzie)
@@ -334,6 +509,111 @@ export function solidMesh(kind, dims) {
   return mesh;
 }
 
+/**
+ * Siatka bryły ze szkicu (od 1.48): { V, F – ściany jako pętle [obrys, ...otwory] (numery wierzchołków), N, E }.
+ * Kolejność wierzchołków daje normalne na zewnątrz (obrys przeciwnie do wskazówek zegara, otwory – zgodnie).
+ */
+const modelCache = new WeakMap();
+export function modelMesh(element) {
+  let byDims = modelCache.get(element.profile);
+  if (!byDims) {
+    byDims = new Map();
+    modelCache.set(element.profile, byDims);
+  }
+  const key = `${element.kind}:${JSON.stringify(element.dims)}`;
+  if (byDims.has(key)) return byDims.get(key);
+  const V = [];
+  const F = [];
+  const { islands } = element.profile;
+  if (element.kind === 'extrude') {
+    const [z0, z1] = [-element.dims.h / 2, element.dims.h / 2];
+    for (const island of islands) {
+      const loops = [island.outer, ...island.holes];
+      const ring = (z) => loops.map((loop) => {
+        const first = V.length;
+        for (const [x, y] of loop) V.push([x, y, z]);
+        return first;
+      });
+      const [bottom, top] = [ring(z0), ring(z1)];
+      F.push(loops.map((loop, at) => loop.map((_, index) => bottom[at] + loop.length - 1 - index)));
+      F.push(loops.map((loop, at) => loop.map((_, index) => top[at] + index)));
+      loops.forEach((loop, at) => loop.forEach((_, index) => {
+        const next = (index + 1) % loop.length;
+        F.push([[bottom[at] + index, bottom[at] + next, top[at] + next, top[at] + index]]);
+      }));
+    }
+  } else {
+    const angle = element.dims.angle;
+    const full = angle >= 359.99;
+    const steps = Math.max(3, Math.round((72 * angle) / 360));
+    const sweep = (angle * Math.PI) / 180;
+    const dedupe = (loop) => loop.filter((vertex, index) => vertex !== loop[(index + loop.length - 1) % loop.length]);
+    for (const island of islands) {
+      const loops = [island.outer, ...island.holes];
+      // Punkty na osi (y = 0) – jeden wierzchołek dla wszystkich kątów.
+      const rings = [];
+      for (let step = 0; step < (full ? steps : steps + 1); step += 1) {
+        const turn = (step * sweep) / steps;
+        const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
+        rings.push(loops.map((loop, at) => loop.map(([x, y], index) => {
+          if (Math.abs(y) < 1e-9) {
+            const id = `${at}:${index}`;
+            rings.axis ??= new Map();
+            if (!rings.axis.has(id)) {
+              rings.axis.set(id, V.length);
+              V.push([x, 0, 0]);
+            }
+            return rings.axis.get(id);
+          }
+          V.push([x, y * cos, y * sin]);
+          return V.length - 1;
+        })));
+      }
+      for (let step = 0; step < steps; step += 1) {
+        const [a, b] = [rings[step], rings[full ? (step + 1) % steps : step + 1]];
+        loops.forEach((loop, at) => loop.forEach((_, index) => {
+          const next = (index + 1) % loop.length;
+          const quad = dedupe([a[at][index], a[at][next], b[at][next], b[at][index]]);
+          if (quad.length >= 3) F.push([quad]);
+        }));
+      }
+      if (!full) {
+        // Ściany na końcach obrotu: na początku – odwrotnie (normalna w stronę mniejszego kąta).
+        F.push(rings[0].map((loop) => dedupe(loop.slice().reverse())));
+        F.push(rings[steps].map((loop) => dedupe(loop.slice())));
+      }
+    }
+  }
+  const N = F.map((loops) => {
+    const loop = loops[0];
+    let [nx, ny, nz] = [0, 0, 0];
+    loop.forEach((index, at) => {
+      const [p, q] = [V[index], V[loop[(at + 1) % loop.length]]];
+      nx += (p[1] - q[1]) * (p[2] + q[2]);
+      ny += (p[2] - q[2]) * (p[0] + q[0]);
+      nz += (p[0] - q[0]) * (p[1] + q[1]);
+    });
+    const length = Math.hypot(nx, ny, nz) || 1;
+    return [nx / length, ny / length, nz / length];
+  });
+  const edges = new Map();
+  F.forEach((loops, face) => loops.forEach((loop) => loop.forEach((a, at) => {
+    const b = loop[(at + 1) % loop.length];
+    if (a === b) return;
+    const id = a < b ? `${a}-${b}` : `${b}-${a}`;
+    if (!edges.has(id)) edges.set(id, { a: Math.min(a, b), b: Math.max(a, b), faces: [] });
+    edges.get(id).faces.push(face);
+  })));
+  const E = [...edges.values()].map((edge) => {
+    const [first, second = first] = edge.faces;
+    const [n1, n2] = [N[first], N[second]];
+    return { ...edge, sharp: edge.faces.length !== 2 || n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2] < Math.cos(20 * D2R) };
+  });
+  const mesh = { V, F, N, E };
+  byDims.set(key, mesh);
+  return mesh;
+}
+
 /** Odcinki połączone w łamane (linia przerywana nie zaczyna się od nowa na każdym odcinku okręgu). */
 export function chainEdges(edges) {
   const adjacent = new Map();
@@ -375,15 +655,16 @@ export function solidGeometry(element) {
   // Zapamiętany rozkład – tylko gdy bryła się nie zmieniła (element poprawiony w miejscu, np. przy wstawianiu, liczy się od nowa).
   const signature = JSON.stringify([element.kind, element.x, element.y, element.q, element.dims, element.showDims === true, element.axes === true]);
   const cached = geometryCache.get(element);
-  if (cached?.signature === signature) return cached;
+  if (cached?.signature === signature && cached.profile === element.profile) return cached;
   const m = quatMatrix(element.q);
   const at = (point) => {
     const v = rotate(m, point);
     return { x: element.x + v[0], y: element.y - v[1], z: v[2] };
   };
-  const result = element.kind === 'sphere' ? sphereGeometry(element, at) : meshGeometry(element, m, at);
+  const result = element.kind === 'sphere' ? sphereGeometry(element, at) : isModel(element) ? modelGeometry(element, m, at) : meshGeometry(element, m, at);
   result.bounds = boundsOf(result);
   result.signature = signature;
+  result.profile = element.profile;
   geometryCache.set(element, result);
   return result;
 }
@@ -417,6 +698,218 @@ function meshGeometry(element, m, at) {
     axes: axisLines(element, at, center),
     dims: meshDims(element, mesh, P, facing, at, center)
   };
+}
+
+/**
+ * Bryła ze szkicu (od 1.48), także wklęsła i z otworami: krawędzie ostre i zarys próbkowane co ok. 3 jednostki – punkt
+ * widać, gdy nie zasłania go żadna ściana zwrócona do patrzącego (poza ścianami tej krawędzi); granice odcinków –
+ * bisekcją. Ściany od patrzącego – z płaszczyzną z(x, y) na stronie (bufor głębokości przy cieniowaniu).
+ */
+function modelGeometry(element, m, at) {
+  const mesh = modelMesh(element);
+  const view = mesh.V.map((vertex) => rotate(m, vertex));
+  const P = view.map(([x, y]) => ({ x: element.x + x, y: element.y - y }));
+  const N = mesh.N.map((normal) => rotate(m, normal));
+  const facing = N.map((normal) => normal[2] > 1e-9);
+  const D = mesh.F.map((loops, face) => {
+    const point = view[loops[0][0]];
+    return N[face][0] * point[0] + N[face][1] * point[1] + N[face][2] * point[2];
+  });
+  // Siatka komórek (układ widoku, y w górę) ze ścianami od patrzącego.
+  const CELL = 16;
+  const grid = new Map();
+  const boxes = mesh.F.map((loops, face) => {
+    if (!facing[face]) return null;
+    let [minX, maxX, minY, maxY] = [Infinity, -Infinity, Infinity, -Infinity];
+    for (const index of loops[0]) {
+      const [x, y] = view[index];
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    }
+    for (let row = Math.floor(minY / CELL); row <= Math.floor(maxY / CELL); row += 1) {
+      for (let column = Math.floor(minX / CELL); column <= Math.floor(maxX / CELL); column += 1) {
+        const id = `${row}:${column}`;
+        if (!grid.has(id)) grid.set(id, []);
+        grid.get(id).push(face);
+      }
+    }
+    return { minX, maxX, minY, maxY };
+  });
+  const insideFace = (face, x, y) => {
+    let inside = false;
+    for (const loop of mesh.F[face]) {
+      for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+        const [a, b] = [view[loop[i]], view[loop[j]]];
+        if ((a[1] > y) !== (b[1] > y) && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
+      }
+    }
+    return inside;
+  };
+  const seen = ([x, y, z], skip) => {
+    const list = grid.get(`${Math.floor(y / CELL)}:${Math.floor(x / CELL)}`);
+    if (!list) return true;
+    for (const face of list) {
+      if (skip.includes(face)) continue;
+      const box = boxes[face];
+      if (x < box.minX || x > box.maxX || y < box.minY || y > box.maxY) continue;
+      const n = N[face];
+      if ((D[face] - n[0] * x - n[1] * y) / n[2] > z + 0.05 && insideFace(face, x, y)) return false;
+    }
+    return true;
+  };
+  // Krawędzie do rysowania: ostre i zarys (gładkie między ścianami zwróconymi różnie); obie ściany od patrzącego tyłem – niewidoczne.
+  const candidates = [];
+  for (const edge of mesh.E) {
+    const first = facing[edge.faces[0]];
+    const second = edge.faces.length > 1 ? facing[edge.faces[1]] : first;
+    if (edge.sharp) candidates.push({ ...edge, hidden: !first && !second });
+    else if (first !== second) candidates.push({ ...edge, hidden: false });
+  }
+  const byKey = new Map(candidates.map((edge) => [`${edge.a}-${edge.b}`, edge]));
+  const visible = [];
+  const hidden = [];
+  // Krawędzie z tyłu (całe niewidoczne) – osobne łamane: zamknięte obrysy z przodu zostają zamknięte.
+  const chains = [...chainEdges(candidates.filter((edge) => !edge.hidden)), ...chainEdges(candidates.filter((edge) => edge.hidden))];
+  for (const chain of chains) {
+    let run = null;
+    let travelled = 0;
+    const flush = () => {
+      if (run && run.points.length > 1) (run.seen ? visible : hidden).push({ points: run.points, closed: false, offset: run.offset });
+      run = null;
+    };
+    for (let at = 0; at + 1 < chain.length; at += 1) {
+      const [a, b] = [chain[at], chain[at + 1]];
+      const edge = byKey.get(a < b ? `${a}-${b}` : `${b}-${a}`);
+      const [A, B] = [view[a], view[b]];
+      const length = Math.hypot(B[0] - A[0], B[1] - A[1]);
+      const steps = Math.max(1, Math.ceil(length / 3));
+      const point = (t) => [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t];
+      const visibleAt = (t) => !edge.hidden && seen(point(t), edge.faces);
+      const page = (t) => ({ x: P[a].x + (P[b].x - P[a].x) * t, y: P[a].y + (P[b].y - P[a].y) * t });
+      let state = visibleAt(0.5 / steps);
+      if (!run || run.seen !== state) {
+        flush();
+        run = { seen: state, points: [page(0)], offset: travelled };
+      }
+      for (let step = 1; step < steps; step += 1) {
+        const next = visibleAt((step + 0.5) / steps);
+        if (next !== state) {
+          // Granica między próbkami – bisekcją.
+          let [low, high] = [(step - 0.5) / steps, (step + 0.5) / steps];
+          for (let round = 0; round < 8; round += 1) {
+            const middle = (low + high) / 2;
+            if (visibleAt(middle) === state) low = middle;
+            else high = middle;
+          }
+          const border = (low + high) / 2;
+          run.points.push(page(border));
+          flush();
+          run = { seen: next, points: [page(border)], offset: travelled + length * border };
+          state = next;
+        }
+      }
+      run.points.push(page(1));
+      travelled += length;
+    }
+    // Zamknięta łamana bez przerw (cała widoczna albo cała niewidoczna) – zamknięta.
+    const closed = chain.length > 2 && chain[0] === chain.at(-1);
+    if (closed && run && run.points.length === chain.length && run.offset === 0) {
+      run.points.pop();
+      (run.seen ? visible : hidden).push({ points: run.points, closed: true, offset: 0 });
+      run = null;
+    }
+    flush();
+  }
+  const faces = [];
+  mesh.F.forEach((loops, face) => {
+    if (!facing[face]) return;
+    const n = N[face];
+    // z na stronie: x widoku = X − x bryły, y widoku = y bryły − Y.
+    const plane = { a: -n[0] / n[2], b: n[1] / n[2], c: (D[face] + n[0] * element.x - n[1] * element.y) / n[2] };
+    faces.push({
+      loops: loops.map((loop) => loop.map((index) => ({ x: P[index].x, y: P[index].y }))),
+      points: loops[0].map((index) => ({ x: P[index].x, y: P[index].y })),
+      light: Math.max(0, n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2]), plane
+    });
+  });
+  const center = { x: element.x, y: element.y };
+  return { visible, hidden, faces, sphere: null, depth: true, axes: modelAxes(element, at, center), dims: modelDims(element, mesh, P, facing, at, center) };
+}
+
+/** Granice profilu (układ bryły). */
+function profileBounds(profile) {
+  const points = profile.islands.flatMap((island) => island.outer);
+  return {
+    minX: Math.min(...points.map(([x]) => x)), maxX: Math.max(...points.map(([x]) => x)),
+    minY: Math.min(...points.map(([, y]) => y)), maxY: Math.max(...points.map(([, y]) => y))
+  };
+}
+
+/** Oś bryły obrotowej (x) – wysunięta poza bryłę; widok wzdłuż osi – krzyż. */
+function modelAxes(element, at, center) {
+  if (!element.axes || element.kind !== 'revolve') return [];
+  const bounds = profileBounds(element.profile);
+  const reach = Math.max(12, (bounds.maxX - bounds.minX) * 0.08);
+  const [a, b] = [at([bounds.minX - reach, 0, 0]), at([bounds.maxX + reach, 0, 0])];
+  if (Math.hypot(b.x - a.x, b.y - a.y) < (bounds.maxX - bounds.minX + 2 * reach) * 0.15) return crossLines(center, bounds.maxY + reach);
+  return [[{ x: a.x, y: a.y }, { x: b.x, y: b.y }]];
+}
+
+/** Wymiary bryły ze szkicu: wyciągnięcie – długość wzdłuż z (krawędź zarysu); obrotowa – długość wzdłuż osi i największa średnica. */
+function modelDims(element, mesh, P, facing, at, center) {
+  if (!element.showDims) return [];
+  const dims = [];
+  if (element.kind === 'extrude') {
+    const preferred = { x: -0.33, y: 0.94 };
+    let best = null;
+    let score = -Infinity;
+    for (const edge of mesh.E) {
+      if (edge.faces.length !== 2 || facing[edge.faces[0]] === facing[edge.faces[1]]) continue;
+      const [A, B] = [mesh.V[edge.a], mesh.V[edge.b]];
+      if (Math.abs(A[0] - B[0]) > 1e-6 || Math.abs(A[1] - B[1]) > 1e-6) continue;
+      const [p1, p2] = [P[edge.a], P[edge.b]];
+      if (Math.hypot(p2.x - p1.x, p2.y - p1.y) < 20) continue;
+      const value = ((p1.x + p2.x) / 2 - center.x) * preferred.x + ((p1.y + p2.y) / 2 - center.y) * preferred.y;
+      if (value > score) {
+        score = value;
+        best = edge;
+      }
+    }
+    if (best) {
+      const [p1, p2] = [P[best.a], P[best.b]];
+      const length = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
+      let n = { x: -(p2.y - p1.y) / length, y: (p2.x - p1.x) / length };
+      if (n.x * ((p1.x + p2.x) / 2 - center.x) + n.y * ((p1.y + p2.y) / 2 - center.y) < 0) n = { x: -n.x, y: -n.y };
+      dims.push({ type: 'linear', from: { x: p1.x, y: p1.y }, to: { x: p2.x, y: p2.y }, normal: n, offset: SOLID_DIM.offset, gaps: [SOLID_DIM.gap, SOLID_DIM.gap], value: element.dims.h });
+    }
+    return dims;
+  }
+  const bounds = profileBounds(element.profile);
+  const [a, b] = [at([bounds.minX, 0, 0]), at([bounds.maxX, 0, 0])];
+  const length = Math.hypot(b.x - a.x, b.y - a.y);
+  let perp = length > 1e-6 ? { x: -(b.y - a.y) / length, y: (b.x - a.x) / length } : { x: 1, y: 0 };
+  if (perp.y < -1e-9 || (Math.abs(perp.y) <= 1e-9 && perp.x > 0)) perp = { x: -perp.x, y: -perp.y };
+  const widest = Math.max(0, ...P.map((point) => (point.x - a.x) * perp.x + (point.y - a.y) * perp.y));
+  // Linie pomocnicze od zarysu na końcach (promień profilu przy początku i końcu osi).
+  const endRadius = (x) => Math.max(0, ...element.profile.islands.flatMap((island) => island.outer).filter(([px]) => Math.abs(px - x) < 1e-6).map(([, py]) => py));
+  if (length >= 20) {
+    dims.push({
+      type: 'linear', from: { x: a.x, y: a.y }, to: { x: b.x, y: b.y }, normal: perp, offset: widest + SOLID_DIM.offset,
+      gaps: [endRadius(bounds.minX) + SOLID_DIM.gap, endRadius(bounds.maxX) + SOLID_DIM.gap], value: bounds.maxX - bounds.minX
+    });
+  }
+  // Największa średnica – w miejscu najdalszego punktu profilu.
+  const far = element.profile.islands.flatMap((island) => island.outer).reduce((best, point) => (point[1] > best[1] ? point : best));
+  const middle = at([far[0], 0, 0]);
+  const u = length > 1e-6 ? { x: perp.x, y: perp.y } : { x: 1, y: 0 };
+  const direction = u.x < 0 ? { x: -u.x, y: -u.y } : u;
+  dims.push({
+    type: 'diameter', from: { x: middle.x - direction.x * far[1], y: middle.y - direction.y * far[1] }, to: { x: middle.x + direction.x * far[1], y: middle.y + direction.y * far[1] },
+    value: far[1] * 2, prefix: '⌀'
+  });
+  return dims;
 }
 
 /** Kula: zarys, równik i południk (tylna połowa – niewidoczna), cieniowanie – gradient. */
@@ -647,4 +1140,154 @@ export function solidTone(color, light) {
   const rgb = [1, 3, 5].map((start) => parseInt(color.slice(start, start + 2), 16));
   const k = 0.6 + 0.4 * light;
   return `#${rgb.map((value) => Math.round(clamp((value + (255 - value) * 0.8) * k, 0, 255)).toString(16).padStart(2, '0')).join('')}`;
+}
+
+// ---------------------------------------------------------------- rzuty 2D (od 1.48)
+
+/** Odstęp rzutów (jednostki strony – dwie kratki). */
+export const PROJECTION_GAP = 2 * STEP;
+/** Rzuty metodą europejską: z przodu, z góry (pod nim), z lewej (z prawej strony rzutu z przodu). */
+export const PROJECTION_VIEWS = Object.freeze(['front', 'top', 'left']);
+
+/** Czy punkt leży na którejś z linii (odległość ≤ tolerance). */
+function onLines(point, lines, tolerance) {
+  for (const line of lines) {
+    const count = line.points.length;
+    for (let index = 0; index < (line.closed ? count : count - 1); index += 1) {
+      const [a, b] = [line.points[index], line.points[(index + 1) % count]];
+      const [dx, dy] = [b.x - a.x, b.y - a.y];
+      const length = dx * dx + dy * dy;
+      const t = length === 0 ? 0 : clamp(((point.x - a.x) * dx + (point.y - a.y) * dy) / length, 0, 1);
+      if (Math.hypot(point.x - a.x - dx * t, point.y - a.y - dy * t) <= tolerance) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Części łamanej niewidocznej poza liniami widocznymi (rysunek techniczny: linia widoczna ma pierwszeństwo) – próbki co ok.
+ * 2 jednostki; cała poza – bez zmian (zamknięta zostaje zamknięta).
+ */
+function apartFrom(line, visible) {
+  const count = line.points.length;
+  const samples = [];
+  for (let index = 0; index < (line.closed ? count : count - 1); index += 1) {
+    const [a, b] = [line.points[index], line.points[(index + 1) % count]];
+    const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 2));
+    for (let step = 0; step < steps; step += 1) samples.push({ x: a.x + ((b.x - a.x) * step) / steps, y: a.y + ((b.y - a.y) * step) / steps, vertex: step === 0 });
+  }
+  samples.push({ ...(line.closed ? line.points[0] : line.points.at(-1)), vertex: true });
+  const off = samples.map((point) => !onLines(point, visible, 0.6));
+  if (off.every(Boolean)) return [line];
+  const parts = [];
+  let part = null;
+  samples.forEach((point, index) => {
+    if (!off[index]) return;
+    const starts = index === 0 || !off[index - 1];
+    const ends = index === samples.length - 1 || !off[index + 1];
+    // Część dochodzi do linii widocznej (próbka obok); w środku – tylko wierzchołki łamanej.
+    if (starts) part = index > 0 ? [samples[index - 1]] : [];
+    if (point.vertex || starts || ends) part.push(point);
+    if (ends) {
+      if (index < samples.length - 1) part.push(samples[index + 1]);
+      parts.push(part);
+      part = null;
+    }
+  });
+  return parts.filter((points) => points.length > 1).map((points) => ({ points: points.map(({ x, y }) => ({ x: round(x), y: round(y) })), closed: false }));
+}
+
+/**
+ * Trzy rzuty bryły (od 1.48) w jej wymiarach, bez obrotu na kartce: { views: [{ id, visible, hidden, axes, bounds }], bounds }
+ * – rzut z przodu ze środkiem w (0, 0), rzut z góry pod nim, z lewej – po prawej (odstęp PROJECTION_GAP). Linie niewidoczne,
+ * które pokrywają się z widocznymi, odpadają (jak w rysunku technicznym); tak samo linie leżące na innych tego samego rodzaju
+ * (np. krawędź otworu widziana z boku na obrysie, dwa otwory jeden za drugim) – każda kreska na rzucie raz.
+ */
+export function solidProjections(element) {
+  const base = { ...element, x: 0, y: 0, showDims: false, axes: true };
+  const raw = PROJECTION_VIEWS.map((id) => ({ id, geometry: solidGeometry({ ...base, q: viewQuat(id) }) }));
+  const extent = (geometry) => {
+    const points = [...geometry.visible, ...geometry.hidden].flatMap((line) => line.points);
+    if (geometry.sphere) points.push({ x: -geometry.sphere.r, y: -geometry.sphere.r }, { x: geometry.sphere.r, y: geometry.sphere.r });
+    return { minX: Math.min(...points.map((p) => p.x)), maxX: Math.max(...points.map((p) => p.x)), minY: Math.min(...points.map((p) => p.y)), maxY: Math.max(...points.map((p) => p.y)) };
+  };
+  const [front, top, left] = raw.map((view) => extent(view.geometry));
+  const shift = {
+    front: { x: 0, y: 0 },
+    top: { x: 0, y: front.maxY + PROJECTION_GAP - top.minY },
+    left: { x: front.maxX + PROJECTION_GAP - left.minX, y: 0 }
+  };
+  const move = (point, offset) => ({ x: round(point.x + offset.x), y: round(point.y + offset.y) });
+  const views = raw.map(({ id, geometry }) => {
+    const offset = shift[id];
+    // Najpierw dłuższe (obrys), krótsze leżące na już przyjętych odpadają.
+    const moved = (lines) => lines.map((line) => ({ points: line.points.map((point) => move(point, offset)), closed: line.closed }))
+      .map((line) => ({ line, length: line.points.reduce((sum, point, index, list) => sum + (index > 0 ? Math.hypot(point.x - list[index - 1].x, point.y - list[index - 1].y) : 0), 0) }))
+      .sort((p, q) => q.length - p.length).map(({ line }) => line);
+    const visible = [];
+    for (const line of moved(geometry.visible)) visible.push(...apartFrom(line, visible));
+    const hidden = [];
+    for (const line of moved(geometry.hidden)) hidden.push(...apartFrom(line, [...visible, ...hidden]));
+    const axes = geometry.axes.map(([a, b]) => [move(a, offset), move(b, offset)]);
+    const own = extent({ visible, hidden, sphere: null });
+    return { id, visible, hidden, axes, bounds: own };
+  });
+  const all = views.map((view) => view.bounds);
+  return { views, bounds: { minX: Math.min(...all.map((b) => b.minX)), maxX: Math.max(...all.map((b) => b.maxX)), minY: Math.min(...all.map((b) => b.minY)), maxY: Math.max(...all.map((b) => b.maxY)) } };
+}
+
+/** Okrąg z punktów łamanej zamkniętej (wszystkie w tej samej odległości od środka) – { x, y, r } albo null. */
+export function circleOf(line) {
+  if (!line.closed || line.points.length < 24) return null;
+  const x = line.points.reduce((sum, point) => sum + point.x, 0) / line.points.length;
+  const y = line.points.reduce((sum, point) => sum + point.y, 0) / line.points.length;
+  const radii = line.points.map((point) => Math.hypot(point.x - x, point.y - y));
+  const r = radii.reduce((sum, value) => sum + value, 0) / radii.length;
+  return r > 1 && radii.every((value) => Math.abs(value - r) <= Math.max(0.5, r * 0.01)) ? { x, y, r } : null;
+}
+
+/**
+ * Rzuty jako zwykłe kształty kartki (od 1.48) – do wymiarowania: krawędzie widoczne – linią ciągłą (okręgi – okręgami,
+ * dwa punkty – odcinkiem, więcej – łamaną albo wielokątem), niewidoczne – przerywaną, osie – osiową; (x, y) – środek rzutu
+ * z przodu na stronie. style: { color, size } – niewidoczne i osie o połowę cieńsze.
+ */
+export function projectionShapes(element, at, style) {
+  const { views } = solidProjections(element);
+  const thin = Math.max(0.5, round(style.size * 0.5, 1));
+  const shapes = [];
+  const place = (point) => ({ x: round(point.x + at.x), y: round(point.y + at.y) });
+  const add = (line, size, dash) => {
+    const points = line.points.map(place);
+    const extra = dash !== 'solid' ? { dash } : {};
+    const circle = circleOf({ ...line, points });
+    if (circle) {
+      shapes.push({ tool: 'shape', shape: 'ellipse', color: style.color, size, x: round(circle.x), y: round(circle.y), w: round(circle.r * 2), h: round(circle.r * 2), angle: 0, skew: 0, adjust: 0, ...extra });
+      return;
+    }
+    if (points.length === 2 || (!line.closed && points.length === 2)) {
+      const [a, b] = points;
+      const length = Math.hypot(b.x - a.x, b.y - a.y);
+      if (length < 1) return;
+      shapes.push({ tool: 'shape', shape: 'line', color: style.color, size, x: round((a.x + b.x) / 2), y: round((a.y + b.y) / 2), w: round(length), h: 0, angle: Math.atan2(b.y - a.y, b.x - a.x), skew: 0, adjust: 0, ...extra });
+      return;
+    }
+    // Łamana na prostej (np. tworząca widziana z boku) – odcinek.
+    const [first, last] = [points[0], points.at(-1)];
+    const straight = !line.closed && points.every((point) => {
+      const [dx, dy] = [last.x - first.x, last.y - first.y];
+      const length = Math.hypot(dx, dy) || 1;
+      return Math.abs((point.x - first.x) * dy - (point.y - first.y) * dx) / length <= 0.5;
+    });
+    if (straight) {
+      add({ points: [line.points[0], line.points.at(-1)], closed: false }, size, dash);
+      return;
+    }
+    shapes.push({ ...polyFromPoints(line.closed ? 'polygon' : 'polyline', points, { x: first.x, y: first.y, angle: 0 }, { color: style.color, size }), ...extra });
+  };
+  for (const view of views) {
+    for (const line of view.visible) add(line, style.size, 'solid');
+    for (const line of view.hidden) add(line, thin, 'dashed');
+    for (const [a, b] of view.axes) add({ points: [a, b], closed: false }, thin, 'center');
+  }
+  return shapes;
 }
