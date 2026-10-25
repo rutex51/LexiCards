@@ -1908,7 +1908,7 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   widoczne, wymiary z jasną obwódką liczb). Uchwyty `boxHandles`: narożnik (`scaleSolid` wokół środka). Od 1.48.1 obok
   ramki **układ osi** zamiast kostki widoków (1.47–1.48; usunięta po audycie IP – mechanizm jak Autodesk ViewCube, zob.
   gałąź z audytem): `axesAnchor` – przy prawym górnym rogu ramki, przy krawędzi ekranu – przy lewym, w trakcie obrotu stoi
-  w miejscu; `solidAxes` (końce osi X/Y/Z z kwaternionu, od najdalszej), `paintSolidAxes` (tarcza, osie czerwona/zielona/
+  w miejscu; `solidAxes` (końce osi X/Y/Z z kwaternionu, od najdalszej; od 1.48.2 X = z, Y = x, Z = y bryły), `paintSolidAxes` (tarcza, osie czerwona/zielona/
   niebieska, oś od patrzącego bledsza, litery). Układ jest tylko wskaźnikiem: `boxHandleAt` zwraca dla tarczy uchwyt
   `axes`, który niczego nie zmienia (dotknięcie nie zdejmuje zaznaczenia). „Obracaj” (`orbitMode`; przeciągnięcie bryły –
   uchwyt 'orbit') – `box-edit` z przyrostami px ekranu. Menu „Widok” (`openSolidViewMenu`) – `animateSolid`, okno
@@ -1924,6 +1924,15 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   otwory – zgodnie; `cleanProfile`, `PROFILE_LIMITS`), `dims` – `{ h }` (wyciągnięcie od −h/2 do h/2 wzdłuż z) albo
   `{ angle }` (10–360°, obrót wokół osi x układu bryły; profil obrotowy – y ≥ 0), `sketch` – kształty szkicu względem
   środka, `sketchAngle` – kierunek osi szkicu na stronie, `sketchMirror` – bryła odbita. Format rysunku 19.
+- **Osie i płaszczyzna szkicu (od 1.48.2)**: wewnętrzny układ bryły bez zmian (x w prawo, y w górę, z do patrzącego;
+  kwaterniony i gotowe widoki – liczbowo te same), ale osie dla użytkownika jak w rysunku technicznym: X = z, Y = x, Z = y
+  (prawoskrętny; w izometrii Z do góry, X i Y w dół). Szkic leży na płaszczyźnie XY: `fromSketch([x, y, z]) = [x, z, −y]`
+  przelicza wierzchołki siatki z układu profilu (x, y – szkic, z – wyciągnięcie / obrót) do układu bryły; `newModel` –
+  widok z góry i `plane: 'xy'`. `cleanSolid`: bryła ze szkicu bez `plane` (zapisana w 1.48) dostaje q·Rx(90°) – wygląda
+  jak dotąd; wynik zawsze z `plane: 'xy'` (drugie wczytanie bez zmian). Uchwyt długości i kąta (`extentHandle`) liczy
+  punkty przez `fromSketch`, przesunięcie środka przy zmianie długości – wzdłuż y bryły; obrotowa z osią pod kątem –
+  `quatFromAngles(0, 90, −kąt)`. Ściana „do patrzącego” – składowa z normalnej > 1e−5 (`FACING`; położenie zapisane
+  z 6 cyframi nie odwraca ścian bocznych w widoku z góry). Format rysunku 20.
 - **Profil** (`profileFromShapes`): `shapeLoop` – punkty obrysu zamkniętego kształtu (elipsa – 72), zagnieżdżenie pętli
   (parzyste – wyspa, nieparzyste – otwór najbliższej wyspy). Wyciągnięcie – układ środka szkicu; obrót – układ osi (zaznaczony
   odcinek / prosta – `axisOf` w edytorze, bez niej – pozioma przez najniższy punkt): x wzdłuż osi, y – odległość od osi.
@@ -2045,7 +2054,7 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   i 5 × Dlaczego – rozkład, przyczyny z tekstu, miejsca dotknięcia, zapis – układ kartki i jego DXF; od 1.45 kształty
   schematu blokowego, łącznik i jego przebieg, długość linii, tory, symbole i oś czasu VSM, legenda wad, ich DXF; od 1.47
   bryły – dane, kąty i kwaterniony, obrót z przeciągnięcia, rzut z krawędziami niewidocznymi, wymiary, przekształcenia, DXF;
-  od 1.48.1 układ osi bryły – kierunki w widokach, kolory, kolejność;
+  od 1.48.1 układ osi bryły – kierunki w widokach, kolory, kolejność; od 1.48.2 Z do góry i szkic na płaszczyźnie XY;
   od 1.48 bryły ze szkicu – profil z kształtów i oś, siatki zamknięte, krawędzie niewidoczne brył wklęsłych, ściany
   z płaszczyznami, wymiary, odbicie i skala z profilem, rzuty 2D, DXF),
   układ wzoru na płótnie, spójność plików wydania.

@@ -1,6 +1,7 @@
 // Rysunek 1.48 (bryły ze szkicu): profil z zamkniętych kształtów (otwory, wyspy, oś obrotu), wyciągnięcie i bryła obrotowa
 // (siatka zamknięta, normalne na zewnątrz), krawędzie niewidoczne brył wklęsłych i z otworami, ściany z płaszczyznami,
 // wymiary, odbicie i skala z profilem, sprawdzanie danych, rzuty 2D (metoda europejska, okręgi, linie niewidoczne), DXF.
+// Od 1.48.2 szkic leży na płaszczyźnie XY (widok z góry), wyciągnięcie – w górę (Z); bryły z 1.48 – przeliczane przy wczytaniu.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -10,7 +11,7 @@ import { drawingToDxf, parseDxf } from '../../js/core/dxf.js';
 import { polyFromPoints, shapePoint } from '../../js/core/shapes.js';
 import {
   PROJECTION_GAP, circleOf, cleanProfile, cleanSolid, isModel, mirrorSolid, modelMesh, newModel, profileFromShapes, projectionShapes, quatFromAngles,
-  scaleSolid, signedArea, solidAngles, solidBox, solidGeometry, solidLabel, solidProjections, viewQuat, withQuat
+  scaleSolid, signedArea, solidAngles, solidBox, solidGeometry, solidLabel, solidProjections, solidView, viewQuat, withQuat
 } from '../../js/core/solids.js';
 import { mirrorStroke, rotateStroke, scaleStroke } from '../../js/core/transform.js';
 
@@ -112,15 +113,15 @@ test('bryły 1.48: siatki – wyciągnięcie i obrót zamknięte (każda krawęd
   assert.equal(full.V.filter(([, y, z]) => y === 0 && z === 0).length, 2);
 });
 
-test('bryły 1.48: rzut brył wklęsłych – otwory widoczne z przodu, niewidoczne z boku; ściany z płaszczyzną głębokości', () => {
-  const front = solidGeometry(withQuat(plate(), viewQuat('front')));
-  assert.equal(front.visible.length, 3, 'obrys i dwa otwory');
-  assert.ok(front.visible.every((item) => item.closed));
-  assert.equal(front.depth, true);
+test('bryły 1.48: rzut brył wklęsłych – otwory widoczne z góry (szkic na XY), niewidoczne z przodu; ściany z płaszczyzną głębokości', () => {
   const top = solidGeometry(withQuat(plate(), viewQuat('top')));
-  // Z góry: tworzące otworów (po dwie) – niewidoczne.
+  assert.equal(top.visible.length, 3, 'obrys i dwa otwory');
+  assert.ok(top.visible.every((item) => item.closed));
+  assert.equal(top.depth, true);
+  const front = solidGeometry(withQuat(plate(), viewQuat('front')));
+  // Z przodu (płytka leży na XY): tworzące otworów (po dwie) – niewidoczne.
   for (const x of [300, 360, 440, 500]) {
-    assert.ok(top.hidden.some((item) => {
+    assert.ok(front.hidden.some((item) => {
       const along = item.points.filter((point) => Math.abs(point.x - x) < 0.6);
       return along.length >= 2 && Math.max(...along.map((point) => point.y)) - Math.min(...along.map((point) => point.y)) > 90;
     }), `tworząca otworu x = ${x}`);
@@ -129,9 +130,9 @@ test('bryły 1.48: rzut brył wklęsłych – otwory widoczne z przodu, niewidoc
   const iso = solidGeometry(withQuat(plate(), viewQuat('iso')));
   assert.ok(iso.hidden.length > 0 && iso.visible.length > 0);
   assert.ok(iso.hidden.some((item) => item.offset > 0), 'przerywana dalej od miejsca na krawędzi');
-  // Płaszczyzna ściany: z w środku przedniej ściany (z przodu) = połowa grubości.
-  const face = front.faces.find((item) => item.loops.length === 3);
-  near(face.plane.a * 400 + face.plane.b * 300 + face.plane.c, plate().dims.h / 2, 1e-6);
+  // Płaszczyzna ściany: z w środku górnej ściany (z góry) = połowa grubości.
+  const face = top.faces.find((item) => item.loops.length === 3);
+  near(face.plane.a * 400 + face.plane.b * 300 + face.plane.c, plate().dims.h / 2, 1e-3);
   // Wałek z boku: zarys i krawędzie stopni.
   const side = solidGeometry(withQuat(shaft(), viewQuat('front')));
   assert.ok(segments(side.visible) > 10);
@@ -142,7 +143,7 @@ test('bryły 1.48: wymiary i osie – długość wyciągnięcia, długość wał
   const slab = plate();
   assert.equal(slab.dims.h, 100, 'domyślnie – połowa krótszego boku szkicu');
   assert.deepEqual(solidGeometry(withQuat(slab, viewQuat('iso'))).dims.map((dim) => dim.value), [100]);
-  assert.deepEqual(solidGeometry(withQuat(slab, viewQuat('front'))).dims, [], 'z przodu długość widać w punkt');
+  assert.deepEqual(solidGeometry(withQuat(slab, viewQuat('top'))).dims, [], 'z góry długość (wzdłuż Z) widać w punkt');
   const turned = solidGeometry(withQuat(shaft(), viewQuat('dimetric')));
   assert.deepEqual(turned.dims.map((dim) => `${dim.prefix ?? ''}${dim.value}`), ['330', '⌀140']);
   assert.equal(turned.axes.length, 1);
@@ -153,10 +154,22 @@ test('bryły 1.48: wymiary i osie – długość wyciągnięcia, długość wał
   assert.ok(isModel(slab) && !isModel({ kind: 'box' }));
 });
 
-test('bryły 1.48: dane – profil i szkic sprawdzane, kąt obrotu 10–360°, złe profile odrzucone; zapis rysunku (format 19)', () => {
+test('bryły 1.48: dane – profil i szkic sprawdzane, kąt obrotu 10–360°, złe profile odrzucone; zapis rysunku; bryła z 1.48 przeliczona (1.48.2)', () => {
   const slab = plate();
   assert.equal(slab.sketch.length, 3);
-  assert.equal(slab.q[0], 1, 'nowa – z przodu');
+  assert.equal(solidView(slab.q), 'top', 'nowa – z góry, jak szkic na XY (od 1.48.2)');
+  assert.equal(slab.plane, 'xy');
+  // Bryła zapisana w 1.48 (szkic na płaszczyźnie przodu, bez `plane`, z przodu): po wczytaniu – z góry, wygląd ten sam
+  // (obrys 300 × 200 jak szkic).
+  const { plane, ...legacy } = { ...slab, q: [1, 0, 0, 0] };
+  assert.equal(plane, 'xy');
+  const loaded = cleanSolid(legacy, ...PAGE);
+  assert.equal(loaded.plane, 'xy');
+  assert.equal(solidView(loaded.q), 'top');
+  const box = solidBox({ ...loaded, showDims: false, axes: false });
+  near(box.width, 300, 0.5);
+  near(box.height, 200, 0.5);
+  assert.deepEqual(cleanSolid(loaded, ...PAGE).q, loaded.q, 'drugie wczytanie bez zmian');
   assert.equal(cleanSolid({ ...slab, profile: null }, ...PAGE), null);
   assert.equal(cleanSolid({ ...slab, profile: { islands: [{ outer: [[0, 0], [1, 0]] }] } }, ...PAGE), null, 'za mało punktów');
   assert.equal(cleanProfile({ islands: [{ outer: [[0, -5], [10, -5], [10, 10], [0, 10]], holes: [] }] }, 'revolve'), null, 'obrotowy pod osią');
@@ -170,7 +183,7 @@ test('bryły 1.48: dane – profil i szkic sprawdzane, kąt obrotu 10–360°, z
   assert.deepEqual(saved.strokes.map((stroke) => stroke.kind), ['extrude', 'revolve']);
   assert.deepEqual(saved.strokes[0].profile, slab.profile);
   assert.deepEqual(saved.strokes[0].sketch, slab.sketch, 'szkic zapisany w bryle');
-  assert.equal(DRAWING_VERSION, 19, 'format 19 – bryły ze szkicu');
+  assert.ok(DRAWING_VERSION >= 19, 'od 1.48 – bryły ze szkicu (1.48.2 – 20)');
 });
 
 test('bryły 1.48: odbicie i skala – profil odbity (x → −x), szkic oznaczony; rzut lustrzany; skala profilu, wymiaru i szkicu', () => {
@@ -204,21 +217,25 @@ test('bryły 1.48: rzuty 2D – przód, góra pod nim, lewy bok obok; okręgi, o
   near(front.bounds.minX, -150);
   near(top.bounds.minY - front.bounds.maxY, PROJECTION_GAP, 0.5);
   near(left.bounds.minX - front.bounds.maxX, PROJECTION_GAP, 0.5);
-  near(bounds.maxX - bounds.minX, 300 + PROJECTION_GAP + 100, 0.5);
-  assert.equal(front.hidden.length, 0, 'z przodu niewidoczne pokrywają się z widocznymi – odpadają');
-  assert.equal(top.hidden.length, 4, 'z góry – otwory przerywaną');
+  // Płytka leży na XY (od 1.48.2): z przodu i z boku – grubość, z lewej szerokość 200.
+  near(bounds.maxX - bounds.minX, 300 + PROJECTION_GAP + 200, 0.5);
+  assert.equal(top.hidden.length, 0, 'z góry niewidoczne pokrywają się z widocznymi – odpadają');
+  assert.equal(front.hidden.length, 4, 'z przodu – otwory przerywaną');
   assert.equal(left.hidden.length, 2, 'z boku – otwory jeden za drugim: każda tworząca raz');
   // Krawędzie otworów widziane z boku leżą na obrysie – odpadają (każda kreska raz).
-  assert.deepEqual([top.visible.length, left.visible.length], [1, 1], 'z góry i z boku – sam obrys');
+  assert.deepEqual([front.visible.length, left.visible.length], [1, 1], 'z przodu i z boku – sam obrys');
   const shapes = projectionShapes(slab, { x: 400, y: 300 }, { color: '#0040dd', size: 2.5 });
   const kinds = shapes.map((shape) => `${shape.shape}${shape.dash ? `/${shape.dash}` : ''}`);
   assert.equal(kinds.filter((kind) => kind === 'ellipse').length, 2, 'otwory – okręgi');
-  assert.equal(kinds.filter((kind) => kind === 'line/dashed').length, 6, 'tworzące otworów z góry (4) i z boku (2) – odcinki przerywane');
+  assert.equal(kinds.filter((kind) => kind === 'line/dashed').length, 6, 'tworzące otworów z przodu (4) i z boku (2) – odcinki przerywane');
   assert.ok(shapes.every((shape) => shape.color === '#0040dd'));
   assert.ok(shapes.filter((shape) => shape.dash).every((shape) => shape.size === 1.3), 'niewidoczne – cieńsze');
   const holes = shapes.filter((shape) => shape.shape === 'ellipse').sort((p, q) => p.x - q.x);
   near(holes[0].w, 60, 0.1);
-  assert.deepEqual(holes.map((hole) => [hole.x, hole.y]), [[330, 300], [470, 300]], 'okręgi w miejscach otworów szkicu');
+  // Okręgi – w rzucie z góry (pod przodem), w tych samych miejscach względem siebie co w szkicu.
+  assert.deepEqual(holes.map((hole) => hole.x), [330, 470], 'okręgi w miejscach otworów szkicu');
+  assert.equal(holes[0].y, holes[1].y);
+  assert.ok(holes[0].y > 300 + 50 + PROJECTION_GAP, `rzut z góry pod przodem: ${holes[0].y}`);
   // Wałek: osie (linia osiowa) w każdym rzucie, okręgi stopni z lewej.
   const turned = projectionShapes(shaft(), { x: 0, y: 0 }, style).map((shape) => `${shape.shape}${shape.dash ? `/${shape.dash}` : ''}`);
   assert.ok(turned.includes('line/center'));

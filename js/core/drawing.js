@@ -74,9 +74,9 @@ import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './la
  * 14 – ramka rysunkowa z tabliczką (1.41), 15 – wymiar długości łuku, wymiar poziomy i pionowy, osie okręgu,
  * arkusz A4 pionowo (1.42), 16 – diagramy Ishikawy i 5 × Dlaczego, układ kartki (1.44), 17 – kształty schematu blokowego,
  * łącznik, symbole i oś czasu VSM, legenda wad, tory (1.45), 18 – bryły (1.47), 19 – bryły ze szkicu: wyciągnięcie i obrót
- * profilu, szkic w bryle (1.48).
+ * profilu, szkic w bryle (1.48), 20 – szkic na płaszczyźnie XY, Z do góry (1.48.2).
  */
-export const DRAWING_VERSION = 19;
+export const DRAWING_VERSION = 20;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;

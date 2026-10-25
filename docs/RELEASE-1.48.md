@@ -92,3 +92,34 @@ Testy wersji 1.48.1:
 
 Czego nie sprawdzono: Safari na iPhonie i iPadzie, prawdziwy palec i Apple Pencil; czytelność kolorów osi w ciemnym
 motywie i dla osób z zaburzeniami widzenia barw (osie mają też litery X, Y, Z).
+
+## Uzupełnienie w wersji 1.48.2 – Z do góry, szkic na płaszczyźnie XY
+
+Wersja 1.48.2, 25 października 2026.
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Osie X i Y na dole, oś Z do góry (domyślny widok bryły) | Układ osi jak w rysunku technicznym: w izometrii **Z pionowo w górę**, **X w lewo w dół**, **Y w prawo w dół**. Kolory bez zmian (X – czerwona, Y – zielona, Z – niebieska). Widok z przodu patrzy wzdłuż X (Y w prawo, Z w górę), z góry – wzdłuż Z (Y w prawo, X w dół), z lewej – wzdłuż Y. Wygląd brył podstawowych i nazwy widoków się nie zmieniają – zmienia się tylko opis osi. |
+| Domyślny układ szkicu – XY | Szkic leży na **płaszczyźnie XY**, wyciągnięcie idzie **w górę, wzdłuż Z** (dotąd: szkic na płaszczyźnie przodu, wyciągnięcie do patrzącego). Po „Wyciągnij” bryła pojawia się w widoku z góry dokładnie na miejscu szkicu i płynnie przechodzi do izometrii – płytka leży, grubość idzie w górę, niebieski uchwyt długości jest nad bryłą. Bryła obrotowa: oś leży w płaszczyźnie XY (wzdłuż osi szkicu). „Rzuty” – przód pokazuje grubość płytki z otworami przerywaną, rzut z góry pod nim – obrys z okręgami otworów. |
+| Rysunki z 1.48 | Bryły ze szkicu zapisane w 1.48 po wczytaniu wyglądają tak samo jak dotąd (położenie przeliczone; format rysunku 20). |
+
+Testy wersji 1.48.2:
+
+- **Testy logiki (Node.js): 491 – wszystkie zaliczone** (1 nowy: profil leży w X i Y, wyciągnięcie wzdłuż Z;
+  zmienione: układ osi – kierunki w nowych osiach; płytka z otworami – otwory widoczne z góry, niewidoczne z przodu,
+  wymiar długości niewidoczny z góry, rzuty – przód z otworami przerywaną, góra z okręgami; bryła zapisana w 1.48
+  wczytuje się w widoku z góry z obrysem 300 × 200 jak szkic, drugie wczytanie bez zmian; format rysunku 20).
+- **Testy w przeglądarce (Chromium): 224 – wszystkie zaliczone w dwóch pełnych przebiegach** (1 nowy, zmienione 2
+  testy brył 1.47):
+  - nowy (komputer): prostokąt → „Wyciągnij” – w izometrii Z pionowo w górę, X w lewo w dół, Y w prawo w dół, uchwyt
+    długości nad środkiem bryły; menu „Widok” – z góry: Z punktem, Y w prawo, X w dół; krawędzie bryły odczytane z płótna
+    leżą dokładnie na krawędziach szkicu (4 punkty), 20 jednostek dalej – puste tło (4 punkty); zapis – `plane: 'xy'`,
+    widok z góry;
+  - komputer (1.47): układ osi w izometrii i z góry w nowych kierunkach, kolory osi z płótna;
+  - iPad (1.47): z przodu X punktem, Z w górę; „Obracaj” palcem – oś X schodzi w dół z pochyloną bryłą;
+  - testy 1.48 (płytka, tuleja, iPad, telefon) – bez zmian, zaliczone.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium): płytka w izometrii z układem osi, ta sama płytka z góry, rzuty, tuleja.
+
+Czego nie sprawdzono: Safari na iPhonie i iPadzie, prawdziwy palec i Apple Pencil; wczytanie prawdziwego rysunku
+zapisanego w 1.48 na urządzeniu (sprawdzone testem logiki na danych w formacie 1.48).

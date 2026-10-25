@@ -2,6 +2,9 @@
 // (x, y) – środek bryły na stronie; dims – wymiary w jednostkach strony (jak w i h kształtu; liczby na rysunku – ze skali);
 // q – położenie w przestrzeni, kwaternion [w, x, y, z]. Układ bryły: x w prawo, y w górę, z do patrzącego – bez obrotu
 // widać ją z przodu. Rzut prostokątny, jak w rysunku technicznym; size – grubość krawędzi widocznych.
+// Osie dla użytkownika (od 1.48.2, jak w rysunku technicznym – Z do góry): X = z bryły (do patrzącego w widoku z przodu),
+// Y = x bryły (w prawo), Z = y bryły (w górę); w izometrii X i Y biegną w dół, Z do góry. Szkic leży na płaszczyźnie XY
+// (z góry: Y w prawo, X w dół – jak kartka), wyciągnięcie – wzdłuż Z.
 //
 // Rodzaje: prostopadłościan { a – długość (x), b – szerokość (z), c – wysokość (y) }, walec { d, h }, stożek { d – podstawa,
 // t – góra (0 – ostry, więcej – ścięty), h }, ostrosłup { podstawa a × b, h }, graniastosłup foremny { n – boki (3–12),
@@ -134,6 +137,8 @@ export function quatFromMatrix(m) {
   }
   return quatNorm(q);
 }
+/** Próg ściany zwróconej do patrzącego (składowa z normalnej) – ponad błąd zaokrąglenia położenia. */
+const FACING = 1e-5;
 const rotate = (m, [x, y, z]) => [m[0] * x + m[1] * y + m[2] * z, m[3] * x + m[4] * y + m[5] * z, m[6] * x + m[7] * y + m[8] * z];
 
 /** Położenie z kątów (stopnie): obrót wokół osi pionowej bryły, pochylenie do patrzącego, obrót na kartce. */
@@ -232,7 +237,10 @@ export function cleanSolid(raw, pageWidth, pageHeight) {
   if (model && !profile) return null;
   const sketch = model && Array.isArray(raw.sketch)
     ? raw.sketch.slice(0, PROFILE_LIMITS.sketch).map((shape) => cleanShape(shape, pageWidth, pageHeight, (color) => HEX.test(color ?? ''))).filter(Boolean) : [];
-  const q = Array.isArray(raw.q) && raw.q.length === 4 && raw.q.every(finite) && Math.hypot(...raw.q) > 1e-6 ? quatNorm(raw.q).map((value) => round(value, 6)) : viewQuat('iso');
+  let q = Array.isArray(raw.q) && raw.q.length === 4 && raw.q.every(finite) && Math.hypot(...raw.q) > 1e-6 ? quatNorm(raw.q).map((value) => round(value, 6)) : viewQuat('iso');
+  // Bryła ze szkicu z 1.48 (szkic na płaszczyźnie przodu, bez `plane`): od 1.48.2 szkic leży na XY – położenie
+  // przeliczone tak, by bryła wyglądała jak dotąd.
+  if (model && raw.plane !== 'xy') q = quatNorm(quatMul(q, quatAxis(1, 0, 0, Math.PI / 2))).map((value) => round(value, 6));
   return {
     tool: 'solid',
     kind: raw.kind,
@@ -246,7 +254,7 @@ export function cleanSolid(raw, pageWidth, pageHeight) {
     ...(raw.shade === true ? { shade: true } : {}),
     ...(raw.showDims === true ? { showDims: true } : {}),
     ...(raw.axes === true ? { axes: true } : {}),
-    ...(profile ? { profile } : {}),
+    ...(profile ? { profile, plane: 'xy' } : {}),
     ...(sketch.length > 0 ? { sketch } : {}),
     ...(sketch.length > 0 && finite(raw.sketchAngle) && raw.sketchAngle !== 0 ? { sketchAngle: round(raw.sketchAngle, 6) } : {}),
     ...(sketch.length > 0 && raw.sketchMirror === true ? { sketchMirror: true } : {})
@@ -363,14 +371,14 @@ export function profileFromShapes(shapes, kind, axis = null) {
   return { profile, center: { x: round(frame.center.x), y: round(frame.center.y) }, angle: frame.angle };
 }
 
-/** Nowa bryła ze szkicu (od 1.48): wyciągnięcie (domyślnie połowa krótszego boku szkicu) albo obrót o 360°, z przodu. */
+/** Nowa bryła ze szkicu (od 1.48): wyciągnięcie (domyślnie połowa krótszego boku szkicu) albo obrót o 360°; od 1.48.2 – z góry (jak szkic na XY). */
 export function newModel(kind, profile, { x = 0, y = 0, color = '#1d1d1f', size = SOLID_LINE_WIDTHS[1], sketch = [], sketchAngle = 0 } = {}) {
   const points = profile.islands.flatMap((island) => island.outer);
   const [w, h] = [Math.max(...points.map(([px]) => px)) - Math.min(...points.map(([px]) => px)), Math.max(...points.map(([, py]) => py)) - Math.min(...points.map(([, py]) => py))];
   return {
     tool: 'solid', kind, x, y,
     dims: kind === 'extrude' ? { h: round(clamp(Math.min(w, h) / 2, SOLID_LIMITS.min, SOLID_LIMITS.max)) } : { angle: 360 },
-    q: viewQuat('front'), color, size, edges: 'dashed', shade: true, showDims: true, axes: true, profile,
+    q: viewQuat('top'), color, size, edges: 'dashed', shade: true, showDims: true, axes: true, profile, plane: 'xy',
     ...(sketch.length > 0 ? { sketch } : {}), ...(sketch.length > 0 && sketchAngle !== 0 ? { sketchAngle: round(sketchAngle, 6) } : {})
   };
 }
@@ -510,6 +518,12 @@ export function solidMesh(kind, dims) {
 }
 
 /**
+ * Punkt z układu profilu bryły ze szkicu (x, y – płaszczyzna szkicu, z – wyciągnięcie; obrotowa: x – oś) do układu bryły
+ * (od 1.48.2): szkic na płaszczyźnie XY (x bryły – Y, −y profilu – X), wyciągnięcie w górę (z profilu → y bryły – Z).
+ */
+export const fromSketch = ([x, y, z]) => [x, z, -y];
+
+/**
  * Siatka bryły ze szkicu (od 1.48): { V, F – ściany jako pętle [obrys, ...otwory] (numery wierzchołków), N, E }.
  * Kolejność wierzchołków daje normalne na zewnątrz (obrys przeciwnie do wskazówek zegara, otwory – zgodnie).
  */
@@ -584,6 +598,8 @@ export function modelMesh(element) {
       }
     }
   }
+  // Od 1.48.2 szkic leży na płaszczyźnie XY: układ profilu (x, y – szkic, z – wyciągnięcie / obrót) → układ bryły.
+  for (const vertex of V) [vertex[0], vertex[1], vertex[2]] = fromSketch(vertex);
   const N = F.map((loops) => {
     const loop = loops[0];
     let [nx, ny, nz] = [0, 0, 0];
@@ -673,7 +689,8 @@ function meshGeometry(element, m, at) {
   const mesh = solidMesh(element.kind, element.dims);
   const P = mesh.V.map(at);
   const N = mesh.N.map((normal) => rotate(m, normal));
-  const facing = N.map((normal) => normal[2] > 1e-9);
+  // Ściana zwrócona do patrzącego; prawie bokiem (np. ściany otworu w widoku z góry przy położeniu z 6 cyframi) – nie.
+  const facing = N.map((normal) => normal[2] > FACING);
   const faces = [];
   mesh.F.forEach((face, index) => {
     if (!facing[index]) return;
@@ -710,7 +727,8 @@ function modelGeometry(element, m, at) {
   const view = mesh.V.map((vertex) => rotate(m, vertex));
   const P = view.map(([x, y]) => ({ x: element.x + x, y: element.y - y }));
   const N = mesh.N.map((normal) => rotate(m, normal));
-  const facing = N.map((normal) => normal[2] > 1e-9);
+  // Ściana zwrócona do patrzącego; prawie bokiem (np. ściany otworu w widoku z góry przy położeniu z 6 cyframi) – nie.
+  const facing = N.map((normal) => normal[2] > FACING);
   const D = mesh.F.map((loops, face) => {
     const point = view[loops[0][0]];
     return N[face][0] * point[0] + N[face][1] * point[1] + N[face][2] * point[2];
@@ -857,7 +875,7 @@ function modelAxes(element, at, center) {
   return [[{ x: a.x, y: a.y }, { x: b.x, y: b.y }]];
 }
 
-/** Wymiary bryły ze szkicu: wyciągnięcie – długość wzdłuż z (krawędź zarysu); obrotowa – długość wzdłuż osi i największa średnica. */
+/** Wymiary bryły ze szkicu: wyciągnięcie – długość wzdłuż Z (krawędź zarysu); obrotowa – długość wzdłuż osi i największa średnica. */
 function modelDims(element, mesh, P, facing, at, center) {
   if (!element.showDims) return [];
   const dims = [];
@@ -868,7 +886,8 @@ function modelDims(element, mesh, P, facing, at, center) {
     for (const edge of mesh.E) {
       if (edge.faces.length !== 2 || facing[edge.faces[0]] === facing[edge.faces[1]]) continue;
       const [A, B] = [mesh.V[edge.a], mesh.V[edge.b]];
-      if (Math.abs(A[0] - B[0]) > 1e-6 || Math.abs(A[1] - B[1]) > 1e-6) continue;
+      // Krawędź wzdłuż wyciągnięcia (Z – y bryły).
+      if (Math.abs(A[0] - B[0]) > 1e-6 || Math.abs(A[2] - B[2]) > 1e-6) continue;
       const [p1, p2] = [P[edge.a], P[edge.b]];
       if (Math.hypot(p2.x - p1.x, p2.y - p1.y) < 20) continue;
       const value = ((p1.x + p2.x) / 2 - center.x) * preferred.x + ((p1.y + p2.y) / 2 - center.y) * preferred.y;

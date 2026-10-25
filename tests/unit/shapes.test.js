@@ -130,7 +130,7 @@ test('kształty w rysunku: sprawdzanie danych, zaznaczanie prostokątem i lassem
     ]
   });
   assert.equal(cleaned.version, DRAWING_VERSION);
-  assert.equal(DRAWING_VERSION, 19, 'od 1.48 – bryły ze szkicu; 1.47 – bryły; 1.45 – schematy procesów; 1.44 – diagramy jakości i układ kartki; 1.42 – wymiar długości łuku, kierunek wymiaru, osie okręgu; 1.41 – ramka rysunkowa; 1.40 – wielokąt foremny, półprosta, narożniki, kreskowanie (1.38 – uzupełnienia tolerancji i symboli, 1.36 – warstwy i sygnatury elementów, 1.25 – jednostka liczb wymiarów i tolerancje w mm, 1.24 – łamana i wielokąt, 1.22.1 – wymiary techniczne i symbole, 1.22 – przyklejone końce, 1.21 – tabele i karteczki, 1.19 – zakończenia odcinka, stałe wymiary i szyki)');
+  assert.equal(DRAWING_VERSION, 20, 'od 1.48.2 – szkic na XY (Z do góry); 1.48 – bryły ze szkicu; 1.47 – bryły; 1.45 – schematy procesów; 1.44 – diagramy jakości i układ kartki; 1.42 – wymiar długości łuku, kierunek wymiaru, osie okręgu; 1.41 – ramka rysunkowa; 1.40 – wielokąt foremny, półprosta, narożniki, kreskowanie (1.38 – uzupełnienia tolerancji i symboli, 1.36 – warstwy i sygnatury elementów, 1.25 – jednostka liczb wymiarów i tolerancje w mm, 1.24 – łamana i wielokąt, 1.22.1 – wymiary techniczne i symbole, 1.22 – przyklejone końce, 1.21 – tabele i karteczki, 1.19 – zakończenia odcinka, stałe wymiary i szyki)');
   assert.equal(cleaned.strokes.length, 3);
   assert.deepEqual([cleaned.strokes[0].color, cleaned.strokes[0].size, cleaned.strokes[0].skew], ['#abcdef', 40, 2.5]);
   near(cleaned.strokes[0].angle, Math.PI);

@@ -76,7 +76,7 @@ import { COLUMN_DEFAULTS, LAYOUT_KINDS, LAYOUT_LABELS, MATRIX_DEFAULT, cleanLayo
 import { paintDiagram, paintPageLayout } from './drawing-diagrams.js';
 import {
   SOLID_EDGES, SOLID_EDGE_LABELS, SOLID_FIELDS, SOLID_KINDS, SOLID_LABELS, SOLID_LIMITS, SOLID_LINE_LABELS, SOLID_LINE_WIDTHS, SOLID_VIEWS, cleanSolid, cleanSolidDims,
-  hasAxis, isModel, newModel, newSolid, orbitQuat, profileFromShapes, projectionShapes, quatFromAngles, quatMatrix, quatSlerp, scaleSolid, shapeLoop,
+  fromSketch, hasAxis, isModel, newModel, newSolid, orbitQuat, profileFromShapes, projectionShapes, quatFromAngles, quatMatrix, quatSlerp, scaleSolid, shapeLoop,
   solidAngles, solidBox, solidLabel, solidProjections, solidView, viewQuat, withQuat, PROJECTION_GAP
 } from '../core/solids.js';
 import { AXES_GAP, AXES_RADIUS, paintSolid, paintSolidAxes, solidAxes } from './drawing-solids.js';
@@ -6556,8 +6556,8 @@ export function openDrawingEditor({
       const solid = newModel(kind, made.profile, {
         x: made.center.x, y: made.center.y, color: first.color ?? inkHex(tools.penColor), size: SOLID_LINE_WIDTHS[1], sketch, sketchAngle: made.angle
       });
-      // Obrót: oś na kartce pod kątem – bryła obrócona tak samo (z przodu oś leży wzdłuż osi szkicu).
-      if (kind === 'revolve' && made.angle !== 0) solid.q = quatFromAngles(0, 0, -made.angle * (180 / Math.PI));
+      // Obrót: oś na kartce pod kątem – bryła obrócona tak samo (od 1.48.2 z góry – szkic na XY – oś leży wzdłuż osi szkicu).
+      if (kind === 'revolve' && made.angle !== 0) solid.q = quatFromAngles(0, 90, -made.angle * (180 / Math.PI));
       const placed = cleanSolid(solid, drawing.width, drawing.height);
       if (!placed) return;
       // Bryła w miejscu szkicu (kolejność rysowania); tablica zmieniana w miejscu, jak przy usuwaniu.
@@ -6623,7 +6623,9 @@ export function openDrawingEditor({
     /** Uchwyt długości wyciągnięcia albo kąta obrotu (strona): punkt uchwytu, kierunek przeciągania na stronie (na jednostkę). */
     function extentHandle(element) {
       const m = quatMatrix(element.q);
-      const at = (point) => {
+      // Punkty w układzie szkicu (x, y – profil, z – wyciągnięcie / obrót) → bryła (od 1.48.2 szkic na XY) → strona.
+      const at = (sketchPoint) => {
+        const point = fromSketch(sketchPoint);
         const v = [m[0] * point[0] + m[1] * point[1] + m[2] * point[2], m[3] * point[0] + m[4] * point[1] + m[5] * point[2]];
         return { x: element.x + v[0], y: element.y - v[1] };
       };
@@ -6773,7 +6775,7 @@ export function openDrawingEditor({
             axesRow,
             elementOptions(choice, SOLID_LINE_LABELS, 'Grubość linii')),
           h('p', { class: 'field__hint' }, 'Bryłę obracasz przyciskiem „Obracaj” (przeciąganie bryły; z Shift – tylko wokół osi pionowej), widok wybierasz w menu „Widok”. '
-            + 'Układ osi obok ramki: X – czerwona, Y – zielona, Z – niebieska. '
+            + 'Układ osi obok ramki: X – czerwona, Y – zielona, Z – niebieska (do góry); szkic leży na płaszczyźnie XY. '
             + 'Krawędzie niewidoczne – linią przerywaną, wymiary – jak przy kształtach (skala i jednostka rysunku).')
         ],
         onSubmit: () => {
@@ -8586,8 +8588,9 @@ export function openDrawingEditor({
             if (original.kind === 'extrude') {
               const h = Math.round(Math.min(SOLID_LIMITS.max, Math.max(SOLID_LIMITS.min, original.dims.h + units)) * 10) / 10;
               const shift = (h - original.dims.h) / 2;
+              // Środek przesuwa się wzdłuż wyciągnięcia – Z (y bryły, od 1.48.2).
               const m = quatMatrix(original.q);
-              active.preview = { ...original, dims: { h }, x: Math.round((original.x + m[2] * shift) * 100) / 100, y: Math.round((original.y - m[5] * shift) * 100) / 100 };
+              active.preview = { ...original, dims: { h }, x: Math.round((original.x + m[1] * shift) * 100) / 100, y: Math.round((original.y - m[4] * shift) * 100) / 100 };
             } else {
               let angle = original.dims.angle + (units * 180) / Math.PI;
               angle = locked(event) ? Math.round(angle / 15) * 15 : angle > 355 ? 360 : Math.round(angle);

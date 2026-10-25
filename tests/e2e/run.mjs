@@ -11407,14 +11407,14 @@ test('rysunek 1.47: grupa Bryły – wstawienie, układ osi X/Y/Z obok ramki (od
   await cancel();
   await shot('prostopadloscian');
 
-  // Układ osi obok ramki (od 1.48.1 zamiast kostki widoków): w izometrii X w prawo i w dół, Y w górę, Z w lewo i w dół;
-  // osie czerwona, zielona, niebieska. Tarcza osi tylko pokazuje położenie – dotknięcie i przeciągnięcie niczego nie
-  // obracają i nie zdejmują zaznaczenia.
+  // Układ osi obok ramki (od 1.48.1 zamiast kostki widoków; od 1.48.2 Z do góry): w izometrii X w lewo i w dół, Y w prawo
+  // i w dół, Z pionowo w górę; osie czerwona, zielona, niebieska. Tarcza osi tylko pokazuje położenie – dotknięcie
+  // i przeciągnięcie niczego nie obracają i nie zdejmują zaznaczenia.
   const iso = await where();
   const [ax, ay] = iso.axes;
-  assert.ok(iso.x[0] > ax + 10 && iso.x[1] > ay, `izometria – X: ${iso.x} (środek ${iso.axes})`);
-  assert.ok(Math.abs(iso.y[0] - ax) <= 1 && iso.y[1] < ay - 15, `izometria – Y: ${iso.y}`);
-  assert.ok(iso.z[0] < ax - 10 && iso.z[1] > ay, `izometria – Z: ${iso.z}`);
+  assert.ok(iso.x[0] < ax - 10 && iso.x[1] > ay, `izometria – X: ${iso.x} (środek ${iso.axes})`);
+  assert.ok(iso.y[0] > ax + 10 && iso.y[1] > ay, `izometria – Y: ${iso.y}`);
+  assert.ok(Math.abs(iso.z[0] - ax) <= 1 && iso.z[1] < ay - 15, `izometria – Z do góry: ${iso.z}`);
   assert.deepEqual(await axisColors({ x: iso.x, y: iso.y, z: iso.z }), { x: 'czerwona', y: 'zielona', z: 'niebieska' });
   assert.equal(await canvas.getAttribute('data-cube'), null, 'bez kostki widoków');
   await page.mouse.click(ax, ay);
@@ -11424,16 +11424,17 @@ test('rysunek 1.47: grupa Bryły – wstawienie, układ osi X/Y/Z obok ramki (od
   await cancel();
   assert.deepEqual((await where()).solid, iso.solid, 'bryła w tym samym miejscu');
 
-  // Menu „Widok” – z góry (płynne przejście): Y na patrzącego (sam punkt), Z w dół ekranu, X w prawo.
+  // Menu „Widok” – z góry (płynne przejście; jak kartka ze szkicem na XY): Z na patrzącego (sam punkt), X w dół ekranu,
+  // Y w prawo.
   await editor.locator('[data-testid=drawing-selection-solid-view]').click();
   await page.locator('[data-testid=drawing-solid-view-top]').click();
   await settledAnimation();
   assert.deepEqual(await angles(), { yaw: '0', pitch: '90', roll: '0' }, 'widok z góry z menu');
   await cancel();
   const top = await where();
-  assert.ok(top.x[0] > top.axes[0] + 20 && Math.abs(top.x[1] - top.axes[1]) <= 1, `z góry – X: ${top.x} (środek ${top.axes})`);
-  assert.ok(Math.abs(top.z[0] - top.axes[0]) <= 1 && top.z[1] > top.axes[1] + 20, `z góry – Z: ${top.z}`);
-  assert.ok(Math.hypot(top.y[0] - top.axes[0], top.y[1] - top.axes[1]) <= 1.5, `z góry – Y na patrzącego: ${top.y}`);
+  assert.ok(top.y[0] > top.axes[0] + 20 && Math.abs(top.y[1] - top.axes[1]) <= 1, `z góry – Y: ${top.y} (środek ${top.axes})`);
+  assert.ok(Math.abs(top.x[0] - top.axes[0]) <= 1 && top.x[1] > top.axes[1] + 20, `z góry – X: ${top.x}`);
+  assert.ok(Math.hypot(top.z[0] - top.axes[0], top.z[1] - top.axes[1]) <= 1.5, `z góry – Z na patrzącego: ${top.z}`);
   await shot('osie-z-gory');
   await editor.locator('[data-testid=drawing-selection-solid-view]').click();
   assert.equal(await page.locator('[data-testid=drawing-solid-view-top]').getAttribute('aria-checked'), 'true', 'bieżący widok zaznaczony');
@@ -11553,14 +11554,15 @@ test('rysunek 1.47 na iPadzie: układ osi przy stożku (od 1.48.1) – palec na 
   await finger.end();
   await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Bryła: Stożek');
   assert.deepEqual(await angles(), { yaw: '45', pitch: '35,3', roll: '0' }, 'palec na tarczy osi niczego nie obraca');
-  // Menu „Widok” – przód: Z na patrzącego (sam punkt).
+  // Menu „Widok” – przód: X na patrzącego (sam punkt; od 1.48.2 Z do góry).
   await editor.locator('[data-testid=drawing-selection-solid-view]').tap();
   await page.locator('[data-testid=drawing-solid-view-front]').tap();
   await page.waitForTimeout(500);
   assert.deepEqual(await angles(), { yaw: '0', pitch: '0', roll: '0' }, 'przód z menu');
   const front = await where();
-  assert.ok(Math.hypot(front.z[0] - front.axes[0], front.z[1] - front.axes[1]) <= 1.5, `z przodu – Z na patrzącego: ${front.z}`);
-  // „Obracaj”: palec na bryle obraca ją, bryła zostaje w miejscu, osie obracają się razem z nią (Z schodzi w dół).
+  assert.ok(Math.hypot(front.x[0] - front.axes[0], front.x[1] - front.axes[1]) <= 1.5, `z przodu – X na patrzącego: ${front.x}`);
+  assert.ok(Math.abs(front.z[0] - front.axes[0]) <= 1 && front.z[1] < front.axes[1] - 20, `z przodu – Z do góry: ${front.z}`);
+  // „Obracaj”: palec na bryle obraca ją, bryła zostaje w miejscu, osie obracają się razem z nią (X schodzi w dół).
   await editor.locator('[data-testid=drawing-selection-orbit]').tap();
   const { solid } = await where();
   const drag = await touchAt(context, page, solid[0], solid[1] - 20);
@@ -11571,7 +11573,7 @@ test('rysunek 1.47 na iPadzie: układ osi przy stożku (od 1.48.1) – palec na 
   await nextFrames(page);
   const tiltedAxes = await where();
   assert.deepEqual(tiltedAxes.solid, solid, 'bryła w tym samym miejscu');
-  assert.ok(tiltedAxes.z[1] > tiltedAxes.axes[1] + 8, `oś Z po pochyleniu w dół: ${tiltedAxes.z} (środek ${tiltedAxes.axes})`);
+  assert.ok(tiltedAxes.x[1] > tiltedAxes.axes[1] + 8, `oś X po pochyleniu w dół: ${tiltedAxes.x} (środek ${tiltedAxes.axes})`);
   const tilted = await angles();
   assert.equal(tilted.yaw, '0');
   assert.ok(Number(tilted.pitch.replace(',', '.')) > 20, `pochylenie palcem w dół: ${tilted.pitch}`);
@@ -11874,6 +11876,75 @@ test('rysunek 1.48 na telefonie: „Wyciągnij” i „Obróć wokół osi” na
   }
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-148-okno-telefon.png') });
 }, { device: PHONE });
+
+test('rysunek 1.48.2: osie jak w rysunku technicznym – Z do góry, szkic na płaszczyźnie XY: wyciągnięcie w górę, widok z góry pokrywa się ze szkicem (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Osie</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  const frame = await pageFrame(page);
+  const shot = async (name) => {
+    await nextFrames(page);
+    await page.screenshot({ path: path.join(OUTPUT, `rysunek-1482-${name}.png`) });
+  };
+  /** Środek układu osi, bryły, końce osi X, Y, Z i uchwyt długości (ekran). */
+  const where = async () => {
+    await waitUntil(async () => Boolean(await canvas.getAttribute('data-axes')), 'Układ osi');
+    const n = (await canvas.getAttribute('data-axes')).split(',').map(Number);
+    const box = await canvas.boundingBox();
+    const at = (index) => [box.x + n[index], box.y + n[index + 1]];
+    const extent = await canvas.getAttribute('data-extent');
+    const [ex, ey] = extent ? extent.split(',').map(Number) : [NaN, NaN];
+    return { axes: at(0), solid: at(2), x: at(4), y: at(6), z: at(8), extent: extent ? [box.x + ex, box.y + ey] : null };
+  };
+
+  // Szkic: prostokąt 400 × 240 (strona); „Wyciągnij” – bryła startuje z góry (jak szkic) i przechodzi do izometrii.
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  await page.mouse.move(...frame.screen(300, 250));
+  await page.mouse.down();
+  await page.mouse.move(...frame.screen(700, 490), { steps: 8 });
+  await page.mouse.up();
+  await expectText(count, 'Prostokąt');
+  await editor.locator('[data-testid=drawing-selection-extrude]').click();
+  await expectText(count, 'Bryła: wyciągnięcie');
+  await page.waitForTimeout(600);
+  // Izometria: Z pionowo w górę, X w lewo i w dół, Y w prawo i w dół; uchwyt długości nad bryłą (wyciągnięcie wzdłuż Z).
+  const iso = await where();
+  const [ax, ay] = iso.axes;
+  assert.ok(Math.abs(iso.z[0] - ax) <= 1 && iso.z[1] < ay - 15, `Z do góry: ${iso.z} (środek ${iso.axes})`);
+  assert.ok(iso.x[0] < ax - 10 && iso.x[1] > ay, `X w lewo i w dół: ${iso.x}`);
+  assert.ok(iso.y[0] > ax + 10 && iso.y[1] > ay, `Y w prawo i w dół: ${iso.y}`);
+  assert.ok(iso.extent && Math.abs(iso.extent[0] - iso.solid[0]) <= 2 && iso.extent[1] < iso.solid[1] - 20, `uchwyt długości nad bryłą: ${iso.extent} (bryła ${iso.solid})`);
+  await shot('izometria');
+
+  // Widok z góry: Z na patrzącego, Y w prawo, X w dół; obrys bryły tam, gdzie był szkic.
+  await editor.locator('[data-testid=drawing-selection-solid-view]').click();
+  await page.locator('[data-testid=drawing-solid-view-top]').click();
+  await page.waitForTimeout(600);
+  const top = await where();
+  assert.ok(Math.hypot(top.z[0] - top.axes[0], top.z[1] - top.axes[1]) <= 1.5, `z góry – Z na patrzącego: ${top.z}`);
+  assert.ok(top.y[0] > top.axes[0] + 20 && Math.abs(top.y[1] - top.axes[1]) <= 1, `z góry – Y w prawo: ${top.y}`);
+  assert.ok(Math.abs(top.x[0] - top.axes[0]) <= 1 && top.x[1] > top.axes[1] + 20, `z góry – X w dół: ${top.x}`);
+  await shot('z-gory');
+  await page.keyboard.press('Escape');
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  const dark = async (x, y) => (await pixelAt(page, ...frame.at(x, y))).reduce((sum, value) => sum + value, 0) < 450;
+  for (const [x, y] of [[300, 370], [700, 370], [500, 250], [500, 490]]) assert.ok(await dark(x, y), `krawędź bryły na krawędzi szkicu: ${x}, ${y}`);
+  for (const [x, y] of [[280, 370], [720, 370], [500, 230], [500, 510]]) assert.equal(await dark(x, y), false, `poza obrysem szkicu: ${x}, ${y}`);
+
+  // Zapis: bryła ze szkiciem na płaszczyźnie XY, w widoku z góry.
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const [solid] = (await savedStrokes(page, ids.statements)).filter((stroke) => stroke.tool === 'solid');
+  assert.equal(solid.plane, 'xy');
+  const { solidView } = await import('../../js/core/solids.js');
+  assert.equal(solidView(solid.q), 'top');
+}, { device: DESKTOP });
 
 // ---------------------------------------------------------------- nauka z fiszkami
 
