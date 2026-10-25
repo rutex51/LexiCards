@@ -1,0 +1,113 @@
+# Audyt technologii CAD 2D i 3D
+
+Stan: commit `9eaa9ac` (1.48.0). Ocena techniczna i wstępna ocena ryzyka – **nie jest opinią prawną ani analizą FTO**.
+
+## 4.1 Architektura – co faktycznie jest zaimplementowane
+
+Aplikacja to PWA: czysty JavaScript (moduły ES), Canvas 2D, IndexedDB, bez bibliotek i bez serwera.
+Moduły CAD to 27 plików:
+
+- **Rdzeń, bez przeglądarki (`js/core`):** `drawing.js`, `shapes.js`, `geometry-edit.js`, `recognize.js`,
+  `transform.js`, `arrays.js`, `attach.js`, `layers.js`, `solids.js`, `dxf.js`, `gdt.js`, `fits.js`, `templates.js`,
+  `page-layouts.js`, `diagrams.js`, `title-block.js`, `tool-ring.js`, `page-curl.js`.
+- **Interfejs (`js/ui`):** `drawing.js` (edytor), `drawing-solids.js`, `drawing-gdt.js`, `drawing-paint.js`,
+  `drawing-ring.js`, `drawing-groups.js`, `drawing-boxes.js`, `drawing-diagrams.js`, `fit-table.js`.
+
+| Mechanizm | Stan | Gdzie |
+| --- | --- | --- |
+| Rysunek 2D: odcinek, łuk, okrąg, elipsa, wielokąty, krzywa Béziera, łamana, spirala, punkt | jest | `shapes.js` |
+| Bryły 3D podstawowe (6 rodzajów) | jest – siatki wielościanów | `solids.js` |
+| Bryły ze szkicu: wyciągnięcie, obrót wokół osi | jest – siatki z profilu, bez jądra B-Rep | `solids.js` |
+| Układy współrzędnych | strona 2D (y w dół); bryła: prawoskrętny, kwaternion | `solids.js` |
+| Przekształcenia: przesunięcie, obrót, odbicie, skala, szyk | jest | `transform.js`, `arrays.js` |
+| Zaznaczanie i edycja: uchwyty, lasso, prostokąt, fragmenty | jest | `ui/drawing.js` |
+| Więzy geometryczne i solwer więzów | **brak** (tylko przyciąganie i przyklejone końce) | `attach.js` |
+| Modelowanie parametryczne | **brak** (wymiary jako pola liczbowe; „Historia modelu” to szkic + jedna operacja, bez przeliczania drzewa) | `solids.js`, `ui/drawing.js` |
+| Operacje logiczne (CSG), B-Rep, powierzchnie, NURBS powierzchniowe | **brak** | — |
+| Generowanie siatek | jest (pierścienie, wielościany, obrót profilu) | `solids.js` |
+| Wizualizacja | Canvas 2D: rzut prostokątny, krawędzie niewidoczne, bufor głębokości | `solids.js`, `ui/drawing-solids.js` |
+| Import / eksport CAD | DXF (odczyt ASCII, zapis R12) | `dxf.js` |
+| Zapis | JSON w IndexedDB (format rysunku 19), kopia zapasowa | `drawing.js`, `backup.js` |
+| Cofnij / ponów | migawki stanu | `ui/drawing.js` |
+| Sprawdzanie danych | funkcje `clean*` dla każdego elementu | wszystkie moduły rdzenia |
+| Wymiarowanie i symbole metrologiczne (ISO 129, 1101, 1302, 286 – oznaczenia) | jest | `shapes.js`, `gdt.js`, `fits.js` |
+
+## 4.2 Porównanie z technologiami CAD
+
+| System | SDK/biblioteka | Kod z repozytorium | Znane algorytmy | Formaty | Wyróżniające cechy | Zasoby chronione | Ukryte zależności |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| AutoCAD (Autodesk) | nie | nie znaleziono | tak – ogólne konstrukcje (offset, fillet, trim, TTR, object snap) | DXF – publiczna specyfikacja | nazwy poleceń opisowo w dokumentacji („jak FILLET”) | nie | nie |
+| Autodesk Inventor / Fusion | nie | nie | szkic → wyciągnięcie / obrót, manipulator długości | — | **kostka widoków** – mechanizm jak ViewCube (zob. P-01) | nie (własny rysunek kostki, polskie napisy) | nie |
+| SolidWorks | nie | nie | szkic → bryła, lista historii | — | „Historia modelu” – lista dwóch kroków, bez drzewa | nie | nie |
+| Siemens NX / Solid Edge | nie | nie | uchwyt przeciągania długości | — | ogólne (zob. P-06) | nie | nie |
+| PTC Creo, CATIA, Onshape | nie | nie | ogólne | — | brak cech szczególnych | nie | nie |
+| FreeCAD / OCCT | nie | nie (brak nazw `TopoDS`, `BRep…`, `Part::`) | — | — | — | — | nie |
+| LibreCAD / QCAD CE | nie | nie (brak nazw `RS_…`) | DXF | DXF | — | — | nie |
+| SolveSpace | nie | nie (brak solwera więzów) | — | — | — | — | nie |
+| Blender | nie | nie | — | — | — | — | nie |
+| CGAL | nie | nie | — | — | — | — | nie |
+| Three.js / Babylon.js | nie | nie (brak `Matrix4`, `BufferGeometry` itp.); wzór kwaternionu z macierzy – standard (S-2) | kwaterniony, SLERP | — | — | — | nie |
+
+Wniosek: **nie znaleziono kodu, bibliotek, zasobów ani dokumentacji pochodzących z systemów CAD**.
+Podobieństwa dotyczą koncepcji funkcji i interfejsu. Prawo autorskie nie chroni koncepcji. Koncepcje mogą natomiast
+podlegać patentom (zob. PATENT_LANDSCAPE.md) i oznaczeniom chronionym jako znaki towarowe (niżej).
+
+## 4.3 Algorytmy geometrii
+
+Szczegóły zawiera GEOMETRY_ALGORITHM_REGISTER.csv: 48 pozycji z plikami i wierszami.
+
+- Wszystkie to techniki standardowe z literatury publicznej: de Casteljau, de Boor, shoelace, crossing number, Newell,
+  Sutherland–Hodgman, z-buffer, HLR przez próbkowanie, kwaterniony i SLERP, ShortStraw, PCA.
+- Brak NURBS powierzchniowych, B-Rep, CSG, triangulacji, solwera więzów i operacji logicznych.
+- Podobieństwa zapisu do znanych postaci: S-1 (PNPOLY), S-2, S-3 – szczegóły w SOURCE_CODE_SIMILARITY.md.
+
+## 4.4 Jądra CAD i biblioteki geometrii
+
+Brak. Repozytorium nie zawiera i nie ładuje: Open CASCADE, CGAL, Clipper, Eigen, GLM, three.js, Babylon.js ani
+innych bibliotek matematycznych czy renderujących.
+
+Dowody:
+- `package.json` nie ma `dependencies`;
+- brak importów spoza ścieżek względnych;
+- brak plików dostawców (vendor);
+- brak skryptów z CDN w `index.html`.
+
+Tabela: CAD_LIBRARY_LICENSES.csv.
+
+## 4.5 Formaty danych
+
+| Format | Obsługa | Biblioteka | Uwagi IP |
+| --- | --- | --- | --- |
+| DXF | odczyt ASCII (DXF binarny odrzucany z komunikatem), zapis R12 | własna | Specyfikacja jest publikowana przez Autodesk. Implementacja formatu dla zgodności jest powszechna i co do zasady dozwolona. „DXF” figuruje na liście znaków towarowych Autodesk (wynik wyszukiwania, niezweryfikowany) – używać opisowo („plik DXF”), bez sugerowania powiązania. |
+| DWG, STEP, IGES, STL, OBJ, glTF | **brak** | — | — |
+| SVG | tylko rozpoznanie typu wklejanego obrazu (wklejenie SVG jest odrzucane) | — | — |
+| PDF (eksport notatki), PNG (obraz rysunku) | jest | własna | ISO 32000; standardowe kroje PDF bez osadzania |
+
+## Znaki towarowe w repozytorium
+
+| Oznaczenie | Gdzie | Ocena |
+| --- | --- | --- |
+| ViewCube (znak Autodesk – według rekordu rejestru znalezionego w wyszukiwaniu) | tylko wewnętrzne nazwy w kodzie: `paintViewCube` (`js/ui/drawing-solids.js:218`), import w `js/ui/drawing.js:82`, ikona `viewCube` (`js/ui/icons.js:242`), komentarz `js/ui/drawing.js:7669` | Użytkownik widzi „kostka widoków”. Ryzyko znaku niskie, ale zalecana zmiana nazw wewnętrznych na neutralne (np. `orientationCube`). |
+| AutoCAD | komentarze w `js/core/dxf.js` (opis formatu, kolory ACI), dokumentacja (9 miejsc), README (4) | Użycie opisowe. W materiałach handlowych nie sugerować zgodności ani powiązania z Autodesk. |
+| Inventor, SolidWorks | `docs/RELEASE-1.48.md` („jak w Inventorze / SolidWorks”) | Opisowe, w dokumentacji wewnętrznej. W materiałach handlowych zalecane sformułowania neutralne („jak w programach CAD”). |
+| iPad, iPhone, Apple Pencil, Windows | dokumentacja | Opisowe (platformy) – zwykła praktyka. |
+
+## Najważniejsze ustalenie CAD
+
+**Kostka widoków** (wersja 1.47) odtwarza mechanizm interfejsu Autodesk ViewCube:
+
+- sześcian z podpisanymi ścianami przy modelu;
+- dotknięcie ściany ustawia widok;
+- przeciągnięcie kostki obraca model.
+
+Kod jest własny, ale mechanizm może wchodzić w zakres patentu USA **US 7,782,319 B2** (Autodesk). Według Google Patents,
+widzianego tylko w wynikach wyszukiwarki, jego status to „Active – Reinstated”, przewidywane wygaśnięcie 2029-03-06.
+Treści zastrzeżeń nie pobrano – szczegóły w PATENT_LANDSCAPE.md (P-01). To jedyne ustalenie o ryzyku **WYSOKIM**
+(dla rynku USA, do czasu analizy FTO).
+
+Pozostałe sposoby zmiany widoku nie dotyczą tego mechanizmu:
+- menu „Widok”;
+- „Obracaj” (przeciąganie samej bryły);
+- pola kątów w oknie bryły.
+
+Usunięcie samej kostki nie odbiera więc żadnej funkcji.

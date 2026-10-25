@@ -1,0 +1,15 @@
+biblioteka,obecna w repozytorium,wersja,źródło,licencja,sposób integracji,modyfikacje,obowiązek uznania autorstwa,obowiązek ujawnienia kodu,klauzule patentowe,ograniczenia dystrybucji komercyjnej,App Store,dowód / uwagi
+Open CASCADE Technology (OCCT),nie,—,—,LGPL-2.1 z wyjątkiem OCCT (informacyjnie; nie weryfikowano dla wersji – nieobecna),brak,—,—,—,—,—,—,brak nazw TopoDS / gp_Pnt / BRep*; brak plików i importów
+CGAL,nie,—,—,GPL-3.0 / LGPL-3.0 (zależnie od pakietu) lub komercyjna (informacyjnie),brak,—,—,—,—,—,—,brak plików i importów
+Clipper / Clipper2,nie,—,—,Boost Software License 1.0 (informacyjnie),brak,—,—,—,—,—,—,brak nazw ClipperLib / IntPoint; własny offset (geometry-edit.js) bez obcinania pętli
+Eigen,nie,—,—,MPL-2.0 (informacyjnie),brak,—,—,—,—,—,—,projekt nie zawiera kodu C++
+GLM,nie,—,—,MIT lub Happy Bunny (informacyjnie),brak,—,—,—,—,—,—,projekt nie zawiera kodu C++
+three.js,nie,—,—,MIT (informacyjnie),brak,—,—,—,—,—,—,brak Matrix4 / BufferGeometry / Object3D; wzór kwaternionu z macierzy – standard matematyczny (S-2)
+Babylon.js,nie,—,—,Apache-2.0 (informacyjnie),brak,—,—,—,—,—,—,brak importów i plików
+earcut / polybool / martinez,nie,—,—,ISC / MIT (informacyjnie),brak,—,—,—,—,—,—,brak triangulacji i operacji logicznych
+dxf-parser / dxf-writer (npm),nie,—,—,MIT (informacyjnie),brak,—,—,—,—,—,—,własny parser i zapis DXF (js/core/dxf.js) bez nazw tych bibliotek
+LibreCAD / QCAD CE,nie,—,—,GPL-2.0 (informacyjnie),brak,—,—,—,—,—,—,brak nazw RS_*
+FreeCAD,nie,—,—,LGPL-2.1+ (informacyjnie),brak,—,—,—,—,—,—,brak nazw Part::
+SolveSpace,nie,—,—,GPL-3.0 (informacyjnie),brak,—,—,—,—,—,—,brak solwera więzów
+Blender,nie,—,—,GPL (informacyjnie),brak,—,—,—,—,—,—,brak kodu i zasobów
+PNPOLY (fragment algorytmu),możliwe podobieństwo wyrażenia (S-1),—,wrfranklin.org (strona niedostępna w czasie audytu),permisywna (wg kopii w źródłach NOAA/PMEL; do potwierdzenia u źródła),wyrażenie w 7 miejscach kodu,—,tak – zachowanie noty (jeśli fragment uznać za pochodny),nie,nie,nie,nie,zalecenie: nota albo własna funkcja pomocnicza (REMEDIATION_PLAN R-04)

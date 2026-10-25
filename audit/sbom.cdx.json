@@ -1,0 +1,111 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-10-25T00:00:00Z",
+    "component": {
+      "type": "application",
+      "bom-ref": "lexicards",
+      "name": "lexicards",
+      "version": "1.48.0",
+      "description": "LexiCards – PWA do nauki terminologii PL–EN z edytorem rysunku 2D/3D (bez zależności uruchomieniowych)"
+    },
+    "properties": [
+      { "name": "audit:commit", "value": "9eaa9ac" },
+      { "name": "audit:method", "value": "inwentaryzacja ręczna – brak narzędzi SBOM w środowisku" }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "py-fsrs-port",
+      "name": "py-fsrs (port algorytmu FSRS-6 do JavaScript)",
+      "version": "6.3.2",
+      "scope": "required",
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "copyright": "Copyright (c) 2022 Open Spaced Repetition",
+      "externalReferences": [{ "type": "vcs", "url": "https://github.com/open-spaced-repetition/py-fsrs" }],
+      "properties": [{ "name": "audit:location", "value": "js/core/fsrs.js" }, { "name": "audit:integration", "value": "kod przeniesiony (osadzony)" }]
+    },
+    {
+      "type": "file",
+      "bom-ref": "asset-kartka-wav",
+      "name": "sounds/kartka.wav",
+      "scope": "required",
+      "properties": [{ "name": "audit:origin", "value": "nagranie właściciela produktu (docs/RELEASE-1.31.md)" }]
+    },
+    {
+      "type": "file",
+      "bom-ref": "asset-icons",
+      "name": "icons/*.png",
+      "scope": "required",
+      "properties": [{ "name": "audit:origin", "value": "wygenerowane tools/gen_icons.py (krój Inter, SIL OFL 1.1 – plik kroju niedystrybuowany)" }]
+    },
+    {
+      "type": "application",
+      "bom-ref": "playwright",
+      "name": "playwright",
+      "version": "1.56.1",
+      "scope": "excluded",
+      "licenses": [{ "license": { "id": "Apache-2.0" } }],
+      "properties": [{ "name": "audit:use", "value": "testy w przeglądarce; zainstalowany globalnie, nie w package.json" }]
+    },
+    {
+      "type": "application",
+      "bom-ref": "eslint",
+      "name": "eslint",
+      "version": "10.1.0",
+      "scope": "excluded",
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "properties": [{ "name": "audit:use", "value": "lint; konfiguracja poza repozytorium" }]
+    },
+    {
+      "type": "platform",
+      "bom-ref": "nodejs",
+      "name": "Node.js",
+      "version": "22.22.0",
+      "scope": "excluded",
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "properties": [{ "name": "audit:use", "value": "testy jednostkowe, build, serwer lokalny" }]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pillow",
+      "name": "Pillow",
+      "version": "12.3.0",
+      "scope": "excluded",
+      "licenses": [{ "license": { "id": "HPND" } }],
+      "properties": [{ "name": "audit:use", "value": "tools/gen_icons.py, tools/gen_template_image.py, tools/gen_fixtures.py" }]
+    },
+    {
+      "type": "library",
+      "bom-ref": "openpyxl",
+      "name": "openpyxl",
+      "version": "3.1.5",
+      "scope": "excluded",
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "properties": [{ "name": "audit:use", "value": "pliki testowe XLSX" }]
+    },
+    {
+      "type": "library",
+      "bom-ref": "py-fsrs-tool",
+      "name": "py-fsrs",
+      "version": "6.3.2",
+      "scope": "excluded",
+      "licenses": [{ "license": { "id": "MIT" } }],
+      "properties": [{ "name": "audit:use", "value": "tools/gen_fsrs_reference.py – wektory testowe" }]
+    },
+    {
+      "type": "application",
+      "bom-ref": "libreoffice",
+      "name": "LibreOffice",
+      "scope": "excluded",
+      "licenses": [{ "license": { "id": "MPL-2.0" } }],
+      "properties": [{ "name": "audit:use", "value": "tools/check_export.py (opcjonalnie)" }]
+    }
+  ],
+  "dependencies": [
+    { "ref": "lexicards", "dependsOn": ["py-fsrs-port", "asset-kartka-wav", "asset-icons"] }
+  ]
+}
