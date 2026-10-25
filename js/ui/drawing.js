@@ -79,7 +79,7 @@ import {
   hasAxis, isModel, newModel, newSolid, orbitQuat, profileFromShapes, projectionShapes, quatFromAngles, quatMatrix, quatSlerp, scaleSolid, shapeLoop,
   solidAngles, solidBox, solidLabel, solidProjections, solidView, viewQuat, withQuat, PROJECTION_GAP
 } from '../core/solids.js';
-import { CUBE_GAP, CUBE_HALF, cubeFaceAt, paintSolid, paintViewCube } from './drawing-solids.js';
+import { AXES_GAP, AXES_RADIUS, paintSolid, paintSolidAxes, solidAxes } from './drawing-solids.js';
 import { openFitTable } from './fit-table.js';
 import { RING_SIDES, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPartHidden } from '../core/tool-ring.js';
 import { openToolGroups } from './drawing-groups.js';
@@ -874,7 +874,7 @@ export function openDrawingEditor({
     });
     editButton.hidden = true;
     // Od 1.47: bryła – gotowy widok (menu) i „Obracaj”: przeciąganie bryły obraca ją zamiast przesuwać.
-    const solidViewButton = selectionButton('drawing-selection-solid-view', 'viewCube', 'Widok', 'Widok bryły – izometria, dimetria, przód, góra, boki', () => openSolidViewMenu());
+    const solidViewButton = selectionButton('drawing-selection-solid-view', 'solidViews', 'Widok', 'Widok bryły – izometria, dimetria, przód, góra, boki', () => openSolidViewMenu());
     solidViewButton.setAttribute('aria-haspopup', 'menu');
     let orbitMode = false;
     const orbitButton = selectionButton('drawing-selection-orbit', 'orbit', 'Obracaj', 'Obracaj bryłę – przeciągnięcie bryły obraca ją w przestrzeni (dotknij ponownie, żeby skończyć)', () => {
@@ -2281,7 +2281,7 @@ export function openDrawingEditor({
       // Tabela i karteczka (od 1.21): narożnik do zmiany wielkości i koniec strzałki karteczki.
       const box = editedBox();
       if (box) paintBoxHandles(ctx, box);
-      if (box?.tool !== 'solid' && live.dataset.cube) delete live.dataset.cube;
+      if (box?.tool !== 'solid' && live.dataset.axes) delete live.dataset.axes;
       if (box?.tool !== 'solid' && live.dataset.extent) delete live.dataset.extent;
       if (snip) {
         // Wycinek (od 1.17): obrys obszaru – fioletowy, kreskowany.
@@ -6505,7 +6505,7 @@ export function openDrawingEditor({
     function insertSolid(kind) {
       clearSelection();
       putSolid(null, newSolid(kind, { color: inkHex(tools.penColor), size: SOLID_LINE_WIDTHS[1] }));
-      flash(`${SOLID_LABELS[kind]}: kostka obok obraca bryłę, ściana kostki – widok, dotknięcie bryły – wymiary`);
+      flash(`${SOLID_LABELS[kind]}: „Obracaj” obraca bryłę, „Widok” – gotowe widoki, dotknięcie bryły – wymiary`);
     }
     /** Zapis bryły: nowa (element = null) albo poprawka – z tym samym identyfikatorem i warstwami. */
     function putSolid(element, next) {
@@ -6772,7 +6772,8 @@ export function openDrawingEditor({
             h('div', { class: 'drawing__settings-switch' }, toggle({ checked: draft.showDims, label: 'Wymiary', onChange: (checked) => { draft.showDims = checked; } })),
             axesRow,
             elementOptions(choice, SOLID_LINE_LABELS, 'Grubość linii')),
-          h('p', { class: 'field__hint' }, 'Bryłę obracasz kostką obok ramki (ściana kostki – widok) albo przyciskiem „Obracaj”; z Shift – tylko wokół osi pionowej. '
+          h('p', { class: 'field__hint' }, 'Bryłę obracasz przyciskiem „Obracaj” (przeciąganie bryły; z Shift – tylko wokół osi pionowej), widok wybierasz w menu „Widok”. '
+            + 'Układ osi obok ramki: X – czerwona, Y – zielona, Z – niebieska. '
             + 'Krawędzie niewidoczne – linią przerywaną, wymiary – jak przy kształtach (skala i jednostka rysunku).')
         ],
         onSubmit: () => {
@@ -7585,12 +7586,12 @@ export function openDrawingEditor({
      * i (od 1.26) granice kolumn tabeli na górnej krawędzi – szerokość dwóch sąsiednich kolumn.
      */
     function boxHandles(element) {
-      // Bryła (od 1.47): narożnik – wielkość (proporcjonalnie), kostka widoków obok ramki.
+      // Bryła (od 1.47): narożnik – wielkość (proporcjonalnie); układ osi obok ramki (od 1.48.1) nie jest uchwytem.
       if (element.tool === 'solid') {
         const box = solidBox(element);
         // Od 1.48: bryła ze szkicu – uchwyt długości wyciągnięcia albo kąta obrotu.
         const extent = isModel(element) ? extentHandle(element) : null;
-        return [{ id: 'resize', x: box.x + box.width, y: box.y + box.height }, { id: 'cube', ...cubeAnchor(element) }, ...(extent ? [{ id: 'extent', x: extent.x, y: extent.y }] : [])];
+        return [{ id: 'resize', x: box.x + box.width, y: box.y + box.height }, ...(extent ? [{ id: 'extent', x: extent.x, y: extent.y }] : [])];
       }
       // Symbol metrologiczny (od 1.22.1): bez narożnika – tylko koniec strzałki albo wierzchołek chropowatości.
       if (element.tool === 'roughness') return [{ id: 'target', x: element.x, y: element.y }];
@@ -7613,20 +7614,27 @@ export function openDrawingEditor({
       let best = null;
       for (const handle of boxHandles(element)) {
         const distance = Math.hypot(handle.x - point.x, handle.y - point.y) * view.scale;
-        // Kostka widoków (od 1.47) – cała tarcza.
-        const reach = handle.id === 'cube' ? CUBE_HALF * 2 : HANDLE_HIT;
-        if (distance <= reach && (!best || distance < best.distance)) best = { ...handle, distance, element };
+        if (distance <= HANDLE_HIT && (!best || distance < best.distance)) best = { ...handle, distance, element };
+      }
+      // Tarcza układu osi bryły (od 1.48.1) – dotknięcie i przeciągnięcie nic nie zmieniają ani nie zdejmują zaznaczenia.
+      if (!best && element.tool === 'solid') {
+        const anchor = axesAnchor(element);
+        const distance = Math.hypot(anchor.x - point.x, anchor.y - point.y) * view.scale;
+        if (distance <= AXES_RADIUS) best = { id: 'axes', ...anchor, distance, element };
       }
       return best;
     }
-    /** Miejsce kostki widoków bryły (jednostki strony): przy prawym górnym rogu ramki, a gdy tam brak miejsca – przy lewym. */
-    function cubeAnchor(element) {
-      if (active?.kind === 'box-edit' && active.cube && active.original === element) return active.cube;
+    /**
+     * Miejsce układu osi bryły (od 1.48.1; jednostki strony): przy prawym górnym rogu ramki, a gdy tam brak miejsca – przy lewym;
+     * w trakcie obracania stoi w miejscu.
+     */
+    function axesAnchor(element) {
+      if (active?.kind === 'box-edit' && active.anchor && active.original === element) return active.anchor;
       const box = solidBox(element);
-      const reach = (SELECTION_PAD + CUBE_GAP + CUBE_HALF * 2) / view.scale;
+      const reach = (SELECTION_PAD + AXES_GAP + AXES_RADIUS) / view.scale;
       const right = box.x + box.width + reach;
-      const x = toScreen({ x: right, y: 0 }).x + CUBE_HALF * 2 > view.width ? box.x - reach : right;
-      return { x, y: box.y + (CUBE_HALF * 2) / view.scale };
+      const x = toScreen({ x: right, y: 0 }).x + AXES_RADIUS > view.width ? box.x - reach : right;
+      return { x, y: box.y + AXES_RADIUS / view.scale };
     }
     function paintBoxHandles(ctx, element) {
       ctx.save();
@@ -7635,6 +7643,15 @@ export function openDrawingEditor({
       ctx.strokeStyle = SELECT_COLORS.whole;
       ctx.fillStyle = '#ffffff';
       const handles = boxHandles(element);
+      if (element.tool === 'solid') {
+        // Układ osi (od 1.48.1) – w położeniu bryły; środek osi, bryły i końce osi X, Y, Z (px płótna) – dla testów.
+        const center = toScreen(axesAnchor(element));
+        paintSolidAxes(ctx, element.q, center, { active: active?.kind === 'box-edit' && active.handle === 'orbit' && active.moved });
+        const middle = toScreen(element);
+        const tips = Object.fromEntries(solidAxes(element.q, center).map((axis) => [axis.label, axis.tip]));
+        const where = [center, middle, tips.X, tips.Y, tips.Z].map((point) => `${Math.round(point.x)},${Math.round(point.y)}`).join(',');
+        if (live.dataset.axes !== where) live.dataset.axes = where;
+      }
       // Uchwyt długości albo kąta (px płótna) – dla testów; bez uchwytu (np. wyciągnięcie widziane od czoła) – brak.
       const extentAt = handles.find((handle) => handle.id === 'extent');
       const extentWhere = extentAt ? `${Math.round(toScreen(extentAt).x)},${Math.round(toScreen(extentAt).y)}` : null;
@@ -7665,14 +7682,6 @@ export function openDrawingEditor({
           ctx.restore();
           continue;
         }
-        if (handle.id === 'cube') {
-          paintViewCube(ctx, element.q, point, view.dpr, { active: active?.kind === 'box-edit' && active.handle !== 'resize' });
-          // Środek kostki i bryły (px płótna) – dla testów.
-          const middle = toScreen(element);
-          const where = `${Math.round(point.x)},${Math.round(point.y)},${Math.round(middle.x)},${Math.round(middle.y)}`;
-          if (live.dataset.cube !== where) live.dataset.cube = where;
-          continue;
-        }
         ctx.beginPath();
         if (handle.id === 'target') ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
         else if (handle.id.startsWith('col-')) ctx.roundRect(point.x - 4, point.y - 11, 8, 22, 4);
@@ -7684,12 +7693,10 @@ export function openDrawingEditor({
     }
     function startBoxEdit(event, handle) {
       active = { kind: 'box-edit', ...common(event, toDrawing(event)), handle: handle.id, original: handle.element, preview: handle.element, moved: false };
-      // Kostka widoków i „Obracaj” (od 1.47): kostka stoi w miejscu, dotknięta ściana – widok po dotknięciu bez ruchu.
-      if (handle.id === 'cube' || handle.id === 'orbit') {
-        const anchor = cubeAnchor(handle.element);
-        active.cube = anchor;
+      // „Obracaj” (od 1.47): układ osi obok ramki stoi w miejscu, obrót – z przyrostów ruchu.
+      if (handle.id === 'orbit') {
+        active.anchor = axesAnchor(handle.element);
         active.last = local(event);
-        active.face = handle.id === 'cube' ? cubeFaceAt(handle.element.q, toScreen(anchor), toScreen(toDrawing(event))) : null;
       }
       requestRender();
     }
@@ -8566,6 +8573,7 @@ export function openDrawingEditor({
           requestLive();
           break;
         case 'box-edit': {
+          if (active.handle === 'axes') break;
           if (!active.moved && Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale < TAP_SLOP) break;
           if (active.handle === 'extent') {
             // Od 1.48: długość wyciągnięcia (ściana idzie za wskaźnikiem, druga zostaje) albo kąt obrotu.
@@ -8588,7 +8596,7 @@ export function openDrawingEditor({
             requestLive();
             break;
           }
-          if (active.handle === 'cube' || active.handle === 'orbit') {
+          if (active.handle === 'orbit') {
             // Obrót bryły (od 1.47): swobodny – jak kula pod palcem; z Shift – wokół osi pionowej bryły.
             const at = local(event);
             const [dx, dy] = [at.clientX - active.last.clientX, at.clientY - active.last.clientY];
@@ -8758,9 +8766,6 @@ export function openDrawingEditor({
       } else if (done.kind === 'turn' && !cancelled && done.moved && done.angle !== 0) {
         const { center, angle } = done;
         replaceSelection(done.items, transformStrokes(done.items, (stroke) => rotateStroke(stroke, center.x, center.y, angle), elementBox));
-      } else if (done.kind === 'box-edit' && !cancelled && !done.moved && done.handle === 'cube' && done.face) {
-        // Dotknięta ściana kostki (od 1.47) – płynnie do widoku.
-        animateSolid(done.original, viewQuat(done.face));
       } else if (done.kind === 'box-edit' && !cancelled && !done.moved && done.handle === 'orbit') {
         // „Obracaj”: dotknięcie bryły bez ruchu – jej okno (jak bez obracania).
         editBox(done.original, done.start);

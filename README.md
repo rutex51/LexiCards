@@ -1,4 +1,4 @@
-# LexiCards 1.48
+# LexiCards 1.48.1
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -54,10 +54,10 @@ Rysunek – zaległości pakietów A i B planu: przyciąganie do środka kształ
 Rysunek – edycja geometrii (pakiet E planu): grupa Edycja – odsuń, zaokrąglij, fazuj, przytnij, wydłuż; okrąg styczny do dwóch elementów o danym promieniu; łamana punkt po punkcie (wersja 1.43): [docs/RELEASE-1.43.md](docs/RELEASE-1.43.md).
 Rysunek – szablony jakości (Six Sigma / Lean): grupa Jakość – diagram Ishikawy (6M, przyczyny i podprzyczyny), 5 × Dlaczego, tabela SIPOC, układ kartki (raport A3, PDCA, macierz 2×2, Kanban, diagram pokrewieństwa); zestaw „Jakość / Lean” (wersja 1.44): [docs/RELEASE-1.44.md](docs/RELEASE-1.44.md).
 Rysunek – schematy procesów: grupa Procesy – kształty schematu blokowego (początek / koniec, dane, dokument, podproces), łącznik pod kątem prostym przyklejany do kształtów, tory (swimlanes), symbole i oś czasu VSM (czas przejścia, PCE), legenda wad liczona ze znaczników, długość zaznaczonych tras („spaghetti”); zestaw „Procesy / VSM” (wersja 1.45); iPad w pionie – układ jak na komputerze (1.45.1); zajęte miejsce i historia zmian w Ustawieniach (1.45.2): [docs/RELEASE-1.45.md](docs/RELEASE-1.45.md).
-Rysunek – bryły: prostopadłościan, walec, stożek, ostrosłup, graniastosłup, kula; swobodny obrót kostką widoków albo przyciskiem „Obracaj”, gotowe widoki (izometria, dimetria, przód, góra, boki), krawędzie niewidoczne przerywane, cieniowanie, wymiary i osie, DXF (wersja 1.47; numer 1.46 – zarezerwowany na wykresy z tabel): [docs/RELEASE-1.47.md](docs/RELEASE-1.47.md).
-Rysunek – bryły ze szkicu: zaznaczone kształty → „Wyciągnij” albo „Obróć wokół osi” (kształty w kształtach – otwory), niebieski uchwyt długości i kąta, historia modelu z „Edytuj szkic”, „Rzuty” – przód, góra i lewy bok metodą europejską jako kształty do wymiarowania (wersja 1.48): [docs/RELEASE-1.48.md](docs/RELEASE-1.48.md).
+Rysunek – bryły: prostopadłościan, walec, stożek, ostrosłup, graniastosłup, kula; swobodny obrót przyciskiem „Obracaj” (od 1.48.1 obok bryły układ osi X/Y/Z zamiast kostki widoków), gotowe widoki (izometria, dimetria, przód, góra, boki), krawędzie niewidoczne przerywane, cieniowanie, wymiary i osie, DXF (wersja 1.47; numer 1.46 – zarezerwowany na wykresy z tabel): [docs/RELEASE-1.47.md](docs/RELEASE-1.47.md).
+Rysunek – bryły ze szkicu: zaznaczone kształty → „Wyciągnij” albo „Obróć wokół osi” (kształty w kształtach – otwory), niebieski uchwyt długości i kąta, historia modelu z „Edytuj szkic”, „Rzuty” – przód, góra i lewy bok metodą europejską jako kształty do wymiarowania (wersja 1.48); układ osi zamiast kostki widoków (1.48.1): [docs/RELEASE-1.48.md](docs/RELEASE-1.48.md).
 
-## Co potrafi wersja 1.48
+## Co potrafi wersja 1.48.1
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -167,7 +167,7 @@ Rysunek – bryły ze szkicu: zaznaczone kształty → „Wyciągnij” albo „
   **5 × Dlaczego**, tabela **SIPOC** i **układ kartki** (raport A3, PDCA, macierz 2×2, Kanban, diagram pokrewieństwa). Od 1.45 grupa
   **Procesy**: **schemat blokowy** z **łącznikami** pod kątem prostym, **tory**, **mapa strumienia wartości** (symbole i oś czasu)
   i **koncentracja wad** (legenda liczy znaczniki), a zaznaczone linie pokazują **długość trasy**. Od 1.47 grupa **Bryły**:
-  prostopadłościan, walec, stożek, ostrosłup, graniastosłup i kula – obracane swobodnie **kostką widoków**, z krawędziami
+  prostopadłościan, walec, stożek, ostrosłup, graniastosłup i kula – obracane swobodnie przyciskiem **Obracaj**, z **układem osi** X/Y/Z obok, z krawędziami
   niewidocznymi, cieniowaniem i wymiarami. Od 1.48 **bryły ze szkicu**: zaznaczone kształty **wyciągnięte** albo **obrócone
   wokół osi** (kształty w kształtach – otwory), szkic zostaje w bryle do poprawy, a **Rzuty** dają przód, górę i lewy bok
   do wymiarowania. Od 1.24.1 kartka w edytorze wygląda
@@ -942,10 +942,11 @@ znacznikiem i kolorem (kolejne dotknięcia stawiają kolejne znaczniki). **Spagh
 łamane, łuki, kreski pióra) pokazują swoją długość, a kilka – długość razem, w jednostkach rysunku. Format rysunku – 17.
 **Bryły** (od 1.47): grupa **Bryły** na prawym kółku – **prostopadłościan**, **walec**, **stożek** (ostry albo ścięty),
 **ostrosłup**, **graniastosłup** foremny (3–12 boków) i **kula**. Dotknięcie wstawia bryłę na środku widocznej części strony,
-w izometrii. Obok zaznaczonej bryły jest **kostka widoków**: przeciągnięcie obraca bryłę swobodnie (w każdą stronę, także
-od spodu; z Shift – tylko wokół osi pionowej i pochylenie), dotknięcie ściany (PRZÓD, GÓRA, PRAWA…) płynnie ustawia ten
-widok. **Obracaj** nad bryłą – przeciąganie samej bryły obraca ją zamiast przesuwać; **Widok** – izometria, dimetria,
-przód, góra, boki, tył, dół. Dotknięcie zaznaczonej bryły otwiera jej okno: rodzaj, wymiary w jednostce rysunku, położenie
+w izometrii. Obok zaznaczonej bryły jest **układ osi** (od 1.48.1; w 1.47–1.48 była tu kostka widoków): X – czerwona,
+Y – zielona, Z – niebieska, w położeniu bryły; oś skierowana od patrzącego jest bledsza. Układ tylko pokazuje położenie –
+dotknięcie go niczego nie zmienia. **Obracaj** nad bryłą – przeciąganie samej bryły obraca ją swobodnie zamiast przesuwać
+(w każdą stronę, także od spodu; z Shift – tylko wokół osi pionowej i pochylenie); **Widok** – izometria, dimetria,
+przód, góra, boki, tył, dół (płynne przejście). Dotknięcie zaznaczonej bryły otwiera jej okno: rodzaj, wymiary w jednostce rysunku, położenie
 (obrót wokół osi pionowej, pochylenie, obrót na kartce), krawędzie niewidoczne (przerywane, ukryte, widoczne), cieniowanie,
 wymiary, osie symetrii, grubość linii i kolor. Rzut jest prostokątny jak w rysunku technicznym: krawędzie niewidoczne –
 linia przerywana, osie – punktowa, wymiary – jak przy kształtach (średnice ⌀, kula S⌀). Narożnik ramki powiększa bryłę,

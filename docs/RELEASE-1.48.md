@@ -59,3 +59,36 @@ Zmiany przy okazji:
 - Plik DXF w programie CAD – sprawdzony odczytem z powrotem w aplikacji.
 - Ciemny motyw.
 - Szkice z przecinającymi się kształtami (nie w sobie) – każdy liczony jako osobna wyspa; operacje logiczne – w kolejnym etapie.
+
+## Uzupełnienie w wersji 1.48.1 – układ osi zamiast kostki widoków
+
+Wersja 1.48.1, 25 października 2026. Po audycie własności intelektualnej (osobna gałąź repozytorium z katalogiem
+`audit/`) kostka widoków z 1.47 została usunięta. Jej działanie – kostka obok modelu, dotknięcie ściany ustawia widok,
+przeciągnięcie obraca – odpowiada mechanizmowi Autodesk ViewCube, objętemu patentem USA (US 7,782,319 B2).
+
+| Prośba | Jak jest zrobione |
+| --- | --- |
+| Usunąć kostkę widoków | Nie ma jej przy bryle ani w kodzie (uchwyt, ściany, przeciąganie). Bryłę obracasz przyciskiem **Obracaj** (przeciąganie samej bryły, z Shift – wokół osi pionowej), widok wybierasz w menu **Widok**, kąty – w oknie bryły. |
+| Zamiast niej układ współrzędnych 3D w trzech kolorach | Obok zaznaczonej bryły, w miejscu kostki – **układ osi** na jasnej tarczy: **X – czerwona**, **Y – zielona**, **Z – niebieska**, z literami na końcach, w położeniu bryły (obraca się razem z nią, także w trakcie „Obracaj”). Oś skierowana od patrzącego jest bledsza, oś na patrzącego – punkt. Układ tylko pokazuje położenie: dotknięcie i przeciągnięcie tarczy niczego nie zmieniają i nie zdejmują zaznaczenia. |
+| Przy okazji | Komunikat po wstawieniu bryły i podpowiedź w jej oknie mówią o „Obracaj” i „Widok”; ikona przycisku **Widok** – układ osi zamiast sześcianu. |
+
+Testy wersji 1.48.1:
+
+- **Testy logiki (Node.js): 490 – wszystkie zaliczone** (1 nowy: układ osi – kierunki w widokach z przodu, z góry,
+  w izometrii i z tyłu, punkt dla osi na patrzącego, kolejność od najdalszej, kolory; brak funkcji kostki).
+- **Testy w przeglądarce (Chromium): 223 – wszystkie zaliczone w dwóch pełnych przebiegach** (bez nowych testów;
+  zmienione 3 testy brył 1.47 i 3 testy 1.48):
+  - komputer: układ osi w izometrii – X w prawo i w dół, Y w górę, Z w lewo i w dół; kolory końców osi odczytane
+    z płótna – czerwona, zielona, niebieska; kostki nie ma; dotknięcie i przeciągnięcie tarczy nie obracają bryły
+    i nie zdejmują zaznaczenia; menu „Widok” – z góry: Y punktem, Z w dół, X w prawo; reszta testu bez zmian;
+  - iPad (dotyk): palec na tarczy niczego nie obraca; menu „Widok” – przód (Z punktem); „Obracaj” palcem – oś Z schodzi
+    w dół razem z pochyloną bryłą;
+  - telefon: tarcza osi w szerokości ekranu.
+  - Uwaga: w pierwszym, przerwanym podejściu do pełnych przebiegów raz nie przeszedł test fiszek „gesty” (stuknięcie
+    po przesunięciu nie obróciło fiszki). Kodu fiszek ta wersja nie zmienia; test osobno przeszedł 5 razy na 5, w ok. 100
+    wcześniejszych przebiegach nie zawiódł. Przyczyny nie ustalono. Oba pełne przebiegi powtórzono od początku – bez błędów.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium): prostopadłościan z układem osi, układ osi w widoku z góry, obrót palcem (iPad), telefon.
+
+Czego nie sprawdzono: Safari na iPhonie i iPadzie, prawdziwy palec i Apple Pencil; czytelność kolorów osi w ciemnym
+motywie i dla osób z zaburzeniami widzenia barw (osie mają też litery X, Y, Z).

@@ -239,7 +239,8 @@ const ICONS = {
   extrude: [p('M4 15.5h10l5-3.5H9z'), p('M4 15.5V19h10l5-3.5V12'), p('M11.5 10V3'), p('M9 5.5l2.5-2.5L14 5.5')],
   revolve: [{ d: 'M2.5 12h19', 'stroke-dasharray': '4 2 1 2' }, p('M6 12V7h5v2h4v3'), p('M19 15.5a7.5 3.2 0 1 1-4.6-3.9'), p('M14.4 9.4v2.4l2.4-.5')],
   projections: [p('M3 3.5h7v6H3z'), p('M14 3.5h7v6h-7z'), p('M3 14.5h7v6H3z'), { d: 'M12 3v18M3 12h18', 'stroke-dasharray': '1.5 2' }],
-  viewCube: [p('M4 8.2 12 4.2l8 4v8.2l-8 4-8-4z'), p('M4 8.2l8 4 8-4'), p('M12 12.2v8.2'), { d: 'M12 12.2 4 8.2l8-4 8 4z', fill: 'currentColor', 'fill-opacity': '0.3', stroke: 'none' }],
+  // Widok bryły (od 1.48.1 – układ osi zamiast kostki).
+  solidViews: [p('M11 13.5V4'), p('M11 13.5l9.5 5'), p('M11 13.5l-7.5 6'), dot(11, 3.6, 1.7), dot(20.6, 18.6, 1.7), dot(3.4, 19.8, 1.7), dot(11, 13.5, 1.4)],
   defects: [p('M3.5 3.5h17v17h-17z'), p('M7 8l3 3m0-3l-3 3'), p('M15 14.5l2.5 2.5m0-2.5L15 17'), p('M15.5 7.5a1.5 1.5 0 1 0 .01 0')],
   // Od 1.43: łamana i edycja geometrii – odsuń, zaokrąglij, fazuj, przytnij, wydłuż.
   shapePolyline: [p('M3.5 18.5l5-10 6 6 6-10'), dot(3.5, 18.5, 1.6), dot(8.5, 8.5, 1.6), dot(14.5, 14.5, 1.6), dot(20.5, 4.5, 1.6)],

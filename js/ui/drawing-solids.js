@@ -1,5 +1,5 @@
 // Bryły (od 1.47) na płótnie: ściany cieniowane, krawędzie niewidoczne (przerywane), osie, krawędzie widoczne i wymiary
-// z rozkładu (core/solids.js); kostka widoków przy zaznaczonej bryle – przeciąganie obraca, ściana ustawia widok.
+// z rozkładu (core/solids.js); przy zaznaczonej bryle – układ osi X/Y/Z (od 1.48.1; w 1.47–1.48 – kostka widoków).
 // Od 1.48 bryły ze szkicu (mogą być wklęsłe) – ściany z buforem głębokości w pikselach płótna.
 
 import { solidDimText } from '../core/drawing.js';
@@ -178,75 +178,65 @@ export function paintSolid(ctx, element, { scale = null, dimFormat = 'unit' } = 
   ctx.restore();
 }
 
-// ---------------------------------------------------------------- kostka widoków (px ekranu)
+// ---------------------------------------------------------------- układ osi bryły (px ekranu)
 
-/** Połowa boku kostki i jej odstęp od ramki zaznaczenia (px ekranu). */
-export const CUBE_HALF = 24;
-export const CUBE_GAP = 18;
-/** Ściany kostki: napis, normalna, kierunek napisu (w prawo, w górę), widok. */
-const CUBE_FACES = [
-  ['PRZÓD', [0, 0, 1], [1, 0, 0], [0, 1, 0], 'front'], ['TYŁ', [0, 0, -1], [-1, 0, 0], [0, 1, 0], 'back'],
-  ['PRAWA', [1, 0, 0], [0, 0, -1], [0, 1, 0], 'right'], ['LEWA', [-1, 0, 0], [0, 0, 1], [0, 1, 0], 'left'],
-  ['GÓRA', [0, 1, 0], [1, 0, 0], [0, 0, -1], 'top'], ['DÓŁ', [0, -1, 0], [1, 0, 0], [0, 0, 1], 'bottom']
-];
-const turn = (m, [x, y, z]) => [m[0] * x + m[1] * y + m[2] * z, m[3] * x + m[4] * y + m[5] * z, m[6] * x + m[7] * y + m[8] * z];
+/**
+ * Od 1.48.1 zamiast kostki widoków (1.47): mały układ osi przy zaznaczonej bryle – tylko wskaźnik położenia, bez dotykania
+ * (widok – menu „Widok”, obrót – „Obracaj” albo kąty w oknie). Osie bryły: X – czerwona, Y – zielona, Z – niebieska.
+ */
+export const AXES_LENGTH = 26;
+/** Promień tarczy pod osiami i jej odstęp od ramki zaznaczenia (px ekranu). */
+export const AXES_RADIUS = 40;
+export const AXES_GAP = 16;
+const AXES = [['X', [1, 0, 0], '#d92d20'], ['Y', [0, 1, 0], '#1e8e3e'], ['Z', [0, 0, 1], '#1a6fdb']];
 
-/** Ściany kostki zwrócone do patrzącego (od najdalszej): { label, view, corners, center, n, u, v } w px ekranu. */
-export function cubeFaces(q, center, half = CUBE_HALF) {
+/** Osie w położeniu `q` od środka `center` (px ekranu): { label, color, tip, along – długość na ekranie (0–1), depth }, od najdalszej. */
+export function solidAxes(q, center, length = AXES_LENGTH) {
   const m = quatMatrix(q);
-  return CUBE_FACES.map(([label, normal, right, up, view]) => {
-    const [n, u, v] = [turn(m, normal), turn(m, right), turn(m, up)];
-    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => ({ x: center.x + (n[0] + u[0] * a + v[0] * b) * half, y: center.y - (n[1] + u[1] * a + v[1] * b) * half }));
-    return { label, view, n, u, v, corners, center: { x: center.x + n[0] * half, y: center.y - n[1] * half } };
-  }).filter((face) => face.n[2] > 0.02).sort((a, b) => a.n[2] - b.n[2]);
+  return AXES.map(([label, [x, y, z], color]) => {
+    const v = [m[0] * x + m[1] * y + m[2] * z, m[3] * x + m[4] * y + m[5] * z, m[6] * x + m[7] * y + m[8] * z];
+    return { label, color, tip: { x: center.x + v[0] * length, y: center.y - v[1] * length }, along: Math.hypot(v[0], v[1]), depth: v[2] };
+  }).sort((a, b) => a.depth - b.depth);
 }
 
-/** Widok ściany kostki pod punktem (px ekranu) albo null. */
-export function cubeFaceAt(q, center, point, half = CUBE_HALF) {
-  for (const face of cubeFaces(q, center, half).reverse()) {
-    let inside = false;
-    for (let i = 0, j = 3; i < 4; j = i++) {
-      const [a, b] = [face.corners[i], face.corners[j]];
-      if ((a.y > point.y) !== (b.y > point.y) && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
-    }
-    if (inside) return face.view;
-  }
-  return null;
-}
-
-/** Kostka widoków w tym samym położeniu co bryła; ctx – w px ekranu (dpr – gęstość pikseli, do napisów na ścianach). */
-export function paintViewCube(ctx, q, center, dpr, { accent = '#0058be', active = false } = {}) {
-  const half = CUBE_HALF;
+/** Układ osi na jasnej tarczy; oś skierowana od patrzącego – bledsza; active – w trakcie obracania (obwódka w kolorze zaznaczenia). */
+export function paintSolidAxes(ctx, q, center, { accent = '#0058be', active = false } = {}) {
   ctx.save();
   ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
   ctx.strokeStyle = active ? accent : 'rgba(60, 60, 67, 0.35)';
   ctx.lineWidth = active ? 2 : 1;
   ctx.beginPath();
-  ctx.arc(center.x, center.y, half * 1.95, 0, Math.PI * 2);
+  ctx.arc(center.x, center.y, AXES_RADIUS, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-  for (const face of cubeFaces(q, center, half)) {
+  ctx.lineCap = 'round';
+  ctx.font = textFont(12, '700');
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const axis of solidAxes(q, center)) {
+    ctx.globalAlpha = axis.depth < -0.05 ? 0.45 : 1;
+    ctx.strokeStyle = axis.color;
+    ctx.fillStyle = axis.color;
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    face.corners.forEach((point, index) => (index === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y)));
-    ctx.closePath();
-    const shade = Math.round(228 + 22 * face.n[2]);
-    ctx.fillStyle = `rgb(${shade - 8}, ${shade - 3}, ${shade})`;
-    ctx.fill();
-    ctx.strokeStyle = '#8e8e93';
-    ctx.lineWidth = 1;
+    ctx.moveTo(center.x, center.y);
+    ctx.lineTo(axis.tip.x, axis.tip.y);
     ctx.stroke();
-    if (face.n[2] > 0.3) {
-      // Napis na ścianie – w jej płaszczyźnie (kostka 80 jednostek, napis 17).
-      const k = half / 40;
-      ctx.save();
-      ctx.setTransform(dpr * face.u[0] * k, dpr * -face.u[1] * k, dpr * -face.v[0] * k, dpr * face.v[1] * k, dpr * face.center.x, dpr * face.center.y);
-      ctx.fillStyle = '#3a3a3c';
-      ctx.font = textFont(17, '700');
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(face.label, 0, 1);
-      ctx.restore();
-    }
+    ctx.beginPath();
+    ctx.arc(axis.tip.x, axis.tip.y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Litera za końcem osi; oś prawie na patrzącego (sam punkt) – litera obok środka.
+    const [dx, dy] = axis.along > 0.2 ? [(axis.tip.x - center.x) / (AXES_LENGTH * axis.along), (axis.tip.y - center.y) / (AXES_LENGTH * axis.along)] : [0.7, -0.7];
+    const [lx, ly] = [axis.tip.x + dx * 9, axis.tip.y + dy * 9];
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.strokeText(axis.label, lx, ly);
+    ctx.fillText(axis.label, lx, ly);
   }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#636366';
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, 2.5, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }

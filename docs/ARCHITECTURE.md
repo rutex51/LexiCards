@@ -1905,11 +1905,14 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   bryły – bryły są symetryczne względem x = 0, wynik jest obrotem), skala – wymiary. Styl jak… – kolor i grubość.
 - **Edytor** (`js/ui/drawing.js`, `js/ui/drawing-solids.js`): grupa `solids` (`SOLID_ITEMS` – polecenia `solid:<rodzaj>`,
   `insertSolid` → `putSolid`: miejsce jak dla elementów, środek z prostokąta); `paintSolid` (ściany, niewidoczne, osie,
-  widoczne, wymiary z jasną obwódką liczb). Uchwyty `boxHandles`: narożnik (`scaleSolid` wokół środka) i kostka widoków
-  (`cubeAnchor` – przy prawym górnym rogu ramki, przy krawędzi ekranu – przy lewym; w trakcie obrotu stoi w miejscu;
-  `paintViewCube`, `cubeFaceAt`). Przeciąganie kostki i „Obracaj” (`orbitMode`; przeciągnięcie bryły – uchwyt 'orbit') –
-  `box-edit` z przyrostami px ekranu; dotknięcie ściany – `animateSolid`. Menu „Widok” (`openSolidViewMenu`), okno
-  `editSolid` (wymiary przez `dimFactor` i skalę). `live.dataset.cube` – środek kostki i bryły (testy). Od 1.47 `touchend`
+  widoczne, wymiary z jasną obwódką liczb). Uchwyty `boxHandles`: narożnik (`scaleSolid` wokół środka). Od 1.48.1 obok
+  ramki **układ osi** zamiast kostki widoków (1.47–1.48; usunięta po audycie IP – mechanizm jak Autodesk ViewCube, zob.
+  gałąź z audytem): `axesAnchor` – przy prawym górnym rogu ramki, przy krawędzi ekranu – przy lewym, w trakcie obrotu stoi
+  w miejscu; `solidAxes` (końce osi X/Y/Z z kwaternionu, od najdalszej), `paintSolidAxes` (tarcza, osie czerwona/zielona/
+  niebieska, oś od patrzącego bledsza, litery). Układ jest tylko wskaźnikiem: `boxHandleAt` zwraca dla tarczy uchwyt
+  `axes`, który niczego nie zmienia (dotknięcie nie zdejmuje zaznaczenia). „Obracaj” (`orbitMode`; przeciągnięcie bryły –
+  uchwyt 'orbit') – `box-edit` z przyrostami px ekranu. Menu „Widok” (`openSolidViewMenu`) – `animateSolid`, okno
+  `editSolid` (wymiary przez `dimFactor` i skalę). `live.dataset.axes` – środek układu, bryły i końce osi X, Y, Z (testy). Od 1.47 `touchend`
   na płótnie – `preventDefault` (bez kliknięcia po dotknięciu w okno otwarte tym dotknięciem).
 - **DXF** (`writeSolid`): widoczne – POLYLINE, niewidoczne – DASHED (albo ciągłe), osie – LINE CENTER, wymiary – LINE,
   groty SOLID, TEXT wyśrodkowany.
@@ -2042,6 +2045,7 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   i 5 × Dlaczego – rozkład, przyczyny z tekstu, miejsca dotknięcia, zapis – układ kartki i jego DXF; od 1.45 kształty
   schematu blokowego, łącznik i jego przebieg, długość linii, tory, symbole i oś czasu VSM, legenda wad, ich DXF; od 1.47
   bryły – dane, kąty i kwaterniony, obrót z przeciągnięcia, rzut z krawędziami niewidocznymi, wymiary, przekształcenia, DXF;
+  od 1.48.1 układ osi bryły – kierunki w widokach, kolory, kolejność;
   od 1.48 bryły ze szkicu – profil z kształtów i oś, siatki zamknięte, krawędzie niewidoczne brył wklęsłych, ściany
   z płaszczyznami, wymiary, odbicie i skala z profilem, rzuty 2D, DXF),
   układ wzoru na płótnie, spójność plików wydania.

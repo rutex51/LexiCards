@@ -11342,7 +11342,7 @@ test('ustawienia 1.45.2: zajęte miejsce – aplikacja, dane, obrazy i załączn
   await waitUntil(async () => (await items.count()) === 5, 'Znów najnowsze');
 }, { device: PHONE });
 
-test('rysunek 1.47: grupa Bryły – wstawienie, kostka widoków (przeciąganie – swobodny obrót, ściana – widok), „Obracaj”, menu „Widok”, okno bryły (rodzaj, wymiary, kąty, krawędzie, cieniowanie), odbicie, sześć brył na kartce, zapis i DXF (komputer)', async ({ open }) => {
+test('rysunek 1.47: grupa Bryły – wstawienie, układ osi X/Y/Z obok ramki (od 1.48.1 zamiast kostki widoków; kierunki, kolory, tarcza bez działania), menu „Widok”, „Obracaj”, okno bryły (rodzaj, wymiary, kąty, krawędzie, cieniowanie), odbicie, sześć brył na kartce, zapis i DXF (komputer)', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
   const ids = await sampleLessons(page);
@@ -11359,13 +11359,24 @@ test('rysunek 1.47: grupa Bryły – wstawienie, kostka widoków (przeciąganie 
     await page.keyboard.press('Escape');
     await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
   };
-  /** Środek kostki widoków i zaznaczonej bryły na ekranie. */
+  /** Środek układu osi, zaznaczonej bryły i końce osi X, Y, Z na ekranie (od 1.48.1). */
   const where = async () => {
-    await waitUntil(async () => Boolean(await canvas.getAttribute('data-cube')), 'Kostka widoków');
-    const [x, y, sx, sy] = (await canvas.getAttribute('data-cube')).split(',').map(Number);
+    await waitUntil(async () => Boolean(await canvas.getAttribute('data-axes')), 'Układ osi');
+    const n = (await canvas.getAttribute('data-axes')).split(',').map(Number);
     const box = await canvas.boundingBox();
-    return { cube: [box.x + x, box.y + y], solid: [box.x + sx, box.y + sy] };
+    const at = (index) => [box.x + n[index], box.y + n[index + 1]];
+    return { axes: at(0), solid: at(2), x: at(4), y: at(6), z: at(8) };
   };
+  /** Kolor płótna na końcach osi: czerwony, zielony albo niebieski. */
+  const axisColors = (tips) => canvas.evaluate((element, points) => {
+    const box = element.getBoundingClientRect();
+    const ratio = element.width / box.width;
+    const ctx = element.getContext('2d');
+    return Object.fromEntries(Object.entries(points).map(([name, [x, y]]) => {
+      const [r, g, b] = ctx.getImageData(Math.round((x - box.left) * ratio), Math.round((y - box.top) * ratio), 1, 1).data;
+      return [name, r > g + 60 && r > b + 60 ? 'czerwona' : g > r + 40 && g > b + 20 ? 'zielona' : b > r + 60 && b > g + 30 ? 'niebieska' : `${r},${g},${b}`];
+    }));
+  }, tips);
   const drag = async (from, to, steps = 10) => {
     await page.mouse.move(...from);
     await page.mouse.down();
@@ -11383,7 +11394,7 @@ test('rysunek 1.47: grupa Bryły – wstawienie, kostka widoków (przeciąganie 
     await sheet(page).getByRole('button', { name: 'Anuluj' }).click();
     await closed();
   };
-  const settledAnimation = () => waitUntil(async () => (await canvas.getAttribute('data-cube')) !== null && page.evaluate(() => new Promise((done) => setTimeout(done, 450)).then(() => true)), 'Koniec obrotu');
+  const settledAnimation = () => waitUntil(async () => (await canvas.getAttribute('data-axes')) !== null && page.evaluate(() => new Promise((done) => setTimeout(done, 450)).then(() => true)), 'Koniec obrotu');
 
   await pickGroup(editor, 'solids');
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Bryły');
@@ -11391,31 +11402,39 @@ test('rysunek 1.47: grupa Bryły – wstawienie, kostka widoków (przeciąganie 
     ['Prostop.', 'Walec', 'Stożek', 'Ostrosłup', 'Graniast.', 'Kula']);
   await editor.locator('[data-testid=drawing-insert-solid-box]').click();
   await expectText(count, 'Bryła: Prostopadłościan');
-  await expectText(notice, 'Prostopadłościan: kostka obok obraca bryłę, ściana kostki – widok, dotknięcie bryły – wymiary');
+  await expectText(notice, 'Prostopadłościan: „Obracaj” obraca bryłę, „Widok” – gotowe widoki, dotknięcie bryły – wymiary');
   assert.deepEqual(await angles(), { yaw: '45', pitch: '35,3', roll: '0' }, 'nowa bryła – izometria');
   await cancel();
   await shot('prostopadloscian');
 
-  // Przeciągnięcie kostki – swobodny obrót (bryła zostaje w miejscu).
-  const before = await where();
-  await drag(before.cube, [before.cube[0] + 80, before.cube[1] + 30]);
-  const turned = await angles();
-  assert.notDeepEqual(turned, { yaw: '45', pitch: '35,3', roll: '0' }, `obrót kostką: ${JSON.stringify(turned)}`);
+  // Układ osi obok ramki (od 1.48.1 zamiast kostki widoków): w izometrii X w prawo i w dół, Y w górę, Z w lewo i w dół;
+  // osie czerwona, zielona, niebieska. Tarcza osi tylko pokazuje położenie – dotknięcie i przeciągnięcie niczego nie
+  // obracają i nie zdejmują zaznaczenia.
+  const iso = await where();
+  const [ax, ay] = iso.axes;
+  assert.ok(iso.x[0] > ax + 10 && iso.x[1] > ay, `izometria – X: ${iso.x} (środek ${iso.axes})`);
+  assert.ok(Math.abs(iso.y[0] - ax) <= 1 && iso.y[1] < ay - 15, `izometria – Y: ${iso.y}`);
+  assert.ok(iso.z[0] < ax - 10 && iso.z[1] > ay, `izometria – Z: ${iso.z}`);
+  assert.deepEqual(await axisColors({ x: iso.x, y: iso.y, z: iso.z }), { x: 'czerwona', y: 'zielona', z: 'niebieska' });
+  assert.equal(await canvas.getAttribute('data-cube'), null, 'bez kostki widoków');
+  await page.mouse.click(ax, ay);
+  await drag([ax - 10, ay - 10], [ax + 70, ay + 30]);
+  await expectText(count, 'Bryła: Prostopadłościan');
+  assert.deepEqual(await angles(), { yaw: '45', pitch: '35,3', roll: '0' }, 'tarcza osi niczego nie obraca');
   await cancel();
-  const after = await where();
-  assert.deepEqual(after.solid, before.solid, 'środek bryły w tym samym miejscu');
+  assert.deepEqual((await where()).solid, iso.solid, 'bryła w tym samym miejscu');
 
-  // Menu „Widok” – izometria (płynne przejście), potem ściana GÓRA kostki – widok z góry.
+  // Menu „Widok” – z góry (płynne przejście): Y na patrzącego (sam punkt), Z w dół ekranu, X w prawo.
   await editor.locator('[data-testid=drawing-selection-solid-view]').click();
-  await page.locator('[data-testid=drawing-solid-view-iso]').click();
+  await page.locator('[data-testid=drawing-solid-view-top]').click();
   await settledAnimation();
-  assert.deepEqual(await angles(), { yaw: '45', pitch: '35,3', roll: '0' }, 'izometria z menu');
+  assert.deepEqual(await angles(), { yaw: '0', pitch: '90', roll: '0' }, 'widok z góry z menu');
   await cancel();
-  const { cube } = await where();
-  await page.mouse.click(cube[0], cube[1] - 14);
-  await settledAnimation();
-  assert.deepEqual(await angles(), { yaw: '0', pitch: '90', roll: '0' }, 'ściana GÓRA – widok z góry');
-  await cancel();
+  const top = await where();
+  assert.ok(top.x[0] > top.axes[0] + 20 && Math.abs(top.x[1] - top.axes[1]) <= 1, `z góry – X: ${top.x} (środek ${top.axes})`);
+  assert.ok(Math.abs(top.z[0] - top.axes[0]) <= 1 && top.z[1] > top.axes[1] + 20, `z góry – Z: ${top.z}`);
+  assert.ok(Math.hypot(top.y[0] - top.axes[0], top.y[1] - top.axes[1]) <= 1.5, `z góry – Y na patrzącego: ${top.y}`);
+  await shot('osie-z-gory');
   await editor.locator('[data-testid=drawing-selection-solid-view]').click();
   assert.equal(await page.locator('[data-testid=drawing-solid-view-top]').getAttribute('aria-checked'), 'true', 'bieżący widok zaznaczony');
   await page.locator('[data-testid=drawing-solid-view-front]').click();
@@ -11501,7 +11520,7 @@ test('rysunek 1.47: grupa Bryły – wstawienie, kostka widoków (przeciąganie 
   assert.ok(parsed.entities.some((item) => item.type === 'TEXT' && item.first(1) === '6 cm'), 'wymiar prostopadłościanu');
 }, { device: DESKTOP });
 
-test('rysunek 1.47 na iPadzie: kostka widoków palcem – przeciągnięcie obraca stożek, dotknięcie ściany PRZÓD – widok z przodu; „Obracaj” palcem na bryle', async ({ open, context }) => {
+test('rysunek 1.47 na iPadzie: układ osi przy stożku (od 1.48.1) – palec na tarczy osi niczego nie obraca; menu „Widok” – przód; „Obracaj” palcem na bryle – osie obracają się z nią', async ({ open, context }) => {
   const page = await open();
   await loadSamples(page);
   const ids = await sampleLessons(page);
@@ -11509,10 +11528,11 @@ test('rysunek 1.47 na iPadzie: kostka widoków palcem – przeciągnięcie obrac
   const canvas = editor.locator('[data-testid=drawing-canvas]');
   const closed = () => waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
   const where = async () => {
-    await waitUntil(async () => Boolean(await canvas.getAttribute('data-cube')), 'Kostka widoków');
-    const [x, y, sx, sy] = (await canvas.getAttribute('data-cube')).split(',').map(Number);
+    await waitUntil(async () => Boolean(await canvas.getAttribute('data-axes')), 'Układ osi');
+    const n = (await canvas.getAttribute('data-axes')).split(',').map(Number);
     const box = await canvas.boundingBox();
-    return { cube: [box.x + x, box.y + y], solid: [box.x + sx, box.y + sy] };
+    const at = (index) => [box.x + n[index], box.y + n[index + 1]];
+    return { axes: at(0), solid: at(2), x: at(4), y: at(6), z: at(8) };
   };
   const angles = async () => {
     await page.touchscreen.tap(...(await where()).solid);
@@ -11526,36 +11546,38 @@ test('rysunek 1.47 na iPadzie: kostka widoków palcem – przeciągnięcie obrac
   await pickGroup(editor, 'solids');
   await editor.locator('[data-testid=drawing-insert-solid-cone]').tap();
   await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Bryła: Stożek');
-  const { cube } = await where();
-  const finger = await touchAt(context, page, ...cube);
-  await finger.move(cube[0] - 60, cube[1] + 50);
-  await nextFrames(page);
-  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-147-ipad-obrot-palcem.png') });
+  // Palec na tarczy osi (od 1.48.1 zamiast kostki) – bryła się nie obraca, zaznaczenie zostaje.
+  const { axes } = await where();
+  const finger = await touchAt(context, page, ...axes);
+  await finger.move(axes[0] - 60, axes[1] + 50);
   await finger.end();
-  const turned = await angles();
-  assert.notDeepEqual(turned, { yaw: '45', pitch: '35,3', roll: '0' }, `obrót palcem: ${JSON.stringify(turned)}`);
-  // Widok z menu (izometria), potem ściana PRZÓD (lewa dolna ściana kostki w izometrii).
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Bryła: Stożek');
+  assert.deepEqual(await angles(), { yaw: '45', pitch: '35,3', roll: '0' }, 'palec na tarczy osi niczego nie obraca');
+  // Menu „Widok” – przód: Z na patrzącego (sam punkt).
   await editor.locator('[data-testid=drawing-selection-solid-view]').tap();
-  await page.locator('[data-testid=drawing-solid-view-iso]').tap();
+  await page.locator('[data-testid=drawing-solid-view-front]').tap();
   await page.waitForTimeout(500);
-  const iso = await where();
-  await page.touchscreen.tap(iso.cube[0] - 12, iso.cube[1] + 10);
-  await page.waitForTimeout(500);
-  assert.deepEqual(await angles(), { yaw: '0', pitch: '0', roll: '0' }, 'ściana PRZÓD');
-  // „Obracaj”: palec na bryle obraca ją, bryła zostaje w miejscu.
+  assert.deepEqual(await angles(), { yaw: '0', pitch: '0', roll: '0' }, 'przód z menu');
+  const front = await where();
+  assert.ok(Math.hypot(front.z[0] - front.axes[0], front.z[1] - front.axes[1]) <= 1.5, `z przodu – Z na patrzącego: ${front.z}`);
+  // „Obracaj”: palec na bryle obraca ją, bryła zostaje w miejscu, osie obracają się razem z nią (Z schodzi w dół).
   await editor.locator('[data-testid=drawing-selection-orbit]').tap();
   const { solid } = await where();
   const drag = await touchAt(context, page, solid[0], solid[1] - 20);
   await drag.move(solid[0], solid[1] + 60);
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-147-ipad-obrot-palcem.png') });
   await drag.end();
   await nextFrames(page);
-  assert.deepEqual((await where()).solid, solid, 'bryła w tym samym miejscu');
+  const tiltedAxes = await where();
+  assert.deepEqual(tiltedAxes.solid, solid, 'bryła w tym samym miejscu');
+  assert.ok(tiltedAxes.z[1] > tiltedAxes.axes[1] + 8, `oś Z po pochyleniu w dół: ${tiltedAxes.z} (środek ${tiltedAxes.axes})`);
   const tilted = await angles();
   assert.equal(tilted.yaw, '0');
   assert.ok(Number(tilted.pitch.replace(',', '.')) > 20, `pochylenie palcem w dół: ${tilted.pitch}`);
 }, { device: IPAD });
 
-test('rysunek 1.47 na telefonie: grupa Bryły w górnym menu, kostka widoków na ekranie, okno bryły w szerokości ekranu', async ({ open }) => {
+test('rysunek 1.47 na telefonie: grupa Bryły w górnym menu, układ osi bryły na ekranie, okno bryły w szerokości ekranu', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
   const ids = await sampleLessons(page);
@@ -11568,10 +11590,11 @@ test('rysunek 1.47 na telefonie: grupa Bryły w górnym menu, kostka widoków na
     assert.ok(box && box.x >= 0 && box.x + box.width <= 391, `${kind} na ekranie`);
   }
   await editor.locator('[data-testid=drawing-insert-solid-box]').click();
-  await waitUntil(async () => Boolean(await canvas.getAttribute('data-cube')), 'Kostka widoków');
-  const [x, , sx, sy] = (await canvas.getAttribute('data-cube')).split(',').map(Number);
+  await waitUntil(async () => Boolean(await canvas.getAttribute('data-axes')), 'Układ osi');
+  const [x, , sx, sy] = (await canvas.getAttribute('data-axes')).split(',').map(Number);
   const frame = await canvas.boundingBox();
-  assert.ok(frame.x + x + 24 <= 390 && frame.x + x - 24 >= 0, `kostka w szerokości ekranu: ${x}`);
+  // Tarcza osi (promień 40 px) w szerokości ekranu.
+  assert.ok(frame.x + x + 40 <= 390 && frame.x + x - 40 >= 0, `układ osi w szerokości ekranu: ${x}`);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-147-telefon.png') });
   await page.touchscreen.tap(frame.x + sx, frame.y + sy);
   await page.locator('[data-testid=drawing-solid-dim-a]').waitFor();
@@ -11609,9 +11632,9 @@ test('rysunek 1.48: szkic → „Wyciągnij” (płytka z dwoma otworami), uchwy
   };
   /** Środek zaznaczonej bryły i jej uchwyt długości albo kąta (ekran). */
   const where = async () => {
-    await waitUntil(async () => Boolean(await canvas.getAttribute('data-cube')), 'Kostka widoków');
+    await waitUntil(async () => Boolean(await canvas.getAttribute('data-axes')), 'Układ osi');
     const box = await canvas.boundingBox();
-    const [, , sx, sy] = (await canvas.getAttribute('data-cube')).split(',').map(Number);
+    const [, , sx, sy] = (await canvas.getAttribute('data-axes')).split(',').map(Number);
     const extent = await canvas.getAttribute('data-extent');
     const [ex, ey] = extent ? extent.split(',').map(Number) : [NaN, NaN];
     return { solid: [box.x + sx, box.y + sy], extent: extent ? [box.x + ex, box.y + ey] : null };
@@ -11695,7 +11718,7 @@ test('rysunek 1.48: szkic → „Wyciągnij” (płytka z dwoma otworami), uchwy
   await closed();
   await expectText(count, '3 ');
   await expectText(notice, 'Szkic na kartce');
-  assert.equal(await canvas.getAttribute('data-cube'), null, 'bryły nie ma');
+  assert.equal(await canvas.getAttribute('data-axes'), null, 'bryły nie ma (bez układu osi)');
   await shot('edytuj-szkic');
   await button('extrude').click();
   await expectText(count, 'Bryła: wyciągnięcie');
@@ -11770,7 +11793,7 @@ test('rysunek 1.48 na iPadzie: „Wyciągnij” palcem, uchwyt długości palcem
   const where = async () => {
     await waitUntil(async () => Boolean(await canvas.getAttribute('data-extent')), 'Uchwyt długości');
     const box = await canvas.boundingBox();
-    const [, , sx, sy] = (await canvas.getAttribute('data-cube')).split(',').map(Number);
+    const [, , sx, sy] = (await canvas.getAttribute('data-axes')).split(',').map(Number);
     const [ex, ey] = (await canvas.getAttribute('data-extent')).split(',').map(Number);
     return { solid: [box.x + sx, box.y + sy], extent: [box.x + ex, box.y + ey] };
   };
@@ -11810,7 +11833,7 @@ test('rysunek 1.48 na iPadzie: „Wyciągnij” palcem, uchwyt długości palcem
   await page.locator('[data-testid=drawing-solid-sketch]').tap();
   await closed();
   await expectText(count, 'Prostokąt');
-  assert.equal(await canvas.getAttribute('data-cube'), null, 'szkic zamiast bryły');
+  assert.equal(await canvas.getAttribute('data-axes'), null, 'szkic zamiast bryły');
 }, { device: IPAD });
 
 test('rysunek 1.48 na telefonie: „Wyciągnij” i „Obróć wokół osi” na pasku zaznaczenia, okno bryły ze szkicu w szerokości ekranu', async ({ open }) => {
@@ -11838,8 +11861,8 @@ test('rysunek 1.48 na telefonie: „Wyciągnij” i „Obróć wokół osi” na
   await expectText(count, 'Bryła: obrotowa');
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-148-telefon.png') });
-  await waitUntil(async () => Boolean(await canvas.getAttribute('data-cube')), 'Kostka widoków');
-  const [, , sx, sy] = (await canvas.getAttribute('data-cube')).split(',').map(Number);
+  await waitUntil(async () => Boolean(await canvas.getAttribute('data-axes')), 'Układ osi');
+  const [, , sx, sy] = (await canvas.getAttribute('data-axes')).split(',').map(Number);
   const box = await canvas.boundingBox();
   await page.touchscreen.tap(box.x + sx, box.y + sy);
   await page.locator('[data-testid=drawing-solid-dim-angle]').waitFor();
