@@ -153,6 +153,26 @@ Bazy Urzędu Patentowego RP nie przeszukano. Nie odczytano treści zastrzeżeń 
   - https://www.mactrast.com/2012/11/apple-receives-design-patents-for-page-turning-animation-and-ipad-smart-case/amp/
   - https://www.smartcompany.com.au/technology/apple-patents-page-turning-animation-on-ebooks-despite-prior-art-in-beos/
 
+### P-12 – P-14. Inne rodziny dotyczące przewracania strony (uzupełnienie z 25.10.2026, po pytaniu właściciela)
+
+Wyszukiwanie: wyłącznie wyszukiwarka internetowa (bazy patentowe nadal zablokowane – AUDIT_LIMITATIONS.md). Zastrzeżeń
+nie odczytano; statusy – z wyników wyszukiwania, niezweryfikowane w USPTO.
+
+- **P-12. US 9,911,221 B2 – „Animated page turning” (Google LLC).** Status „Active” według Google Patents. Według
+  streszczenia: strona zaginana na wirtualnym walcu (cylindrze) w trakcie przewracania.
+  Źródło: https://patents.google.com/patent/US9911221
+- **P-13. US 7,667,703 B2 (Palo Alto Research Center) i US 7,898,541 B2 (kontynuacja częściowa).** Przewracanie stron
+  w dokumencie elektronicznym. US 7,667,703 – „Expired – Fee Related” według Google Patents; status US 7,898,541 –
+  nieustalony. Źródła: https://patents.google.com/patent/US7667703, https://patents.google.com/patent/US7898541
+- **P-14. Zgłoszenie Microsoft z 2009 r.** (zawijanie strony z prześwitującym płatem) – znane z prasy; numeru i tego, czy
+  udzielono patentu, nie ustalono. Źródło: https://techcrunch.com/2010/07/08/microsoft-tries-to-patent-virtual-page-turning-technique-should-apple-be-worried/
+- **Implementacja w aplikacji:** `js/core/page-curl.js` – **płaskie zgięcie papieru**: zgięcie to symetralna odcinka
+  róg → wskaźnik, zagięta część kartki odbita względem zgięcia (macierz odbicia), podział kartki obcinaniem wielokąta
+  półpłaszczyzną (Sutherland–Hodgman). Bez walca, bez siatki 3D i bez prześwitywania płata – inna technika niż opisana
+  w streszczeniu P-12.
+- **Wstępne ryzyko:** NISKIE (P-12 – technika z walcem, inna niż płaskie odbicie; P-13 – wygasły lub nieustalony; P-14 –
+  nieustalony). Formalnie wymaga odczytu zastrzeżeń niezależnych P-12 (R-07).
+
 ### P-08. Rozpoznawanie kształtu po przytrzymaniu kreski
 
 - **Wynik:** nie znaleziono patentu na samo zachowanie „narysuj i przytrzymaj → figura” (znane z iPadOS 14).
@@ -189,3 +209,6 @@ Bazy Urzędu Patentowego RP nie przeszukano. Nie odczytano treści zastrzeżeń 
 
 Funkcje wymagające formalnej analizy FTO przed sprzedażą w USA: **kostka widoków** (P-01, P-03) i **animacja
 przewracania strony** (P-07 – do jej wygaśnięcia).
+
+Uzupełnienie z 25.10.2026: kostkę widoków usunięto w wersji 1.48.1 (R-01). Dopisano P-12 – P-14 (inne rodziny
+dotyczące przewracania strony: 3 patenty US i 1 zgłoszenie bez numeru) – ryzyko NISKIE, bez zmian w aplikacji.
