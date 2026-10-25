@@ -3,6 +3,12 @@
 Żadnego z działań nie wykonano w ramach audytu – zgodnie ze zleceniem kod aplikacji nie był zmieniany.
 Każde działanie zmieniające kod wymaga decyzji właściciela.
 
+**Stan wykonania (25 października 2026):**
+- **R-01 – wykonane w wersji 1.48.1** (decyzja właściciela): kostka widoków usunięta, zastąpiona biernym układem osi
+  X/Y/Z bez sterowania widokiem.
+- **R-05 – nieaktualne:** nazwy z „ViewCube” usunięto razem z kostką.
+- Pozostałe – otwarte.
+
 | Nr | Priorytet | Działanie | Ustalenie | Nakład | Kto |
 | --- | --- | --- | --- | --- | --- |
 | R-01 | 1 – WYSOKI | **Kostka widoków:** usunąć ją albo zastąpić rozwiązaniem bez trójwymiarowej reprezentacji układu współrzędnych, np. płaskim paskiem przycisków widoków, przed jakąkolwiek dystrybucją komercyjną w USA. Bez kostki dalej działają: menu „Widok”, „Obracaj” (przeciąganie bryły) i kąty w oknie bryły. Jeśli kostka ma zostać – opinia FTO rzecznika patentowego (US 7,782,319 B2; US 8,132,123; US 7,814,436 B2). | P-01, P-03 | mały (usunięcie uchwytu `cube`, testy 1.47 do poprawy) | deweloper + decyzja właściciela |

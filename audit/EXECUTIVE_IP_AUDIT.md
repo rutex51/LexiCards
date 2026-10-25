@@ -6,6 +6,13 @@
 Ocena techniczna i wstępna ocena ryzyka prawnego. **Nie jest opinią prawną, analizą Freedom to Operate ani gwarancją
 braku naruszeń.** Kod aplikacji nie był zmieniany.
 
+> **Aktualizacja – wersja 1.48.1 (25 października 2026):** decyzją właściciela wykonano **R-01** – kostkę widoków
+> usunięto z aplikacji. Zastąpił ją układ osi X/Y/Z (czerwona, zielona, niebieska), który **tylko pokazuje** położenie
+> bryły: dotknięcie ani przeciągnięcie wskaźnika nie zmienia widoku i nie obraca bryły. Widok zmienia się menu „Widok”,
+> obrót – przyciskiem „Obracaj” (przeciąganie bryły) i kątami w oknie. Ustalenie F-01 jest zamknięte w kodzie od 1.48.1.
+> Wersje 1.47–1.48 z kostką pozostają w historii repozytorium. R-05 (nazwy `paintViewCube` / `viewCube`) jest nieaktualne –
+> nazwy zniknęły razem z kostką. Pozostałe ustalenia bez zmian.
+
 ## Najważniejsze wnioski
 
 1. **Prawa autorskie.** Nie znaleziono kodu skopiowanego z programów CAD ani bibliotek CAD lub geometrii: AutoCAD,
@@ -80,4 +87,5 @@ braku naruszeń.** Kod aplikacji nie był zmieniany.
 ## Gotowość (wstępna, nie jest zgodą prawną)
 
 **CONDITIONAL (warunkowa).** Rynek UE/PL: brak przeszkód zidentyfikowanych w tym zakresie badań – z zastrzeżeniem
-ograniczeń (AUDIT_LIMITATIONS.md). Rynek USA: warunkiem jest R-01, a do 13.11.2026 także R-02.
+ograniczeń (AUDIT_LIMITATIONS.md). Rynek USA: R-01 wykonane w 1.48.1; do 13.11.2026 warunkiem pozostaje R-02 (animacja
+przewracania kartek), a ryzyka P-03 i P-06 wymagają sprawdzenia statusu.
