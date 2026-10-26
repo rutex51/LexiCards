@@ -1963,6 +1963,54 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   ze szkicu bez wyboru rodzaju, grupa „Historia modelu” i „Edytuj szkic” (`restoreSketch` – szkic na miejsce bryły,
   odbity, gdy `sketchMirror`).
 
+## Szkic na ścianie bryły: wycięcie i dodanie (od 1.49)
+
+- **Element**: bryła (podstawowa poza kulą albo ze szkicu) z listą `features` (najwyżej `FEATURE_LIMITS.count` = 30):
+  `{ op: 'cut' | 'add', o, u, v, profile, depth, through?, sketch?, mirror? }`. `o` – punkt ściany (środek szkicu),
+  `u`, `v` – jednostkowe, prostopadłe kierunki szkicu w płaszczyźnie ściany (układ bryły), normalna `featureNormal` =
+  u × v – na zewnątrz. Współrzędne z 10 miejscami po przecinku (płaszczyzna dodania leży na ścianie w granicach błędu
+  rachunku). `cleanFeature` poprawia u i v (normalizacja, Gram–Schmidt), profil – `cleanProfile(…, 'extrude')`, głębokość
+  1–6000, `through` tylko przy wycięciu. Format rysunku 21.
+- **Operacje logiczne** (`js/core/csg.js`, własna implementacja klasycznej metody drzew BSP – podział przestrzeni
+  płaszczyznami ścian): wielościan to lista płaskich wielokątów wypukłych z płaszczyzną (części jednej ściany – wspólny
+  obiekt płaszczyzny). `subtract` i `union` – drzewa z obu brył, przycinanie wielokątów jednej bryły drzewem drugiej
+  (`clipTo`), odwracanie (`invert`); bez rekurencji (głębokie drzewa); płaszczyzna podziału – z kilku kandydatów ta,
+  która przecina najmniej wielokątów; wielokąty z dala od obrysu bryły tnącej nie są dzielone. `meshPolygons` – ściany
+  siatki: wypukłe bez otworów – same, inne – trapezy w pasach między wysokościami wierzchołków (`convexParts`).
+  `toMesh` – z powrotem siatka: wierzchołki sklejone (0,002), części jednej płaszczyzny połączone (krawędzie przeciwne się
+  znoszą; T-złącza w płaszczyźnie uzupełnione), pętle obrysów i otworów (kilka wyjść z punktu – pierwsze zgodnie ze
+  wskazówkami zegara), bez punktów pośrednich na prostych i kolców, bez szczelin węższych niż 0,01; T-złącza między
+  ścianami uzupełnione (każda krawędź – dwie ściany); krawędzie z jedną ścianą na jednej prostej – `seam` (rysowane jak
+  wspólna krawędź). `meshVolume` – objętość (testy).
+- **Siatka bryły z operacjami** (`featureMesh`, `solidShape`): bryła bazowa (`primitiveMesh` – siatka podstawowa w postaci
+  pętli z obrysem na zewnątrz; ze szkicu – `modelMesh`, kilka wysp – najpierw suma), potem po kolei operacje
+  (`applyFeature`): każda wyspa profilu jako graniastosłup wzdłuż normalnej – dodanie od 0 do `depth` (suma), wycięcie od
+  `−depth` (na wylot – grubość bryły pod ścianą + 1) do `CUT_MARGIN` nad ścianą (różnica). Wielokąty po każdej operacji
+  zapamiętane (`featureSoup`, klucz – bryła bazowa i operacje) – przeciąganie głębokości ostatniej liczy tylko ją.
+  Rysowanie – `modelGeometry` z tą siatką (krawędzie niewidoczne z zasłaniania, bufor głębokości); osie i wymiary –
+  z bryły bazowej.
+- **Ściana i widok** (`faceAt`, `faceView`): ściana pod punktem – najbliższa patrzącemu spośród zwróconych do niego
+  (obrys na stronie, reguła parzystości); widok prosto na ścianę – ściana boczna albo pochyła: oś Z (y bryły) w górę
+  ekranu, wierzch i spód: najbliższa oś bryły w ścianie w górę ekranu. `sketchFrame` – bryła stoi ścianą do patrzącego
+  (normalna w granicach 1e−6), szkic choć częściowo na ścianie (punkt szkicu w ścianie albo wierzchołek ściany w szkicu);
+  kilka ścian – najbliższa patrzącemu; u – kierunek „w prawo ekranu” rzutowany na ścianę, o – środek szkicu na
+  płaszczyźnie ściany; `behind` – grubość bryły pod ścianą. `newFeature` – głębokość na start; `featureView` – izometria
+  (z ośmiu), w której ściana jest najlepiej widoczna; `featureQuat` – widok prosto na szkic operacji (wiersze macierzy:
+  u, v, normalna).
+- **Przesuwanie za ścianami** (`followFaces`): po zmianie wymiarów (ta sama liczba ścian bryły bazowej) albo głębokości
+  ściany o tej samej normalnej i nowej odległości – „przesunięte płaszczyzny”; operacja leżąca na takiej płaszczyźnie
+  idzie o tyle samo wzdłuż normalnej, a koniec każdej operacji (wierzch dodania, dno wycięcia) to kolejna płaszczyzna.
+- **Przekształcenia**: `mirrorSolid` – o i v odbite (x → −x), u odbite i odwrócone, profil x → −x (układ dalej
+  prawoskrętny), `mirror` przy szkicu; `scaleSolid` – o, profil, głębokość; `scaleStroke` (transform.js) – szkice operacji.
+- **Edytor**: przycisk **Szkic na ścianie** (`startPointPick('face')`, podświetlenie ściany pod myszą – `faceHover`,
+  dotknięcie – `animateSolid` do `faceView`), **Wytnij z bryły** / **Dodaj do bryły** (`featureTargetOf` – bryła
+  zaznaczona razem z kształtami albo najwyżej leżąca bryła, dla której `sketchFrame` się udaje; `createFeature` – kształty
+  znikają (szkic operacji względem środka), bryła z nową operacją, `featureView`). Uchwyt `extent` dla brył z operacjami
+  – `featureHandle`: od środka szkicu na ścianie wzdłuż normalnej do końca ostatniej operacji (na wylot – wyjście),
+  przeciąganie zmienia `depth` (zdejmuje `through`). Okno `editSolid`: historia z operacjami (głębokość, **Na wylot**,
+  **Usuń** / **Przywróć**, **Edytuj szkic** ostatniej – `restoreFeatureSketch`), bez wyboru rodzaju; zapis –
+  `followFaces` z numerami zachowanych operacji.
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).
@@ -2055,6 +2103,8 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   schematu blokowego, łącznik i jego przebieg, długość linii, tory, symbole i oś czasu VSM, legenda wad, ich DXF; od 1.47
   bryły – dane, kąty i kwaterniony, obrót z przeciągnięcia, rzut z krawędziami niewidocznymi, wymiary, przekształcenia, DXF;
   od 1.48.1 układ osi bryły – kierunki w widokach, kolory, kolejność; od 1.48.2 Z do góry i szkic na płaszczyźnie XY;
+  od 1.49 operacje logiczne (objętości, siatki szczelne, scalanie ścian), ściana i widok na nią, wycięcie i dodanie,
+  dane, odbicie, skala, przesuwanie za ścianami, rozkład, rzuty i DXF brył z operacjami;
   od 1.48 bryły ze szkicu – profil z kształtów i oś, siatki zamknięte, krawędzie niewidoczne brył wklęsłych, ściany
   z płaszczyznami, wymiary, odbicie i skala z profilem, rzuty 2D, DXF),
   układ wzoru na płótnie, spójność plików wydania.

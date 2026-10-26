@@ -7570,6 +7570,12 @@ button.drawing__pill .icon { color: var(--text-2); }
 /* Od 1.48: historia bryły ze szkicu – wiersz z poleceniem. */
 .drawing__solid-history { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; }
 .drawing__solid-history + .drawing__solid-history { border-top: 1px solid var(--separator); }
+/* Operacje na ścianach (od 1.49): wiersz historii, pod nim głębokość i „Na wylot”; usunięta – przekreślona. */
+.drawing__solid-feature { border-top: 1px solid var(--separator); }
+.drawing__solid-feature .drawing__solid-grid { padding-top: 0; align-items: center; }
+.drawing__solid-feature-actions { display: flex; gap: 4px; }
+.drawing__solid-feature--removed .drawing__solid-history > span { text-decoration: line-through; color: var(--text-secondary); }
+.drawing__solid-feature--removed .drawing__solid-grid { display: none; }
 @media (max-width: 699px) {
   .drawing__solid-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

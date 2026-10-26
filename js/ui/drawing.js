@@ -75,8 +75,9 @@ import {
 import { COLUMN_DEFAULTS, LAYOUT_KINDS, LAYOUT_LABELS, MATRIX_DEFAULT, cleanLayout } from '../core/page-layouts.js';
 import { paintDiagram, paintPageLayout } from './drawing-diagrams.js';
 import {
-  SOLID_EDGES, SOLID_EDGE_LABELS, SOLID_FIELDS, SOLID_KINDS, SOLID_LABELS, SOLID_LIMITS, SOLID_LINE_LABELS, SOLID_LINE_WIDTHS, SOLID_VIEWS, cleanSolid, cleanSolidDims,
-  fromSketch, hasAxis, isModel, newModel, newSolid, orbitQuat, profileFromShapes, projectionShapes, quatFromAngles, quatMatrix, quatSlerp, scaleSolid, shapeLoop,
+  FEATURE_LABELS, FEATURE_LIMITS, SOLID_EDGES, SOLID_EDGE_LABELS, SOLID_FIELDS, SOLID_KINDS, SOLID_LABELS, SOLID_LIMITS, SOLID_LINE_LABELS, SOLID_LINE_WIDTHS, SOLID_VIEWS,
+  cleanSolid, cleanSolidDims, faceAt, faceView, featureBehind, featureNormal, featureQuat, featureView, followFaces, fromSketch, hasAxis, hasFeatures, isModel,
+  newFeature, newModel, newSolid, orbitQuat, profileFromShapes, projectionShapes, quatFromAngles, quatMatrix, quatSlerp, scaleSolid, shapeLoop, sketchFrame,
   solidAngles, solidBox, solidLabel, solidProjections, solidView, viewQuat, withQuat, PROJECTION_GAP
 } from '../core/solids.js';
 import { AXES_GAP, AXES_RADIUS, paintSolid, paintSolidAxes, solidAxes } from './drawing-solids.js';
@@ -892,6 +893,15 @@ export function openDrawingEditor({
     const revolveButton = selectionButton('drawing-selection-revolve', 'revolve', 'Obróć wokół osi',
       'Obróć wokół osi – bryła obrotowa z profilu; oś – zaznaczony odcinek albo prosta (bez niej – pozioma linia pod szkicem)', () => createModel('revolve'));
     const projectButton = selectionButton('drawing-selection-projections', 'projections', 'Rzuty', 'Rzuty 2D – przód, góra i lewy bok (metoda europejska) jako linie do wymiarowania', () => projectSolid());
+    // Od 1.49: szkic na ścianie bryły – dotknięta ściana prosto do patrzącego; zamknięte kształty na niej wycinają albo
+    // dodają materiał prostopadle do ściany.
+    const faceButton = selectionButton('drawing-selection-face', 'solidFace', 'Szkic na ścianie', 'Szkic na ścianie – dotknij płaskiej ściany bryły: widok prosto na nią', () => {
+      if (pointPick?.kind === 'face') cancelPointPick('Bez szkicu na ścianie');
+      else startPointPick('face');
+      updateToolbar();
+    });
+    const cutButton = selectionButton('drawing-selection-cut', 'solidCut', 'Wytnij z bryły', 'Wytnij z bryły – zaznaczone kształty na ścianie wycinają materiał w głąb (prostopadle do ściany)', () => createFeature('cut'));
+    const addButton = selectionButton('drawing-selection-add', 'solidAdd', 'Dodaj do bryły', 'Dodaj do bryły – zaznaczone kształty na ścianie dodają materiał na zewnątrz (prostopadle do ściany)', () => createFeature('add'));
     // Od 1.21: karteczka zwinięta do ikony albo rozwinięta – jednym dotknięciem.
     const collapseButton = selectionButton('drawing-selection-collapse', 'minus', 'Zwiń', 'Zwiń karteczkę do ikony', () => toggleCollapsed());
     // Od 1.17: tekst i wypełnienie zaznaczonego kształtu, „Osadź” – obraz zaznaczenia albo wycinka w notatce.
@@ -943,7 +953,7 @@ export function openDrawingEditor({
     moveButton.setAttribute('aria-pressed', 'false');
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
       // Od 1.41 nazwa i pole z obwodem w jednej kolumnie (na telefonie – pole i obwód w osobnym wierszu).
-      h('span', { class: 'drawing__selection-head' }, selectionCount, selectionMeasure), moveButton, editButton, solidViewButton, orbitButton, projectButton, extrudeButton, revolveButton,
+      h('span', { class: 'drawing__selection-head' }, selectionCount, selectionMeasure), moveButton, editButton, solidViewButton, orbitButton, faceButton, projectButton, extrudeButton, revolveButton, cutButton, addButton,
       collapseButton, shapeTextButton, magnetButton,
       layersSelectionButton, copyButton, duplicateButton,
       whyButton, chainButton, baselineButton, mirrorButton, scaleButton, matchButton, orderButton, arrayButton, explodeButton, embedButton, deleteButton);
@@ -2327,6 +2337,7 @@ export function openDrawingEditor({
           : !active && (tool === 'shape' || symbolPlacing || pointPick) ? [edgeHover] : [];
       for (const snap of snaps) if (snap) paintSnapMarker(ctx, snap);
       if (pointPick?.first) paintAxisPick(ctx);
+      if (pointPick?.kind === 'face' && faceHover) paintFaceHover(ctx);
       if (pointPick && EDIT_END[pointPick.kind]) paintEditPick(ctx);
       if (ruler) paintRuler(ctx);
       if (active?.kind === 'stroke' && active.edge && active.edge.to >= active.edge.from) paintLength(ctx, active.edge);
@@ -2389,10 +2400,16 @@ export function openDrawingEditor({
       solidViewButton.hidden = !solid;
       orbitButton.hidden = !solid;
       projectButton.hidden = !solid;
+      faceButton.hidden = !solid || solid.kind === 'sphere';
+      faceButton.setAttribute('aria-pressed', String(pointPick?.kind === 'face'));
       // Profil bryły (od 1.48): same kształty, co najmniej jeden zamknięty (pozostałe – np. oś obrotu).
       const profile = !snip && selectionKind === 'whole' && items.every(isShape) && items.some(isProfileShape);
       extrudeButton.hidden = !profile;
       revolveButton.hidden = !profile;
+      // Od 1.49: kształty na ścianie bryły – wycięcie i dodanie (bryła zaznaczona razem z nimi albo widziana prosto na ścianę pod nimi).
+      const featureTarget = snip ? null : featureTargetOf(items);
+      cutButton.hidden = !featureTarget;
+      addButton.hidden = !featureTarget;
       orbitButton.setAttribute('aria-pressed', String(orbitMode));
       stage.classList.toggle('drawing__stage--orbit', orbitMode);
       if (sticky) {
@@ -5422,12 +5439,15 @@ export function openDrawingEditor({
     /** Czekanie na dotknięcia: 'mirror' i 'mirror-copy' – dwa punkty osi (first – pierwszy), 'match' – element wzoru stylu. */
     let pointPick = null;
     let axisHover = null;
+    /** Ściana bryły pod myszą przy „Szkic na ścianie” (od 1.49) – obrys na stronie. */
+    let faceHover = null;
     const PICK_HINTS = {
       mirror: ['Odbicie: dotknij pierwszego punktu osi (Esc – bez odbicia)', 'Odbicie: dotknij drugiego punktu osi (Esc – bez odbicia)'],
       'mirror-copy': ['Kopia odbita: dotknij pierwszego punktu osi (Esc – bez kopii)', 'Kopia odbita: dotknij drugiego punktu osi (Esc – bez kopii)'],
       match: ['Dotknij elementu, którego styl przenieść na zaznaczone (Esc – bez zmian)'],
       chain: ['Łańcuch: dotknij następnego punktu – wymiar od końca poprzedniego (Esc – koniec)'],
-      baseline: ['Od bazy: dotknij następnego punktu – wymiar od początku bazowego, piętro dalej (Esc – koniec)']
+      baseline: ['Od bazy: dotknij następnego punktu – wymiar od początku bazowego, piętro dalej (Esc – koniec)'],
+      face: ['Szkic na ścianie: dotknij płaskiej ściany bryły – bryła stanie tą ścianą do Ciebie (Esc – bez zmian)']
     };
     /** Podpowiedź wyboru – zostaje do końca wyboru (bez znikania po kilku sekundach). */
     function showPickHint() {
@@ -5446,6 +5466,7 @@ export function openDrawingEditor({
     function cancelPointPick(message = null) {
       pointPick = null;
       axisHover = null;
+      faceHover = null;
       edgeHover = null;
       editHover = null;
       if (message) flash(message);
@@ -5711,6 +5732,19 @@ export function openDrawingEditor({
         addLinkedDim(point, event);
         return;
       }
+      if (pointPick.kind === 'face') {
+        // Od 1.49: ściana zaznaczonej bryły pod palcem – bryła obraca się, aż ściana stoi prosto do patrzącego.
+        const [solid] = selection;
+        const face = solid?.tool === 'solid' ? faceAt(solid, point) : null;
+        if (!face) {
+          flash('Tu nie ma ściany zaznaczonej bryły – dotknij jej płaskiej ściany (Esc – bez zmian)');
+          setTimeout(() => { if (pointPick) showPickHint(); }, 2500);
+          return;
+        }
+        cancelPointPick('Narysuj na ścianie zamknięte kształty (okrąg, prostokąt…) i wybierz „Wytnij z bryły” albo „Dodaj do bryły”');
+        animateSolid(solid, faceView(solid, face.normal));
+        return;
+      }
       if (pointPick.kind === 'match') {
         const shown = shownStrokes();
         const [index] = strokesAt(shown, point.x, point.y, HANDLE_HIT / view.scale);
@@ -5759,6 +5793,21 @@ export function openDrawingEditor({
       requestRender();
     }
     /** Oś odbicia w trakcie wyboru: pierwszy punkt i prosta przez punkt pod wskaźnikiem (przerywana, przez całą stronę). */
+    /** Ściana pod myszą przy „Szkic na ścianie” – półprzezroczysta, z obrysem. */
+    function paintFaceHover(ctx) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 88, 190, 0.18)';
+      ctx.strokeStyle = 'rgba(0, 88, 190, 0.9)';
+      ctx.lineWidth = 2 / view.scale;
+      ctx.beginPath();
+      for (const loop of faceHover) {
+        loop.forEach(([x, y], index) => (index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+        ctx.closePath();
+      }
+      ctx.fill('evenodd');
+      ctx.stroke();
+      ctx.restore();
+    }
     function paintAxisPick(ctx) {
       const { first } = pointPick;
       ctx.save();
@@ -6596,6 +6645,102 @@ export function openDrawingEditor({
       requestRender();
       flash('Szkic na kartce – popraw go i wybierz „Wyciągnij” albo „Obróć wokół osi”');
     }
+    // ---- szkic na ścianie bryły: wycięcie i dodanie (od 1.49)
+    /**
+     * Bryła, na której ścianie leżą zaznaczone zamknięte kształty: zaznaczona razem z nimi (wtedy przyciski są zawsze, a gdy
+     * bryła nie stoi ścianą do patrzącego – komunikat) albo, bez niej, najwyżej leżąca bryła widziana prosto na ścianę pod kształtami.
+     */
+    function featureTargetOf(items) {
+      if (selectionKind !== 'whole' || !items.some(isProfileShape)) return null;
+      const solids = items.filter((stroke) => stroke.tool === 'solid');
+      if (solids.length > 1 || items.some((stroke) => stroke.tool !== 'solid' && !isShape(stroke))) return null;
+      if (solids.length === 1) return solids[0].kind === 'sphere' ? null : solids[0];
+      const made = profileFromShapes(items.filter(isProfileShape), 'extrude');
+      if (made.error) return null;
+      const loops = items.filter(isProfileShape).map(shapeLoop).filter(Boolean);
+      const shown = shownStrokes();
+      for (let index = shown.length - 1; index >= 0; index -= 1) {
+        const stroke = shown[index];
+        if (stroke.tool === 'solid' && stroke.kind !== 'sphere' && !sketchFrame(stroke, loops, made.center).error) return stroke;
+      }
+      return null;
+    }
+    /**
+     * Wycięcie albo dodanie z zaznaczonych kształtów na ścianie bryły: profil (otwory – kształty w kształtach) wyciągnięty
+     * prostopadle do ściany; kształty znikają z kartki i zostają w operacji jako jej szkic. Bryła przechodzi do izometrii,
+     * w której widać tę ścianę; niebieski uchwyt zmienia głębokość (wysokość).
+     */
+    function createFeature(op) {
+      const items = orderedSelection();
+      const target = featureTargetOf(items);
+      if (!target) return;
+      const shapes = items.filter(isProfileShape);
+      const made = profileFromShapes(shapes, 'extrude');
+      if (made.error) {
+        flash(made.error);
+        return;
+      }
+      const frame = sketchFrame(target, shapes.map(shapeLoop).filter(Boolean), made.center);
+      if (frame.error) {
+        flash(frame.error);
+        return;
+      }
+      if ((target.features?.length ?? 0) >= FEATURE_LIMITS.count) {
+        flash(`Najwyżej ${FEATURE_LIMITS.count} operacji na jednej bryle`);
+        return;
+      }
+      const sketch = items.filter((stroke) => stroke !== target).map((stroke) => {
+        const copy = translateStroke(stroke, -made.center.x, -made.center.y);
+        delete copy.id;
+        delete copy.attach;
+        delete copy.layers;
+        return copy;
+      });
+      const feature = newFeature(op, frame, made.profile, sketch);
+      const next = cleanSolid({ ...target, features: [...(target.features ?? []), feature] }, drawing.width, drawing.height);
+      if (!next || (next.features?.length ?? 0) !== (target.features?.length ?? 0) + 1) return;
+      const kept = { ...next, ...(target.id ? { id: target.id } : {}), ...(target.layers ? { layers: target.layers } : {}) };
+      history.begin();
+      drawing.strokes[drawing.strokes.indexOf(target)] = kept;
+      for (let index = drawing.strokes.length - 1; index >= 0; index -= 1) {
+        if (items.includes(drawing.strokes[index]) && drawing.strokes[index] !== target) drawing.strokes.splice(index, 1);
+      }
+      commitStep();
+      changed = true;
+      selectOnly(kept);
+      flash(op === 'cut' ? 'Wycięcie – niebieski uchwyt zmienia głębokość, w oknie bryły – na wylot' : 'Dodanie – niebieski uchwyt zmienia wysokość, dotknięcie bryły – okno');
+      animateSolid(kept, featureView(featureNormal(feature)));
+    }
+    /**
+     * „Edytuj szkic” ostatniej operacji: operacja znika, bryła staje ścianą do patrzącego (jak przy rysowaniu szkicu), a szkic
+     * wraca na ścianę zaznaczony – poprawisz go i wytniesz albo dodasz jeszcze raz.
+     */
+    function restoreFeatureSketch(element) {
+      const feature = element.features?.at(-1);
+      if (!feature?.sketch?.length) return;
+      const q = featureQuat(feature);
+      const m = quatMatrix(q);
+      const at = { x: element.x + m[0] * feature.o[0] + m[1] * feature.o[1] + m[2] * feature.o[2], y: element.y - (m[3] * feature.o[0] + m[4] * feature.o[1] + m[5] * feature.o[2]) };
+      let shapes = feature.sketch.map((shape) => translateStroke(shape, at.x, at.y));
+      // Bryła odbita lustrzanie – szkic też (względem pionu przez środek szkicu).
+      if (feature.mirror) shapes = shapes.map((shape) => mirrorAcross(shape, at, { x: at.x, y: at.y + 1 }));
+      const rest = element.features.slice(0, -1);
+      const next = { ...element, q };
+      if (rest.length > 0) next.features = rest;
+      else delete next.features;
+      const index = drawing.strokes.indexOf(element);
+      if (index < 0) return;
+      history.begin();
+      drawing.strokes.splice(index, 1, next, ...shapes.map(onActiveLayer));
+      commitStep();
+      changed = true;
+      if (tool !== 'select') setTool('select');
+      selection = new Set(shapes);
+      selectionKind = 'whole';
+      updateToolbar();
+      requestRender();
+      flash('Szkic na ścianie – popraw go i wybierz „Wytnij z bryły” albo „Dodaj do bryły”');
+    }
     /** Rzuty 2D zaznaczonej bryły (przód, góra, lewy bok) obok niej – zwykłe kształty, zaznaczone (przesuniesz je razem). */
     function projectSolid() {
       const [only] = selection;
@@ -6622,6 +6767,7 @@ export function openDrawingEditor({
     }
     /** Uchwyt długości wyciągnięcia albo kąta obrotu (strona): punkt uchwytu, kierunek przeciągania na stronie (na jednostkę). */
     function extentHandle(element) {
+      if (hasFeatures(element)) return featureHandle(element);
       const m = quatMatrix(element.q);
       // Punkty w układzie szkicu (x, y – profil, z – wyciągnięcie / obrót) → bryła (od 1.48.2 szkic na XY) → strona.
       const at = (sketchPoint) => {
@@ -6646,6 +6792,28 @@ export function openDrawingEditor({
       // Koniec łuku biegnie prawie na patrzącego – kąt z przeciągnięcia skakałby; bez uchwytu (okno albo inny widok).
       if (Math.hypot(along.x, along.y) < far[1] * 0.2) return null;
       return { x: tip.x, y: tip.y, base: tip, along };
+    }
+    /**
+     * Uchwyt głębokości ostatniej operacji na ścianie (od 1.49): od środka szkicu na ścianie wzdłuż normalnej – dodanie na
+     * zewnątrz (wierzch), wycięcie w głąb (dno; na wylot – wyjście po drugiej stronie); przeciąganie w tę stronę – głębiej.
+     */
+    function featureHandle(element) {
+      const index = element.features.length - 1;
+      const feature = element.features[index];
+      const m = quatMatrix(element.q);
+      const n = featureNormal(feature);
+      const at = (point) => ({ x: element.x + m[0] * point[0] + m[1] * point[1] + m[2] * point[2], y: element.y - (m[3] * point[0] + m[4] * point[1] + m[5] * point[2]) });
+      const points = feature.profile.islands.flatMap((island) => island.outer);
+      const [cx, cy] = [(Math.min(...points.map(([x]) => x)) + Math.max(...points.map(([x]) => x))) / 2, (Math.min(...points.map(([, y]) => y)) + Math.max(...points.map(([, y]) => y))) / 2];
+      const sign = feature.op === 'add' ? 1 : -1;
+      const depth = feature.op === 'cut' && feature.through ? featureBehind(element, index) : feature.depth;
+      const point = (z) => [0, 1, 2].map((axis) => feature.o[axis] + feature.u[axis] * cx + feature.v[axis] * cy + n[axis] * z);
+      const [base, end, ahead] = [at(point(0)), at(point(sign * depth)), at(point(sign * (depth + 1)))];
+      const along = { x: ahead.x - end.x, y: ahead.y - end.y };
+      const length = Math.hypot(along.x, along.y);
+      if (length < 0.15) return null;
+      const reach = 36 / view.scale;
+      return { x: end.x + (along.x / length) * reach, y: end.y + (along.y / length) * reach, base, along, depth };
     }
     /** Płynne przejście bryły do położenia `q` (ok. 0,35 s) – jeden krok cofania. */
     function animateSolid(element, q) {
@@ -6693,6 +6861,8 @@ export function openDrawingEditor({
       const shown = (key, value) => (key === 'n' ? String(value) : key === 'angle' ? formatNumber(value) : formatNumber(toScaleLength(value, drawing.scale) * factor));
       const model = isModel(element);
       const holes = model ? element.profile.islands.reduce((sum, island) => sum + island.holes.length, 0) : 0;
+      // Od 1.49: operacje na ścianach – głębokość, na wylot, usunięcie; „Edytuj szkic” – przy ostatniej.
+      const features = element.features ?? [];
       const units = (value) => fromScaleLength(value / factor, drawing.scale);
       const width = SOLID_LINE_WIDTHS.reduce((best, value, index) => (Math.abs(value - element.size) < Math.abs(SOLID_LINE_WIDTHS[best] - element.size) ? index : best), 0);
       const choice = { size: width, color: inkChoice(element.color) };
@@ -6704,7 +6874,8 @@ export function openDrawingEditor({
         dims: Object.fromEntries((model ? [element.kind] : SOLID_KINDS).map((kind) => {
           const values = kind === element.kind ? element.dims : cleanSolidDims(kind, {});
           return [kind, Object.fromEntries(SOLID_FIELDS[kind].map(([key]) => [key, shown(key, values[key])]))];
-        }))
+        })),
+        features: features.map((feature) => ({ depth: shown('h', feature.depth), through: feature.through === true, removed: false }))
       };
       const dimsBox = h('div', { class: 'drawing__solid-grid' });
       const axesRow = h('div', { class: 'drawing__settings-switch' }, toggle({ checked: draft.axes, label: 'Osie symetrii', onChange: (checked) => { draft.axes = checked; } }));
@@ -6745,23 +6916,67 @@ export function openDrawingEditor({
       }, view.label));
       let saved = false;
       let restore = false;
+      let restoreFeature = false;
+      const first = model ? 3 : 2;
+      const featureRows = features.map((feature, index) => {
+        const row = draft.features[index];
+        const input = textInput({ value: row.depth, testID: `drawing-solid-feature-depth-${index}`, onInput: (value) => { row.depth = value; } });
+        input.inputMode = 'decimal';
+        input.disabled = row.through;
+        const throughSwitch = feature.op === 'cut' ? toggle({
+          checked: row.through, label: 'Na wylot',
+          onChange: (checked) => {
+            row.through = checked;
+            input.disabled = checked;
+          }
+        }) : null;
+        if (throughSwitch) throughSwitch.querySelector('input').dataset.testid = `drawing-solid-feature-through-${index}`;
+        const through = throughSwitch ? h('div', { class: 'drawing__settings-switch' }, throughSwitch) : null;
+        const box = h('div', { class: 'drawing__solid-feature', dataset: { testid: `drawing-solid-feature-${index}` } });
+        const remove = h('button', {
+          type: 'button', class: 'button button--plain', dataset: { testid: `drawing-solid-feature-remove-${index}` },
+          onClick: () => {
+            row.removed = !row.removed;
+            box.classList.toggle('drawing__solid-feature--removed', row.removed);
+            remove.textContent = row.removed ? 'Przywróć' : 'Usuń';
+          }
+        }, 'Usuń');
+        const sketchButton = index === features.length - 1 && feature.sketch?.length ? h('button', {
+          type: 'button', class: 'button button--plain', dataset: { testid: 'drawing-solid-feature-sketch' },
+          onClick: () => {
+            restoreFeature = true;
+            sheet.close();
+          }
+        }, 'Edytuj szkic') : null;
+        const holesCount = feature.profile.islands.reduce((sum, island) => sum + island.holes.length, 0);
+        replaceChildren(box,
+          h('div', { class: 'drawing__solid-history' },
+            h('span', null, `${first + index}. ${FEATURE_LABELS[feature.op]} – ${plural(feature.profile.islands.length, 'obrys', 'obrysy', 'obrysów')}${holesCount > 0 ? `, ${plural(holesCount, 'otwór', 'otwory', 'otworów')}` : ''}`),
+            h('span', { class: 'drawing__solid-feature-actions' }, sketchButton, remove)),
+          h('div', { class: 'drawing__solid-grid' }, field(`${feature.op === 'add' ? 'Wysokość' : 'Głębokość'} (${unit})`, input), through));
+        return box;
+      });
       const sheet = openFormSheet({
         title: solidLabel(element),
         submitLabel: 'Zapisz',
         build: () => [
-          model ? null : group({ title: 'Rodzaj' }, h('div', { class: 'drawing__solid-kinds', role: 'group', 'aria-label': 'Rodzaj bryły' }, kindButtons)),
-          // Od 1.48: historia bryły ze szkicu – szkic (do poprawy na kartce) i operacja.
-          model ? group({ title: 'Historia modelu' },
-            h('div', { class: 'drawing__solid-history' },
+          model || features.length > 0 ? null : group({ title: 'Rodzaj' }, h('div', { class: 'drawing__solid-kinds', role: 'group', 'aria-label': 'Rodzaj bryły' }, kindButtons)),
+          // Od 1.48: historia bryły ze szkicu – szkic (do poprawy na kartce) i operacja; od 1.49 – operacje na ścianach.
+          model || features.length > 0 ? group({ title: 'Historia modelu' },
+            model ? h('div', { class: 'drawing__solid-history' },
               h('span', null, `1. Szkic – ${plural(element.sketch?.length ?? 0, 'kształt', 'kształty', 'kształtów')}${holes > 0 ? `, ${plural(holes, 'otwór', 'otwory', 'otworów')}` : ''}`),
-              element.sketch?.length ? h('button', {
+              // Szkic bryły z operacjami na ścianach – dopiero po ich usunięciu (operacje leżą na jej ścianach).
+              element.sketch?.length && features.length === 0 ? h('button', {
                 type: 'button', class: 'button button--plain', dataset: { testid: 'drawing-solid-sketch' },
                 onClick: () => {
                   restore = true;
                   sheet.close();
                 }
-              }, 'Edytuj szkic') : null),
-            h('div', { class: 'drawing__solid-history' }, h('span', null, `2. ${element.kind === 'extrude' ? 'Wyciągnięcie' : 'Obrót wokół osi'}`))) : null,
+              }, 'Edytuj szkic') : null) : null,
+            h('div', { class: 'drawing__solid-history' }, h('span', null, model ? `2. ${element.kind === 'extrude' ? 'Wyciągnięcie' : 'Obrót wokół osi'}` : `1. ${SOLID_LABELS[element.kind]}`)),
+            ...featureRows,
+            features.length > 0 ? h('p', { class: 'field__hint' }, 'Wycięcia i dodania leżą na ścianach – zmiana wymiarów albo głębokości przesuwa operacje narysowane na przesuniętych ścianach.'
+              + (model && element.sketch?.length ? ' Szkic bryły poprawisz po usunięciu operacji.' : '')) : null) : null,
           group({ title: model ? 'Operacja' : 'Wymiary' }, dimsBox),
           group({ title: 'Położenie' }, h('div', { class: 'drawing__solid-grid' }, yaw.field, pitch.field, roll.field),
             h('div', { class: 'drawing__solid-views', role: 'group', 'aria-label': 'Gotowe widoki' }, viewButtons)),
@@ -6783,9 +6998,13 @@ export function openDrawingEditor({
           return true;
         },
         onClose: () => {
-          // Od 1.48: „Edytuj szkic” – szkic na kartce zamiast bryły.
+          // Od 1.48: „Edytuj szkic” – szkic na kartce zamiast bryły; od 1.49 – szkic ostatniej operacji na ścianie.
           if (restore) {
             restoreSketch(element);
+            return;
+          }
+          if (restoreFeature) {
+            restoreFeatureSketch(element);
             return;
           }
           if (!saved) return;
@@ -6798,13 +7017,27 @@ export function openDrawingEditor({
             const value = number(draft.dims[draft.kind][key], null);
             return [key, value === null ? old[key] : key === 'n' || key === 'angle' ? value : units(value)];
           }));
+          // Operacje (od 1.49): głębokość, na wylot, usunięte; pairs – numer każdej pozostałej w bryle sprzed zmiany.
+          const pairs = [];
+          const nextFeatures = [];
+          features.forEach((feature, index) => {
+            const row = draft.features[index];
+            if (row.removed) return;
+            const value = number(row.depth, null);
+            const kept = { ...feature, depth: value === null ? feature.depth : units(value) };
+            if (row.through) kept.through = true;
+            else delete kept.through;
+            nextFeatures.push(kept);
+            pairs.push(index);
+          });
           const next = cleanSolid({
             ...element, kind: draft.kind, dims,
             q: quatFromAngles(number(draft.angles.yaw, angles.yaw), number(draft.angles.pitch, angles.pitch), number(draft.angles.roll, angles.roll)),
-            color: inkHex(choice.color), size: SOLID_LINE_WIDTHS[choice.size], edges: draft.edges, shade: draft.shade, showDims: draft.showDims, axes: draft.axes
+            color: inkHex(choice.color), size: SOLID_LINE_WIDTHS[choice.size], edges: draft.edges, shade: draft.shade, showDims: draft.showDims, axes: draft.axes,
+            features: nextFeatures
           }, drawing.width, drawing.height);
           if (!next) return;
-          putSolid(element, next);
+          putSolid(element, followFaces(element, next, pairs));
           flash('Bryła zmieniona');
         }
       });
@@ -7591,8 +7824,8 @@ export function openDrawingEditor({
       // Bryła (od 1.47): narożnik – wielkość (proporcjonalnie); układ osi obok ramki (od 1.48.1) nie jest uchwytem.
       if (element.tool === 'solid') {
         const box = solidBox(element);
-        // Od 1.48: bryła ze szkicu – uchwyt długości wyciągnięcia albo kąta obrotu.
-        const extent = isModel(element) ? extentHandle(element) : null;
+        // Od 1.48: bryła ze szkicu – uchwyt długości wyciągnięcia albo kąta obrotu; od 1.49 – głębokość ostatniej operacji.
+        const extent = isModel(element) || hasFeatures(element) ? extentHandle(element) : null;
         return [{ id: 'resize', x: box.x + box.width, y: box.y + box.height }, ...(extent ? [{ id: 'extent', x: extent.x, y: extent.y }] : [])];
       }
       // Symbol metrologiczny (od 1.22.1): bez narożnika – tylko koniec strzałki albo wierzchołek chropowatości.
@@ -8585,6 +8818,16 @@ export function openDrawingEditor({
             const move = { x: point.x - active.start.x, y: point.y - active.start.y };
             const units = (move.x * extent.along.x + move.y * extent.along.y) / (extent.along.x ** 2 + extent.along.y ** 2);
             active.moved = true;
+            if (hasFeatures(original)) {
+              // Od 1.49: głębokość ostatniej operacji (wycięcie na wylot – od grubości bryły, potem zwykła głębokość).
+              const feature = original.features.at(-1);
+              const depth = Math.round(Math.min(SOLID_LIMITS.max, Math.max(FEATURE_LIMITS.min, extent.depth + units)) * 10) / 10;
+              const deeper = { ...feature, depth };
+              delete deeper.through;
+              active.preview = { ...original, features: [...original.features.slice(0, -1), deeper] };
+              requestLive();
+              break;
+            }
             if (original.kind === 'extrude') {
               const h = Math.round(Math.min(SOLID_LIMITS.max, Math.max(SOLID_LIMITS.min, original.dims.h + units)) * 10) / 10;
               const shift = (h - original.dims.h) / 2;
@@ -9011,6 +9254,10 @@ export function openDrawingEditor({
         } else if (pointPick && EDIT_END[pointPick.kind]) {
           editHover = editHoverAt(toDrawing(event));
           requestLive();
+        } else if (pointPick?.kind === 'face') {
+          const [solid] = selection;
+          faceHover = solid?.tool === 'solid' ? faceAt(solid, toDrawing(event))?.loops ?? null : null;
+          requestLive();
         } else if (pointPick && pointPick.kind !== 'match') {
           // Oś odbicia pod myszą; łańcuch i od bazy (od 1.42) – miejsce przyciągnięcia.
           const at = toDrawing(event);
@@ -9206,7 +9453,7 @@ export function openDrawingEditor({
       }
       if (event.key === 'Escape' && pointPick) {
         event.preventDefault();
-        cancelPointPick({ match: 'Bez przenoszenia stylu', chain: 'Koniec wymiarów łańcuchowych', baseline: 'Koniec wymiarów od bazy', ...EDIT_END }[pointPick.kind] ?? 'Bez odbicia');
+        cancelPointPick({ match: 'Bez przenoszenia stylu', chain: 'Koniec wymiarów łańcuchowych', baseline: 'Koniec wymiarów od bazy', face: 'Bez szkicu na ścianie', ...EDIT_END }[pointPick.kind] ?? 'Bez odbicia');
         updateToolbar();
         return;
       }

@@ -11946,6 +11946,300 @@ test('rysunek 1.48.2: osie jak w rysunku technicznym – Z do góry, szkic na p�
   assert.equal(solidView(solid.q), 'top');
 }, { device: DESKTOP });
 
+test('rysunek 1.49: szkic na ścianie bryły – „Szkic na ścianie” (dotknięta ściana do patrzącego), okrąg → „Wytnij z bryły”, uchwyt głębokości, na wylot w oknie, prostokąt → „Dodaj do bryły”, rzuty, „Edytuj szkic” operacji, zapis i DXF (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Ściana</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  const button = (name) => editor.locator(`[data-testid=drawing-selection-${name}]`);
+  const closed = () => waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+  const frame = await pageFrame(page);
+  const shot = async (name) => {
+    await nextFrames(page);
+    await page.screenshot({ path: path.join(OUTPUT, `rysunek-149-${name}.png`) });
+  };
+  const drag = async (from, to, steps = 8) => {
+    await page.mouse.move(...from);
+    await page.mouse.down();
+    await page.mouse.move(...to, { steps });
+    await page.mouse.up();
+  };
+  /** Środek zaznaczonej bryły (ekran i strona), końce osi X, Y, Z i uchwyt głębokości (ekran). */
+  const where = async () => {
+    await waitUntil(async () => Boolean(await canvas.getAttribute('data-axes')), 'Układ osi');
+    const box = await canvas.boundingBox();
+    const n = (await canvas.getAttribute('data-axes')).split(',').map(Number);
+    const at = (index) => [box.x + n[index], box.y + n[index + 1]];
+    const extent = await canvas.getAttribute('data-extent');
+    const [ex, ey] = extent ? extent.split(',').map(Number) : [NaN, NaN];
+    const solid = at(2);
+    return { axes: at(0), solid, x: at(4), y: at(6), z: at(8), extent: extent ? [box.x + ex, box.y + ey] : null, page: [(solid[0] - frame.x - frame.left) / frame.scale, (solid[1] - frame.y - frame.top) / frame.scale] };
+  };
+  const settled = () => page.waitForTimeout(600);
+  const openSolid = async () => {
+    await page.mouse.click(...(await where()).solid);
+    await expectText(sheet(page).locator('.sheet__title'), 'Bryła: Prostopadłościan');
+  };
+
+  // Prostopadłościan (izometria) – „Szkic na ścianie”: najechanie podświetla ścianę, dotknięcie wierzchu – widok z góry.
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').click();
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await settled();
+  assert.equal(await button('face').isVisible(), true, 'Szkic na ścianie');
+  assert.equal(await button('cut').isVisible(), false);
+  const iso = await where();
+  await button('face').click();
+  await expectText(notice, 'Szkic na ścianie: dotknij płaskiej ściany bryły');
+  const onTop = [iso.solid[0], iso.solid[1] - 54 * frame.scale];
+  await page.mouse.move(...onTop);
+  await shot('wybor-sciany');
+  await page.mouse.click(...onTop);
+  await expectText(notice, 'Narysuj na ścianie zamknięte kształty');
+  await settled();
+  const top = await where();
+  assert.ok(Math.hypot(top.z[0] - top.axes[0], top.z[1] - top.axes[1]) <= 1.5, `wierzch do patrzącego – Z punktem: ${top.z}`);
+  assert.ok(top.y[0] > top.axes[0] + 20 && Math.abs(top.x[0] - top.axes[0]) <= 1 && top.x[1] > top.axes[1] + 20, `z góry: Y w prawo, X w dół (${top.y} / ${top.x})`);
+
+  // Okrąg ⌀ 80 na wierzchu (z prawej od środka): „Wytnij z bryły” – bryła nie musi być zaznaczona (pod okręgiem).
+  const [px, py] = top.page;
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-ellipse');
+  await page.keyboard.down('Shift');
+  await drag(frame.screen(px + 30, py - 40), frame.screen(px + 110, py + 40));
+  await page.keyboard.up('Shift');
+  await expectText(count, 'Elipsa');
+  assert.equal(await button('cut').isVisible(), true, 'Wytnij z bryły');
+  assert.equal(await button('add').isVisible(), true, 'Dodaj do bryły');
+  assert.equal(await button('extrude').isVisible(), true, 'Wyciągnij zostaje');
+  await shot('szkic-na-scianie');
+  await button('cut').click();
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await expectText(notice, 'Wycięcie – niebieski uchwyt zmienia głębokość');
+  await settled();
+  const cut = await where();
+  assert.ok(cut.extent, 'uchwyt głębokości');
+  assert.ok(cut.extent[1] > cut.solid[1], `uchwyt w głąb – pod środkiem bryły: ${cut.extent} (${cut.solid})`);
+  await shot('wyciecie');
+
+  // Okno: historia (1. Prostopadłościan, 2. Wycięcie), głębokość – połowa wysokości (132 / 2 = 66 jednostek ≈ 1,5 cm).
+  await openSolid();
+  const history = sheet(page).locator('.drawing__solid-history');
+  assert.deepEqual((await history.allTextContents()).map((text) => text.trim()), ['1. Prostopadłościan', '2. Wycięcie – 1 obrysEdytuj szkicUsuń']);
+  assert.equal(await page.locator('[data-testid=drawing-solid-kind-box]').count(), 0, 'z operacjami – bez zmiany rodzaju');
+  const first = Number((await page.locator('[data-testid=drawing-solid-feature-depth-0]').inputValue()).replace(',', '.'));
+  assert.ok(Math.abs(first - 66 / 44) < 0.06, `głębokość ok. 1,5 cm: ${first}`);
+  await sheet(page).getByRole('button', { name: 'Anuluj' }).click();
+  await closed();
+
+  // Uchwyt głębokości przeciągnięty dalej w głąb – głębiej; potem w oknie „Na wylot”.
+  const away = [cut.extent[0] - cut.solid[0], cut.extent[1] - cut.solid[1]];
+  const reach = Math.hypot(...away);
+  await drag(cut.extent, [cut.extent[0] + (away[0] / reach) * 25, cut.extent[1] + (away[1] / reach) * 25]);
+  await openSolid();
+  const deeper = Number((await page.locator('[data-testid=drawing-solid-feature-depth-0]').inputValue()).replace(',', '.'));
+  assert.ok(deeper > first + 0.3, `głębiej po przeciągnięciu: ${deeper} cm`);
+  await page.locator('[data-testid=drawing-solid-feature-through-0]').check({ force: true });
+  assert.equal(await page.locator('[data-testid=drawing-solid-feature-depth-0]').isDisabled(), true, 'na wylot – bez głębokości');
+  await sheetSubmit(page).click();
+  await closed();
+  await settled();
+  await shot('na-wylot');
+
+  // Dodanie: znów wierzch (bryła po zapisie zaznaczona), prostokąt z lewej – „Dodaj do bryły”; uchwyt wysokości nad bryłą.
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await button('face').click();
+  await page.mouse.click((await where()).solid[0] - 20, (await where()).solid[1] - 54 * frame.scale);
+  await settled();
+  const again = await where();
+  const [qx, qy] = again.page;
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  await drag(frame.screen(qx - 110, qy - 50), frame.screen(qx - 20, qy + 50));
+  await expectText(count, 'Prostokąt');
+  await button('add').click();
+  await expectText(notice, 'Dodanie – niebieski uchwyt zmienia wysokość');
+  await settled();
+  const added = await where();
+  assert.ok(added.extent && added.extent[1] < added.solid[1] - 20, `uchwyt wysokości nad bryłą: ${added.extent}`);
+  await page.keyboard.press('Escape');
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  await editor.locator('[data-testid=drawing-hide-ui]').click();
+  await waitUntil(() => notice.isHidden(), 'Komunikat zniknął');
+  await shot('wyciecie-i-dodanie');
+  await editor.locator('[data-testid=drawing-hide-ui]').click();
+
+  // Rzuty: otwór na wylot – okrąg z góry, linie niewidoczne z przodu i z boku.
+  await page.mouse.click(...added.solid);
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await button('projections').click();
+  await expectText(notice, 'Rzuty: przód, góra i lewy bok');
+  await page.keyboard.press('Escape');
+  await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
+  await shot('rzuty');
+
+  // „Edytuj szkic” ostatniej operacji: dodanie znika, bryła staje wierzchem do patrzącego, prostokąt wraca zaznaczony.
+  await page.mouse.click(...added.solid);
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await openSolid();
+  assert.deepEqual((await history.allTextContents()).map((text) => text.trim()), ['1. Prostopadłościan', '2. Wycięcie – 1 obrysUsuń', '3. Dodanie – 1 obrysEdytuj szkicUsuń']);
+  await page.locator('[data-testid=drawing-solid-feature-sketch]').click();
+  await closed();
+  await expectText(count, 'Prostokąt');
+  await expectText(notice, 'Szkic na ścianie – popraw go');
+  assert.equal(await button('add').isVisible(), true, 'szkic na ścianie – znów „Dodaj do bryły”');
+  await button('add').click();
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await settled();
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const strokes = await savedStrokes(page, ids.statements);
+  const [solid] = strokes.filter((stroke) => stroke.tool === 'solid');
+  assert.deepEqual(solid.features.map((feature) => `${feature.op}${feature.through ? '/na wylot' : ''}`), ['cut/na wylot', 'add']);
+  assert.deepEqual(solid.features[0].u.map(Math.round), [1, 0, 0], 'szkic na wierzchu: u wzdłuż x');
+  assert.equal(Math.round(solid.features[0].o[1]), 66, 'o na wierzchu (połowa wysokości 132)');
+  assert.equal(solid.features[1].sketch.length, 1, 'szkic dodania zapisany');
+  assert.equal(strokes.filter((stroke) => stroke.tool === 'shape' && stroke.shape === 'rect').length, 0, 'prostokąt w bryle');
+  assert.ok(strokes.some((stroke) => stroke.tool === 'shape' && stroke.shape === 'ellipse'), 'rzut z góry – okrąg otworu');
+  const { drawingToDxf, parseDxf } = await import('../../js/core/dxf.js');
+  const drawingData = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  const exported = drawingToDxf(drawingData);
+  assert.equal(exported.skipped, 0, 'bryła z operacjami zapisana');
+  assert.ok(parseDxf(exported.text).entities.some((item) => item.linetype === 'DASHED'), 'krawędzie niewidoczne');
+}, { device: DESKTOP });
+
+test('rysunek 1.49 na iPadzie: walec – „Szkic na ścianie” i dotknięcie wierzchu palcem, okrąg → „Dodaj do bryły”, uchwyt wysokości palcem', async ({ open, context }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>iPad</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  const button = (name) => editor.locator(`[data-testid=drawing-selection-${name}]`);
+  const closed = () => waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+  const frame = await pageFrame(page);
+  const where = async () => {
+    await waitUntil(async () => Boolean(await canvas.getAttribute('data-axes')), 'Układ osi');
+    const box = await canvas.boundingBox();
+    const [, , sx, sy] = (await canvas.getAttribute('data-axes')).split(',').map(Number);
+    const extent = await canvas.getAttribute('data-extent');
+    const [ex, ey] = extent ? extent.split(',').map(Number) : [NaN, NaN];
+    const solid = [box.x + sx, box.y + sy];
+    return { solid, extent: extent ? [box.x + ex, box.y + ey] : null, page: [(solid[0] - frame.x - frame.left) / frame.scale, (solid[1] - frame.y - frame.top) / frame.scale] };
+  };
+  const height = async () => {
+    await page.touchscreen.tap(...(await where()).solid);
+    await expectText(sheet(page).locator('.sheet__title'), 'Bryła: Walec');
+    const value = Number((await page.locator('[data-testid=drawing-solid-feature-depth-0]').inputValue()).replace(',', '.'));
+    await sheet(page).getByRole('button', { name: 'Anuluj' }).tap();
+    await closed();
+    return value;
+  };
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-cylinder]').tap();
+  await expectText(count, 'Bryła: Walec');
+  await page.waitForTimeout(500);
+  // Wierzch walca w izometrii – nad środkiem (wysokość 220 → ok. 90 jednostek w górę).
+  const iso = await where();
+  await button('face').tap();
+  await expectText(notice, 'Szkic na ścianie: dotknij płaskiej ściany bryły');
+  await page.touchscreen.tap(iso.solid[0], iso.solid[1] - 90 * frame.scale);
+  await expectText(notice, 'Narysuj na ścianie zamknięte kształty');
+  await page.waitForTimeout(600);
+  const top = await where();
+  // Okrąg ⌀ 60 na środku wierzchu (myszą, jak inne kształty w testach), potem palcem „Dodaj do bryły”.
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-ellipse');
+  await page.keyboard.down('Shift');
+  await page.mouse.move(...frame.screen(top.page[0] - 30, top.page[1] - 30));
+  await page.mouse.down();
+  await page.mouse.move(...frame.screen(top.page[0] + 30, top.page[1] + 30), { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  await expectText(count, 'Elipsa');
+  await button('add').tap();
+  await expectText(notice, 'Dodanie – niebieski uchwyt zmienia wysokość');
+  await page.waitForTimeout(600);
+  const first = await height();
+  assert.ok(Math.abs(first - 30 / 44) < 0.06, `wysokość – połowa średnicy szkicu (ok. 0,7 cm): ${first}`);
+  const { solid, extent } = await where();
+  assert.ok(extent, 'uchwyt wysokości');
+  const away = [extent[0] - solid[0], extent[1] - solid[1]];
+  const reach = Math.hypot(...away);
+  const finger = await touchAt(context, page, ...extent);
+  await finger.move(extent[0] + (away[0] / reach) * 50, extent[1] + (away[1] / reach) * 50);
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-149-ipad-uchwyt.png') });
+  await finger.end();
+  const higher = await height();
+  assert.ok(higher > first + 0.4, `wyżej palcem: ${higher} cm`);
+}, { device: IPAD });
+
+test('rysunek 1.49 na telefonie: „Szkic na ścianie”, „Wytnij z bryły” i „Dodaj do bryły” na pasku zaznaczenia, okno bryły z operacją w szerokości ekranu', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  const button = (name) => editor.locator(`[data-testid=drawing-selection-${name}]`);
+  const frame = await pageFrame(page);
+  const onScreen = async (name) => {
+    await button(name).scrollIntoViewIfNeeded();
+    const box = await button(name).boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 391, `${name} na ekranie`);
+  };
+  const solidAt = async () => {
+    await waitUntil(async () => Boolean(await canvas.getAttribute('data-axes')), 'Układ osi');
+    const box = await canvas.boundingBox();
+    const [, , sx, sy] = (await canvas.getAttribute('data-axes')).split(',').map(Number);
+    return [box.x + sx, box.y + sy];
+  };
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').scrollIntoViewIfNeeded();
+  await editor.locator('[data-testid=drawing-insert-solid-box]').click();
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await page.waitForTimeout(500);
+  await onScreen('face');
+  await button('face').click();
+  const iso = await solidAt();
+  await page.mouse.click(iso[0], iso[1] - 54 * frame.scale);
+  await page.waitForTimeout(600);
+  const top = await solidAt();
+  const [px, py] = [(top[0] - frame.x - frame.left) / frame.scale, (top[1] - frame.y - frame.top) / frame.scale];
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  await page.mouse.move(...frame.screen(px - 60, py - 40));
+  await page.mouse.down();
+  await page.mouse.move(...frame.screen(px + 60, py + 40), { steps: 8 });
+  await page.mouse.up();
+  await expectText(count, 'Prostokąt');
+  await onScreen('cut');
+  await onScreen('add');
+  await button('cut').click();
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-149-telefon.png') });
+  await page.touchscreen.tap(...(await solidAt()));
+  await page.locator('[data-testid=drawing-solid-feature-depth-0]').waitFor();
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  assert.equal(await overflowX(page), 0, 'okno bez przewijania w bok');
+  for (const id of ['drawing-solid-feature-depth-0', 'drawing-solid-feature-remove-0', 'drawing-solid-feature-sketch']) {
+    await page.locator(`[data-testid=${id}]`).scrollIntoViewIfNeeded();
+    const item = await page.locator(`[data-testid=${id}]`).boundingBox();
+    assert.ok(item.x >= 0 && item.x + item.width <= 390, `${id} w szerokości ekranu`);
+  }
+  await page.locator('[data-testid=drawing-solid-feature-depth-0]').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-149-okno-telefon.png') });
+}, { device: PHONE });
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

@@ -230,9 +230,10 @@ export function scaleStroke(stroke, cx, cy, factor) {
   if (isUpright(stroke)) return placeUpright(stroke, map);
   if (isShape(stroke)) return scaleShape(stroke, map, factor);
   if (isSolid(stroke)) {
-    // Szkic bryły (od 1.48) – razem z nią (współrzędne względem jej środka).
+    // Szkic bryły (od 1.48) – razem z nią (współrzędne względem jej środka); od 1.49 – też szkice operacji na ścianach.
     const next = scaleSolid(stroke, cx, cy, factor);
     if (stroke.sketch) next.sketch = stroke.sketch.map((shape) => scaleStroke(shape, 0, 0, factor));
+    if (next.features) next.features = next.features.map((feature) => (feature.sketch ? { ...feature, sketch: feature.sketch.map((shape) => scaleStroke(shape, 0, 0, factor)) } : feature));
     return next;
   }
   const points = stroke.points.slice();

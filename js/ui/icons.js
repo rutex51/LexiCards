@@ -239,6 +239,10 @@ const ICONS = {
   extrude: [p('M4 15.5h10l5-3.5H9z'), p('M4 15.5V19h10l5-3.5V12'), p('M11.5 10V3'), p('M9 5.5l2.5-2.5L14 5.5')],
   revolve: [{ d: 'M2.5 12h19', 'stroke-dasharray': '4 2 1 2' }, p('M6 12V7h5v2h4v3'), p('M19 15.5a7.5 3.2 0 1 1-4.6-3.9'), p('M14.4 9.4v2.4l2.4-.5')],
   projections: [p('M3 3.5h7v6H3z'), p('M14 3.5h7v6h-7z'), p('M3 14.5h7v6H3z'), { d: 'M12 3v18M3 12h18', 'stroke-dasharray': '1.5 2' }],
+  // Od 1.49: szkic na ścianie bryły (szkic przerywany na ścianie), wycięcie (otwór w głąb) i dodanie (czop na wierzchu).
+  solidFace: [p('M4 10h10v10H4z'), p('M4 10l4-4h10l-4 4'), p('M18 6v10l-4 4'), { d: 'M6.6 12.6h4.8v4.8H6.6z', 'stroke-dasharray': '1.6 1.4' }],
+  solidCut: [p('M3 10h12v10H3z'), p('M3 10l5-4h12l-5 4'), p('M20 6v10l-5 4'), p('M9 8a2.6 1 0 1 0 5.2 0a2.6 1 0 1 0-5.2 0'), { d: 'M9 8v6.5M14.2 8v6.5', 'stroke-dasharray': '1.6 1.4' }],
+  solidAdd: [p('M3 13h12v7H3z'), p('M3 13l5-4h12l-5 4'), p('M20 9v7l-5 4'), p('M9 4.5a2.6 1 0 1 0 5.2 0a2.6 1 0 1 0-5.2 0'), p('M9 4.5v6.3M14.2 4.5v6.3')],
   // Widok bryły (od 1.48.1 – układ osi zamiast kostki).
   solidViews: [p('M11 13.5V4'), p('M11 13.5l9.5 5'), p('M11 13.5l-7.5 6'), dot(11, 3.6, 1.7), dot(20.6, 18.6, 1.7), dot(3.4, 19.8, 1.7), dot(11, 13.5, 1.4)],
   defects: [p('M3.5 3.5h17v17h-17z'), p('M7 8l3 3m0-3l-3 3'), p('M15 14.5l2.5 2.5m0-2.5L15 17'), p('M15.5 7.5a1.5 1.5 0 1 0 .01 0')],

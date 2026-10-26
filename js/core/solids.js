@@ -22,8 +22,15 @@
 // Takie bryły mogą być wklęsłe i mieć otwory: krawędź jest próbkowana co kilka jednostek, a każdy punkt sprawdzany, czy
 // nie zasłania go ściana bliżej patrzącego (siatka komórek), granice widocznych odcinków – dokładnie (bisekcja);
 // cieniowanie – z buforem głębokości (płaszczyzny ścian na stronie, faces[].plane).
+//
+// Od 1.49 operacje na ścianach: features – lista { op: 'cut' (wycięcie) | 'add' (dodanie), o, u, v, profile, depth,
+// through?, sketch?, mirror? }. Szkic leży na płaskiej ścianie bryły: o – punkt ściany (środek szkicu), u i v – kierunki
+// szkicu w płaszczyźnie ściany (układ bryły), normalna u × v – na zewnątrz bryły; profil (x wzdłuż u, y wzdłuż v) wyciągnięty
+// wzdłuż normalnej: dodanie – na zewnątrz o depth, wycięcie – w głąb o depth albo na wylot (through). Operacje działają po
+// kolei na bryle (podstawowej albo ze szkicu) – operacje logiczne w core/csg.js; rysowanie jak u brył ze szkicu.
 
 import { cleanShape, polyFromPoints, shapeOutline, shapePoint } from './shapes.js';
+import { meshPolygons, planeOf, subtract, toMesh, union } from './csg.js';
 
 /** Kratka strony (drawing.js PAPER_STEP) – wymiary nowej bryły. */
 const STEP = 44;
@@ -69,6 +76,12 @@ export const SOLID_DEFAULTS = Object.freeze({
 export const SOLID_LIMITS = Object.freeze({ min: 4, max: 6000, sides: Object.freeze([3, 12]), angle: Object.freeze([10, 360]) });
 /** Profil bryły ze szkicu: najwięcej wysp, pętli (obrysów i otworów) i punktów. */
 export const PROFILE_LIMITS = Object.freeze({ islands: 20, loops: 60, points: 4000, sketch: 200 });
+/** Operacje na ścianach (od 1.49): wycięcie i dodanie; najwięcej operacji, najmniejsza głębokość (jednostki strony). */
+export const FEATURE_OPS = Object.freeze(['cut', 'add']);
+export const FEATURE_LABELS = Object.freeze({ cut: 'Wycięcie', add: 'Dodanie' });
+export const FEATURE_LIMITS = Object.freeze({ count: 30, min: 1 });
+/** Czy bryła ma operacje na ścianach. */
+export const hasFeatures = (element) => Array.isArray(element?.features) && element.features.length > 0;
 /** Krawędzie niewidoczne: przerywane, ukryte, jak widoczne. */
 export const SOLID_EDGES = Object.freeze(['dashed', 'none', 'all']);
 export const SOLID_EDGE_LABELS = Object.freeze({ dashed: 'Przerywane', none: 'Ukryte', all: 'Widoczne' });
@@ -237,6 +250,9 @@ export function cleanSolid(raw, pageWidth, pageHeight) {
   if (model && !profile) return null;
   const sketch = model && Array.isArray(raw.sketch)
     ? raw.sketch.slice(0, PROFILE_LIMITS.sketch).map((shape) => cleanShape(shape, pageWidth, pageHeight, (color) => HEX.test(color ?? ''))).filter(Boolean) : [];
+  // Od 1.49: operacje na ścianach (kula – bez płaskich ścian).
+  const features = raw.kind !== 'sphere' && Array.isArray(raw.features)
+    ? raw.features.slice(0, FEATURE_LIMITS.count).map((feature) => cleanFeature(feature, pageWidth, pageHeight)).filter(Boolean) : [];
   let q = Array.isArray(raw.q) && raw.q.length === 4 && raw.q.every(finite) && Math.hypot(...raw.q) > 1e-6 ? quatNorm(raw.q).map((value) => round(value, 6)) : viewQuat('iso');
   // Bryła ze szkicu z 1.48 (szkic na płaszczyźnie przodu, bez `plane`): od 1.48.2 szkic leży na XY – położenie
   // przeliczone tak, by bryła wyglądała jak dotąd.
@@ -257,7 +273,45 @@ export function cleanSolid(raw, pageWidth, pageHeight) {
     ...(profile ? { profile, plane: 'xy' } : {}),
     ...(sketch.length > 0 ? { sketch } : {}),
     ...(sketch.length > 0 && finite(raw.sketchAngle) && raw.sketchAngle !== 0 ? { sketchAngle: round(raw.sketchAngle, 6) } : {}),
-    ...(sketch.length > 0 && raw.sketchMirror === true ? { sketchMirror: true } : {})
+    ...(sketch.length > 0 && raw.sketchMirror === true ? { sketchMirror: true } : {}),
+    ...(features.length > 0 ? { features } : {})
+  };
+}
+
+/** Wektor 3D z liczb albo null. */
+const vector = (raw) => (Array.isArray(raw) && raw.length === 3 && raw.every(finite) ? raw.map(Number) : null);
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const unit3 = (a) => {
+  const length = Math.hypot(a[0], a[1], a[2]);
+  return length > 1e-9 ? [a[0] / length, a[1] / length, a[2] / length] : null;
+};
+/** Współrzędne układu operacji – 10 miejsc po przecinku (płaszczyzna dodania leży dokładnie na ścianie). */
+const fine = (value) => round(value, 10);
+/** Sprawdzona operacja na ścianie (od 1.49) albo null: u i v – jednostkowe i prostopadłe (poprawiane, gdy nie są). */
+function cleanFeature(raw, pageWidth, pageHeight) {
+  if (!raw || !FEATURE_OPS.includes(raw.op)) return null;
+  const [o, rawU, rawV] = [vector(raw.o), vector(raw.u), vector(raw.v)];
+  if (!o || !rawU || !rawV) return null;
+  let u = rawU;
+  let v = rawV;
+  if (Math.abs(Math.hypot(...u) - 1) > 1e-9 || Math.abs(Math.hypot(...v) - 1) > 1e-9 || Math.abs(dot3(u, v)) > 1e-9) {
+    u = unit3(rawU);
+    if (!u) return null;
+    v = unit3(rawV.map((value, axis) => value - dot3(rawV, u) * u[axis]));
+    if (!v) return null;
+  }
+  const profile = cleanProfile(raw.profile, 'extrude');
+  if (!profile || !finite(raw.depth) || raw.depth <= 0) return null;
+  const sketch = Array.isArray(raw.sketch)
+    ? raw.sketch.slice(0, PROFILE_LIMITS.sketch).map((shape) => cleanShape(shape, pageWidth, pageHeight, (color) => HEX.test(color ?? ''))).filter(Boolean) : [];
+  return {
+    op: raw.op,
+    o: o.map((value) => fine(clamp(value, -SOLID_LIMITS.max, SOLID_LIMITS.max))), u: u.map(fine), v: v.map(fine),
+    profile, depth: round(clamp(raw.depth, FEATURE_LIMITS.min, SOLID_LIMITS.max)),
+    ...(raw.op === 'cut' && raw.through === true ? { through: true } : {}),
+    ...(sketch.length > 0 ? { sketch } : {}),
+    ...(sketch.length > 0 && raw.mirror === true ? { mirror: true } : {})
   };
 }
 
@@ -409,10 +463,24 @@ export function mirrorSolid(element, at, angle) {
   const [dx, dy] = [element.x - at.x, element.y - at.y];
   const [cos2, sin2] = [Math.cos(2 * angle), Math.sin(2 * angle)];
   const mirrored = { ...withQuat(element, quatFromMatrix(next)), x: round(at.x + dx * cos2 + dy * sin2), y: round(at.y + dx * sin2 - dy * cos2) };
+  const across = (loop, ccw) => oriented(loop.map(([x, y]) => [x === 0 ? 0 : -x, y]), ccw);
+  const acrossProfile = (profile) => ({ islands: profile.islands.map((island) => ({ outer: across(island.outer, true), holes: island.holes.map((hole) => across(hole, false)) })) });
+  // Operacje na ścianach (od 1.49) – odbite razem z bryłą (lustro x układu bryły): o i v odbite, u – odbite i odwrócone,
+  // profil x → −x (układ dalej prawoskrętny); szkic operacji – oznaczony.
+  if (hasFeatures(element)) {
+    const flip = (a) => [a[0] === 0 ? 0 : -a[0], a[1], a[2]];
+    mirrored.features = element.features.map((feature) => {
+      const next = { ...feature, o: flip(feature.o), u: flip(feature.u).map((value) => (value === 0 ? 0 : -value)), v: flip(feature.v), profile: acrossProfile(feature.profile) };
+      if (feature.sketch) {
+        if (feature.mirror) delete next.mirror;
+        else next.mirror = true;
+      }
+      return next;
+    });
+  }
   if (!isModel(element)) return mirrored;
   // Bryła ze szkicu (od 1.48) nie musi być symetryczna – jej profil też odbity (x → −x), szkic – oznaczony.
-  const across = (loop, ccw) => oriented(loop.map(([x, y]) => [x === 0 ? 0 : -x, y]), ccw);
-  mirrored.profile = { islands: element.profile.islands.map((island) => ({ outer: across(island.outer, true), holes: island.holes.map((hole) => across(hole, false)) })) };
+  mirrored.profile = acrossProfile(element.profile);
   if (element.sketch) {
     if (element.sketchMirror) delete mirrored.sketchMirror;
     else mirrored.sketchMirror = true;
@@ -425,9 +493,15 @@ export function scaleSolid(element, cx, cy, factor) {
     key === 'n' || key === 'angle' ? value : round(clamp(value * factor, key === 't' && value === 0 ? 0 : SOLID_LIMITS.min, SOLID_LIMITS.max))]));
   const next = { ...element, dims, x: round(cx + (element.x - cx) * factor), y: round(cy + (element.y - cy) * factor) };
   // Bryła ze szkicu (od 1.48) – profil razem z nią (kształty szkicu skaluje transform.js).
-  if (isModel(element)) {
-    const scale = (loop) => loop.map(([x, y]) => [round(x * factor), round(y * factor)]);
-    next.profile = { islands: element.profile.islands.map((island) => ({ outer: scale(island.outer), holes: island.holes.map(scale) })) };
+  const scale = (loop) => loop.map(([x, y]) => [round(x * factor), round(y * factor)]);
+  const scaleProfile = (profile) => ({ islands: profile.islands.map((island) => ({ outer: scale(island.outer), holes: island.holes.map(scale) })) });
+  if (isModel(element)) next.profile = scaleProfile(element.profile);
+  // Operacje na ścianach (od 1.49): miejsce, profil i głębokość.
+  if (hasFeatures(element)) {
+    next.features = element.features.map((feature) => ({
+      ...feature, o: feature.o.map((value) => fine(value * factor)), profile: scaleProfile(feature.profile),
+      depth: round(clamp(feature.depth * factor, FEATURE_LIMITS.min, SOLID_LIMITS.max))
+    }));
   }
   return next;
 }
@@ -658,6 +732,288 @@ export function chainEdges(edges) {
   return chains;
 }
 
+// ---------------------------------------------------------------- operacje na ścianach (od 1.49)
+
+const loopsCache = new Map();
+/** Siatka bryły podstawowej w postaci pętli (jak bryły ze szkicu): obrys każdej ściany przeciwnie do wskazówek zegara z zewnątrz. */
+export function primitiveMesh(kind, dims) {
+  const key = `${kind}:${JSON.stringify(dims)}`;
+  const cached = loopsCache.get(key);
+  if (cached) return cached;
+  const mesh = solidMesh(kind, dims);
+  const F = mesh.F.map((face, index) => {
+    const { n } = planeOf(face.map((vertex) => mesh.V[vertex]));
+    return [dot3(n, mesh.N[index]) < 0 ? face.slice().reverse() : face.slice()];
+  });
+  const result = { V: mesh.V, F, N: mesh.N, E: mesh.E };
+  if (loopsCache.size > 200) loopsCache.clear();
+  loopsCache.set(key, result);
+  return result;
+}
+
+/** Normalna szkicu operacji (na zewnątrz ściany). */
+export const featureNormal = (feature) => cross3(feature.u, feature.v);
+/** Punkt profilu operacji (x, y) w odległości z od ściany – układ bryły. */
+const featurePoint = (feature, n, [x, y], z) => [0, 1, 2].map((axis) => feature.o[axis] + feature.u[axis] * x + feature.v[axis] * y + n[axis] * z);
+
+/** Wyspa profilu operacji wyciągnięta wzdłuż normalnej od z0 do z1 – siatka w układzie bryły. */
+function islandSolid(feature, island, z0, z1) {
+  const n = featureNormal(feature);
+  const V = [];
+  const F = [];
+  const loops = [island.outer, ...island.holes];
+  const ring = (z) => loops.map((loop) => {
+    const first = V.length;
+    for (const point of loop) V.push(featurePoint(feature, n, point, z));
+    return first;
+  });
+  const [bottom, top] = [ring(z0), ring(z1)];
+  F.push(loops.map((loop, at) => loop.map((_, index) => bottom[at] + loop.length - 1 - index)));
+  F.push(loops.map((loop, at) => loop.map((_, index) => top[at] + index)));
+  loops.forEach((loop, at) => loop.forEach((_, index) => {
+    const next = (index + 1) % loop.length;
+    F.push([[bottom[at] + index, bottom[at] + next, top[at] + next, top[at] + index]]);
+  }));
+  return { V, F };
+}
+
+/** Wycięcie zaczyna się tyle nad ścianą (jednostki strony) – bez ścian narzędzia w płaszczyźnie ściany bryły. */
+const CUT_MARGIN = 0.01;
+/** Grubość bryły pod płaszczyzną operacji (wycięcie na wylot, domyślna głębokość). */
+function depthBehind(points, feature) {
+  const n = featureNormal(feature);
+  const d = dot3(n, feature.o);
+  let deepest = 0;
+  for (const point of points) deepest = Math.max(deepest, d - dot3(n, point));
+  return deepest;
+}
+
+/** Wielokąty bryły bazowej (bryła ze szkicu z kilkoma wyspami – suma wysp: wyspy mogą na siebie nachodzić). */
+function basePolygons(element) {
+  if (!isModel(element)) return meshPolygons(primitiveMesh(element.kind, element.dims));
+  const { islands } = element.profile;
+  if (islands.length === 1) return meshPolygons(modelMesh(element));
+  return islands.reduce((sum, island) => union(sum, meshPolygons(modelMesh({ kind: element.kind, dims: element.dims, profile: { islands: [island] } }))), []);
+}
+/** Operacja na wielokątach bryły: każda wyspa profilu osobno (suma albo różnica). */
+function applyFeature(polygons, feature) {
+  const behind = feature.op === 'cut' && feature.through ? depthBehind(polygons.flatMap((polygon) => polygon.points), feature) + 1 : 0;
+  let result = polygons;
+  for (const island of feature.profile.islands) {
+    const range = feature.op === 'add' ? [0, feature.depth] : [-(feature.through ? behind : feature.depth), CUT_MARGIN];
+    const tool = meshPolygons(islandSolid(feature, island, ...range));
+    result = feature.op === 'add' ? union(result, tool) : subtract(result, tool);
+  }
+  return result;
+}
+
+const profileIds = new WeakMap();
+let nextProfileId = 1;
+const featureKeys = new WeakMap();
+/** Klucz bryły bazowej: rodzaj, wymiary i (bryła ze szkicu) tożsamość profilu. */
+function baseKey(element) {
+  if (!isModel(element)) return `${element.kind}:${JSON.stringify(element.dims)}`;
+  if (!profileIds.has(element.profile)) profileIds.set(element.profile, nextProfileId++);
+  return `${element.kind}:${JSON.stringify(element.dims)}:${profileIds.get(element.profile)}`;
+}
+function featureKey(feature) {
+  if (!featureKeys.has(feature)) featureKeys.set(feature, JSON.stringify([feature.op, feature.o, feature.u, feature.v, feature.depth, feature.through === true, feature.profile]));
+  return featureKeys.get(feature);
+}
+/** Wielokąty po kolejnych operacjach – zapamiętane (przeciąganie głębokości ostatniej operacji liczy tylko ją). */
+const soupCache = new Map();
+function featureSoup(element, count) {
+  const key = [baseKey(element), ...element.features.slice(0, count).map(featureKey)].join('|');
+  const cached = soupCache.get(key);
+  if (cached) return cached;
+  const result = count === 0 ? basePolygons(element) : applyFeature(featureSoup(element, count - 1), element.features[count - 1]);
+  if (soupCache.size > 40) soupCache.delete(soupCache.keys().next().value);
+  soupCache.set(key, result);
+  return result;
+}
+const featureMeshes = new WeakMap();
+/** Siatka bryły z operacjami na ścianach (ściany scalone, bez T-złączy) – jak siatka bryły ze szkicu. */
+export function featureMesh(element) {
+  const key = baseKey(element);
+  const cached = featureMeshes.get(element.features);
+  if (cached?.key === key) return cached.mesh;
+  const mesh = toMesh(featureSoup(element, element.features.length));
+  featureMeshes.set(element.features, { key, mesh });
+  return mesh;
+}
+/** Siatka bryły (pętle ścian) – z operacjami, ze szkicu albo podstawowa; kula – null. */
+export function solidShape(element) {
+  if (element.kind === 'sphere') return null;
+  if (hasFeatures(element)) return featureMesh(element);
+  return isModel(element) ? modelMesh(element) : primitiveMesh(element.kind, element.dims);
+}
+
+const insidePage = (x, y, loops) => {
+  let inside = false;
+  for (const loop of loops) {
+    for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+      const [a, b] = [loop[i], loop[j]];
+      if ((a[1] > y) !== (b[1] > y) && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
+    }
+  }
+  return inside;
+};
+/** Ściany zwrócone do patrzącego: { normal – układ bryły, N – układ widoku, D, loops – strona, vertex – punkt ściany }. */
+function frontFaces(element) {
+  const mesh = solidShape(element);
+  if (!mesh) return [];
+  const m = quatMatrix(element.q);
+  const view = mesh.V.map((vertex) => rotate(m, vertex));
+  const list = [];
+  mesh.F.forEach((loops, face) => {
+    const N = rotate(m, mesh.N[face]);
+    if (N[2] <= FACING) return;
+    list.push({
+      normal: mesh.N[face], N, D: dot3(N, view[loops[0][0]]), vertex: mesh.V[loops[0][0]],
+      loops: loops.map((loop) => loop.map((index) => [element.x + view[index][0], element.y - view[index][1]]))
+    });
+  });
+  return list;
+}
+
+/** Ściana bryły pod punktem strony (najbliższa patrzącemu): { normal – układ bryły, loops – obrys na stronie } albo null. */
+export function faceAt(element, point) {
+  let best = null;
+  for (const face of frontFaces(element)) {
+    if (!insidePage(point.x, point.y, face.loops)) continue;
+    const [x, y] = [point.x - element.x, element.y - point.y];
+    const z = (face.D - face.N[0] * x - face.N[1] * y) / face.N[2];
+    if (!best || z > best.z) best = { normal: face.normal, loops: face.loops, z };
+  }
+  return best ? { normal: best.normal, loops: best.loops } : null;
+}
+
+/**
+ * Położenie, w którym ściana o normalnej `normal` (układ bryły) jest zwrócona prosto do patrzącego i stoi prosto: ściana
+ * boczna albo pochyła – oś Z (y bryły) w górę ekranu; wierzch i spód – krawędzie wzdłuż osi bryły, obrót jak najmniejszy
+ * od obecnego położenia.
+ */
+export function faceView(element, normal) {
+  const n = unit3(normal);
+  const up = [0, 1, 0];
+  let v;
+  if (Math.abs(dot3(up, n)) < 0.9) v = unit3(up.map((value, axis) => value - dot3(up, n) * n[axis]));
+  else {
+    // Obecny kierunek „w górę ekranu” rzutowany na ścianę – najbliższa oś bryły leżąca w ścianie (przy remisie – pierwsza).
+    const m = quatMatrix(element.q);
+    const current = [m[3], m[4], m[5]];
+    let best = -Infinity;
+    for (const axis of [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 1, 0]]) {
+      const along = unit3(axis.map((value, index) => value - dot3(axis, n) * n[index]));
+      if (!along || Math.abs(dot3(axis, n)) > 0.7) continue;
+      const score = dot3(along, current);
+      if (score > best + 1e-6) {
+        best = score;
+        v = along;
+      }
+    }
+  }
+  const u = cross3(v, n);
+  return quatFromMatrix([...u, ...v, ...n]).map((value) => round(value, 6));
+}
+
+/**
+ * Układ szkicu na ścianie (od 1.49): bryła widziana prostopadle do płaskiej ściany, szkic `loops` (strona) choć częściowo na
+ * niej; `center` – środek szkicu na stronie. Ściana – najbliższa patrzącemu spośród ścian pod szkicem. Wynik:
+ * { o, u, v, behind – grubość bryły pod ścianą } albo { error }.
+ */
+export function sketchFrame(element, loops, center) {
+  if (element.kind === 'sphere') return { error: 'Kula nie ma płaskiej ściany – szkic na ścianie tylko na innych bryłach' };
+  const facing = frontFaces(element).filter((face) => face.N[2] > 1 - 1e-6);
+  if (facing.length === 0) return { error: 'Ustaw bryłę ścianą do siebie: „Szkic na ścianie” i dotknij ściany' };
+  const points = loops.flat();
+  let best = null;
+  for (const face of facing) {
+    const overlaps = points.some(([x, y]) => insidePage(x, y, face.loops)) || face.loops[0].some(([x, y]) => insidePage(x, y, loops));
+    if (!overlaps) continue;
+    const z = face.D / face.N[2];
+    if (!best || z > best.z + 1e-6) best = { face, z };
+  }
+  if (!best) return { error: 'Szkic musi leżeć na ścianie bryły (choć częściowo)' };
+  const n = best.face.normal;
+  const d = dot3(n, best.face.vertex);
+  const m = quatMatrix(element.q);
+  const [right, up] = [[m[0], m[1], m[2]], [m[3], m[4], m[5]]];
+  const u = unit3(right.map((value, axis) => value - dot3(right, n) * n[axis]));
+  const v = cross3(n, u);
+  const [x, y] = [center.x - element.x, element.y - center.y];
+  const p = [0, 1, 2].map((axis) => right[axis] * x + up[axis] * y);
+  const o = p.map((value, axis) => value + n[axis] * (d - dot3(n, p)));
+  const frame = { o: o.map(fine), u: u.map(fine), v: v.map(fine) };
+  return { ...frame, behind: round(depthBehind(solidShape(element).V, frame)) };
+}
+
+/** Nowa operacja: dodanie – połowa krótszego boku szkicu (jak wyciągnięcie), wycięcie – do połowy grubości bryły. */
+export function newFeature(op, frame, profile, sketch = []) {
+  const points = profile.islands.flatMap((island) => island.outer);
+  const [w, h] = [Math.max(...points.map(([x]) => x)) - Math.min(...points.map(([x]) => x)), Math.max(...points.map(([, y]) => y)) - Math.min(...points.map(([, y]) => y))];
+  const depth = op === 'add' ? clamp(Math.min(w, h) / 2, SOLID_LIMITS.min, SOLID_LIMITS.max) : Math.max(FEATURE_LIMITS.min, frame.behind / 2);
+  return { op, o: frame.o, u: frame.u, v: frame.v, profile, depth: round(depth), ...(sketch.length > 0 ? { sketch } : {}) };
+}
+
+/** Grubość bryły pod ścianą operacji (bez niej i późniejszych) – głębokość wycięcia na wylot. */
+export function featureBehind(element, index) {
+  return round(depthBehind(featureSoup(element, index).flatMap((polygon) => polygon.points), element.features[index]));
+}
+
+/** Położenie z widokiem prosto na ścianę operacji (szkic tak, jak go narysowano): wiersze macierzy – u, v, normalna. */
+export const featureQuat = (feature) => quatFromMatrix([...feature.u, ...feature.v, ...featureNormal(feature)]).map((value) => round(value, 6));
+
+/** Izometria (z ośmiu stron), w której ściana o normalnej `normal` jest najlepiej widoczna – po operacji. */
+export function featureView(normal) {
+  let best = null;
+  for (const pitch of [35.264, -35.264]) {
+    for (const yaw of [45, -45, 135, -135]) {
+      const q = quatFromAngles(yaw, pitch);
+      const z = rotate(quatMatrix(q), normal)[2];
+      if (!best || z > best.z + 1e-6) best = { q, z };
+    }
+  }
+  return best.q;
+}
+
+/**
+ * Operacje za zmienionymi płaszczyznami (od 1.49): po zmianie wymiarów bryły albo głębokości operacji ściany się przesuwają –
+ * operacje narysowane na nich idą razem z nimi (o tyle samo wzdłuż normalnej). `old` i `next` – ta sama bryła przed i po
+ * zmianie; `pairs[i]` – numer operacji `next.features[i]` w `old` (−1 – nowa).
+ */
+export function followFaces(old, next, pairs = next.features?.map((_, index) => index) ?? []) {
+  if (!hasFeatures(next)) return next;
+  const moved = [];
+  const before = old.kind === 'sphere' ? null : isModel(old) ? modelMesh(old) : primitiveMesh(old.kind, old.dims);
+  const after = next.kind === 'sphere' ? null : isModel(next) ? modelMesh(next) : primitiveMesh(next.kind, next.dims);
+  if (before && after && before.F.length === after.F.length && old.kind === next.kind) {
+    before.F.forEach((loops, face) => {
+      const [n0, n1] = [before.N[face], after.N[face]];
+      if (dot3(n0, n1) < 1 - 1e-9) return;
+      const [d0, d1] = [dot3(n0, before.V[loops[0][0]]), dot3(n1, after.V[after.F[face][0][0]])];
+      if (Math.abs(d1 - d0) > 1e-6) moved.push({ n: n0, d0, d1 });
+    });
+  }
+  const features = next.features.map((feature, index) => {
+    const previous = pairs[index] >= 0 ? old.features?.[pairs[index]] : null;
+    if (!previous) return feature;
+    const n = featureNormal(previous);
+    const d = dot3(n, previous.o);
+    const shift = moved.find((plane) => dot3(plane.n, n) > 1 - 1e-6 && Math.abs(plane.d0 - d) < 1e-3);
+    const delta = shift ? shift.d1 - shift.d0 : 0;
+    const placed = delta === 0 ? feature : { ...feature, o: feature.o.map((value, axis) => fine(value + n[axis] * delta)) };
+    // Koniec operacji (wierzch dodania, dno wycięcia) – płaszczyzna dla następnych operacji.
+    if (!(previous.op === 'cut' && previous.through) && !(placed.op === 'cut' && placed.through)) {
+      const sign = previous.op === 'add' ? 1 : -1;
+      const [end0, end1] = [d + sign * previous.depth, d + delta + sign * placed.depth];
+      if (Math.abs(end1 - end0) > 1e-6) moved.push({ n, d0: end0, d1: end1 });
+    }
+    return placed;
+  });
+  return { ...next, features };
+}
+
 // ---------------------------------------------------------------- rozkład na stronie
 
 const geometryCache = new WeakMap();
@@ -671,16 +1027,18 @@ export function solidGeometry(element) {
   // Zapamiętany rozkład – tylko gdy bryła się nie zmieniła (element poprawiony w miejscu, np. przy wstawianiu, liczy się od nowa).
   const signature = JSON.stringify([element.kind, element.x, element.y, element.q, element.dims, element.showDims === true, element.axes === true]);
   const cached = geometryCache.get(element);
-  if (cached?.signature === signature && cached.profile === element.profile) return cached;
+  if (cached?.signature === signature && cached.profile === element.profile && cached.features === element.features) return cached;
   const m = quatMatrix(element.q);
   const at = (point) => {
     const v = rotate(m, point);
     return { x: element.x + v[0], y: element.y - v[1], z: v[2] };
   };
-  const result = element.kind === 'sphere' ? sphereGeometry(element, at) : isModel(element) ? modelGeometry(element, m, at) : meshGeometry(element, m, at);
+  // Od 1.49 bryła z operacjami na ścianach (może być wklęsła) – jak bryła ze szkicu.
+  const result = element.kind === 'sphere' ? sphereGeometry(element, at) : isModel(element) || hasFeatures(element) ? modelGeometry(element, m, at) : meshGeometry(element, m, at);
   result.bounds = boundsOf(result);
   result.signature = signature;
   result.profile = element.profile;
+  result.features = element.features;
   geometryCache.set(element, result);
   return result;
 }
@@ -723,7 +1081,7 @@ function meshGeometry(element, m, at) {
  * bisekcją. Ściany od patrzącego – z płaszczyzną z(x, y) na stronie (bufor głębokości przy cieniowaniu).
  */
 function modelGeometry(element, m, at) {
-  const mesh = modelMesh(element);
+  const mesh = hasFeatures(element) ? featureMesh(element) : modelMesh(element);
   const view = mesh.V.map((vertex) => rotate(m, vertex));
   const P = view.map(([x, y]) => ({ x: element.x + x, y: element.y - y }));
   const N = mesh.N.map((normal) => rotate(m, normal));
@@ -780,10 +1138,13 @@ function modelGeometry(element, m, at) {
   // Krawędzie do rysowania: ostre i zarys (gładkie między ścianami zwróconymi różnie); obie ściany od patrzącego tyłem – niewidoczne.
   const candidates = [];
   for (const edge of mesh.E) {
+    // Od 1.49: krawędź ze szczeliną po operacji (seam – ściana po drugiej stronie) – jak krawędź dwóch ścian.
+    const other = edge.faces.length > 1 ? edge.faces[1] : edge.seam;
     const first = facing[edge.faces[0]];
-    const second = edge.faces.length > 1 ? facing[edge.faces[1]] : first;
-    if (edge.sharp) candidates.push({ ...edge, hidden: !first && !second });
-    else if (first !== second) candidates.push({ ...edge, hidden: false });
+    const second = other !== undefined ? facing[other] : first;
+    const faces = edge.seam !== undefined ? [...edge.faces, edge.seam] : edge.faces;
+    if (edge.sharp) candidates.push({ ...edge, faces, hidden: !first && !second });
+    else if (first !== second) candidates.push({ ...edge, faces, hidden: false });
   }
   const byKey = new Map(candidates.map((edge) => [`${edge.a}-${edge.b}`, edge]));
   const visible = [];
@@ -853,7 +1214,17 @@ function modelGeometry(element, m, at) {
     });
   });
   const center = { x: element.x, y: element.y };
-  return { visible, hidden, faces, sphere: null, depth: true, axes: modelAxes(element, at, center), dims: modelDims(element, mesh, P, facing, at, center) };
+  const result = { visible, hidden, faces, sphere: null, depth: true };
+  if (!hasFeatures(element)) return { ...result, axes: modelAxes(element, at, center), dims: modelDims(element, mesh, P, facing, at, center) };
+  // Z operacjami na ścianach (od 1.49): osie i wymiary – z bryły bazowej (wymiary całości, jak bez operacji).
+  const base = isModel(element) ? modelMesh(element) : solidMesh(element.kind, element.dims);
+  const baseFacing = base.N.map((normal) => rotate(m, normal)[2] > FACING);
+  if (!isModel(element)) return { ...result, axes: axisLines(element, at, center), dims: meshDims(element, base, base.V.map(at), baseFacing, at, center) };
+  const baseP = base.V.map((vertex) => {
+    const [x, y] = rotate(m, vertex);
+    return { x: element.x + x, y: element.y - y };
+  });
+  return { ...result, axes: modelAxes(element, at, center), dims: modelDims(element, base, baseP, baseFacing, at, center) };
 }
 
 /** Granice profilu (układ bryły). */
