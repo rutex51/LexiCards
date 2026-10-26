@@ -201,3 +201,21 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
   bez rozpoznawalnych elementów cudzych programów.
 - Nowe pozycje rejestru algorytmów: G61–G62. Ryzyko wstępnie NISKIE.
 
+## Uzupełnienie: wersja 1.54 (26.10.2026) – płaszczyzny szkicu i rzuty sceny
+
+- **Kod:** `js/core/solids.js` (`sketchToBody` – przejście z układu szkicu na płaszczyźnie XY, XZ albo YZ do układu bryły
+  przez obrót; `meshLines` – rdzeń linii widocznych i niewidocznych wydzielony z rzutów jednej bryły z 1.48;
+  `layoutProjections`, `viewsToShapes`), `js/core/solid-pose.js` (`sketchPlaneLevel`, `onSketchPlane` – położenie
+  płaszczyzny szkicu w scenie), nowy `js/core/scene-projections.js` (wspólna siatka wszystkich brył w położeniu ze sceny,
+  siatka kuli z południków i równoleżników, osie, trzy widoki), okno „Bryła na płaszczyźnie” w `js/ui/drawing.js`, przycisk
+  „Rzuty” w `js/ui/drawing-scene.js`. Bez bibliotek. Dwie nowe ikony (`sketchPlane`, `sceneProjections`) – własne proste
+  rysunki SVG (prostokąty, linie), bez cudzych zestawów ikon.
+- **Funkcje:** szkic na płaszczyźnie podstawowej (XY, XZ, YZ) z odsunięciem – ogólna funkcja programów CAD (płaszczyzny
+  odniesienia i szkice od lat 80.–90.); rzuty prostokątne trzech widoków metodą europejską z liniami niewidocznymi –
+  rysunek techniczny według norm (rzutowanie prostokątne, linie niewidoczne przerywane, linie osiowe); ukrywanie krawędzi
+  na wspólnej siatce wielu brył – klasyczne algorytmy usuwania linii niewidocznych (podręczniki grafiki od lat 60.–70.).
+- **Patenty:** szczególnego ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – bazy zablokowane,
+  AUDIT_LIMITATIONS.md). Interfejs: opisowe nazwy („Na płaszczyźnie…”, „XZ – przód”, „Rzuty”, „Na tej kartce”), okno
+  w stylu aplikacji – bez rozpoznawalnych elementów cudzych programów. Nazwy płaszczyzn XY/XZ/YZ – zwykłe oznaczenia osi.
+- Nowe pozycje rejestru algorytmów: G63–G64. Ryzyko wstępnie NISKIE.
+
