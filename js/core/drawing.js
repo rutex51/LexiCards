@@ -49,6 +49,7 @@
 //   Od 1.52 (format 23) bryła ma położenie w scenie: z – wysokość podstawy, yaw – obrót wokół Z, on – bryła pod spodem
 //   (core/solid-pose.js); obrazek bryły postawionej jest w obrazku bryły na dole stosu.
 //   Od 1.53 (format 24) bryła może mieć measures [{ a, b }] – pomiary 3D między cechami brył (core/measure3d.js).
+//   Od 1.54 (format 25) bryła ze szkicu na płaszczyźnie pionowej: plane 'xz' | 'yz' i planeAngle – kąt osi profilu.
 
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import { DEFAULT_RECENT_FITS, cleanRecentFits } from './fits.js';
@@ -84,7 +85,7 @@ import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './la
  * profilu, szkic w bryle (1.48), 20 – szkic na płaszczyźnie XY, Z do góry (1.48.2), 21 – wycięcia i dodania na ścianach
  * brył (1.49), 22 – początek układu współrzędnych arkusza (1.50).
  */
-export const DRAWING_VERSION = 24;
+export const DRAWING_VERSION = 25;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;

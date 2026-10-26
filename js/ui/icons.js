@@ -236,6 +236,10 @@ const ICONS = {
   // Obrót bryły w przestrzeni (od 1.47): kula z orbitą i strzałką.
   orbit: [{ tag: 'circle', cx: 12, cy: 12, r: 4.5 }, p('M3.5 13.5c1.2 3 6 4.6 11 3.4 4.2-1 6.6-3.6 5.8-6.2-.5-1.6-2.3-2.8-4.8-3.3'), p('M14 5.6l2.6 1.8-1.9 2.4')],
   // Od 1.48: wyciągnięcie i obrót profilu, rzuty 2D, szkic bryły.
+  // Od 1.54: płaszczyzna szkicu – pozioma i pionowa.
+  sketchPlane: [p('M2.5 17.5l5-4h14l-5 4z'), p('M7.5 13.5V4.5h9v9'), p('M12 9h.01')],
+  // Od 1.54: rzuty sceny – przód, góra pod nim, bok obok.
+  sceneProjections: [p('M3.5 3.5h7v6h-7z'), p('M3.5 13h7v7.5h-7z'), p('M14 3.5h6.5v6H14z'), { d: 'M7 9.5V13M10.5 6.5H14', 'stroke-dasharray': '1.5 1.5' }],
   extrude: [p('M4 15.5h10l5-3.5H9z'), p('M4 15.5V19h10l5-3.5V12'), p('M11.5 10V3'), p('M9 5.5l2.5-2.5L14 5.5')],
   revolve: [{ d: 'M2.5 12h19', 'stroke-dasharray': '4 2 1 2' }, p('M6 12V7h5v2h4v3'), p('M19 15.5a7.5 3.2 0 1 1-4.6-3.9'), p('M14.4 9.4v2.4l2.4-.5')],
   projections: [p('M3 3.5h7v6H3z'), p('M14 3.5h7v6h-7z'), p('M3 14.5h7v6H3z'), { d: 'M12 3v18M3 12h18', 'stroke-dasharray': '1.5 2' }],

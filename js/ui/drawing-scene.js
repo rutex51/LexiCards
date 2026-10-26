@@ -12,6 +12,7 @@
 // Od 1.53 pomiary 3D (core/measure3d.js): „Pomiar” w pasku – dotknięcie dwóch cech brył (narożnik, środek ściany,
 // krawędź, ściana, oś walca), także na różnych bryłach; wynik (odległość z ΔX, ΔY, ΔZ albo kąt) zostaje w scenie jako
 // wymiar – zapisany w bryle pierwszej cechy, idzie za bryłami. Dotknięcie liczby pomiaru – szczegóły i „Usuń pomiar”.
+// Od 1.54 „Rzuty” – rzuty całej sceny na kartkę (core/scene-projections.js; onProjections).
 
 import { faceAt, quatMatrix, solidGeometry, solidLabel, solidShape } from '../core/solids.js';
 import {
@@ -55,7 +56,7 @@ const shortLabel = (solid) => solidLabel(solid).replace('Bryła: ', '');
  * – nowe położenie brył; onPlace(bryła, bryła pod spodem, punkt strony, wysokość ściany) – „Postaw na ścianie”; onUndo() –
  * „Cofnij”. Po zmianie edytor zapisuje krok cofania i woła update.
  */
-export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
+export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onProjections }) {
   const canvas = h('canvas', { class: 'drawing__scene-canvas', role: 'img', 'aria-label': 'Scena 3D', dataset: { testid: 'drawing-scene-canvas' } });
   const viewButtons = SCENE_VIEWS.map((item) => h('button', {
     type: 'button', class: 'drawing__scene-chip', 'aria-pressed': 'false', dataset: { testid: `drawing-scene-view-${item.id}`, view: item.id },
@@ -80,12 +81,18 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
     }
   }, icon('zoomFit', { size: 16 }), 'Cała');
   const measureButton = h('button', {
-    type: 'button', class: 'drawing__scene-chip', 'aria-pressed': 'false', title: 'Pomiar 3D – odległość albo kąt między cechami brył',
+    type: 'button', class: 'drawing__scene-chip drawing__scene-chip--tool', 'aria-pressed': 'false', 'aria-label': 'Pomiar', title: 'Pomiar 3D – odległość albo kąt między cechami brył',
     dataset: { testid: 'drawing-scene-measure-toggle' },
     onClick: () => (state.measuring ? stopMeasuring() : startMeasuring())
-  }, icon('caliper', { size: 16 }), 'Pomiar');
+  }, icon('caliper', { size: 16 }), h('span', { class: 'drawing__scene-chip-label' }, 'Pomiar'));
+  // Od 1.54: rzuty całej sceny na kartkę (przód, góra, lewy bok).
+  const projectionsButton = h('button', {
+    type: 'button', class: 'drawing__scene-chip drawing__scene-chip--tool', 'aria-label': 'Rzuty', title: 'Rzuty sceny – przód, góra i lewy bok wszystkich brył jako linie na kartce',
+    dataset: { testid: 'drawing-scene-projections' },
+    onClick: () => onProjections()
+  }, icon('sceneProjections', { size: 16 }), h('span', { class: 'drawing__scene-chip-label' }, 'Rzuty'));
   const bar = h('div', { class: 'drawing__scene-bar', role: 'toolbar', 'aria-label': 'Scena 3D – widoki' },
-    exitButton, undoButton, measureButton, h('span', { class: 'drawing__scene-sep' }), ...viewButtons, h('span', { class: 'drawing__scene-sep' }), fitButton);
+    exitButton, undoButton, measureButton, projectionsButton, h('span', { class: 'drawing__scene-sep' }), ...viewButtons, h('span', { class: 'drawing__scene-sep' }), fitButton);
   const picked = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, dataset: { testid: 'drawing-scene-selected' } });
   const hint = h('span', { class: 'drawing__pill drawing__pill--info drawing__scene-hint', dataset: { testid: 'drawing-scene-hint' } });
 

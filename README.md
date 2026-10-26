@@ -1,4 +1,4 @@
-# LexiCards 1.53
+# LexiCards 1.54
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -61,8 +61,9 @@ Rysunek – układ współrzędnych arkusza: początek w lewym dolnym rogu arkus
 Rysunek – scena 3D do oglądania: „Scena 3D” przy bryłach – kartka jako płaszczyzna z całą treścią 2D, bryły stojące na niej w miejscu obrazków, obrót przeciąganiem, przybliżanie kółkiem i dwoma palcami, widoki (izometria, przód, boki, tył, góra), bryły zasłaniają się nawzajem, zaznaczanie; w ruchu same krawędzie (wersja 1.51): [docs/RELEASE-1.51.md](docs/RELEASE-1.51.md).
 Rysunek – położenie brył w scenie: panel X, Y, Z (wysokość podstawy) i obrót wokół Z w mm przedmiotu, strzałki osi do przesuwania (w trakcie same krawędzie), „Postaw na ścianie” – bryła na wierzchu innej (idzie za nią), „Na arkusz”, „Cofnij”; stos brył w 2D – jeden obrazek (wersja 1.52): [docs/RELEASE-1.52.md](docs/RELEASE-1.52.md).
 Rysunek – pomiary 3D w scenie: „Pomiar” – dwie cechy brył (narożnik, środek ściany, krawędź, ściana, oś walca), odległość z ΔX, ΔY, ΔZ, odległość od prostej i płaszczyzny, kąty i odległość równoległych; wynik zostaje w scenie jako wymiar i idzie za bryłami (wersja 1.53): [docs/RELEASE-1.53.md](docs/RELEASE-1.53.md).
+Rysunek – płaszczyzny szkicu i rzuty sceny: „Na płaszczyźnie…” – bryła ze szkicu poziomo na wysokości Z albo pionowo na XZ (widok z przodu) i YZ (widok z boku), np. stojący wspornik albo wazon; „Rzuty” w scenie – przód, góra i lewy bok wszystkich brył razem, krawędzie zasłonięte przez inne bryły przerywane, na tej albo nowej kartce (wersja 1.54): [docs/RELEASE-1.54.md](docs/RELEASE-1.54.md).
 
-## Co potrafi wersja 1.53
+## Co potrafi wersja 1.54
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -180,7 +181,8 @@ Rysunek – pomiary 3D w scenie: „Pomiar” – dwie cechy brył (narożnik, �
   w lewym dolnym rogu, współrzędne pod kursorem, punkty kształtów i położenie zaznaczonego wpisywane liczbami (mm w skali
   rysunku). Od 1.51 **scena 3D**: kartka i bryły w przestrzeni – obrót, widoki, przybliżanie; od 1.52 **położenie brył**
   w scenie – X, Y, Z i obrót, strzałki osi, bryła postawiona na innej (w 2D – wspólny obrazek); od 1.53 **pomiary 3D** –
-  odległości (z ΔX, ΔY, ΔZ) i kąty między cechami brył, zostają w scenie jako wymiary.
+  odległości (z ΔX, ΔY, ΔZ) i kąty między cechami brył, zostają w scenie jako wymiary; od 1.54 **płaszczyzny szkicu** –
+  bryła ze szkicu poziomo na wysokości albo pionowo (przód XZ, bok YZ) – i **rzuty całej sceny** na kartkę.
   Od 1.24.1 kartka w edytorze wygląda
   jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
@@ -1034,6 +1036,17 @@ ma przy bryle także Z i obrót. Format rysunku – 23.
 Pomiar zostaje w scenie jako wymiar (pomarańczowa liczba w ramce) i liczy się od nowa, gdy bryły się przesuwają albo
 zmieniają; dotknięcie liczby – szczegóły i **Usuń pomiar**; Esc – od nowa, potem koniec pomiaru. Pomiar jest zapisany
 w bryle pierwszej cechy (format rysunku 24), tylko w scenie (nie na kartce 2D).
+**Płaszczyzny szkicu** (od 1.54): przy zaznaczonych kształtach obok **Wyciągnij** i **Obróć wokół osi** jest **Na
+płaszczyźnie…** – okno **Bryła na płaszczyźnie**: **XY – poziomo** (szkic na wysokości Z, wyciągnięcie w górę), **XZ –
+przód** (kształty na kartce to widok z przodu: w prawo X, w górę Z; szkic w pionowej płaszczyźnie Y = liczba z okna,
+wyciągnięcie do przodu, −Y) albo **YZ – bok** (widok z prawego boku: w prawo Y, w górę Z; płaszczyzna X = liczba,
+wyciągnięcie w prawo); rodzaj bryły (**Wyciągnij** / **Obróć wokół osi** – oś w płaszczyźnie szkicu) i położenie
+płaszczyzny w mm przedmiotu w skali rysunku (na start – bryła tam, gdzie leży szkic). Bryła na XZ i YZ stoi na arkuszu,
+obrazek na start – widok z przodu albo z boku. **Edytuj szkic** – okno zaczyna potem od płaszczyzny tej bryły. Format
+rysunku – 25. **Rzuty** w pasku sceny: przód, góra pod przodem i lewy bok na prawo (metoda europejska) wszystkich brył
+w położeniu ze sceny – krawędzie zasłonięte, także przez inne bryły, przerywane, osie linią osiową, kula – okrąg; **Na
+tej kartce** (na prawo od obrazków brył) albo **Na nowej kartce**. Rzuty to zwykłe linie – zaznaczone po wstawieniu, nie
+zmieniają się po przesunięciu brył.
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę

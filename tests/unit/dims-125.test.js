@@ -51,7 +51,7 @@ test('jednostki 1.25: liczby bez jednostki w mm, cm, m i calach, oznaczenie „W
 });
 
 test('jednostki 1.25: zapis jednostki z rysunkiem i przeliczenie tolerancji starszych rysunków do mm (format 10)', () => {
-  assert.equal(DRAWING_VERSION, 24, 'od 1.53 – pomiary 3D; 1.52 – położenie brył w scenie; 1.50 – początek układu współrzędnych arkusza; 1.49 – operacje na ścianach brył; 1.48.2 – szkic na XY (Z do góry); 1.48 – bryły ze szkicu; 1.47 – bryły; 1.45 – schematy procesów; 1.44 – diagramy jakości i układ kartki; 1.42 – wymiar długości łuku, kierunek wymiaru, osie okręgu; 1.41 – ramka rysunkowa; 1.40 – wielokąt foremny, półprosta, narożniki, kreskowanie (1.38 – uzupełnienia tolerancji i symboli, 1.36 – warstwy)');
+  assert.equal(DRAWING_VERSION, 25, 'od 1.54 – płaszczyzny szkicu XZ i YZ; 1.53 – pomiary 3D; 1.52 – położenie brył w scenie; 1.50 – początek układu współrzędnych arkusza; 1.49 – operacje na ścianach brył; 1.48.2 – szkic na XY (Z do góry); 1.48 – bryły ze szkicu; 1.47 – bryły; 1.45 – schematy procesów; 1.44 – diagramy jakości i układ kartki; 1.42 – wymiar długości łuku, kierunek wymiaru, osie okręgu; 1.41 – ramka rysunkowa; 1.40 – wielokąt foremny, półprosta, narożniki, kreskowanie (1.38 – uzupełnienia tolerancji i symboli, 1.36 – warstwy)');
   const tolerated = withDimTolerance(withDimTolerance(rect({ dims: ['width', 'skew'] }), 'width', { kind: 'dev', upper: 0.01, lower: -0.005 }), 'skew', { kind: 'sym', value: 1 });
   const base = { width: 1600, height: 1100, strokes: [tolerated] };
   // Liczby „5 cm” (format 9): tolerancja w cm – ×10; kąt bez zmian.

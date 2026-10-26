@@ -374,3 +374,28 @@ export function stackPaintOrder(strokes) {
   }
   return order;
 }
+
+// ---------------------------------------------------------------- płaszczyzny szkicu (od 1.54)
+
+/** Grubość bryły ze szkicu w głąb płaszczyzny: wyciągnięcie – długość, bryła obrotowa – 0 (oś leży na płaszczyźnie). */
+const sketchDepth = (solid) => (solid.kind === 'extrude' ? solid.dims.h : 0);
+/**
+ * Położenie płaszczyzny szkicu, przy którym obrazek bryły zostaje w miejscu szkicu (jednostki strony, świat sceny):
+ * XY – wysokość Z (0), XZ – Y świata, YZ – X świata. solid – bryła ze szkicu w miejscu szkicu (x, y – środek szkicu).
+ */
+export function sketchPlaneLevel(solid, plane, pageHeight) {
+  if (plane === 'xz') return pageHeight - solid.y + sketchDepth(solid) / 2;
+  if (plane === 'yz') return solid.x - sketchDepth(solid) / 2;
+  return 0;
+}
+/**
+ * Bryła ze szkicu na płaszczyźnie w położeniu `level` (jak sketchPlaneLevel): XY – podstawa na wysokości Z; XZ – szkic
+ * w płaszczyźnie Y = level, wyciągnięcie do przodu (−Y), bryła stoi na arkuszu; YZ – szkic w płaszczyźnie X = level,
+ * wyciągnięcie w prawo (+X), na arkuszu. x, y bryły – miejsce obrazka i X, Y w scenie (1.52).
+ */
+export function onSketchPlane(solid, plane, level, pageHeight) {
+  const depth = sketchDepth(solid);
+  if (plane === 'xz') return withZYaw({ ...solid, y: round(pageHeight - (level - depth / 2)) }, 0, 0);
+  if (plane === 'yz') return withZYaw({ ...solid, x: round(level + depth / 2) }, 0, 0);
+  return withZYaw(solid, level, 0);
+}

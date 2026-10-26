@@ -9,8 +9,8 @@
 // w układzie bryły. Po zmianie bryły (przesunięcie, obrót, wymiary) – cecha tej samej roli i kierunku najbliższa zapisanej:
 // pomiar idzie za bryłą, rysunek brył się nie zmienia.
 
-import { solidShape } from './solids.js';
-import { bodyExtent, worldRotation } from './solid-pose.js';
+import { sketchToBody, solidShape } from './solids.js';
+import { worldRotation } from './solid-pose.js';
 
 const ID_RE = /^[a-z0-9]{6,16}$/;
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
@@ -158,8 +158,12 @@ function meshFeatures(solid) {
     const h = solid.dims.h / 2;
     axis = { role: 'axis', p: [0, 0, 0], d: [0, 1, 0], a: [0, -h, 0], b: [0, h, 0] };
   } else if (curved && solid.kind === 'revolve') {
-    const { min, max } = bodyExtent(solid);
-    axis = { role: 'axis', p: [(min[0] + max[0]) / 2, 0, 0], d: [1, 0, 0], a: [min[0], 0, 0], b: [max[0], 0, 0] };
+    // Oś bryły obrotowej – x profilu (szkic na XY – x bryły; od 1.54 na płaszczyźnie pionowej – pod kątem osi profilu).
+    const toBody = sketchToBody(solid);
+    const xs = solid.profile.islands.flatMap((island) => island.outer.map(([x]) => x));
+    const [low, high] = [Math.min(...xs), Math.max(...xs)];
+    const [a, b] = [toBody([low, 0, 0]), toBody([high, 0, 0])];
+    axis = { role: 'axis', p: mul(add(a, b), 0.5), d: unit(sub(b, a)), a, b };
   }
   if (!axis) for (let face = 0; face < count; face += 1) if (facets[face]?.kind === 'axis') facets[face] = null;
   return { points, edges, faces, axis, facets, mesh };

@@ -258,8 +258,10 @@ export function cleanSolid(raw, pageWidth, pageHeight) {
     ? raw.features.slice(0, FEATURE_LIMITS.count).map((feature) => cleanFeature(feature, pageWidth, pageHeight)).filter(Boolean) : [];
   let q = Array.isArray(raw.q) && raw.q.length === 4 && raw.q.every(finite) && Math.hypot(...raw.q) > 1e-6 ? quatNorm(raw.q).map((value) => round(value, 6)) : viewQuat('iso');
   // Bryła ze szkicu z 1.48 (szkic na płaszczyźnie przodu, bez `plane`): od 1.48.2 szkic leży na XY – położenie
-  // przeliczone tak, by bryła wyglądała jak dotąd.
-  if (model && raw.plane !== 'xy') q = quatNorm(quatMul(q, quatAxis(1, 0, 0, Math.PI / 2))).map((value) => round(value, 6));
+  // przeliczone tak, by bryła wyglądała jak dotąd. Od 1.54 także płaszczyzny pionowe XZ i YZ (z kątem osi profilu).
+  const plane = SKETCH_PLANES.includes(raw.plane) ? raw.plane : null;
+  if (model && !plane) q = quatNorm(quatMul(q, quatAxis(1, 0, 0, Math.PI / 2))).map((value) => round(value, 6));
+  const planeAngle = model && plane && plane !== 'xy' && finite(raw.planeAngle) ? round(planeTurn(raw.planeAngle), 4) : 0;
   return {
     tool: 'solid',
     kind: raw.kind,
@@ -273,7 +275,8 @@ export function cleanSolid(raw, pageWidth, pageHeight) {
     ...(raw.shade === true ? { shade: true } : {}),
     ...(raw.showDims === true ? { showDims: true } : {}),
     ...(raw.axes === true ? { axes: true } : {}),
-    ...(profile ? { profile, plane: 'xy' } : {}),
+    ...(profile ? { profile, plane: plane ?? 'xy' } : {}),
+    ...(planeAngle !== 0 ? { planeAngle } : {}),
     ...(sketch.length > 0 ? { sketch } : {}),
     ...(sketch.length > 0 && finite(raw.sketchAngle) && raw.sketchAngle !== 0 ? { sketchAngle: round(raw.sketchAngle, 6) } : {}),
     ...(sketch.length > 0 && raw.sketchMirror === true ? { sketchMirror: true } : {}),
@@ -432,14 +435,20 @@ export function profileFromShapes(shapes, kind, axis = null) {
   return { profile, center: { x: round(frame.center.x), y: round(frame.center.y) }, angle: frame.angle };
 }
 
-/** Nowa bryła ze szkicu (od 1.48): wyciągnięcie (domyślnie połowa krótszego boku szkicu) albo obrót o 360°; od 1.48.2 – z góry (jak szkic na XY). */
-export function newModel(kind, profile, { x = 0, y = 0, color = '#1d1d1f', size = SOLID_LINE_WIDTHS[1], sketch = [], sketchAngle = 0 } = {}) {
+/**
+ * Nowa bryła ze szkicu (od 1.48): wyciągnięcie (domyślnie połowa krótszego boku szkicu) albo obrót o 360°; od 1.48.2 – z góry
+ * (jak szkic na XY). Od 1.54 płaszczyzna szkicu (plane) i kąt osi profilu na płaszczyźnie pionowej (planeAngle, stopnie) –
+ * obrazek na start z przodu (XZ) albo z prawego boku (YZ), jak szkic.
+ */
+export function newModel(kind, profile, { x = 0, y = 0, color = '#1d1d1f', size = SOLID_LINE_WIDTHS[1], sketch = [], sketchAngle = 0, plane = 'xy', planeAngle = 0 } = {}) {
   const points = profile.islands.flatMap((island) => island.outer);
   const [w, h] = [Math.max(...points.map(([px]) => px)) - Math.min(...points.map(([px]) => px)), Math.max(...points.map(([, py]) => py)) - Math.min(...points.map(([, py]) => py))];
   return {
     tool: 'solid', kind, x, y,
     dims: kind === 'extrude' ? { h: round(clamp(Math.min(w, h) / 2, SOLID_LIMITS.min, SOLID_LIMITS.max)) } : { angle: 360 },
-    q: viewQuat('top'), color, size, edges: 'dashed', shade: true, showDims: true, axes: true, profile, plane: 'xy',
+    q: viewQuat(plane === 'xz' ? 'front' : plane === 'yz' ? 'right' : 'top'), color, size, edges: 'dashed', shade: true, showDims: true, axes: true, profile,
+    plane: SKETCH_PLANES.includes(plane) ? plane : 'xy',
+    ...(plane !== 'xy' && planeTurn(planeAngle) !== 0 ? { planeAngle: round(planeTurn(planeAngle), 4) } : {}),
     ...(sketch.length > 0 ? { sketch } : {}), ...(sketch.length > 0 && sketchAngle !== 0 ? { sketchAngle: round(sketchAngle, 6) } : {})
   };
 }
@@ -607,6 +616,29 @@ export function solidMesh(kind, dims) {
  * w górę (z profilu → y bryły – Z).
  */
 export const fromSketch = ([x, y, z]) => [x, z, -y];
+/**
+ * Płaszczyzny szkicu (od 1.54): 'xy' – arkusz (wyciągnięcie w górę, +Z), 'xz' – pionowa, widok z przodu: x profilu → X,
+ * y → Z, wyciągnięcie do przodu (−Y), 'yz' – pionowa, widok z prawego boku: x → Y, y → Z, wyciągnięcie w prawo (+X).
+ * Wyciągnięcie idzie od płaszczyzny szkicu w stronę patrzącego (jak w programach CAD).
+ */
+export const SKETCH_PLANES = Object.freeze(['xy', 'xz', 'yz']);
+/** Kąt w stopniach w (−180, 180]. */
+const planeTurn = (value) => {
+  const angle = ((value % 360) + 360) % 360;
+  return angle > 180 ? angle - 360 : angle || 0;
+};
+/**
+ * Punkt z układu profilu (x, y – szkic, z – wyciągnięcie / obrót) do układu bryły dla płaszczyzny bryły: XY – fromSketch;
+ * XZ i YZ – najpierw obrót profilu na płaszczyźnie o planeAngle (oś bryły obrotowej pod kątem), potem płaszczyzna.
+ */
+export function sketchToBody(element) {
+  const plane = element.plane ?? 'xy';
+  if (plane === 'xy') return fromSketch;
+  const turn = (element.planeAngle ?? 0) * D2R;
+  const [c, s] = [Math.cos(turn), Math.sin(turn)];
+  if (plane === 'xz') return ([x, y, z]) => [x * c - y * s, x * s + y * c, z];
+  return ([x, y, z]) => [z, x * s + y * c, -(x * c - y * s)];
+}
 
 /**
  * Siatka bryły ze szkicu (od 1.48): { V, F – ściany jako pętle [obrys, ...otwory] (numery wierzchołków), N, E }.
@@ -619,7 +651,7 @@ export function modelMesh(element) {
     byDims = new Map();
     modelCache.set(element.profile, byDims);
   }
-  const key = `${element.kind}:${JSON.stringify(element.dims)}`;
+  const key = `${element.kind}:${JSON.stringify(element.dims)}:${element.plane ?? 'xy'}:${element.planeAngle ?? 0}`;
   if (byDims.has(key)) return byDims.get(key);
   const V = [];
   const F = [];
@@ -683,8 +715,10 @@ export function modelMesh(element) {
       }
     }
   }
-  // Od 1.48.2 szkic leży na płaszczyźnie XY: układ profilu (x, y – szkic, z – wyciągnięcie / obrót) → układ bryły.
-  for (const vertex of V) [vertex[0], vertex[1], vertex[2]] = fromSketch(vertex);
+  // Od 1.48.2 szkic leży na płaszczyźnie XY, od 1.54 także na XZ i YZ: układ profilu (x, y – szkic, z – wyciągnięcie /
+  // obrót) → układ bryły.
+  const toBody = sketchToBody(element);
+  for (const vertex of V) [vertex[0], vertex[1], vertex[2]] = toBody(vertex);
   const N = F.map((loops) => {
     const loop = loops[0];
     let [nx, ny, nz] = [0, 0, 0];
@@ -1087,15 +1121,12 @@ function meshGeometry(element, m, at) {
 }
 
 /**
- * Bryła ze szkicu (od 1.48), także wklęsła i z otworami: krawędzie ostre i zarys próbkowane co ok. 3 jednostki – punkt
- * widać, gdy nie zasłania go żadna ściana zwrócona do patrzącego (poza ścianami tej krawędzi); granice odcinków –
- * bisekcją. Ściany od patrzącego – z płaszczyzną z(x, y) na stronie (bufor głębokości przy cieniowaniu).
+ * Krawędzie siatki widziane z przodu (od 1.54 wspólne dla bryły ze szkicu i rzutów całej sceny): view – wierzchołki w układzie
+ * widoku (x w prawo, y w górę, z do patrzącego), N – normalne w układzie widoku. Krawędzie ostre i zarys próbkowane co ok.
+ * 3 jednostki – punkt widać, gdy nie zasłania go żadna ściana zwrócona do patrzącego (poza ścianami tej krawędzi), granice
+ * odcinków – bisekcją. Wynik: { visible, hidden – łamane { points (układ widoku), closed, offset }, facing, D }.
  */
-function modelGeometry(element, m, at) {
-  const mesh = hasFeatures(element) ? featureMesh(element) : modelMesh(element);
-  const view = mesh.V.map((vertex) => rotate(m, vertex));
-  const P = view.map(([x, y]) => ({ x: element.x + x, y: element.y - y }));
-  const N = mesh.N.map((normal) => rotate(m, normal));
+export function meshLines(mesh, view, N) {
   // Ściana zwrócona do patrzącego; prawie bokiem (np. ściany otworu w widoku z góry przy położeniu z 6 cyframi) – nie.
   const facing = N.map((normal) => normal[2] > FACING);
   const D = mesh.F.map((loops, face) => {
@@ -1177,7 +1208,7 @@ function modelGeometry(element, m, at) {
       const steps = Math.max(1, Math.ceil(length / 3));
       const point = (t) => [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t];
       const visibleAt = (t) => !edge.hidden && seen(point(t), edge.faces);
-      const page = (t) => ({ x: P[a].x + (P[b].x - P[a].x) * t, y: P[a].y + (P[b].y - P[a].y) * t });
+      const page = (t) => ({ x: A[0] + (B[0] - A[0]) * t, y: A[1] + (B[1] - A[1]) * t });
       let state = visibleAt(0.5 / steps);
       if (!run || run.seen !== state) {
         flush();
@@ -1212,6 +1243,24 @@ function modelGeometry(element, m, at) {
     }
     flush();
   }
+  return { visible, hidden, facing, D };
+}
+
+/**
+ * Bryła ze szkicu (od 1.48), także wklęsła i z otworami: krawędzie ostre i zarys próbkowane co ok. 3 jednostki – punkt
+ * widać, gdy nie zasłania go żadna ściana zwrócona do patrzącego (poza ścianami tej krawędzi); granice odcinków –
+ * bisekcją. Ściany od patrzącego – z płaszczyzną z(x, y) na stronie (bufor głębokości przy cieniowaniu).
+ */
+function modelGeometry(element, m, at) {
+  const mesh = hasFeatures(element) ? featureMesh(element) : modelMesh(element);
+  const view = mesh.V.map((vertex) => rotate(m, vertex));
+  const P = view.map(([x, y]) => ({ x: element.x + x, y: element.y - y }));
+  const N = mesh.N.map((normal) => rotate(m, normal));
+  const lines = meshLines(mesh, view, N);
+  const { facing, D } = lines;
+  // Punkty łamanych z układu widoku (y w górę) na stronę.
+  const toPage = (list) => list.map((line) => ({ ...line, points: line.points.map((point) => ({ x: element.x + point.x, y: element.y - point.y })) }));
+  const [visible, hidden] = [toPage(lines.visible), toPage(lines.hidden)];
   const faces = [];
   mesh.F.forEach((loops, face) => {
     if (!facing[face]) return;
@@ -1252,7 +1301,9 @@ function modelAxes(element, at, center) {
   if (!element.axes || element.kind !== 'revolve') return [];
   const bounds = profileBounds(element.profile);
   const reach = Math.max(12, (bounds.maxX - bounds.minX) * 0.08);
-  const [a, b] = [at([bounds.minX - reach, 0, 0]), at([bounds.maxX + reach, 0, 0])];
+  // Oś – x profilu (od 1.54 na płaszczyźnie pionowej może leżeć pod kątem).
+  const toBody = sketchToBody(element);
+  const [a, b] = [at(toBody([bounds.minX - reach, 0, 0])), at(toBody([bounds.maxX + reach, 0, 0]))];
   if (Math.hypot(b.x - a.x, b.y - a.y) < (bounds.maxX - bounds.minX + 2 * reach) * 0.15) return crossLines(center, bounds.maxY + reach);
   return [[{ x: a.x, y: a.y }, { x: b.x, y: b.y }]];
 }
@@ -1261,15 +1312,19 @@ function modelAxes(element, at, center) {
 function modelDims(element, mesh, P, facing, at, center) {
   if (!element.showDims) return [];
   const dims = [];
+  const toBody = sketchToBody(element);
   if (element.kind === 'extrude') {
     const preferred = { x: -0.33, y: 0.94 };
     let best = null;
     let score = -Infinity;
+    // Kierunek wyciągnięcia w układzie bryły (szkic na XY – y bryły; od 1.54 na XZ – z, na YZ – x).
+    const along = toBody([0, 0, 1]);
     for (const edge of mesh.E) {
       if (edge.faces.length !== 2 || facing[edge.faces[0]] === facing[edge.faces[1]]) continue;
       const [A, B] = [mesh.V[edge.a], mesh.V[edge.b]];
-      // Krawędź wzdłuż wyciągnięcia (Z – y bryły).
-      if (Math.abs(A[0] - B[0]) > 1e-6 || Math.abs(A[2] - B[2]) > 1e-6) continue;
+      // Krawędź wzdłuż wyciągnięcia.
+      const d = [B[0] - A[0], B[1] - A[1], B[2] - A[2]];
+      if (Math.hypot(...cross3(d, along)) > 1e-6 * (Math.hypot(...d) + 1)) continue;
       const [p1, p2] = [P[edge.a], P[edge.b]];
       if (Math.hypot(p2.x - p1.x, p2.y - p1.y) < 20) continue;
       const value = ((p1.x + p2.x) / 2 - center.x) * preferred.x + ((p1.y + p2.y) / 2 - center.y) * preferred.y;
@@ -1288,7 +1343,7 @@ function modelDims(element, mesh, P, facing, at, center) {
     return dims;
   }
   const bounds = profileBounds(element.profile);
-  const [a, b] = [at([bounds.minX, 0, 0]), at([bounds.maxX, 0, 0])];
+  const [a, b] = [at(toBody([bounds.minX, 0, 0])), at(toBody([bounds.maxX, 0, 0]))];
   const length = Math.hypot(b.x - a.x, b.y - a.y);
   let perp = length > 1e-6 ? { x: -(b.y - a.y) / length, y: (b.x - a.x) / length } : { x: 1, y: 0 };
   if (perp.y < -1e-9 || (Math.abs(perp.y) <= 1e-9 && perp.x > 0)) perp = { x: -perp.x, y: -perp.y };
@@ -1303,7 +1358,7 @@ function modelDims(element, mesh, P, facing, at, center) {
   }
   // Największa średnica – w miejscu najdalszego punktu profilu.
   const far = element.profile.islands.flatMap((island) => island.outer).reduce((best, point) => (point[1] > best[1] ? point : best));
-  const middle = at([far[0], 0, 0]);
+  const middle = at(toBody([far[0], 0, 0]));
   const u = length > 1e-6 ? { x: perp.x, y: perp.y } : { x: 1, y: 0 };
   const direction = u.x < 0 ? { x: -u.x, y: -u.y } : u;
   dims.push({
@@ -1606,7 +1661,14 @@ function apartFrom(line, visible) {
  */
 export function solidProjections(element) {
   const base = { ...element, x: 0, y: 0, showDims: false, axes: true };
-  const raw = PROJECTION_VIEWS.map((id) => ({ id, geometry: solidGeometry({ ...base, q: viewQuat(id) }) }));
+  return layoutProjections(PROJECTION_VIEWS.map((id) => ({ id, geometry: solidGeometry({ ...base, q: viewQuat(id) }) })));
+}
+/**
+ * Układ rzutów metodą europejską (od 1.54 wspólny dla bryły i całej sceny): raw – [{ id, geometry: { visible, hidden, axes,
+ * sphere? } }] w układzie strony względem środka; góra pod przodem, lewy bok na prawo od przodu (odstęp PROJECTION_GAP),
+ * krótsze linie leżące na dłuższych odpadają. Wynik: { views: [{ id, visible, hidden, axes, bounds }], bounds }.
+ */
+export function layoutProjections(raw) {
   const extent = (geometry) => {
     const points = [...geometry.visible, ...geometry.hidden].flatMap((line) => line.points);
     if (geometry.sphere) points.push({ x: -geometry.sphere.r, y: -geometry.sphere.r }, { x: geometry.sphere.r, y: geometry.sphere.r });
@@ -1653,11 +1715,17 @@ export function circleOf(line) {
  * z przodu na stronie. style: { color, size } – niewidoczne i osie o połowę cieńsze.
  */
 export function projectionShapes(element, at, style) {
-  const { views } = solidProjections(element);
+  return viewsToShapes(solidProjections(element).views, at, style);
+}
+/** Rzuty (layoutProjections) jako kształty kartki w punkcie `at` (od 1.54 – także rzuty całej sceny). */
+export function viewsToShapes(views, at, style) {
   const thin = Math.max(0.5, round(style.size * 0.5, 1));
   const shapes = [];
   const place = (point) => ({ x: round(point.x + at.x), y: round(point.y + at.y) });
-  const add = (line, size, dash) => {
+  const add = (raw, size, dash) => {
+    // Łamana wracająca do początku (np. obrys zebrany z kawałków) – wielokąt; inaczej wzięta za odcinek długości 0.
+    const ends = raw.points.length > 2 && Math.hypot(raw.points[0].x - raw.points.at(-1).x, raw.points[0].y - raw.points.at(-1).y) < 0.5;
+    const line = ends && !raw.closed ? { ...raw, points: raw.points.slice(0, -1), closed: true } : raw;
     const points = line.points.map(place);
     const extra = dash !== 'solid' ? { dash } : {};
     const circle = circleOf({ ...line, points });

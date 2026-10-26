@@ -140,7 +140,7 @@ test('pomiary 1.53: odnośnik do cechy – po zmianie wymiarów i położenia ta
   // Narożnik +z bryły leży od strony −Y arkusza (Y w głąb): walec jest od niego w X o −100, w Y o +50, w Z o +120.
   nearAll(measureFeatures(a, b).delta, [-100, 50, 120]);
   const clean = cleanDrawing(JSON.parse(JSON.stringify(drawing)));
-  assert.equal(clean.version, 24);
+  assert.ok(clean.version >= 24, 'format 24 albo nowszy');
   assert.deepEqual(clean.strokes[0].measures, owner.measures);
   // Pomiar do bryły, której nie ma – usunięty przy wczytaniu.
   const lonely = cleanDrawing(JSON.parse(JSON.stringify({ ...drawing, strokes: [owner] })));

@@ -7988,6 +7988,7 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
 .drawing__coord-axis--y { color: #1e8e3e; }
 .drawing__coord-axis--z { color: #1a6fdb; }
 .drawing__coord-axis--turn { color: var(--text-2); }
+.drawing__coord-field--wide { grid-column: 1 / -1; }
 .drawing__coord-input {
   flex: 1;
   min-width: 0;
@@ -8041,6 +8042,11 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
 }
 .drawing__scene-chip[aria-pressed="true"] { background: var(--accent-fill); color: var(--on-accent); }
 .drawing__scene-chip--exit { font-weight: 700; color: var(--accent); }
+/* Od 1.54: na telefonie „Pomiar” i „Rzuty” – same ikony (nazwa w aria-label), żeby pierwsze widoki mieściły się na ekranie. */
+@media (max-width: 599px) {
+  .drawing__scene-chip-label { display: none; }
+  .drawing__scene-chip--tool { padding: 0 9px; }
+}
 .drawing__scene-sep { flex: none; align-self: stretch; width: 1px; margin: 6px 4px; background: var(--separator); }
 /* Od 1.52 pastylki i panel położenia zaznaczonej bryły – razem na dole: panel po prawej, na wąskim ekranie – pod pastylkami. */
 .drawing__scene-dock {

@@ -2,6 +2,7 @@
 // Pełne opisy – docs/RELEASE-<wersja>.md. Pierwsza pozycja to bieżąca wersja aplikacji (sprawdza to test).
 
 export const CHANGELOG = Object.freeze([
+  ['1.54', 'Rysunek – bryły na płaszczyźnie: szkic poziomo na wysokości Z albo pionowo na XZ (przód) i YZ (bok); „Rzuty” w scenie – przód, góra i lewy bok wszystkich brył, krawędzie zasłonięte przerywane.'],
   ['1.53', 'Rysunek – pomiary 3D w scenie: odległość z ΔX, ΔY, ΔZ i kąty między narożnikami, krawędziami, ścianami i osiami brył; wynik zostaje jako wymiar.'],
   ['1.52', 'Rysunek – położenie brył w scenie: X, Y, Z i obrót wokół Z, strzałki osi, „Postaw na ścianie” i „Na arkusz”; bryła na bryle w 2D – wspólny obrazek.'],
   ['1.51', 'Rysunek – scena 3D: kartka i bryły w przestrzeni, obrót przeciąganiem, przybliżanie, widoki i zaznaczanie; w ruchu same krawędzie.'],

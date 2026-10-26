@@ -71,7 +71,7 @@ import {
 } from '../core/transform.js';
 import { FRAME_FIELDS, FRAME_FIELD_LABELS, FRAME_FIELD_MAX, FRAME_FORMATS, cleanFrame, frameScaleText } from '../core/title-block.js';
 import { coordFactor, coordPlaces, coordText, coordUnit, defaultOrigin, formatCoord, fromSheet, originText, sheetOrigin, toSheet } from '../core/sheet-coords.js';
-import { normalYaw, placeOn, placement, resolveStacks, solidsById, stackChanges, stackFollowers, stackPaintOrder, withPose } from '../core/solid-pose.js';
+import { normalYaw, onSketchPlane, placeOn, placement, resolveStacks, sketchPlaneLevel, solidsById, stackChanges, stackFollowers, stackPaintOrder, withPose } from '../core/solid-pose.js';
 import { cleanColumnWidths, moveColumnBorder } from '../core/tables.js';
 import {
   DIAGRAM_LIMITS, DIAGRAM_SIZES, TIMELINE_UNITS, VSM_DEFAULTS, VSM_LABELS, VSM_SYMBOLS, causesText, cleanDiagram, diagramLabel, diagramTargetAt, newDiagram, parseCauses,
@@ -81,12 +81,13 @@ import { COLUMN_DEFAULTS, LAYOUT_KINDS, LAYOUT_LABELS, MATRIX_DEFAULT, cleanLayo
 import { paintDiagram, paintPageLayout } from './drawing-diagrams.js';
 import {
   FEATURE_LABELS, FEATURE_LIMITS, SOLID_EDGES, SOLID_EDGE_LABELS, SOLID_FIELDS, SOLID_KINDS, SOLID_LABELS, SOLID_LIMITS, SOLID_LINE_LABELS, SOLID_LINE_WIDTHS, SOLID_VIEWS,
-  cleanSolid, cleanSolidDims, faceAt, faceView, featureBehind, featureNormal, featureQuat, featureView, followFaces, fromSketch, hasAxis, hasFeatures, isModel,
-  newFeature, newModel, newSolid, orbitQuat, profileFromShapes, projectionShapes, quatFromAngles, quatMatrix, quatSlerp, scaleSolid, shapeLoop, sketchFrame,
+  cleanSolid, cleanSolidDims, faceAt, faceView, featureBehind, featureNormal, featureQuat, featureView, followFaces, sketchToBody, hasAxis, hasFeatures, isModel,
+  newFeature, newModel, newSolid, orbitQuat, profileFromShapes, projectionShapes, viewsToShapes, quatFromAngles, quatMatrix, quatSlerp, scaleSolid, shapeLoop, sketchFrame,
   solidAngles, solidBox, solidLabel, solidProjections, solidView, viewQuat, withQuat, PROJECTION_GAP
 } from '../core/solids.js';
 import { AXES_GAP, AXES_RADIUS, paintSolid, paintSolidAxes, solidAxes } from './drawing-solids.js';
 import { createScene } from './drawing-scene.js';
+import { sceneProjections } from '../core/scene-projections.js';
 import { openFitTable } from './fit-table.js';
 import { RING_SIDES, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPartHidden } from '../core/tool-ring.js';
 import { openToolGroups } from './drawing-groups.js';
@@ -881,7 +882,8 @@ export function openDrawingEditor({
         }
         applySceneChange(new Map([[base, placed.base], [solid, placed.solid]]), solid);
       },
-      onUndo: () => sceneUndo()
+      onUndo: () => sceneUndo(),
+      onProjections: () => projectScene()
     });
     const base = h('canvas', { class: 'drawing__canvas', 'aria-hidden': 'true' });
     const live = h('canvas', { class: 'drawing__canvas drawing__canvas--live', role: 'img', 'aria-label': `Płótno rysunku: ${title}`, dataset: { testid: 'drawing-canvas' } });
@@ -922,6 +924,9 @@ export function openDrawingEditor({
     const revolveButton = selectionButton('drawing-selection-revolve', 'revolve', 'Obróć wokół osi',
       'Obróć wokół osi – bryła obrotowa z profilu; oś – zaznaczony odcinek albo prosta (bez niej – pozioma linia pod szkicem)', () => createModel('revolve'));
     const projectButton = selectionButton('drawing-selection-projections', 'projections', 'Rzuty', 'Rzuty 2D – przód, góra i lewy bok (metoda europejska) jako linie do wymiarowania', () => projectSolid());
+    // Od 1.54: bryła ze szkicu na wybranej płaszczyźnie – XY na wysokości, pionowe XZ i YZ z odsunięciem.
+    const planeButton = selectionButton('drawing-selection-plane', 'sketchPlane', 'Na płaszczyźnie…',
+      'Bryła na płaszczyźnie – szkic poziomo na wysokości Z albo pionowo (XZ – przód, YZ – bok)', () => openPlaneSheet());
     // Od 1.49: szkic na ścianie bryły – dotknięta ściana prosto do patrzącego; zamknięte kształty na niej wycinają albo
     // dodają materiał prostopadle do ściany.
     const faceButton = selectionButton('drawing-selection-face', 'solidFace', 'Szkic na ścianie', 'Szkic na ścianie – dotknij płaskiej ściany bryły: widok prosto na nią', () => {
@@ -984,7 +989,7 @@ export function openDrawingEditor({
     moveButton.setAttribute('aria-pressed', 'false');
     const selectionBar = h('div', { class: 'drawing__selection', hidden: true, role: 'toolbar', 'aria-label': 'Zaznaczone kreski' },
       // Od 1.41 nazwa i pole z obwodem w jednej kolumnie (na telefonie – pole i obwód w osobnym wierszu).
-      h('span', { class: 'drawing__selection-head' }, selectionCount, selectionMeasure), moveButton, editButton, solidViewButton, orbitButton, faceButton, projectButton, extrudeButton, revolveButton, cutButton, addButton,
+      h('span', { class: 'drawing__selection-head' }, selectionCount, selectionMeasure), moveButton, editButton, solidViewButton, orbitButton, faceButton, projectButton, extrudeButton, revolveButton, planeButton, cutButton, addButton,
       collapseButton, shapeTextButton, magnetButton,
       layersSelectionButton, copyButton, duplicateButton,
       whyButton, chainButton, baselineButton, mirrorButton, scaleButton, positionButton, matchButton, orderButton, arrayButton, explodeButton, embedButton, deleteButton);
@@ -2440,6 +2445,7 @@ export function openDrawingEditor({
       const profile = !snip && selectionKind === 'whole' && items.every(isShape) && items.some(isProfileShape);
       extrudeButton.hidden = !profile;
       revolveButton.hidden = !profile;
+      planeButton.hidden = !profile;
       // Od 1.49: kształty na ścianie bryły – wycięcie i dodanie (bryła zaznaczona razem z nimi albo widziana prosto na ścianę pod nimi).
       const featureTarget = snip ? null : featureTargetOf(items);
       cutButton.hidden = !featureTarget;
@@ -5366,6 +5372,62 @@ export function openDrawingEditor({
       updateToolbar();
       requestRender();
     }
+    /**
+     * Rzuty całej sceny (od 1.54): przód, góra i lewy bok wszystkich brył w położeniu ze sceny, z krawędziami zasłoniętymi
+     * przez inne bryły – zwykłe kształty do wymiarowania, na tej kartce (obok brył) albo na nowej (na środku).
+     */
+    function projectScene() {
+      const projected = sceneProjections(drawing);
+      if (!projected) return;
+      closeScene();
+      if (!newPages) {
+        placeSceneProjections(projected, false);
+        return;
+      }
+      openMenu({
+        title: 'Rzuty sceny – przód, góra i lewy bok',
+        items: [
+          { label: 'Na tej kartce', icon: 'sceneProjections', testID: 'drawing-scene-projections-here', onSelect: () => placeSceneProjections(projected, false) },
+          { label: 'Na nowej kartce', icon: 'plus', testID: 'drawing-scene-projections-page', onSelect: () => placeSceneProjections(projected, true) }
+        ]
+      });
+    }
+    function placeSceneProjections({ views, bounds }, onNewPage) {
+      if (onNewPage) {
+        const before = drawing;
+        addPage();
+        if (drawing === before) return;
+      }
+      const [width, height] = [bounds.maxX - bounds.minX, bounds.maxY - bounds.minY];
+      let at;
+      if (onNewPage) {
+        at = { x: Math.max(PROJECTION_GAP, (drawing.width - width) / 2) - bounds.minX, y: Math.max(PROJECTION_GAP, (drawing.height - height) / 2) - bounds.minY };
+      } else {
+        // Na prawo od obrazków brył, gdy się mieści; inaczej na lewo, a gdy i tam brak miejsca – od lewej krawędzi kartki.
+        const boxes = drawing.strokes.filter((stroke) => stroke.tool === 'solid').map(solidBox);
+        const union = {
+          minX: Math.min(...boxes.map((box) => box.x)), maxX: Math.max(...boxes.map((box) => box.x + box.width)), minY: Math.min(...boxes.map((box) => box.y))
+        };
+        let x = union.maxX + PROJECTION_GAP - bounds.minX;
+        if (x + bounds.maxX > drawing.width) x = union.minX - PROJECTION_GAP - bounds.maxX;
+        if (x + bounds.minX < 0) x = PROJECTION_GAP - bounds.minX;
+        const y = Math.min(Math.max(union.minY - bounds.minY, PROJECTION_GAP - bounds.minY), Math.max(PROJECTION_GAP - bounds.minY, drawing.height - PROJECTION_GAP - bounds.maxY));
+        at = { x, y };
+      }
+      const shapes = viewsToShapes(views, at, { color: '#1d1d1f', size: SOLID_LINE_WIDTHS[1] });
+      if (shapes.length === 0) return;
+      history.begin();
+      for (const shape of shapes) drawing.strokes.push(onActiveLayer(shape));
+      commitStep();
+      changed = true;
+      if (tool !== 'select') setTool('select');
+      selection = new Set(shapes);
+      selectionKind = 'whole';
+      updateToolbar();
+      requestRender();
+      const large = width > drawing.width - 2 * PROJECTION_GAP || height > drawing.height - 2 * PROJECTION_GAP;
+      flash(`Rzuty sceny: przód, góra i lewy bok – ${plural(shapes.length, 'linia', 'linie', 'linii')}${large ? ' (większe niż kartka – zmniejsz „Skaluj”)' : ''}`);
+    }
     /** „Cofnij” w scenie: krok cofania rysunku; zaznaczona zostaje bryła w tym samym miejscu rysunku. */
     function sceneUndo() {
       const [only] = selection;
@@ -7104,7 +7166,7 @@ export function openDrawingEditor({
      * Bryła z zaznaczonych kształtów: profil (otwory – kształty w kształtach), dla obrotu – oś; kształty znikają z kartki
      * i zostają w bryle jako szkic („Edytuj szkic”). Bryła powstaje z przodu (jak szkic) i płynnie przechodzi do izometrii.
      */
-    function createModel(kind) {
+    function createModel(kind, onPlane = null) {
       const items = orderedSelection();
       const shapes = items.filter(isProfileShape);
       const axis = kind === 'revolve' ? axisOf(items) : null;
@@ -7113,6 +7175,8 @@ export function openDrawingEditor({
         flash(made.error);
         return;
       }
+      // Od 1.54: płaszczyzna szkicu (XY – arkusz; XZ, YZ – pionowe; oś bryły obrotowej pod kątem jak na kartce).
+      const plane = onPlane?.plane ?? 'xy';
       const sketch = items.map((stroke) => {
         const copy = translateStroke(stroke, -made.center.x, -made.center.y);
         delete copy.id;
@@ -7121,11 +7185,13 @@ export function openDrawingEditor({
         return copy;
       });
       const [first] = items;
-      const solid = newModel(kind, made.profile, {
-        x: made.center.x, y: made.center.y, color: first.color ?? inkHex(tools.penColor), size: SOLID_LINE_WIDTHS[1], sketch, sketchAngle: made.angle
+      let solid = newModel(kind, made.profile, {
+        x: made.center.x, y: made.center.y, color: first.color ?? inkHex(tools.penColor), size: SOLID_LINE_WIDTHS[1], sketch, sketchAngle: made.angle,
+        plane, planeAngle: kind === 'revolve' && plane !== 'xy' ? -made.angle * (180 / Math.PI) : 0
       });
       // Obrót: oś na kartce pod kątem – bryła obrócona tak samo (od 1.48.2 z góry – szkic na XY – oś leży wzdłuż osi szkicu).
-      if (kind === 'revolve' && made.angle !== 0) solid.q = quatFromAngles(0, 90, -made.angle * (180 / Math.PI));
+      if (kind === 'revolve' && made.angle !== 0 && plane === 'xy') solid.q = quatFromAngles(0, 90, -made.angle * (180 / Math.PI));
+      if (onPlane) solid = onSketchPlane(solid, plane, onPlane.level(solid), drawing.height);
       const placed = cleanSolid(solid, drawing.width, drawing.height);
       if (!placed) return;
       // Bryła w miejscu szkicu (kolejność rysowania); tablica zmieniana w miejscu, jak przy usuwaniu.
@@ -7138,8 +7204,95 @@ export function openDrawingEditor({
       commitStep();
       changed = true;
       selectOnly(placed);
-      flash(kind === 'extrude' ? 'Wyciągnięcie – niebieski uchwyt zmienia długość, dotknięcie bryły – okno' : 'Bryła obrotowa – niebieski uchwyt zmienia kąt, dotknięcie bryły – okno');
+      flash(plane !== 'xy' ? `Bryła na płaszczyźnie ${plane.toUpperCase()} – w „Scena 3D” stoi pionowo; niebieski uchwyt zmienia ${kind === 'extrude' ? 'długość' : 'kąt'}`
+        : kind === 'extrude' ? 'Wyciągnięcie – niebieski uchwyt zmienia długość, dotknięcie bryły – okno' : 'Bryła obrotowa – niebieski uchwyt zmienia kąt, dotknięcie bryły – okno');
       animateSolid(placed, viewQuat(kind === 'revolve' ? 'dimetric' : 'iso'));
+    }
+    /** Ostatnio wybrana płaszczyzna w oknie „Na płaszczyźnie…” (od 1.54). */
+    let lastPlane = 'xz';
+    /**
+     * Bryła ze szkicu na płaszczyźnie (od 1.54): XY – poziomo na wysokości Z, XZ – pionowo (widok z przodu: w prawo X, w górę Z)
+     * w Y, YZ – pionowo (widok z prawego boku: w prawo Y, w górę Z) w X; liczby w układzie arkusza, domyślnie płaszczyzna przez
+     * szkic (obrazek bryły zostaje w miejscu szkicu). Wyciągnięcie – w stronę patrzącego na płaszczyznę.
+     */
+    function openPlaneSheet() {
+      const items = orderedSelection();
+      const made = profileFromShapes(items.filter(isProfileShape), 'extrude');
+      if (made.error) {
+        flash(made.error);
+        return;
+      }
+      const factor = coordFactor(drawing);
+      const digits = coordPlaces(drawing);
+      const unit = coordUnit(drawing);
+      let plane = lastPlane;
+      let kind = 'extrude';
+      // Bryła próbna w miejscu szkicu – do domyślnego położenia płaszczyzny (grubość wyciągnięcia).
+      const trial = () => {
+        const axis = kind === 'revolve' ? axisOf(items) : null;
+        const shaped = profileFromShapes(items.filter(isProfileShape), kind, axis);
+        return shaped.error ? null : newModel(kind, shaped.profile, { x: shaped.center.x, y: shaped.center.y, plane });
+      };
+      /** Położenie płaszczyzny w liczbach arkusza (Z, Y albo X) ↔ świat sceny. */
+      const toNumber = (level) => (plane === 'xz' ? toSheet(drawing, { x: 0, y: drawing.height - level }).y : plane === 'yz' ? toSheet(drawing, { x: level, y: 0 }).x : level * factor);
+      const fromNumber = (value) => (plane === 'xz' ? drawing.height - fromSheet(drawing, { x: 0, y: value }).y : plane === 'yz' ? fromSheet(drawing, { x: value, y: 0 }).x : value / factor);
+      const LABELS = { xy: 'Z płaszczyzny – wysokość', xz: 'Y płaszczyzny', yz: 'X płaszczyzny' };
+      const HINTS = {
+        xy: 'Kształty leżą poziomo na wysokości Z (0 – na arkuszu); wyciągnięcie w górę.',
+        xz: 'Kształty na kartce to widok z przodu: w prawo X, w górę Z. Bryła stoi na arkuszu, szkic w płaszczyźnie Y = podana liczba, wyciągnięcie do przodu (−Y).',
+        yz: 'Kształty na kartce to widok z prawego boku: w prawo Y, w górę Z. Bryła stoi na arkuszu, szkic w płaszczyźnie X = podana liczba, wyciągnięcie w prawo (+X).'
+      };
+      const levelInput = h('input', {
+        class: 'input drawing__coord-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': 'Położenie płaszczyzny', dataset: { testid: 'drawing-plane-level' }
+      });
+      const levelName = h('span', { class: 'drawing__coord-name' });
+      const hint = h('p', { class: 'field__hint', dataset: { testid: 'drawing-plane-hint' } });
+      const refresh = () => {
+        const model = trial();
+        levelName.textContent = `${LABELS[plane]} (${unit}, skala rysunku)`;
+        levelInput.value = model ? formatCoord(toNumber(sketchPlaneLevel(model, plane, drawing.height)), digits) : '';
+        hint.textContent = HINTS[plane];
+      };
+      openFormSheet({
+        title: 'Bryła na płaszczyźnie',
+        submitLabel: 'Utwórz',
+        build: () => {
+          refresh();
+          return h('div', { class: 'drawing__coords' },
+            segmented({
+              name: 'drawing-plane', value: plane, label: 'Płaszczyzna szkicu',
+              options: [{ value: 'xy', label: 'XY – poziomo' }, { value: 'xz', label: 'XZ – przód' }, { value: 'yz', label: 'YZ – bok' }],
+              onChange: (value) => {
+                plane = value;
+                refresh();
+              }
+            }),
+            segmented({
+              name: 'drawing-plane-kind', value: kind, label: 'Rodzaj bryły',
+              options: [{ value: 'extrude', label: 'Wyciągnij' }, { value: 'revolve', label: 'Obróć wokół osi' }],
+              onChange: (value) => {
+                kind = value;
+                refresh();
+              }
+            }),
+            h('div', { class: 'drawing__coord-row' }, levelName, h('label', { class: 'drawing__coord-field drawing__coord-field--wide' }, levelInput)),
+            hint);
+        },
+        onSubmit: (api) => {
+          const value = levelInput.value.trim() === '' ? 0 : parseDecimal(levelInput.value);
+          if (value === null) {
+            api.setError('Wpisz liczbę, np. 25 albo −12,5.');
+            return false;
+          }
+          if (plane === 'xy' && value < 0) {
+            api.setError('Wysokość – 0 albo więcej (płaszczyzna nie pod arkuszem).');
+            return false;
+          }
+          lastPlane = plane;
+          createModel(kind, { plane, level: () => fromNumber(value) });
+          return true;
+        }
+      });
     }
     /** Szkic bryły z powrotem na kartce (bryła znika) – poprawisz go i wyciągniesz albo obrócisz jeszcze raz. */
     function restoreSketch(element) {
@@ -7162,7 +7315,10 @@ export function openDrawingEditor({
       selectionKind = 'whole';
       updateToolbar();
       requestRender();
-      flash('Szkic na kartce – popraw go i wybierz „Wyciągnij” albo „Obróć wokół osi”');
+      // Od 1.54: szkic bryły z płaszczyzny pionowej – ta płaszczyzna na start w oknie „Na płaszczyźnie…”.
+      const vertical = element.plane === 'xz' || element.plane === 'yz';
+      if (vertical) lastPlane = element.plane;
+      flash(vertical ? `Szkic na kartce – popraw go i wybierz „Na płaszczyźnie…” (${element.plane.toUpperCase()})` : 'Szkic na kartce – popraw go i wybierz „Wyciągnij” albo „Obróć wokół osi”');
     }
     // ---- szkic na ścianie bryły: wycięcie i dodanie (od 1.49)
     /**
@@ -7288,9 +7444,11 @@ export function openDrawingEditor({
     function extentHandle(element) {
       if (hasFeatures(element)) return featureHandle(element);
       const m = quatMatrix(element.q);
-      // Punkty w układzie szkicu (x, y – profil, z – wyciągnięcie / obrót) → bryła (od 1.48.2 szkic na XY) → strona.
+      // Punkty w układzie szkicu (x, y – profil, z – wyciągnięcie / obrót) → bryła (od 1.48.2 szkic na XY, od 1.54 też
+      // na XZ i YZ) → strona.
+      const toBody = sketchToBody(element);
       const at = (sketchPoint) => {
-        const point = fromSketch(sketchPoint);
+        const point = toBody(sketchPoint);
         const v = [m[0] * point[0] + m[1] * point[1] + m[2] * point[2], m[3] * point[0] + m[4] * point[1] + m[5] * point[2]];
         return { x: element.x + v[0], y: element.y - v[1] };
       };

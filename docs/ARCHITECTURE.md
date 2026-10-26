@@ -2100,7 +2100,8 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
 - **Moduł** `js/core/measure3d.js` (bez przeglądarki). `solidFeatures(bryła)` (pamiętane dla obiektu bryły): z siatki
   `solidShape` – ściany siatki łączone przez krawędzie gładkie (union-find); obszar o jednej normalnej – ściana płaska
   (środek – środek ciężkości pól pętli z polem ze znakiem, otwory odjęte), o różnych – powierzchnia zakrzywiona (oś:
-  walec i stożek – y bryły, bryła obrotowa – x bryły; inne – bez cechy). Krawędzie proste – ostre krawędzie między dwiema
+  walec i stożek – y bryły, bryła obrotowa – oś szkicu przez `sketchToBody`, od 1.54 w kierunku zależnym od płaszczyzny;
+  inne – bez cechy). Krawędzie proste – ostre krawędzie między dwiema
   ścianami płaskimi, odcinki tej samej pary – jedna prosta (zasięg z rzutów końców). Narożniki – wierzchołki co najmniej
   dwóch krawędzi prostych w różnych kierunkach; wierzchołek stożka ostrego; środek kuli. Każda cecha zna ściany płaskie przy
   niej (`featureVisible` – widoczna, gdy któraś zwrócona do patrzącego). `facets` – ściana siatki → ściana płaska / oś.
@@ -2120,6 +2121,38 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   i cechy pod myszą; dotknięcie liczby – `chosen` (panel szczegółów, „Usuń pomiar”). Esc – `cancel`: pierwsza cecha,
   wskazany pomiar, tryb pomiaru. Atrybuty płótna dla testów: `data-measuring`, `data-snaps`, `data-measures`, `data-first`,
   `data-chosen`.
+
+## Płaszczyzny szkicu i rzuty sceny (od 1.54)
+
+- **Zapis** (format 25, `cleanSolid` w `js/core/solids.js`): bryła ze szkicu ma `plane` (`SKETCH_PLANES`: `xy`, `xz`, `yz`;
+  brak – `xy`, a stary `q` przeliczany jak w 1.48.2 tylko wtedy) i przy `xz`/`yz` `planeAngle` (stopnie, (−180°, 180°]) –
+  obrót profilu w płaszczyźnie (kierunek osi bryły obrotowej). `sketchToBody(bryła)` – przejście z układu szkicu do układu
+  bryły (obrót, bez odbicia): `xy` – `fromSketch` jak dotąd, `xz` – obrót o `planeAngle` w płaszczyźnie (x – X, y – Z,
+  z – głębia), `yz` – to samo i obrót do boku (`[z, y', −x']`). Używają go `modelMesh` (klucz pamięci z płaszczyzną),
+  `modelAxes`, `modelDims` (krawędź długości – równoległa do `sketchToBody([0, 0, 1])`), `measure3d` (oś bryły obrotowej)
+  i rzuty sceny. `newModel(kind, profil, { plane, planeAngle })` – obrazek na start: `xz` – przód, `yz` – prawy bok.
+- **Położenie** (`js/core/solid-pose.js`): `sketchPlaneLevel(bryła, plane, H)` – domyślne położenie płaszczyzny (Y dla XZ,
+  X dla YZ, 0 dla XY), przy którym środek obrazka zostaje w miejscu szkicu; `onSketchPlane(bryła, plane, level, H)` –
+  XZ: `y` obrazka tak, by bryła zajmowała Y ∈ [level − h, level] (wyciągnięcie do −Y), YZ: `x` – X ∈ [level, level + h],
+  XY: `z = level`; bez obrotu wokół Z. Bryła obrotowa – głębia 0 (oś w płaszczyźnie).
+- **Edytor** (`js/ui/drawing.js`): `planeButton` (`drawing-selection-plane`) przy profilu; `openPlaneSheet` – okno
+  z wyborami `drawing-plane` i `drawing-plane-kind` (segmenty), polem `drawing-plane-level` (liczby arkusza przez
+  `toSheet`/`fromSheet`) i podpowiedzią `drawing-plane-hint`; `createModel(kind, { plane, level })` – kąt osi szkicu
+  bryły obrotowej z kierunku osi na kartce, potem `onSketchPlane`. `lastPlane` – płaszczyzna na start (ostatnio wybrana
+  albo płaszczyzna bryły po „Edytuj szkic”).
+- **Rzuty sceny** (`js/core/scene-projections.js`, bez przeglądarki): `sceneMesh(sceneSolids(rysunek))` – siatki brył
+  (`solidShape`; kula – `sphereMesh`, 48 × 24, krawędzie gładkie) w świecie sceny (`worldRotation(yaw)`, środek z `placement`)
+  w jednej siatce z przesuniętymi indeksami; `meshLines(siatka, widok, N)` (wydzielone z `modelGeometry` w `solids.js`)
+  liczy linie widoczne i niewidoczne na całej siatce – stąd zasłanianie między bryłami. Kamery `sceneCamera` przód (0, 0),
+  góra (0, 90), lewy bok (−90, 0); osie (`solidAxis`): walec, stożek, graniastosłup, ostrosłup – y bryły, bryła obrotowa –
+  `sketchToBody`, kula – krzyżyk; w widoku wzdłuż osi – krzyżyk (`AXIS_OVERHANG`). Układ – `layoutProjections` (wspólny
+  z `solidProjections`), kształty – `viewsToShapes` (wspólny z `projectionShapes`; łamana wracająca do początku –
+  wielokąt). `sceneProjections(rysunek)` → `{ views, bounds }` albo `null` bez brył.
+- **Scena** (`js/ui/drawing-scene.js`): przycisk `drawing-scene-projections` → `onProjections`; w edytorze `projectScene` –
+  zamknięcie sceny, menu `drawing-scene-projections-here` / `-page` (gdy wolno dodawać kartki), `placeSceneProjections` –
+  na prawo od obrazków brył (na lewo, od lewej krawędzi) albo na środku nowej kartki (`addPage`), jeden krok historii,
+  zaznaczenie i komunikat. „Pomiar” i „Rzuty” mają klasę `drawing__scene-chip--tool` – poniżej 600 px same ikony
+  (`.drawing__scene-chip-label` ukryty, nazwa w `aria-label`).
 
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 

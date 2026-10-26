@@ -13193,7 +13193,7 @@ test('rysunek 1.53: pomiary 3D w scenie – środek wierzchu do środka wierzchu
   await dialog.locator('[data-testid=note-right]').click();
   await dialog.locator('[data-testid=note-text]').waitFor();
   const drawingData = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
-  assert.equal(drawingData.version, 24);
+  assert.ok(drawingData.version >= 24, 'format 24 albo nowszy');
   const [savedBox, savedCylinder] = drawingData.strokes.filter((stroke) => stroke.tool === 'solid');
   assert.equal(savedBox.measures.length, 2, 'dwa pomiary w prostopadłościanie');
   assert.deepEqual(savedBox.measures.map((measure) => [measure.a.role, measure.b.role]), [['center', 'center'], ['face', 'axis']]);
@@ -13266,6 +13266,195 @@ test('rysunek 1.53 na telefonie: „Pomiar” w pasku, panel pomiaru w szerokoś
   await waitUntil(async () => (await toggle.getAttribute('aria-pressed')) === 'false', 'Zakończ pomiar');
   await waitUntil(() => card.isHidden(), 'Panel pomiaru schowany');
   assert.equal((await sceneMeasureLabels(editor)).length, 1, 'pomiar zostaje w scenie');
+}, { device: PHONE });
+
+/** Płaszczyzna szkicu (od 1.54): opcja przełącznika w oknie „Bryła na płaszczyźnie”. */
+const planeOption = (page, name, value) => sheet(page).locator(`input[name=${name}][value=${value}]`);
+const planeLabel = (page, name, value) => sheet(page).locator('.segmented__option', { has: page.locator(`input[name=${name}][value=${value}]`) });
+
+test('rysunek 1.54: „Na płaszczyźnie…” – XY, XZ, YZ i odsunięcie, płyta na XZ stoi pionowo; rzuty sceny na tej kartce z krawędziami zasłoniętymi przez bryłę z przodu (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const dialog = noteDialog(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Płaszczyzny</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  const scene = editor.locator('[data-testid=drawing-scene]');
+  const canvas = sceneCanvas(editor);
+  const frame = await pageFrame(page);
+  const shot = async (name) => {
+    await nextFrames(page);
+    await page.screenshot({ path: path.join(OUTPUT, `rysunek-154-${name}.png`) });
+  };
+  const settled = () => waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz po ruchu');
+  const level = () => sheet(page).locator('[data-testid=drawing-plane-level]');
+  const hint = () => sheet(page).locator('[data-testid=drawing-plane-hint]');
+
+  // Prostokąt 300 × 200 (jednostki strony) – profil płyty.
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  await page.mouse.move(...frame.screen(500, 450));
+  await page.mouse.down();
+  await page.mouse.move(...frame.screen(800, 650), { steps: 8 });
+  await page.mouse.up();
+  await expectText(count, 'Prostokąt');
+  await editor.locator('[data-testid=drawing-selection-plane]').click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Bryła na płaszczyźnie');
+  assert.equal(await planeOption(page, 'drawing-plane', 'xz').isChecked(), true, 'na start XZ – przód');
+  await expectText(hint(), 'widok z przodu');
+  const frontLevel = await level().inputValue();
+  await planeLabel(page, 'drawing-plane', 'yz').click();
+  await expectText(hint(), 'widok z prawego boku');
+  assert.notEqual(await level().inputValue(), frontLevel, 'YZ – inne położenie płaszczyzny (X)');
+  await planeLabel(page, 'drawing-plane', 'xy').click();
+  await expectText(hint(), 'poziomo na wysokości Z');
+  assert.equal(await level().inputValue(), '0,00', 'XY – na arkuszu');
+  await planeLabel(page, 'drawing-plane', 'xz').click();
+  assert.equal(await level().inputValue(), frontLevel);
+  await shot('okno');
+  await saveSheet(page);
+  await expectText(count, 'Bryła: wyciągnięcie');
+  await expectText(notice, 'Bryła na płaszczyźnie XZ');
+  await page.waitForTimeout(600);
+  await shot('plyta-2d');
+
+  // Prostopadłościan (6 × 4 × 3 cm, niższy i węższy od płyty) za płytą: w scenie X jak płyta, Y o 3,5 cm dalej od przodu.
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').click();
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await page.keyboard.press('Escape');
+  await editor.locator('[data-testid=drawing-scene-open]').click();
+  await scene.waitFor();
+  await settled();
+  const centers = await sceneCenters(editor);
+  const [plateIndex, boxIndex] = Object.keys(centers).map(Number).sort((a, b) => a - b);
+  await page.mouse.click(...centers[plateIndex]);
+  await waitUntil(async () => (await canvas.getAttribute('data-selected')) === String(plateIndex), 'Zaznaczona płyta');
+  assert.equal(await poseValue(editor, 'z'), 0, 'płyta stoi na arkuszu');
+  const [plateX, plateY] = [await poseValue(editor, 'x'), await poseValue(editor, 'y')];
+  await page.mouse.click(...(await sceneCenters(editor))[boxIndex]);
+  await waitUntil(async () => (await canvas.getAttribute('data-selected')) === String(boxIndex), 'Zaznaczony prostopadłościan');
+  for (const [key, value] of [['x', plateX], ['y', plateY + 3.5]]) {
+    const input = editor.locator(`[data-testid=drawing-scene-pose-${key}]`);
+    await input.fill(String(value).replace('.', ','));
+    await input.press('Enter');
+    await settled();
+  }
+  await editor.locator('[data-testid=drawing-scene-view-front]').click();
+  await waitUntil(async () => (await canvas.getAttribute('data-view')) === 'front', 'Przód');
+  await settled();
+  await shot('scena-przod');
+  await editor.locator('[data-testid=drawing-scene-view-iso]').click();
+  await waitUntil(async () => (await canvas.getAttribute('data-view')) === 'iso', 'Izometria');
+  await settled();
+  await shot('scena');
+
+  // Rzuty sceny na tej kartce: scena zamknięta, linie zaznaczone, komunikat.
+  await editor.locator('[data-testid=drawing-scene-projections]').click();
+  await page.locator('[data-testid=drawing-scene-projections-here]').click();
+  await waitUntil(() => scene.isHidden(), 'Powrót do 2D');
+  await expectText(notice, 'Rzuty sceny: przód, góra i lewy bok');
+  await waitUntil(async () => /\d+ element/.test(await count.textContent()), 'Zaznaczone linie rzutów');
+  await shot('rzuty');
+
+  // Zapis: płyta na XZ (profil 300 × 200, grubość 100), w scenie pionowo – X 300, Y 100, Z 0–200; rzuty – linie
+  // ciągłe i przerywane (z przodu prostopadłościan za płytą).
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const drawingData = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  assert.equal(drawingData.version, 25);
+  const plate = drawingData.strokes.find((stroke) => stroke.tool === 'solid' && stroke.kind === 'extrude');
+  assert.equal(plate.plane, 'xz');
+  const { sceneSolids } = await import('../../js/core/scene.js');
+  const placed = sceneSolids(drawingData).find((item) => item.solid.kind === 'extrude');
+  assert.deepEqual(placed.half.map((value) => Math.round(value)), [150, 50, 100], 'płyta pionowo: szerokość X, grubość Y, wysokość Z');
+  assert.equal(Math.round(placed.center[2] - placed.half[2]), 0, 'stoi na arkuszu');
+  const lines = drawingData.strokes.filter((stroke) => stroke.tool === 'shape');
+  assert.ok(lines.length >= 6, `linie rzutów: ${lines.length}`);
+  assert.ok(lines.some((shape) => shape.dash === 'dashed'), 'krawędzie zasłonięte – przerywane');
+  assert.ok(lines.filter((shape) => shape.shape === 'polygon' && !shape.dash).length >= 4, 'obrysy brył z góry i z boku – wielokąty');
+}, { device: DESKTOP });
+
+test('rysunek 1.54 na iPadzie: bryła obrotowa na płaszczyźnie YZ dotykiem, „Edytuj szkic” – znów YZ, rzuty sceny na nowej kartce', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>iPad</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const frame = await pageFrame(page);
+  // Szkic myszą (jak w 1.48), dalej palcem.
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  await page.mouse.move(...frame.screen(500, 400));
+  await page.mouse.down();
+  await page.mouse.move(...frame.screen(700, 520), { steps: 8 });
+  await page.mouse.up();
+  await expectText(count, 'Prostokąt');
+  await editor.locator('[data-testid=drawing-selection-plane]').tap();
+  await planeLabel(page, 'drawing-plane', 'yz').tap();
+  await planeLabel(page, 'drawing-plane-kind', 'revolve').tap();
+  await expectText(sheet(page).locator('[data-testid=drawing-plane-hint]'), 'widok z prawego boku');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-154-ipad-okno.png') });
+  await saveSheet(page);
+  await expectText(count, 'Bryła: obrotowa');
+  // „Edytuj szkic” – szkic na kartce, w oknie „Na płaszczyźnie…” na start znów YZ.
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  await waitUntil(async () => Boolean(await canvas.getAttribute('data-axes')), 'Osie bryły');
+  const box = await canvas.boundingBox();
+  const [, , sx, sy] = (await canvas.getAttribute('data-axes')).split(',').map(Number);
+  await page.touchscreen.tap(box.x + sx, box.y + sy);
+  await page.locator('[data-testid=drawing-solid-sketch]').tap();
+  await expectText(count, 'Prostokąt');
+  await expectText(editor.locator('[data-testid=drawing-notice]'), '„Na płaszczyźnie…” (YZ)');
+  await editor.locator('[data-testid=drawing-selection-plane]').tap();
+  assert.equal(await planeOption(page, 'drawing-plane', 'yz').isChecked(), true, 'płaszczyzna bryły na start');
+  await planeLabel(page, 'drawing-plane-kind', 'revolve').tap();
+  await saveSheet(page);
+  await expectText(count, 'Bryła: obrotowa');
+  await editor.locator('[data-testid=drawing-scene-open]').tap();
+  await editor.locator('[data-testid=drawing-scene]').waitFor();
+  await waitUntil(async () => (await sceneCanvas(editor).getAttribute('data-moving')) === 'false', 'Pełny obraz');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-154-ipad-scena.png') });
+  await editor.locator('[data-testid=drawing-scene-projections]').tap();
+  await page.locator('[data-testid=drawing-scene-projections-page]').tap();
+  await waitUntil(() => editor.locator('[data-testid=drawing-scene]').isHidden(), 'Powrót do 2D');
+  await expectText(editor.locator('[data-testid=drawing-page-number]'), 'Kartka 2 z 2');
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Rzuty sceny');
+  await waitUntil(async () => /\d+ element/.test(await count.textContent()), 'Rzuty na nowej kartce');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-154-ipad-rzuty.png') });
+}, { device: IPAD });
+
+test('rysunek 1.54 na telefonie: „Na płaszczyźnie…” na ekranie, okno w szerokości ekranu (trzy płaszczyzny, rodzaj, położenie), bez przewijania w bok', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const frame = await pageFrame(page);
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  await page.mouse.move(...frame.screen(300, 400));
+  await page.mouse.down();
+  await page.mouse.move(...frame.screen(700, 650), { steps: 8 });
+  await page.mouse.up();
+  await expectText(count, 'Prostokąt');
+  const button = editor.locator('[data-testid=drawing-selection-plane]');
+  await button.scrollIntoViewIfNeeded();
+  const bounds = await button.boundingBox();
+  assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 391, `„Na płaszczyźnie…” na ekranie: ${JSON.stringify(bounds)}`);
+  await button.tap();
+  await sheet(page).locator('[data-testid=drawing-plane-level]').waitFor();
+  for (const locator of [planeLabel(page, 'drawing-plane', 'xy'), planeLabel(page, 'drawing-plane', 'yz'), planeLabel(page, 'drawing-plane-kind', 'revolve'), sheet(page).locator('[data-testid=drawing-plane-level]')]) {
+    const box = await locator.boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 391, `w szerokości ekranu: ${JSON.stringify(box)}`);
+  }
+  assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-154-telefon.png') });
+  await saveSheet(page);
+  await expectText(count, 'Bryła: wyciągnięcie');
 }, { device: PHONE });
 
 // ---------------------------------------------------------------- nauka z fiszkami
