@@ -2,6 +2,7 @@
 // Pełne opisy – docs/RELEASE-<wersja>.md. Pierwsza pozycja to bieżąca wersja aplikacji (sprawdza to test).
 
 export const CHANGELOG = Object.freeze([
+  ['1.51', 'Rysunek – scena 3D: kartka i bryły w przestrzeni, obrót przeciąganiem, przybliżanie, widoki i zaznaczanie; w ruchu same krawędzie.'],
   ['1.50', 'Rysunek – układ współrzędnych arkusza: osie od lewego dolnego rogu, współrzędne pod kursorem, punkty i położenie wpisywane liczbami (mm w skali); osie brył jak w CAD.'],
   ['1.49', 'Rysunek – szkic na ścianie bryły: kształty na płaskiej ścianie wycinają materiał w głąb (kieszeń, otwór na wylot) albo dodają go na zewnątrz; operacje w historii modelu.'],
   ['1.48.2', 'Rysunek – bryły: osie jak w rysunku technicznym (Z do góry, X i Y na dole); szkic leży na płaszczyźnie XY, wyciągnięcie idzie w górę.'],

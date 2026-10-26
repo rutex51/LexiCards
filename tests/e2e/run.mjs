@@ -12491,6 +12491,234 @@ test('rysunek 1.50 na telefonie: pastylka współrzędnych i „Punkt X, Y” na
   await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Prostokąt');
 }, { device: PHONE });
 
+/** Scena 3D (od 1.51): płótno sceny, środki brył (px płótna, w kolejności rysunku) i najjaśniejszy kolor wokół punktu. */
+const sceneCanvas = (editor) => editor.locator('[data-testid=drawing-scene-canvas]');
+async function sceneCenters(editor) {
+  const canvas = sceneCanvas(editor);
+  const box = await canvas.boundingBox();
+  const text = await canvas.getAttribute('data-centers');
+  return Object.fromEntries(text.split(';').map((entry) => {
+    const [index, xy] = entry.split(':');
+    const [x, y] = xy.split(',').map(Number);
+    return [index, [box.x + x, box.y + y]];
+  }));
+}
+const scenePixel = (editor, [x, y]) => sceneCanvas(editor).evaluate((canvas, [px, py]) => {
+  const box = canvas.getBoundingClientRect();
+  const ratio = canvas.width / box.width;
+  const data = canvas.getContext('2d').getImageData(Math.round((px - box.left) * ratio) - 2, Math.round((py - box.top) * ratio) - 2, 5, 5).data;
+  let light = 0;
+  for (let index = 0; index < data.length; index += 4) light = Math.max(light, Math.min(data[index], data[index + 1], data[index + 2]));
+  return light;
+}, [x, y]);
+/** Bryła na kartce (2D) – środek z układu osi przy zaznaczonej bryle (px strony). */
+async function solidCenter2d(editor) {
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  await waitUntil(async () => Boolean(await canvas.getAttribute('data-axes')), 'Układ osi bryły');
+  const box = await canvas.boundingBox();
+  const [, , sx, sy] = (await canvas.getAttribute('data-axes')).split(',').map(Number);
+  return [box.x + sx, box.y + sy];
+}
+
+test('rysunek 1.51: scena 3D – „Scena 3D” przy bryłach, kartka płasko z treścią 2D, bryły stoją na kartce, obrót przeciąganiem i kółko – w ruchu same krawędzie, widoki, zaznaczenie bryły, Esc i „2D” – powrót (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Scena</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const opener = editor.locator('[data-testid=drawing-scene-open]');
+  const scene = editor.locator('[data-testid=drawing-scene]');
+  const canvas = sceneCanvas(editor);
+  const frame = await pageFrame(page);
+  const shot = async (name) => {
+    await nextFrames(page);
+    await page.screenshot({ path: path.join(OUTPUT, `rysunek-151-${name}.png`) });
+  };
+  const view = () => canvas.getAttribute('data-view');
+  const settled = () => waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz po ruchu');
+
+  // Bez brył – bez „Scena 3D”. Prostokąt na kartce (treść 2D), prostopadłościan przesunięty w lewo, walec na środku.
+  assert.equal(await opener.isVisible(), false, 'bez brył – bez sceny');
+  await press(editor, 'drawing-shape-rect');
+  await page.mouse.move(...frame.screen(1150, 750));
+  await page.mouse.down();
+  await page.mouse.move(...frame.screen(1450, 950), { steps: 6 });
+  await page.mouse.up();
+  await expectText(count, 'Prostokąt');
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').click();
+  await expectText(count, 'Bryła: Prostopadłościan');
+  const boxAt = await solidCenter2d(editor);
+  await page.mouse.move(...boxAt);
+  await page.mouse.down();
+  await page.mouse.move(boxAt[0] - 260, boxAt[1] + 40, { steps: 8 });
+  await page.mouse.up();
+  await editor.locator('[data-testid=drawing-insert-solid-cylinder]').click();
+  await expectText(count, 'Bryła: Walec');
+  await opener.waitFor();
+  await page.keyboard.press('Escape');
+
+  // Scena: interfejs 2D schowany, izometria, dwie bryły, pełny obraz (bryły cieniowane).
+  await opener.click();
+  await scene.waitFor();
+  assert.equal(await view(), 'iso', 'na start izometria (jak obrazki brył)');
+  assert.equal(await editor.locator('[data-testid=drawing-status]').isVisible(), false, 'interfejs 2D schowany');
+  assert.equal(await editor.locator('[data-testid=drawing-scene-view-iso]').getAttribute('aria-pressed'), 'true');
+  await settled();
+  let centers = await sceneCenters(editor);
+  assert.equal(Object.keys(centers).length, 2, `dwie bryły: ${JSON.stringify(centers)}`);
+  const [boxIndex, cylinderIndex] = Object.keys(centers).map(Number).sort((a, b) => a - b);
+  assert.ok(centers[boxIndex][0] < centers[cylinderIndex][0] - 100, 'prostopadłościan na lewo od walca');
+  assert.ok(await scenePixel(editor, centers[boxIndex]) < 225, 'pełny obraz – ściany cieniowane');
+  await shot('izometria');
+
+  // Obrót przeciągnięciem (bez puszczenia): w ruchu same krawędzie – w środku bryły kartka, nie ściana.
+  const empty = [frame.x + 40, frame.y + frame.height - 80];
+  await page.mouse.move(...empty);
+  await page.mouse.down();
+  await page.mouse.move(empty[0] + 140, empty[1] - 30, { steps: 10 });
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'true', 'Ruch');
+  assert.equal(await view(), '', 'obrócona – poza gotowym widokiem');
+  centers = await sceneCenters(editor);
+  assert.ok(await scenePixel(editor, centers[boxIndex]) > 235, 'w ruchu bez krycia i cieniowania');
+  await shot('obrot-same-krawedzie');
+  await page.mouse.up();
+  await settled();
+  centers = await sceneCenters(editor);
+  assert.ok(await scenePixel(editor, centers[boxIndex]) < 225, 'po puszczeniu – pełny obraz');
+  await shot('obrot-po-puszczeniu');
+
+  // Kółko myszy – przybliżenie: w ruchu same krawędzie, chwilę później pełny obraz.
+  await page.mouse.wheel(0, -240);
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'true', 'Przybliżanie – ruch');
+  await settled();
+
+  // Widoki: przód (od −Y: X w prawo, Z w górę, Y od patrzącego), góra (X w prawo, Y w górę), izometria.
+  const axes = async () => {
+    const box = await canvas.boundingBox();
+    const [x, y, z, origin] = (await canvas.getAttribute('data-axes')).split(';').map((pair) => pair.split(',').map(Number)).map(([px, py]) => [box.x + px, box.y + py]);
+    return { x, y, z, origin };
+  };
+  await editor.locator('[data-testid=drawing-scene-view-front]').click();
+  await waitUntil(async () => (await view()) === 'front', 'Widok z przodu');
+  await settled();
+  let a = await axes();
+  assert.ok(a.x[0] > a.origin[0] + 20 && Math.abs(a.x[1] - a.origin[1]) <= 1, `przód – X w prawo: ${a.x} (${a.origin})`);
+  assert.ok(a.z[1] < a.origin[1] - 20 && Math.abs(a.z[0] - a.origin[0]) <= 1, `przód – Z w górę: ${a.z}`);
+  assert.ok(Math.hypot(a.y[0] - a.origin[0], a.y[1] - a.origin[1]) <= 1.5, `przód – Y od patrzącego: ${a.y}`);
+  centers = await sceneCenters(editor);
+  assert.ok(centers[cylinderIndex][1] < centers[boxIndex][1], 'z przodu: walec (wyższy) – środek wyżej');
+  await shot('przod');
+  await editor.locator('[data-testid=drawing-scene-view-top]').click();
+  await waitUntil(async () => (await view()) === 'top', 'Widok z góry');
+  await settled();
+  a = await axes();
+  assert.ok(a.x[0] > a.origin[0] + 20 && Math.abs(a.y[0] - a.origin[0]) <= 1 && a.y[1] < a.origin[1] - 20, `góra – X w prawo, Y w górę: ${a.x} / ${a.y}`);
+  await shot('gora');
+  await editor.locator('[data-testid=drawing-scene-view-iso]').click();
+  await waitUntil(async () => (await view()) === 'iso', 'Izometria');
+  await settled();
+
+  // Zaznaczenie: dotknięcie bryły – nazwa, dotknięcie obok – bez zaznaczenia.
+  centers = await sceneCenters(editor);
+  await page.mouse.click(...centers[boxIndex]);
+  await waitUntil(async () => (await canvas.getAttribute('data-selected')) === String(boxIndex), 'Zaznaczony prostopadłościan');
+  await expectText(editor.locator('[data-testid=drawing-scene-selected]'), 'Bryła: Prostopadłościan');
+  await shot('zaznaczenie');
+  await page.mouse.click(...empty);
+  await waitUntil(async () => (await canvas.getAttribute('data-selected')) === '', 'Bez zaznaczenia');
+  assert.equal(await editor.locator('[data-testid=drawing-scene-selected]').isVisible(), false);
+  await page.mouse.click(...centers[cylinderIndex]);
+  await waitUntil(async () => (await canvas.getAttribute('data-selected')) === String(cylinderIndex), 'Zaznaczony walec');
+
+  // Esc – z powrotem kartka 2D z zaznaczonym walcem; „Scena 3D” i „2D” – znów scena i powrót.
+  await page.keyboard.press('Escape');
+  await waitUntil(() => scene.isHidden(), 'Scena schowana');
+  assert.equal(await editor.locator('[data-testid=drawing-status]').isVisible(), true, 'interfejs 2D z powrotem');
+  await expectText(count, 'Bryła: Walec');
+  await opener.click();
+  await scene.waitFor();
+  assert.equal(await canvas.getAttribute('data-selected'), String(cylinderIndex), 'zaznaczona bryła także w scenie');
+  await editor.locator('[data-testid=drawing-scene-exit]').click();
+  await waitUntil(() => scene.isHidden(), 'Scena schowana („2D”)');
+  assert.equal(await editor.locator('[data-testid=drawing-dialog]').count() + (await page.locator('dialog[data-testid=drawing-dialog]').count()), 1, 'edytor otwarty');
+}, { device: DESKTOP });
+
+test('rysunek 1.51 na iPadzie: scena 3D palcem – obrót jednym palcem (w ruchu same krawędzie), dotknięcie bryły – zaznaczenie, przybliżenie dwoma palcami', async ({ open, context }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>iPad</p>');
+  const canvas = sceneCanvas(editor);
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-cone]').tap();
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Bryła: Stożek');
+  await editor.locator('[data-testid=drawing-scene-open]').tap();
+  await editor.locator('[data-testid=drawing-scene]').waitFor();
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz');
+  assert.equal(await canvas.getAttribute('data-selected'), await canvas.getAttribute('data-selected'));
+  const box = await canvas.boundingBox();
+  const finger = await touchAt(context, page, box.x + 60, box.y + box.height - 120);
+  await finger.move(box.x + 260, box.y + box.height - 160);
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'true', 'Obrót palcem');
+  assert.equal(await canvas.getAttribute('data-view'), '');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-151-ipad-palec.png') });
+  await finger.end();
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Po puszczeniu');
+  const [cone] = Object.values(await sceneCenters(editor));
+  await page.touchscreen.tap(...cone);
+  await expectText(editor.locator('[data-testid=drawing-scene-selected]'), 'Bryła: Stożek');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-151-ipad.png') });
+
+  // Dwa palce rozsuwane – przybliżenie (w ruchu same krawędzie): stożek dalej od początku układu na ekranie.
+  const spread = async () => {
+    const [x, y] = Object.values(await sceneCenters(editor))[0];
+    const [ox, oy] = (await canvas.getAttribute('data-axes')).split(';')[3].split(',').map(Number);
+    return Math.hypot(x - box.x - ox, y - box.y - oy);
+  };
+  const before = await spread();
+  const client = await context.newCDPSession(page);
+  const fingers = (type, gap) => client.send('Input.dispatchTouchEvent', {
+    type, touchPoints: type === 'touchEnd' ? [] : [{ x: box.x + box.width / 2 - gap, y: box.y + box.height / 2, id: 1 }, { x: box.x + box.width / 2 + gap, y: box.y + box.height / 2, id: 2 }]
+  });
+  await fingers('touchStart', 40);
+  for (let gap = 50; gap <= 120; gap += 10) await fingers('touchMove', gap);
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'true', 'Przybliżanie dwoma palcami');
+  await fingers('touchEnd', 0);
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Po przybliżeniu');
+  const after = await spread();
+  assert.ok(after > before * 2, `przybliżenie dwoma palcami: ${before} → ${after}`);
+}, { device: IPAD });
+
+test('rysunek 1.51 na telefonie: „Scena 3D” na ekranie, pasek widoków w szerokości ekranu (przewijany), bez przewijania strony w bok', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').scrollIntoViewIfNeeded();
+  await editor.locator('[data-testid=drawing-insert-solid-box]').click();
+  const opener = editor.locator('[data-testid=drawing-scene-open]');
+  await opener.waitFor();
+  const item = await opener.boundingBox();
+  assert.ok(item.x >= 0 && item.x + item.width <= 391, `„Scena 3D” na ekranie: ${JSON.stringify(item)}`);
+  await opener.tap();
+  await editor.locator('[data-testid=drawing-scene]').waitFor();
+  await waitUntil(async () => (await sceneCanvas(editor).getAttribute('data-moving')) === 'false', 'Pełny obraz');
+  for (const id of ['drawing-scene-exit', 'drawing-scene-view-iso', 'drawing-scene-view-front']) {
+    const bounds = await editor.locator(`[data-testid=${id}]`).boundingBox();
+    assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 391, `${id} na ekranie`);
+  }
+  assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-151-telefon.png') });
+  await editor.locator('[data-testid=drawing-scene-view-top]').scrollIntoViewIfNeeded();
+  await editor.locator('[data-testid=drawing-scene-view-top]').tap();
+  await waitUntil(async () => (await sceneCanvas(editor).getAttribute('data-view')) === 'top', 'Góra na telefonie');
+  await editor.locator('[data-testid=drawing-scene-exit]').scrollIntoViewIfNeeded();
+  await editor.locator('[data-testid=drawing-scene-exit]').tap();
+  await waitUntil(() => editor.locator('[data-testid=drawing-scene]').isHidden(), 'Powrót do 2D');
+}, { device: PHONE });
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');

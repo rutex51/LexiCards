@@ -2037,6 +2037,31 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   – błąd w oknie. **Położenie** (`openPositionSheet`): odcinek i podobne – `segmentBetween` + `replaceLinked` (końce
   odklejone), środek albo lewy dolny róg obrysu – `moveSelection`.
 
+## Scena 3D (od 1.51)
+
+- **Moduł** `js/core/scene.js` (bez przeglądarki): świat = układ arkusza w jednostkach strony – punkt strony (x, y) to
+  (x, wysokość − y, 0), Z do góry. `sceneCamera(az, el)` – wektory ekranu xv, yv, zv (azymut od −Y w stronę +X, wysokość
+  0–90° – `SCENE_ELEVATION`, kartka nigdy od spodu); `SCENE_VIEWS` – izometria (45°; 35,264°), przód, boki, tył, góra.
+  Bryła stoi prosto: obrót `SCENE_POSE` (świat z układu bryły: X = x, Y = −z, Z = y – jak osie W1), więc kwaternion widoku
+  `sceneQuat(camera)` jest jeden dla wszystkich brył i w gotowych widokach równy `viewQuat` tego widoku (rozkład 2D brył –
+  `solidGeometry`, `paintSolid` – bez zmian). `sceneSolids` – bryły rysunku (bez szyków): początek układu bryły nad środkiem
+  obrazka, podstawa (najmniejsze y bryły) w Z = 0, środek i połowy zasięgu w świecie (`bodyExtent` z `solidShape`, kula –
+  promień); `sceneBounds` – kartka i bryły.
+- **Rzut**: `sceneView` – skala (`base · zoom`) i przesunięcie tak, by środek sceny był w środku obszaru (+ `pan`);
+  `fitScale` – rzut 8 narożników sceny mieści się w obszarze pod paskiem (przy otwarciu, gotowym widoku, „Cała” i zmianie
+  wielkości; w trakcie obrotu stała). `sheetMatrix` – płaszczyzna kartki → ekran (rzut równoległy płaszczyzny jest liniowy:
+  `setTransform(a, b, c, d, e, f)`; dodatni wyznacznik dla wysokości > 0). `paintOrder` – od najdalszej bryły (środek
+  zasięgu). `orbit`, `sceneViewId`, `blendCamera` (azymut najkrótszą drogą, łagodny start i koniec).
+- **Edytor** (`js/ui/drawing-scene.js`, `createScene`): własne płótno nad stroną (`drawing__scene`), interfejs 2D schowany
+  klasą `drawing__body--scene`. Pełny obraz: cień i brzeg kartki, treść kartki – `paintDrawing` (bez brył) w przekształceniu
+  `sheetMatrix` (wektorowo), bryły od najdalszej – `paintSolid` z bryłą w położeniu sceny (`q = sceneQuat`, x i y – rzut
+  początku układu bryły w jednostkach widoku, bez wymiarów, z cieniowaniem; zaznaczona – w kolorze zaznaczenia), osie
+  w początku układu arkusza (wskaźnik – bez dotykania). W ruchu (`moving`: przeciąganie, dwa palce, kółko – 250 ms, przejście
+  do widoku – 380 ms): kartka z obrazu zrobionego raz (do 2400 px), bryły – krawędzie ostre i obrys ścian gładkich ze
+  `solidShape` (bez zasłaniania), kula – okrąg. Zaznaczenie – dotknięcie bez ruchu: ściany rozkładu ostatniego pełnego
+  obrazu od najbliższej bryły; `onSelect` ustawia zaznaczenie edytora. Esc i „2D” – `closeScene`. Atrybuty płótna dla testów:
+  `data-view`, `data-moving`, `data-centers` (środki brył), `data-selected`, `data-axes`.
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).
@@ -2132,7 +2157,8 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   od 1.49 operacje logiczne (objętości, siatki szczelne, scalanie ścian), ściana i widok na nią, wycięcie i dodanie,
   dane, odbicie, skala, przesuwanie za ścianami, rozkład, rzuty i DXF brył z operacjami; od 1.50 układ współrzędnych
   arkusza (początek z ramką i bez, liczby w mm / cm / m / calach, w obie strony, napisy, zapis początku, DXF od początku)
-  i osie brył jak w programach CAD;
+  i osie brył jak w programach CAD; od 1.51 scena 3D (kamera, widoki równe widokom brył, bryły na kartce, granice,
+  przekształcenie kartki, skala w widoku, kolejność rysowania, obrót i przejście do widoku);
   od 1.48 bryły ze szkicu – profil z kształtów i oś, siatki zamknięte, krawędzie niewidoczne brył wklęsłych, ściany
   z płaszczyznami, wymiary, odbicie i skala z profilem, rzuty 2D, DXF),
   układ wzoru na płótnie, spójność plików wydania.

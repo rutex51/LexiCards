@@ -25,6 +25,7 @@
 // odbicie lustrzane (core/transform.js), Shift – kilka elementów kliknięciami i przełącznik palca.
 // Od 1.50: układ współrzędnych arkusza (core/sheet-coords.js) – osie w początku (lewy dolny róg arkusza albo punkt
 // wskazany), współrzędne pod kursorem, okno „Położenie” zaznaczonego (X, Y) i punkty nowego kształtu wpisane liczbami.
+// Od 1.51: „Scena 3D” (drawing-scene.js) – kartka i bryły w przestrzeni, tylko do oglądania; interfejs 2D schowany.
 //
 // Rysik i palec: gdy aplikacja raz zobaczy rysik (pointerType 'pen'), rysuje tylko rysik, a palec
 // przesuwa stronę (dłoń oparta o ekran nie zostawia śladów); bez rysika (iPhone) rysuje palec.
@@ -84,6 +85,7 @@ import {
   solidAngles, solidBox, solidLabel, solidProjections, solidView, viewQuat, withQuat, PROJECTION_GAP
 } from '../core/solids.js';
 import { AXES_GAP, AXES_RADIUS, paintSolid, paintSolidAxes, solidAxes } from './drawing-solids.js';
+import { createScene } from './drawing-scene.js';
 import { openFitTable } from './fit-table.js';
 import { RING_SIDES, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPartHidden } from '../core/tool-ring.js';
 import { openToolGroups } from './drawing-groups.js';
@@ -859,6 +861,14 @@ export function openDrawingEditor({
     // top – miejsce u góry płótna zajęte przez pasek narzędzi (pasek leży nad płótnem).
     const view = { zoom: 1, scale: 1, x: 0, y: 0, width: 0, height: 0, top: STAGE_MARGIN, bottom: STAGE_MARGIN, dpr: 1 };
     const stage = h('div', { class: 'drawing__stage', dataset: { testid: 'drawing-stage' } });
+    // Scena 3D (od 1.51) – nad stroną, z własnym płótnem, paskiem widoków i wskaźnikami; dotknięcie bryły zaznacza ją także w 2D.
+    const scene = createScene({
+      onSelect: (solid) => {
+        selection = solid ? new Set([solid]) : new Set();
+        selectionKind = 'whole';
+      },
+      onExit: () => closeScene()
+    });
     const base = h('canvas', { class: 'drawing__canvas', 'aria-hidden': 'true' });
     const live = h('canvas', { class: 'drawing__canvas drawing__canvas--live', role: 'img', 'aria-label': `Płótno rysunku: ${title}`, dataset: { testid: 'drawing-canvas' } });
     const selectionCount = h('span', { class: 'drawing__selection-count', dataset: { testid: 'drawing-selection-count' } });
@@ -2585,6 +2595,7 @@ export function openDrawingEditor({
       clampView();
       refreshRulerPanel?.();
       requestRender();
+      if (scene.isOpen()) scene.resize();
     };
     const observer = new ResizeObserver(resize);
 
@@ -2880,8 +2891,13 @@ export function openDrawingEditor({
       type: 'button', class: 'drawing__pill', hidden: true, 'aria-haspopup': 'dialog', title: 'Punkty kształtu ze współrzędnych X, Y',
       dataset: { testid: 'drawing-coord-entry' }, onClick: () => openCoordEntry()
     }, icon('coordPoint', { size: 14 }), 'Punkt X, Y');
+    // Od 1.51: scena 3D – gdy na kartce są bryły.
+    const sceneButton = h('button', {
+      type: 'button', class: 'drawing__pill', hidden: true, title: 'Scena 3D – kartka i bryły w przestrzeni (obrót, widoki)',
+      dataset: { testid: 'drawing-scene-open' }, onClick: () => openScene()
+    }, icon('scene3d', { size: 14 }), 'Scena 3D');
     const info = h('div', { class: 'drawing__info', dataset: { testid: 'drawing-info' } }, selectHint, shapeHint, lengthPill, coordPill, scalePill, zoomButton);
-    const status = h('div', { class: 'drawing__status', dataset: { testid: 'drawing-status' } }, penPill, guidePill, rulerPill, perpendicularButton, coordButton,
+    const status = h('div', { class: 'drawing__status', dataset: { testid: 'drawing-status' } }, penPill, guidePill, rulerPill, perpendicularButton, sceneButton, coordButton,
       h('div', { class: 'drawing__pages' }, pagePrev, pagePill, pageNext));
     let noticeTimer = 0;
     /** Krótki komunikat w edytorze (komunikaty aplikacji są pod oknem rysunku). */
@@ -3068,6 +3084,7 @@ export function openDrawingEditor({
       const activeName = layersNow().find((layer) => layer.id === (drawing.activeLayer ?? 1))?.name ?? 'Warstwa 1';
       layersButton.title = `Warstwy – nowe elementy: ${activeName}`;
       scalePill.textContent = `Kratka: ${formatLength(PAPER_STEP, drawing.scale)}`;
+      sceneButton.hidden = !drawing.strokes.some((stroke) => stroke.tool === 'solid');
       updateCoords();
       updateRings();
     }
@@ -5297,6 +5314,30 @@ export function openDrawingEditor({
       const file = new File([text], `${safe}.dxf`, { type: 'application/dxf' });
       const result = await deliverFile(file, { title: 'Zapisz kartkę jako DXF', message: `Plik „${file.name}” – ${plural(written, 'element', 'elementy', 'elementów')} w milimetrach.` });
       if (result !== 'cancelled') flash(`Zapisano „${file.name}”${skipped > 0 ? ` – pominięte: ${skipped} (tabele, karteczki, symbole)` : ''}.`);
+    }
+
+    // ---- scena 3D (od 1.51)
+    /** Scena: kartka (treść 2D bez brył – płasko) i bryły stojące na niej; zaczęta czynność, panele i wybór punktu – kończone. */
+    function openScene() {
+      if (!drawing.strokes.some((stroke) => stroke.tool === 'solid')) return;
+      if (active) finishActive(true);
+      closeSettings();
+      if (pointPick) cancelPointPick();
+      pending = null;
+      const [only] = selection;
+      const selected = selection.size === 1 && only?.tool === 'solid' ? only : null;
+      if (!selected) clearSelection();
+      body.classList.add('drawing__body--scene');
+      scene.open({
+        drawing, origin: sheetOrigin(drawing), selected, dimFormat: dimFormat(drawing),
+        paintPage: (ctx, skip) => paintDrawing(ctx, drawing, media, skip, null, { editor: true })
+      });
+    }
+    function closeScene() {
+      scene.close();
+      body.classList.remove('drawing__body--scene');
+      updateToolbar();
+      requestRender();
     }
 
     // ---- układ współrzędnych arkusza (od 1.50)
@@ -9776,7 +9817,7 @@ export function openDrawingEditor({
       type: 'button', class: 'drawing__hide-all', 'aria-pressed': 'false', dataset: { testid: 'drawing-hide-ui' }, onClick: () => toggleAll()
     });
     const body = h('div', { class: 'drawing__body' }, stage,
-      rings.right.element, rings.left.element, topBar, topTab, dock, dockTab, info, infoTab, status, statusTab, rings.right.tab, rings.left.tab, notice);
+      rings.right.element, rings.left.element, topBar, topTab, dock, dockTab, info, infoTab, status, statusTab, rings.right.tab, rings.left.tab, notice, scene.element);
     const panel = h('div', { class: 'sheet__panel drawing', 'aria-label': `Rysunek: ${title}` },
       h('header', { class: 'sheet__header' }, cancelButton, headerTitle, h('div', { class: 'drawing__header-end' }, hideAllButton, doneButton)),
       body);
@@ -9792,6 +9833,14 @@ export function openDrawingEditor({
     // ale nie w oknie pytania nad edytorem.
     const onKey = (event) => {
       if (event.target !== document.body && !dialog.contains(event.target)) return;
+      // Scena 3D (od 1.51) – tylko do oglądania: skróty rysunku nie działają, Esc wraca do kartki 2D.
+      if (scene.isOpen()) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closeScene();
+        }
+        return;
+      }
       if (event.key === 'Shift' && !shiftDown) {
         shiftDown = true;
         refreshShapeDrag();

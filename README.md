@@ -1,4 +1,4 @@
-# LexiCards 1.50
+# LexiCards 1.51
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -58,8 +58,9 @@ Rysunek – bryły: prostopadłościan, walec, stożek, ostrosłup, graniastosł
 Rysunek – bryły ze szkicu: zaznaczone kształty → „Wyciągnij” albo „Obróć wokół osi” (kształty w kształtach – otwory), niebieski uchwyt długości i kąta, historia modelu z „Edytuj szkic”, „Rzuty” – przód, góra i lewy bok metodą europejską jako kształty do wymiarowania (wersja 1.48); układ osi zamiast kostki widoków (1.48.1); osie jak w rysunku technicznym – Z do góry, szkic na płaszczyźnie XY (1.48.2): [docs/RELEASE-1.48.md](docs/RELEASE-1.48.md).
 Rysunek – szkic na ścianie bryły: „Szkic na ścianie” (dotknięta ściana prosto do patrzącego), zamknięte kształty na niej → „Wytnij z bryły” (głębokość albo na wylot) albo „Dodaj do bryły”, niebieski uchwyt głębokości, operacje w historii modelu z „Edytuj szkic” (wersja 1.49): [docs/RELEASE-1.49.md](docs/RELEASE-1.49.md).
 Rysunek – układ współrzędnych arkusza: początek w lewym dolnym rogu arkusza albo kartki (do przesunięcia), osie X w prawo i Y w górę, współrzędne pod kursorem w mm przedmiotu w skali rysunku, „Punkt X, Y” – punkty nowego kształtu wpisane liczbami, „Położenie” zaznaczonego, DXF od początku układu; osie brył jak w programach CAD – X w prawo, Y w głąb, przód od strony −Y (wersja 1.50): [docs/RELEASE-1.50.md](docs/RELEASE-1.50.md).
+Rysunek – scena 3D do oglądania: „Scena 3D” przy bryłach – kartka jako płaszczyzna z całą treścią 2D, bryły stojące na niej w miejscu obrazków, obrót przeciąganiem, przybliżanie kółkiem i dwoma palcami, widoki (izometria, przód, boki, tył, góra), bryły zasłaniają się nawzajem, zaznaczanie; w ruchu same krawędzie (wersja 1.51): [docs/RELEASE-1.51.md](docs/RELEASE-1.51.md).
 
-## Co potrafi wersja 1.50
+## Co potrafi wersja 1.51
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -175,7 +176,8 @@ Rysunek – układ współrzędnych arkusza: początek w lewym dolnym rogu arkus
   do wymiarowania. Od 1.49 **szkic na ścianie bryły**: kształty narysowane na płaskiej ścianie **wycinają** materiał
   w głąb (kieszeń albo otwór na wylot) albo **dodają** go na zewnątrz. Od 1.50 **układ współrzędnych arkusza**: początek
   w lewym dolnym rogu, współrzędne pod kursorem, punkty kształtów i położenie zaznaczonego wpisywane liczbami (mm w skali
-  rysunku). Od 1.24.1 kartka w edytorze wygląda
+  rysunku). Od 1.51 **scena 3D**: kartka i bryły w przestrzeni – obrót, widoki, przybliżanie (do oglądania).
+  Od 1.24.1 kartka w edytorze wygląda
   jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
@@ -1004,6 +1006,15 @@ okrąg ze środka, wymiar…) – dwa punkty naraz, łamana, okrąg przez 3 punk
 – początek i koniec, okrąg, łuk, wielokąt foremny, punkt i bryła – środek, reszta – lewy dolny róg obrysu (zaznaczone
 przesuwa się tak, by ten punkt był w podanym miejscu). Plik DXF ma ten sam początek: współrzędne w programie CAD są te same
 co w aplikacji. Format rysunku – 22 (przesunięty początek).
+**Scena 3D** (od 1.51): gdy na kartce są bryły, po prawej na dole jest przycisk **Scena 3D**. Kartka staje się płaszczyzną
+(układ arkusza: X w prawo, Y w górę kartki, Z do góry) z całą treścią 2D – kreskami, kształtami, napisami, ramką – a bryły
+stoją na niej prosto, w miejscu swoich obrazków (osie bryły – osie arkusza; widok obrazka w 2D nie zmienia bryły w scenie).
+Przeciągnięcie obraca całą scenę (kartka zawsze od góry albo z boku), kółko myszy i dwa palce przybliżają (dwa palce –
+też przesuwają, myszą – Shift albo środkowy przycisk). U góry: **2D** (powrót; też Esc), widoki **Izometria**, **Przód**,
+**Prawy bok**, **Lewy bok**, **Tył**, **Góra** (płynne przejście, cała scena w widoku) i **Cała**. W ruchu – same krawędzie,
+bez krycia i cieniowania; po puszczeniu – pełny obraz: bryły cieniowane, z krawędziami niewidocznymi, zasłaniają się
+nawzajem. Dotknięcie bryły ją zaznacza (nazwa w lewym dolnym rogu; zostaje zaznaczona po powrocie do 2D). W izometrii sceny
+bryła wygląda jak jej obrazek w izometrii. Scena jest tylko do oglądania – rysunek się nie zmienia.
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę

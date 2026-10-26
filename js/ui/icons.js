@@ -243,6 +243,9 @@ const ICONS = {
   solidFace: [p('M4 10h10v10H4z'), p('M4 10l4-4h10l-4 4'), p('M18 6v10l-4 4'), { d: 'M6.6 12.6h4.8v4.8H6.6z', 'stroke-dasharray': '1.6 1.4' }],
   solidCut: [p('M3 10h12v10H3z'), p('M3 10l5-4h12l-5 4'), p('M20 6v10l-5 4'), p('M9 8a2.6 1 0 1 0 5.2 0a2.6 1 0 1 0-5.2 0'), { d: 'M9 8v6.5M14.2 8v6.5', 'stroke-dasharray': '1.6 1.4' }],
   solidAdd: [p('M3 13h12v7H3z'), p('M3 13l5-4h12l-5 4'), p('M20 9v7l-5 4'), p('M9 4.5a2.6 1 0 1 0 5.2 0a2.6 1 0 1 0-5.2 0'), p('M9 4.5v6.3M14.2 4.5v6.3')],
+  // Od 1.51: scena 3D (bryła na kartce) i cała scena.
+  scene3d: [p('M3 16.5l9 4.5 9-4.5-9-4.5z'), p('M12 3.5l5 2.5v5.2l-5 2.5-5-2.5V6z'), p('M7 6l5 2.5L17 6'), p('M12 8.5v5.2')],
+  zoomFit: [p('M4 9V4h5'), p('M15 4h5v5'), p('M20 15v5h-5'), p('M9 20H4v-5')],
   // Od 1.50: układ współrzędnych arkusza (położenie X, Y) i punkt ze współrzędnych.
   sheetAxes: [p('M5.5 18.5V4.5'), p('M5.5 18.5h14'), p('M3.2 7l2.3-2.5L7.8 7'), p('M17 16.2l2.5 2.3-2.5 2.3'), dot(5.5, 18.5, 1.7)],
   coordPoint: [p('M12 3v5.5M12 15.5V21M3 12h5.5M15.5 12H21'), p('M12 8.2a3.8 3.8 0 1 0 .01 0'), dot(12, 12, 1.2)],
