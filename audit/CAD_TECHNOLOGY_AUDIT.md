@@ -129,3 +129,23 @@ Stan opisany wyżej dotyczy wersji 1.48.0. Od 1.49 aplikacja ma **operacje logic
   jako NISKIE na podstawie wieku techniki, nie wyników wyszukiwania.
 - Nowe pozycje rejestru algorytmów: G49–G53 (GEOMETRY_ALGORITHM_REGISTER.csv).
 
+## Uzupełnienie: wersja 1.50 (26.10.2026) – układ współrzędnych arkusza
+
+Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
+
+- **Kod:** `js/core/sheet-coords.js` (punkt strony ↔ współrzędne arkusza: przesunięcie do początku, odwrócenie osi y,
+  mnożnik skali i jednostki wymiarów), `drawingToDxf` od początku układu, w edytorze – osie w początku, współrzędne pod
+  kursorem, okna „Punkt X, Y” i „Położenie”. Bez bibliotek; przekształcenie liniowe z podręczników grafiki.
+- **Funkcje:** kartezjański układ z początkiem w rogu arkusza, współrzędne kursora, wpisywanie punktów liczbami, położenie
+  elementu w liczbach, przesunięcie początku – powszechna praktyka programów CAD od lat 80. i norm rysunku technicznego.
+  Nazwy w interfejsie opisowe („Układ współrzędnych arkusza”, „Punkt X, Y”, „Położenie”, „Przesuń początek…”).
+- **Osie brył (W1):** zmienione tylko etykiety osi bryły (X = x, Y = −z, Z = y) – konwencja jak w programach CAD
+  i maszynach pomiarowych (przód od strony −Y); bez zmiany geometrii i bez nowych elementów sterujących.
+- **Patenty – uwaga na przyszłość (P-01, P-03, P-06):** osie w początku arkusza i przy bryle są **tylko wskaźnikiem**
+  (bez dotykania, bez zmiany widoku przez ich przeciąganie albo klikanie) – poza mechanizmem „wskaźnik, który obraca
+  scenę / ustawia punkt widzenia” z P-01 i P-03. W kolejnych etapach (scena 3D) zasada zostaje: widoki – zwykłymi
+  przyciskami, obrót – przeciąganiem sceny, nie wskaźnika. Strzałki przesuwania brył wzdłuż osi (planowane w 1.52) –
+  przed wdrożeniem sprawdzić zastrzeżenia P-06 (uchwyt przesuwania i wyciągania w edytorze 3D).
+- Nowe pozycje rejestru algorytmów: G54–G55 (GEOMETRY_ALGORITHM_REGISTER.csv). Ryzyko wstępnie NISKIE (technika
+  powszechna; wyszukiwania patentowego nie robiono – bazy zablokowane, AUDIT_LIMITATIONS.md).
+
