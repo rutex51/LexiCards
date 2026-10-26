@@ -83,7 +83,7 @@ test('rysunek 1.50: opis początku, zapis (format 22, punkt na kartce), ustawien
   assert.equal(originText({ ...drawing, origin: { x: 0, y: drawing.height } }), 'Początek w lewym dolnym rogu kartki');
   // Zapis: zaokrąglony do setnych, przycięty do kartki; zły – pominięty.
   const saved = cleanDrawing({ ...drawing, origin: { x: 88.123, y: 748.456 } });
-  assert.equal(saved.version, 22);
+  assert.equal(saved.version >= 22, true);
   assert.deepEqual(saved.origin, { x: 88.12, y: 748.46 });
   assert.deepEqual(cleanDrawing({ ...drawing, origin: { x: -50, y: 5000 } }).origin, { x: 0, y: drawing.height });
   assert.equal(cleanDrawing({ ...drawing, origin: { x: 'a', y: 3 } }).origin, undefined);

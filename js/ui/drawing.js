@@ -70,7 +70,8 @@ import {
   withStyleOf
 } from '../core/transform.js';
 import { FRAME_FIELDS, FRAME_FIELD_LABELS, FRAME_FIELD_MAX, FRAME_FORMATS, cleanFrame, frameScaleText } from '../core/title-block.js';
-import { coordPlaces, coordText, coordUnit, defaultOrigin, formatCoord, fromSheet, originText, sheetOrigin, toSheet } from '../core/sheet-coords.js';
+import { coordFactor, coordPlaces, coordText, coordUnit, defaultOrigin, formatCoord, fromSheet, originText, sheetOrigin, toSheet } from '../core/sheet-coords.js';
+import { normalYaw, placeOn, placement, resolveStacks, solidsById, stackChanges, stackFollowers, stackPaintOrder, withPose } from '../core/solid-pose.js';
 import { cleanColumnWidths, moveColumnBorder } from '../core/tables.js';
 import {
   DIAGRAM_LIMITS, DIAGRAM_SIZES, TIMELINE_UNITS, VSM_DEFAULTS, VSM_LABELS, VSM_SYMBOLS, causesText, cleanDiagram, diagramLabel, diagramTargetAt, newDiagram, parseCauses,
@@ -570,7 +571,8 @@ export function paintDrawing(ctx, drawing, media = {}, skip = null, plain = null
     ctx.restore();
   }
   let number = 0;
-  for (const stroke of drawing.strokes) {
+  // Bryły postawione na innych (od 1.52) – razem z bryłą na dole, od najdalszej w widoku jej obrazka.
+  for (const stroke of stackPaintOrder(drawing.strokes)) {
     // Karteczki mają numery w kolejności na rysunku (od 1.21).
     if (stroke.tool === 'sticky') number += 1;
     if (skip?.has(stroke)) continue;
@@ -862,12 +864,24 @@ export function openDrawingEditor({
     const view = { zoom: 1, scale: 1, x: 0, y: 0, width: 0, height: 0, top: STAGE_MARGIN, bottom: STAGE_MARGIN, dpr: 1 };
     const stage = h('div', { class: 'drawing__stage', dataset: { testid: 'drawing-stage' } });
     // Scena 3D (od 1.51) – nad stroną, z własnym płótnem, paskiem widoków i wskaźnikami; dotknięcie bryły zaznacza ją także w 2D.
+    // Od 1.52 położenie brył – każda zmiana w scenie to krok cofania rysunku.
     const scene = createScene({
       onSelect: (solid) => {
         selection = solid ? new Set([solid]) : new Set();
         selectionKind = 'whole';
       },
-      onExit: () => closeScene()
+      onExit: () => closeScene(),
+      onChange: (map) => applySceneChange(map),
+      onPlace: (solid, base, point, z) => {
+        const placed = placeOn(drawing.strokes, solid, base, point, z, newElementId);
+        if (placed.error) {
+          flash(placed.error);
+          scene.update({ selected: solid, canUndo: history.canUndo });
+          return;
+        }
+        applySceneChange(new Map([[base, placed.base], [solid, placed.solid]]), solid);
+      },
+      onUndo: () => sceneUndo()
     });
     const base = h('canvas', { class: 'drawing__canvas', 'aria-hidden': 'true' });
     const live = h('canvas', { class: 'drawing__canvas drawing__canvas--live', role: 'img', 'aria-label': `Płótno rysunku: ${title}`, dataset: { testid: 'drawing-canvas' } });
@@ -5329,9 +5343,38 @@ export function openDrawingEditor({
       if (!selected) clearSelection();
       body.classList.add('drawing__body--scene');
       scene.open({
-        drawing, origin: sheetOrigin(drawing), selected, dimFormat: dimFormat(drawing),
+        drawing, origin: sheetOrigin(drawing), selected, dimFormat: dimFormat(drawing), canUndo: history.canUndo,
         paintPage: (ctx, skip) => paintDrawing(ctx, drawing, media, skip, null, { editor: true })
       });
+    }
+    /** Zmiana położenia brył ze sceny (od 1.52): stara → nowa, jeden krok cofania; zaznaczona zostaje zaznaczona. */
+    function applySceneChange(map, chosen = null) {
+      const [only] = selection;
+      const kept = chosen ?? only;
+      history.begin();
+      let selected = null;
+      drawing.strokes.forEach((stroke, index) => {
+        if (!map.has(stroke)) return;
+        drawing.strokes[index] = map.get(stroke);
+        if (stroke === kept) selected = drawing.strokes[index];
+      });
+      selection = selected ? new Set([selected]) : new Set();
+      selectionKind = 'whole';
+      commitStep();
+      const [next] = selection;
+      scene.update({ selected: next ?? null, canUndo: history.canUndo });
+      updateToolbar();
+      requestRender();
+    }
+    /** „Cofnij” w scenie: krok cofania rysunku; zaznaczona zostaje bryła w tym samym miejscu rysunku. */
+    function sceneUndo() {
+      const [only] = selection;
+      const index = drawing.strokes.indexOf(only);
+      stepHistory(false);
+      const same = index >= 0 ? drawing.strokes[index] : null;
+      const selected = same?.tool === 'solid' ? same : null;
+      selection = selected ? new Set([selected]) : new Set();
+      scene.update({ selected, canUndo: history.canUndo });
     }
     function closeScene() {
       scene.close();
@@ -5586,6 +5629,11 @@ export function openDrawingEditor({
       const items = orderedSelection();
       if (items.length === 0) return;
       const only = items.length === 1 ? items[0] : null;
+      // Bryła (od 1.52) – położenie w przestrzeni: X, Y, wysokość podstawy i obrót wokół Z.
+      if (only?.tool === 'solid' && selectionKind === 'whole') {
+        openSolidPosition(only);
+        return;
+      }
       const segment = only && isShape(only) && isSegment(only) && selectionKind === 'whole' ? only : null;
       const arc = only && isShape(only) && isArc(only) ? arcGeometry(only) : null;
       const centered = only && selectionKind === 'whole' && (only.tool === 'solid' || (isShape(only) && (only.shape === 'ellipse' || only.shape === 'ngon' || isPointShape(only) || (isArc(only) && arc))));
@@ -5629,6 +5677,65 @@ export function openDrawingEditor({
             moveSelection(dx, dy);
             changed = true;
           }
+          return true;
+        }
+      });
+    }
+
+    /** Pole liczby (wysokość, obrót) jak pola X i Y. */
+    function numberField(label, axisClass, testID, value) {
+      const input = h('input', {
+        class: 'input drawing__coord-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': label, placeholder: '0', value,
+        dataset: { testid: testID }
+      });
+      return { input, box: h('label', { class: 'drawing__coord-field' }, h('span', { class: `drawing__coord-axis ${axisClass}`, 'aria-hidden': 'true' }, axisClass.endsWith('z') ? 'Z' : '↻'), input) };
+    }
+    /**
+     * Położenie bryły (od 1.52): X, Y – punkt arkusza, nad którym stoi początek układu bryły (bryła stojąca sama – też środek
+     * jej obrazka), Z – wysokość podstawy nad arkuszem, obrót wokół Z (stopnie). Bryła postawiona na innej – idzie za nią.
+     */
+    function openSolidPosition(solid) {
+      const byId = solidsById(drawing.strokes);
+      const place = placement(byId, solid);
+      const below = place.root === solid ? null : byId.get(solid.on.id);
+      const factor = coordFactor(drawing);
+      const places = coordPlaces(drawing);
+      let point = null;
+      let height = null;
+      let turn = null;
+      openFormSheet({
+        title: 'Położenie bryły',
+        submitLabel: 'Ustaw',
+        build: () => {
+          point = coordFields('Środek – X, Y', 'drawing-position-a', place);
+          height = numberField('Z – wysokość podstawy', 'drawing__coord-axis--z', 'drawing-position-z', formatCoord(place.z * factor, places));
+          turn = numberField('Obrót wokół Z (stopnie)', 'drawing__coord-axis--turn', 'drawing-position-yaw', formatCoord(place.yaw, 1));
+          return h('div', { class: 'drawing__coords' }, point.box,
+            h('div', { class: 'drawing__coord-row' }, h('span', { class: 'drawing__coord-name' }, 'Wysokość podstawy · obrót wokół Z (°)'), height.box, turn.box),
+            h('p', { class: 'field__hint' }, `Układ arkusza (${coordUnit(drawing)}, skala rysunku): X, Y – punkt, nad którym stoi środek bryły, Z – wysokość jej `
+              + 'podstawy nad arkuszem, obrót – patrząc z góry, przeciwnie do ruchu wskazówek zegara. '
+              + (below ? `Stoi na bryle „${solidLabel(below).replace('Bryła: ', '')}” – idzie za nią; obrazek jest w jej obrazku.` : 'X, Y to też środek obrazka bryły na kartce.')));
+        },
+        onSubmit: (api) => {
+          const target = point.read();
+          const values = [height.input, turn.input].map((field) => (field.value.trim() === '' ? 0 : parseDecimal(field.value)));
+          if (!target || values.some((value) => value === null)) {
+            api.setError('Wpisz liczby, np. 25 albo −12,5.');
+            return false;
+          }
+          if (values[0] < 0) {
+            api.setError('Wysokość podstawy – 0 albo więcej (bryła nie wchodzi pod arkusz).');
+            return false;
+          }
+          const index = drawing.strokes.indexOf(solid);
+          if (index < 0) return true;
+          const next = withPose(drawing.strokes, solid, { x: target.x, y: target.y, z: values[0] / factor, yaw: normalYaw(values[1]) });
+          history.begin();
+          drawing.strokes[index] = next;
+          selection = new Set([next]);
+          commitStep();
+          updateToolbar();
+          requestRender();
           return true;
         }
       });
@@ -5709,6 +5816,8 @@ export function openDrawingEditor({
       // Przyklejone końce (od 1.22) – w miejscach na swoich kształtach, w tym samym kroku cofania.
       history.begin();
       const replaced = resolveAttachments(drawing.strokes, elementBox);
+      // Bryły postawione na innych (od 1.52) – obrazek w obrazku bryły na dole; zmiana samego obrazka – na cały obrazek.
+      for (const [original, next] of resolveStacks(drawing.strokes, stackChanges(history.before ?? [], drawing.strokes))) replaced.set(original, next);
       if (replaced.size > 0 && selection.size > 0) selection = new Set([...selection].map((stroke) => replaced.get(stroke) ?? stroke));
       if (history.commit()) changed = true;
     }
@@ -9079,7 +9188,7 @@ export function openDrawingEditor({
       ctx.stroke();
       ctx.restore();
     }
-    /** Przyklejone końce idące za przesuwanym albo zmienianym elementem: mapa przyklejony → podgląd (albo null). */
+    /** Przyklejone końce i bryły stosu idące za przesuwanym albo zmienianym elementem: mapa idący za nim → podgląd (albo null). */
     function activeFollowers() {
       let previews = null;
       if (active?.kind === 'move') previews = new Map([...selection].filter((stroke) => stroke.id).map((stroke) => [stroke, translateStroke(stroke, active.dx, active.dy)]));
@@ -9087,6 +9196,8 @@ export function openDrawingEditor({
       else if ((active?.kind === 'shape-edit' || active?.kind === 'box-edit') && active.original.id) previews = new Map([[active.original, active.preview ?? active.original]]);
       if (!previews || previews.size === 0) return null;
       const followers = followersOf(drawing.strokes, previews, elementBox);
+      // Bryły stosu (od 1.52) idą za przesuwaną albo zmienianą bryłą stosu (obrazek stosu jest jeden).
+      for (const [stroke, preview] of stackFollowers(drawing.strokes, previews)) followers.set(stroke, preview);
       // Zaznaczone przesuwają się razem z zaznaczeniem.
       for (const stroke of selection) followers.delete(stroke);
       return followers.size > 0 ? followers : null;
@@ -9833,11 +9944,15 @@ export function openDrawingEditor({
     // ale nie w oknie pytania nad edytorem.
     const onKey = (event) => {
       if (event.target !== document.body && !dialog.contains(event.target)) return;
-      // Scena 3D (od 1.51) – tylko do oglądania: skróty rysunku nie działają, Esc wraca do kartki 2D.
+      // Scena 3D (od 1.51): skróty rysunku nie działają; Esc przerywa przesuwanie albo „Postaw na ścianie”, a gdy nic
+      // nie trwa – wraca do kartki 2D; od 1.52 Ctrl/⌘ + Z cofa zmianę położenia (poza polem z liczbą).
       if (scene.isOpen()) {
         if (event.key === 'Escape') {
           event.preventDefault();
-          closeScene();
+          if (!scene.cancel()) closeScene();
+        } else if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z' && !typing(event.target)) {
+          event.preventDefault();
+          if (history.canUndo) sceneUndo();
         }
         return;
       }

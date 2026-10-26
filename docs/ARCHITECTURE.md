@@ -2060,7 +2060,40 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   do widoku – 380 ms): kartka z obrazu zrobionego raz (do 2400 px), bryły – krawędzie ostre i obrys ścian gładkich ze
   `solidShape` (bez zasłaniania), kula – okrąg. Zaznaczenie – dotknięcie bez ruchu: ściany rozkładu ostatniego pełnego
   obrazu od najbliższej bryły; `onSelect` ustawia zaznaczenie edytora. Esc i „2D” – `closeScene`. Atrybuty płótna dla testów:
-  `data-view`, `data-moving`, `data-centers` (środki brył), `data-selected`, `data-axes`.
+  `data-view`, `data-moving`, `data-centers` (środki brył), `data-selected`, `data-axes`. Od 1.52 bryły mają położenie
+  (sekcja „Położenie brył”).
+
+## Położenie brył (od 1.52)
+
+- **Dane** (format 23, `cleanPose` w `cleanSolid`): `z` – wysokość podstawy (najniższego punktu bryły) nad kartką,
+  `yaw` – obrót wokół Z w stopniach, (−180°, 180°]; zero = brak pola. Bryła stojąca sama: punkt strony (x, y) – miejsce
+  obrazka i zarazem X, Y w scenie (początek układu bryły nad nim). Bryła postawiona: `on { id, x, y, z, yaw }` – położenie
+  względem bryły pod spodem (identyfikator elementu jak przy przyklejonych końcach, `newElementId`): x, y w układzie tamtej
+  bryły obróconym o jej yaw, z – nad jej wierzchem, yaw – względny. Jej x, y, q (obrazek) i bezwzględne z, yaw są wyliczane.
+- **Moduł** `js/core/solid-pose.js` (bez przeglądarki): `placement(byId, bryła)` – położenie w scenie przez cały stos
+  (najwyżej 12 pięter, pętla = koniec); `stackedPicture` – obrazek bryły postawionej w obrazku bryły na dole: przesunięcie
+  w układzie bryły na dole (`UPRIGHT`ᵀ · Rz(−yaw) · różnica w świecie) rzutowane jej widokiem `q`, widok = `q` · obrót
+  względny wokół y bryły (ten sam rzut co w scenie – sprawdzane testem w czterech kamerach). `resolveStacks(strokes, changes)`
+  – po każdej zmianie rysunku (w `commitStep` edytora, w `cleanDrawing`): odnośniki do brył, których nie ma, i pętle –
+  usunięte; zmieniony sam obrazek bryły postawionej (`stackChanges` z `history.before`: ten sam odnośnik, te same wymiary,
+  inne x, y albo q) – przechodzi na bryłę na dole (jej q i x, y tak, by bryła z góry była w nowym miejscu i widoku);
+  potem obrazki brył postawionych z brył na dole. `stackFollowers` – to samo na kopii dla podglądu w trakcie przesuwania
+  i obracania (warstwa bieżąca, jak przyklejone końce). `withPose`, `placeOn`, `liftOff` – nowe położenie bryły
+  (postawiona – nowy odnośnik). `stackPaintOrder` – kolejność rysowania 2D: stos razem, od najdalszej w widoku obrazka.
+  `relinkCopies` przenosi `on` na kopię bryły pod spodem albo go usuwa; `scaleSolid` skaluje `z` i odnośnik.
+- **Scena** (`js/core/scene.js`): `sceneSolids` – położenie z `placement`, `yaw`, `base`, `on`; zasięg w osiach świata po
+  obrocie (prostopadłościan opisany); `sceneQuat(camera, yaw)` = kamera · Rz(yaw) · `SCENE_POSE`; `paintOrder` – bryła
+  postawiona zawsze po bryle pod spodem (kamera nigdy spod kartki).
+- **Edytor sceny** (`js/ui/drawing-scene.js`): panel położenia (liczby z `toSheet`/`coordFactor`, zmiana po Enter albo
+  `change`), strzałki osi (`moveArrows` – długość `ARROW.length / scale` jednostek strony, oś skrócona w rzucie poniżej
+  16 px – bez strzałki; przeciąganie – przesunięcie wskaźnika rzutowane na kierunek strzałki, zaokrąglenie w liczbach
+  arkusza, podgląd na kopii rysunku, same krawędzie), „Postaw na ścianie” (`faceAt` na bryle w położeniu sceny – ściana
+  z normalną w górę po obrocie, wysokość = Z początku układu + y punktu ściany, punkt – przecięcie promienia z płaszczyzną
+  ściany), „Na arkusz”, „Cofnij”. Zmiany idą do edytora: `onChange` / `onPlace` → `applySceneChange` (jeden krok cofania,
+  `commitStep`) → `scene.update` (kamera i skala bez zmian). Esc najpierw przerywa przesuwanie albo wybór ściany. Atrybuty
+  płótna dla testów: `data-arrows`, `data-placing`.
+- **2D**: `paintDrawing` rysuje w kolejności `stackPaintOrder`; przesuwanie, obrót, widok i „Położenie” – zwykłą drogą
+  edytora (stos poprawia `resolveStacks` w `commitStep`); okno „Położenie bryły” – X, Y, Z i obrót (`withPose`).
 
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 

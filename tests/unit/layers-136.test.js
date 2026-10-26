@@ -105,7 +105,7 @@ test('warstwy 1.36: nasycenie koloru – szarość tej samej jasności, bez zmia
 });
 
 test('warstwy 1.36: zapis w rysunku (format 11) – warstwy, warstwa nowych elementów, sygnatury; kreski zachowują sygnatury przy przesuwaniu i gumce', () => {
-  assert.equal(DRAWING_VERSION, 22, 'od 1.50 – początek układu współrzędnych arkusza; 1.49 – operacje na ścianach brył; 1.48.2 – szkic na XY (Z do góry); 1.48 – bryły ze szkicu; 1.47 – bryły; 1.45 – schematy procesów; 1.44 – diagramy jakości i układ kartki; 1.42 – wymiar długości łuku, kierunek wymiaru, osie okręgu; 1.41 – ramka rysunkowa; 1.40 (warstwy – od 11)');
+  assert.equal(DRAWING_VERSION, 23, 'od 1.52 – położenie brył w scenie; 1.50 – początek układu współrzędnych arkusza; 1.49 – operacje na ścianach brył; 1.48.2 – szkic na XY (Z do góry); 1.48 – bryły ze szkicu; 1.47 – bryły; 1.45 – schematy procesów; 1.44 – diagramy jakości i układ kartki; 1.42 – wymiar długości łuku, kierunek wymiaru, osie okręgu; 1.41 – ramka rysunkowa; 1.40 (warstwy – od 11)');
   const empty = emptyDrawing();
   assert.equal('layers' in cleanDrawing(empty), false, 'rysunek bez zmian warstw – bez pola');
   const layers = updateLayer(addLayer(defaultLayers()), 6, { name: 'Konstrukcja', hidden: true });

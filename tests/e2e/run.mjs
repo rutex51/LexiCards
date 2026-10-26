@@ -12384,7 +12384,7 @@ test('rysunek 1.50: układ współrzędnych arkusza – „Kratka” otwiera „
   await dialog.locator('[data-testid=note-text]').waitFor();
   const drawingData = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
   assert.deepEqual(drawingData.origin, { x: 88, y: 748 }, 'początek zapisany (punkt strony)');
-  assert.equal(drawingData.version, 22);
+  assert.ok(drawingData.version >= 22, 'format 22 albo nowszy');
   const line = drawingData.strokes.find((stroke) => stroke.tool === 'shape' && stroke.shape === 'line');
   assert.deepEqual([line.x, line.y, Math.round(line.w)], [308, 858, Math.round(Math.hypot(440, 220))], 'odcinek (20; 80) – (120; 30)');
   const polyline = drawingData.strokes.find((stroke) => stroke.tool === 'shape' && stroke.shape === 'polyline');
@@ -12717,6 +12717,307 @@ test('rysunek 1.51 na telefonie: „Scena 3D” na ekranie, pasek widoków w sze
   await editor.locator('[data-testid=drawing-scene-exit]').scrollIntoViewIfNeeded();
   await editor.locator('[data-testid=drawing-scene-exit]').tap();
   await waitUntil(() => editor.locator('[data-testid=drawing-scene]').isHidden(), 'Powrót do 2D');
+}, { device: PHONE });
+
+/** Scena (od 1.52): strzałki przesuwania zaznaczonej bryły – { X: [początek, koniec], … } (px strony) i liczby w panelu położenia. */
+async function sceneArrows(editor) {
+  const canvas = sceneCanvas(editor);
+  const box = await canvas.boundingBox();
+  const text = (await canvas.getAttribute('data-arrows')) ?? '';
+  return Object.fromEntries(text.split(';').filter(Boolean).map((entry) => {
+    const [label, rest] = entry.split(':');
+    const [ax, ay, bx, by] = rest.split(',').map(Number);
+    return [label, [[box.x + ax, box.y + ay], [box.x + bx, box.y + by]]];
+  }));
+}
+const poseValue = async (editor, key) => Number((await editor.locator(`[data-testid=drawing-scene-pose-${key}]`).inputValue()).replace('−', '-').replace(',', '.'));
+/** Punkt na strzałce (część długości od początku). */
+const alongArrow = ([a, b], part = 0.6) => [a[0] + (b[0] - a[0]) * part, a[1] + (b[1] - a[1]) * part];
+
+test('rysunek 1.52: położenie brył w scenie – strzałki osi (w trakcie same krawędzie), liczby X, Y, Z i obrót, „Postaw na ścianie”, stos idzie za bryłą na dole, „Cofnij”, wspólny obrazek w 2D, „Na arkusz”, zapis (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const dialog = noteDialog(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Położenie</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const opener = editor.locator('[data-testid=drawing-scene-open]');
+  const scene = editor.locator('[data-testid=drawing-scene]');
+  const canvas = sceneCanvas(editor);
+  const card = editor.locator('[data-testid=drawing-scene-pose]');
+  const hint = editor.locator('[data-testid=drawing-scene-hint]');
+  const undo = editor.locator('[data-testid=drawing-scene-undo]');
+  const shot = async (name) => {
+    await nextFrames(page);
+    await page.screenshot({ path: path.join(OUTPUT, `rysunek-152-${name}.png`) });
+  };
+  const settled = () => waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz po ruchu');
+  const close = (actual, expected, tolerance, message) => assert.ok(Math.abs(actual - expected) <= tolerance, `${message}: ${actual} ≈ ${expected}`);
+  const selected = (index) => waitUntil(async () => (await canvas.getAttribute('data-selected')) === String(index), `Zaznaczona bryła ${index}`);
+  const typePose = async (key, value) => {
+    const input = editor.locator(`[data-testid=drawing-scene-pose-${key}]`);
+    await input.fill(value);
+    await input.press('Enter');
+    await settled();
+  };
+
+  // Prostopadłościan przesunięty w lewo i walec na środku kartki.
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').click();
+  await expectText(count, 'Bryła: Prostopadłościan');
+  const boxAt = await solidCenter2d(editor);
+  await page.mouse.move(...boxAt);
+  await page.mouse.down();
+  await page.mouse.move(boxAt[0] - 260, boxAt[1] + 40, { steps: 8 });
+  await page.mouse.up();
+  await editor.locator('[data-testid=drawing-insert-solid-cylinder]').click();
+  await expectText(count, 'Bryła: Walec');
+  await page.keyboard.press('Escape');
+  await opener.click();
+  await scene.waitFor();
+  await settled();
+  let centers = await sceneCenters(editor);
+  const [boxIndex, cylinderIndex] = Object.keys(centers).map(Number).sort((a, b) => a - b);
+  assert.equal(await card.isVisible(), false, 'bez zaznaczenia – bez panelu położenia');
+  assert.equal(await canvas.getAttribute('data-arrows'), '', 'bez zaznaczenia – bez strzałek');
+
+  // Zaznaczony prostopadłościan: panel z liczbami (stoi na kartce, bez obrotu) i trzy strzałki.
+  await page.mouse.click(...centers[boxIndex]);
+  await selected(boxIndex);
+  await card.waitFor();
+  await expectText(editor.locator('[data-testid=drawing-scene-pose-name]'), 'Prostopadłościan');
+  assert.equal(await poseValue(editor, 'z'), 0, 'stoi na kartce');
+  assert.equal(await poseValue(editor, 'yaw'), 0, 'bez obrotu');
+  assert.equal(await editor.locator('[data-testid=drawing-scene-floor]').isDisabled(), true, '„Na arkusz” – już na arkuszu');
+  // „Cofnij” w scenie cofa kroki rysunku – także wstawienie i przesunięcie brył w 2D.
+  assert.equal(await undo.isDisabled(), false, 'kroki rysunku do cofnięcia');
+  let arrows = await sceneArrows(editor);
+  assert.deepEqual(Object.keys(arrows), ['X', 'Y', 'Z'], 'strzałki X, Y, Z');
+  assert.ok(arrows.Z[1][1] < arrows.Z[0][1] - 30 && Math.abs(arrows.Z[1][0] - arrows.Z[0][0]) <= 1, `Z w górę: ${arrows.Z}`);
+  assert.ok(arrows.X[1][0] > arrows.X[0][0] + 20 && arrows.X[1][1] > arrows.X[0][1], `X w prawo w dół: ${arrows.X}`);
+  await shot('zaznaczona-strzalki');
+
+  // Strzałka Z (bez puszczenia): w trakcie same krawędzie, podpowiedź z liczbami; po puszczeniu – wyżej, liczba zaokrąglona.
+  const startX = await poseValue(editor, 'x');
+  const lift = alongArrow(arrows.Z);
+  await page.mouse.move(...lift);
+  await page.mouse.down();
+  await page.mouse.move(lift[0], lift[1] - 70, { steps: 8 });
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'true', 'Przesuwanie – ruch');
+  await expectText(hint, 'Przesuwanie wzdłuż Z');
+  centers = await sceneCenters(editor);
+  assert.ok(await scenePixel(editor, centers[boxIndex]) > 235, 'w trakcie przesuwania bez krycia i cieniowania');
+  assert.ok(await poseValue(editor, 'z') > 0, 'panel pokazuje wysokość w trakcie');
+  await shot('przesuwanie-same-krawedzie');
+  await page.mouse.up();
+  await settled();
+  const raised = await poseValue(editor, 'z');
+  assert.ok(raised > 0.5, `podniesiony: ${raised}`);
+  close(raised * 10, Math.round(raised * 10), 1e-6, 'wysokość zaokrąglona do 0,1 cm');
+  assert.equal(await poseValue(editor, 'x'), startX, 'X bez zmian');
+  assert.ok(await scenePixel(editor, (await sceneCenters(editor))[boxIndex]) < 225, 'po puszczeniu – pełny obraz');
+
+  // Liczby: Z = 0, obrót 30°; strzałka X – dalej w prawo.
+  await typePose('z', '0');
+  assert.equal(await poseValue(editor, 'z'), 0, 'z powrotem na kartce');
+  await typePose('yaw', '30');
+  assert.equal(await poseValue(editor, 'yaw'), 30, 'obrót wokół Z');
+  arrows = await sceneArrows(editor);
+  const slide = alongArrow(arrows.X);
+  await page.mouse.move(...slide);
+  await page.mouse.down();
+  await page.mouse.move(slide[0] + (arrows.X[1][0] - arrows.X[0][0]), slide[1] + (arrows.X[1][1] - arrows.X[0][1]), { steps: 8 });
+  await page.mouse.up();
+  await settled();
+  assert.ok(await poseValue(editor, 'x') > startX + 1, 'przesunięty wzdłuż X');
+  const top = (await sceneArrows(editor)).Z[0];
+
+  // „Postaw na ścianie”: walec na wierzchu prostopadłościanu (dotknięcie środka wierzchu).
+  centers = await sceneCenters(editor);
+  await page.mouse.click(...centers[cylinderIndex]);
+  await selected(cylinderIndex);
+  await editor.locator('[data-testid=drawing-scene-place]').click();
+  await waitUntil(async () => (await canvas.getAttribute('data-placing')) === 'true', 'Postaw na ścianie – wybór ściany');
+  await expectText(hint, 'Dotknij wierzchu innej bryły');
+  assert.equal(await canvas.getAttribute('data-arrows'), '', 'w trakcie wyboru ściany – bez strzałek');
+  await page.mouse.click(...top);
+  await expectText(editor.locator('[data-testid=drawing-scene-pose-on]'), 'stoi na: Prostopadłościan');
+  assert.equal(await poseValue(editor, 'z'), 3, 'podstawa na wierzchu (3 kratki = 3 cm)');
+  assert.equal(await poseValue(editor, 'yaw'), 0, 'obrót walca bez zmian');
+  centers = await sceneCenters(editor);
+  assert.ok(centers[cylinderIndex][1] < centers[boxIndex][1] - 20 && Math.abs(centers[cylinderIndex][0] - centers[boxIndex][0]) < 40,
+    `walec nad prostopadłościanem: ${centers[cylinderIndex]} / ${centers[boxIndex]}`);
+  await shot('postaw-na-scianie');
+
+  // Prostopadłościan przesuwany strzałką X – walec idzie za nim; „Cofnij” – oba wracają.
+  const boxCenter = centers[boxIndex];
+  const topCenter = top;
+  await page.mouse.click(boxCenter[0] + (boxCenter[0] - topCenter[0]) * 0.7, boxCenter[1] + (boxCenter[1] - topCenter[1]) * 0.7);
+  await selected(boxIndex);
+  arrows = await sceneArrows(editor);
+  const push = alongArrow(arrows.X);
+  await page.mouse.move(...push);
+  await page.mouse.down();
+  await page.mouse.move(push[0] + (arrows.X[1][0] - arrows.X[0][0]), push[1] + (arrows.X[1][1] - arrows.X[0][1]), { steps: 8 });
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'true', 'Przesuwanie stosu');
+  await shot('stos-w-ruchu');
+  await page.mouse.up();
+  await settled();
+  const moved = await sceneCenters(editor);
+  const shift = [moved[boxIndex][0] - centers[boxIndex][0], moved[boxIndex][1] - centers[boxIndex][1]];
+  assert.ok(Math.hypot(...shift) > 20, `prostopadłościan przesunięty: ${shift}`);
+  close(moved[cylinderIndex][0] - centers[cylinderIndex][0], shift[0], 2, 'walec za prostopadłościanem – x');
+  close(moved[cylinderIndex][1] - centers[cylinderIndex][1], shift[1], 2, 'walec za prostopadłościanem – y');
+  await undo.click();
+  await settled();
+  const back = await sceneCenters(editor);
+  for (const index of [boxIndex, cylinderIndex]) {
+    close(back[index][0], centers[index][0], 2, `po cofnięciu – x (${index})`);
+    close(back[index][1], centers[index][1], 2, `po cofnięciu – y (${index})`);
+  }
+  await selected(boxIndex);
+
+  // 2D: stos to jeden obrazek – walec przeciągnięty palcem myszy przesuwa też prostopadłościan.
+  await page.keyboard.press('Escape');
+  await waitUntil(() => scene.isHidden(), 'Scena schowana');
+  await expectText(count, 'Bryła: Prostopadłościan');
+  const boxBefore = await solidCenter2d(editor);
+  await opener.click();
+  await scene.waitFor();
+  await settled();
+  await page.mouse.click(...(await sceneCenters(editor))[cylinderIndex]);
+  await selected(cylinderIndex);
+  await page.keyboard.press('Escape');
+  await waitUntil(() => scene.isHidden(), 'Scena schowana (walec)');
+  await expectText(count, 'Bryła: Walec');
+  const cylinder2d = await solidCenter2d(editor);
+  assert.ok(Math.hypot(cylinder2d[0] - boxBefore[0], cylinder2d[1] - boxBefore[1]) < 160, `walec w obrazku prostopadłościanu: ${cylinder2d} / ${boxBefore}`);
+  await shot('2d-wspolny-obrazek');
+  await page.mouse.move(...cylinder2d);
+  await page.mouse.down();
+  await page.mouse.move(cylinder2d[0] + 120, cylinder2d[1] + 60, { steps: 8 });
+  await page.mouse.up();
+  await opener.click();
+  await scene.waitFor();
+  await settled();
+  const after = await sceneCenters(editor);
+  await page.mouse.click(after[boxIndex][0] + (after[boxIndex][0] - after[cylinderIndex][0]) * 0.5, after[boxIndex][1] + (after[boxIndex][1] - after[cylinderIndex][1]) * 0.5);
+  await selected(boxIndex);
+  await page.keyboard.press('Escape');
+  await waitUntil(() => scene.isHidden(), 'Scena schowana (prostopadłościan)');
+  const boxAfter = await solidCenter2d(editor);
+  close(boxAfter[0] - boxBefore[0], 120, 3, 'cały obrazek przesunięty – x');
+  close(boxAfter[1] - boxBefore[1], 60, 3, 'cały obrazek przesunięty – y');
+
+  // „Na arkusz”: walec zdjęty z prostopadłościanu (Z = 0, bez „stoi na”).
+  await opener.click();
+  await scene.waitFor();
+  await settled();
+  await page.mouse.click(...(await sceneCenters(editor))[cylinderIndex]);
+  await selected(cylinderIndex);
+  await editor.locator('[data-testid=drawing-scene-floor]').click();
+  await waitUntil(async () => (await poseValue(editor, 'z')) === 0, 'Na arkuszu');
+  assert.equal(await editor.locator('[data-testid=drawing-scene-pose-on]').isVisible(), false, 'bez „stoi na”');
+  await editor.locator('[data-testid=drawing-scene-undo]').click();
+  await expectText(editor.locator('[data-testid=drawing-scene-pose-on]'), 'stoi na: Prostopadłościan');
+  await editor.locator('[data-testid=drawing-scene-exit]').click();
+  await waitUntil(() => scene.isHidden(), 'Powrót do 2D');
+
+  // Zapis: format 23, prostopadłościan z identyfikatorem i obrotem, walec na nim (na wierzchu, w obrazku prostopadłościanu).
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const drawingData = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  assert.equal(drawingData.version, 23);
+  const [savedBox, savedCylinder] = drawingData.strokes.filter((stroke) => stroke.tool === 'solid');
+  assert.equal(savedBox.yaw, 30, 'obrót prostopadłościanu zapisany');
+  assert.ok(savedBox.id, 'prostopadłościan z identyfikatorem');
+  assert.equal(savedCylinder.on?.id, savedBox.id, 'walec stoi na prostopadłościanie');
+  assert.equal(savedCylinder.on.z, 0, 'na samym wierzchu');
+  assert.equal(savedCylinder.z, savedBox.dims.c, 'wysokość podstawy walca = wysokość prostopadłościanu');
+  const { resolveStacks } = await import('../../js/core/solid-pose.js');
+  const copy = drawingData.strokes.map((stroke) => ({ ...stroke }));
+  assert.equal(resolveStacks(copy).size, 0, 'obrazek walca wyliczony ze stosu (zapis spójny)');
+}, { device: DESKTOP });
+
+test('rysunek 1.52 na iPadzie: strzałka Z palcem (same krawędzie), „Położenie bryły” w 2D – wysokość i obrót, w scenie te same liczby', async ({ open, context }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>iPad</p>');
+  const canvas = sceneCanvas(editor);
+  const scene = editor.locator('[data-testid=drawing-scene]');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const panel = editor.locator('[data-testid=drawing-ruler-panel]');
+  const field = (id) => sheet(page).locator(`[data-testid=${id}]`);
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').tap();
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await editor.locator('[data-testid=drawing-scene-open]').tap();
+  await scene.waitFor();
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz');
+  assert.equal(await canvas.getAttribute('data-selected'), '0', 'zaznaczona bryła z 2D');
+  const arrows = await sceneArrows(editor);
+  const start = alongArrow(arrows.Z);
+  const finger = await touchAt(context, page, ...start);
+  await finger.move(start[0], start[1] - 80);
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'true', 'Przesuwanie palcem');
+  await expectText(editor.locator('[data-testid=drawing-scene-hint]'), 'Przesuwanie wzdłuż Z');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-152-ipad-palec.png') });
+  await finger.end();
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Po puszczeniu');
+  assert.ok(await poseValue(editor, 'z') > 0, 'podniesiony palcem');
+  await editor.locator('[data-testid=drawing-scene-exit]').tap();
+  await waitUntil(() => scene.isHidden(), 'Powrót do 2D');
+
+  // „Położenie bryły” (układ współrzędnych włączony): Z i obrót wpisane w 2D.
+  await editor.locator('[data-testid=drawing-scale-info]').tap();
+  await panel.waitFor();
+  await panel.locator('[data-testid=drawing-coords-toggle]').check({ force: true });
+  await panel.locator('[data-testid=drawing-panel-close]').tap();
+  await waitUntil(() => panel.isHidden(), 'Panel zamknięty');
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await editor.locator('[data-testid=drawing-selection-position]').tap();
+  await field('drawing-position-z').waitFor();
+  assert.ok(Number((await field('drawing-position-z').inputValue()).replace(',', '.')) > 0, 'wysokość ze sceny');
+  await field('drawing-position-z').fill('2');
+  await field('drawing-position-yaw').fill('45');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-152-ipad-polozenie.png') });
+  await saveSheet(page);
+  await editor.locator('[data-testid=drawing-scene-open]').tap();
+  await scene.waitFor();
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz');
+  assert.equal(await poseValue(editor, 'z'), 2, 'Z w scenie');
+  assert.equal(await poseValue(editor, 'yaw'), 45, 'obrót w scenie');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-152-ipad-scena.png') });
+}, { device: IPAD });
+
+test('rysunek 1.52 na telefonie: panel położenia w szerokości ekranu (cztery pola), „Postaw na ścianie” i „Na arkusz” na ekranie, bez przewijania w bok', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const canvas = sceneCanvas(editor);
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').scrollIntoViewIfNeeded();
+  await editor.locator('[data-testid=drawing-insert-solid-box]').click();
+  await editor.locator('[data-testid=drawing-scene-open]').tap();
+  await editor.locator('[data-testid=drawing-scene]').waitFor();
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz');
+  await editor.locator('[data-testid=drawing-scene-pose]').waitFor();
+  for (const id of ['drawing-scene-pose', 'drawing-scene-pose-x', 'drawing-scene-pose-y', 'drawing-scene-pose-z', 'drawing-scene-pose-yaw', 'drawing-scene-place', 'drawing-scene-floor']) {
+    const bounds = await editor.locator(`[data-testid=${id}]`).boundingBox();
+    assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 391 && bounds.y + bounds.height <= 845, `${id} na ekranie: ${JSON.stringify(bounds)}`);
+  }
+  const input = editor.locator('[data-testid=drawing-scene-pose-z]');
+  await input.tap();
+  await input.fill('1,5');
+  await input.press('Enter');
+  await waitUntil(async () => (await poseValue(editor, 'z')) === 1.5, 'Z wpisane na telefonie');
+  assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
+  assert.ok((await sceneArrows(editor)).Z, 'strzałka Z na telefonie');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-152-telefon.png') });
 }, { device: PHONE });
 
 // ---------------------------------------------------------------- nauka z fiszkami

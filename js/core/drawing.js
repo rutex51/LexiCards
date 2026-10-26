@@ -46,6 +46,8 @@
 //   bryły obracanej w przestrzeni.
 //   Od 1.50 (format 22) origin { x, y } – początek układu współrzędnych arkusza przesunięty przez użytkownika (punkt
 //   strony; brak – lewy dolny róg arkusza albo kartki, core/sheet-coords.js).
+//   Od 1.52 (format 23) bryła ma położenie w scenie: z – wysokość podstawy, yaw – obrót wokół Z, on – bryła pod spodem
+//   (core/solid-pose.js); obrazek bryły postawionej jest w obrazku bryły na dole stosu.
 
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import { DEFAULT_RECENT_FITS, cleanRecentFits } from './fits.js';
@@ -62,6 +64,7 @@ import { DEFAULT_PAPER_LEVEL, cleanLevel, cleanTemplate } from './templates.js';
 import { cleanFrame } from './title-block.js';
 import { cleanDiagram } from './diagrams.js';
 import { cleanSolid, solidBox } from './solids.js';
+import { resolveStacks } from './solid-pose.js';
 import { cleanLayout } from './page-layouts.js';
 import { cleanRingPositions, cleanToolGroups, cleanUiHidden, defaultToolGroups } from './tool-ring.js';
 import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './layers.js';
@@ -79,7 +82,7 @@ import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './la
  * profilu, szkic w bryle (1.48), 20 – szkic na płaszczyźnie XY, Z do góry (1.48.2), 21 – wycięcia i dodania na ścianach
  * brył (1.49), 22 – początek układu współrzędnych arkusza (1.50).
  */
-export const DRAWING_VERSION = 22;
+export const DRAWING_VERSION = 23;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -1348,6 +1351,8 @@ export function cleanDrawing(raw) {
     const clean = cleanStroke(stroke, width, height, true, known);
     if (clean) strokes.push(toMillimeters === 1 ? clean : tolerancesInMillimeters(clean, toMillimeters));
   }
+  // Bryły postawione na innych (od 1.52, format 23): odnośniki do brył, których nie ma – usunięte, obrazki stosów – wyliczone.
+  resolveStacks(strokes);
   const template = cleanTemplate(raw.template, width, height, photoBytes);
   let photo = null;
   if (raw.photo && typeof raw.photo === 'object' && /^image\//.test(raw.photo.type ?? '')) {

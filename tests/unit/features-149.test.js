@@ -141,7 +141,7 @@ test('bryły 1.49: dane – operacje sprawdzane (u, v prostopadłe, profil, gł�
   assert.equal(cleanSolid({ ...box, features: [{ ...cut, through: true, op: 'add' }] }, ...PAGE).features[0].through, undefined, 'na wylot – tylko wycięcie');
   assert.equal(cleanSolid({ ...newSolid('sphere'), features: [cut] }, ...PAGE).features, undefined, 'kula');
   assert.equal(cleanSolid({ ...box, features: Array.from({ length: 40 }, () => cut) }, ...PAGE).features.length, FEATURE_LIMITS.count);
-  assert.equal(DRAWING_VERSION, 22, 'format 22 (od 1.50; operacje na ścianach – od 21)');
+  assert.equal(DRAWING_VERSION, 23, 'format 23 (od 1.52; początek układu – od 22; operacje na ścianach – od 21)');
   const saved = cleanDrawing({ version: DRAWING_VERSION, width: PAGE[0], height: PAGE[1], strokes: [element] });
   assert.deepEqual(saved.strokes[0].features, element.features);
 });

@@ -297,10 +297,11 @@ export function newElementId(strokes) {
 
 /** Kopia elementu bez identyfikatora i przyklejeń (powielenie, wklejenie, szyk – kopia jest wolna). */
 export function withoutLinks(stroke) {
-  if (!stroke || (!('id' in stroke) && !('attach' in stroke))) return stroke;
+  if (!stroke || (!('id' in stroke) && !('attach' in stroke) && !('on' in stroke))) return stroke;
   const copy = { ...stroke };
   delete copy.id;
   delete copy.attach;
+  delete copy.on;
   return copy;
 }
 
@@ -318,9 +319,14 @@ export function relinkCopies(copies, existing) {
     taken.push({ id });
   }
   return copies.map((copy) => {
-    if (!copy.id && !copy.attach) return copy;
+    if (!copy.id && !copy.attach && !copy.on) return copy;
     const next = { ...copy };
     if (copy.id) next.id = ids.get(copy.id);
+    // Bryła postawiona na innej (od 1.52) – na kopii tamtej bryły; bez niej stoi sama (w miejscu obrazka).
+    if (copy.on) {
+      if (ids.has(copy.on.id)) next.on = { ...copy.on, id: ids.get(copy.on.id) };
+      else delete next.on;
+    }
     if (copy.attach) {
       const attach = Object.fromEntries(Object.entries(copy.attach).filter(([, ref]) => ids.has(ref.id)).map(([end, ref]) => [end, { ...ref, id: ids.get(ref.id) }]));
       if (Object.keys(attach).length > 0) next.attach = attach;

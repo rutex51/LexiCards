@@ -32,6 +32,7 @@
 
 import { cleanShape, polyFromPoints, shapeOutline, shapePoint } from './shapes.js';
 import { meshPolygons, planeOf, subtract, toMesh, union } from './csg.js';
+import { cleanPose } from './solid-pose.js';
 
 /** Kratka strony (drawing.js PAPER_STEP) – wymiary nowej bryły. */
 const STEP = 44;
@@ -275,7 +276,9 @@ export function cleanSolid(raw, pageWidth, pageHeight) {
     ...(sketch.length > 0 ? { sketch } : {}),
     ...(sketch.length > 0 && finite(raw.sketchAngle) && raw.sketchAngle !== 0 ? { sketchAngle: round(raw.sketchAngle, 6) } : {}),
     ...(sketch.length > 0 && raw.sketchMirror === true ? { sketchMirror: true } : {}),
-    ...(features.length > 0 ? { features } : {})
+    ...(features.length > 0 ? { features } : {}),
+    // Od 1.52: położenie w scenie – wysokość podstawy, obrót wokół Z, bryła pod spodem (core/solid-pose.js).
+    ...cleanPose(raw)
   };
 }
 
@@ -493,6 +496,9 @@ export function scaleSolid(element, cx, cy, factor) {
   const dims = Object.fromEntries(Object.entries(element.dims).map(([key, value]) => [key,
     key === 'n' || key === 'angle' ? value : round(clamp(value * factor, key === 't' && value === 0 ? 0 : SOLID_LIMITS.min, SOLID_LIMITS.max))]));
   const next = { ...element, dims, x: round(cx + (element.x - cx) * factor), y: round(cy + (element.y - cy) * factor) };
+  // Położenie w scenie (od 1.52) – wysokość i przesunięcie względem bryły pod spodem rosną razem z bryłą.
+  if (finite(element.z)) next.z = round(element.z * factor);
+  if (element.on) next.on = { ...element.on, x: round(element.on.x * factor), y: round(element.on.y * factor), z: round(element.on.z * factor) };
   // Bryła ze szkicu (od 1.48) – profil razem z nią (kształty szkicu skaluje transform.js).
   const scale = (loop) => loop.map(([x, y]) => [round(x * factor), round(y * factor)]);
   const scaleProfile = (profile) => ({ islands: profile.islands.map((island) => ({ outer: scale(island.outer), holes: island.holes.map(scale) })) });
@@ -878,16 +884,16 @@ function frontFaces(element) {
   return list;
 }
 
-/** Ściana bryły pod punktem strony (najbliższa patrzącemu): { normal – układ bryły, loops – obrys na stronie } albo null. */
+/** Ściana bryły pod punktem strony (najbliższa patrzącemu): { normal – układ bryły, loops – obrys na stronie, vertex – punkt ściany (układ bryły) } albo null. */
 export function faceAt(element, point) {
   let best = null;
   for (const face of frontFaces(element)) {
     if (!insidePage(point.x, point.y, face.loops)) continue;
     const [x, y] = [point.x - element.x, element.y - point.y];
     const z = (face.D - face.N[0] * x - face.N[1] * y) / face.N[2];
-    if (!best || z > best.z) best = { normal: face.normal, loops: face.loops, z };
+    if (!best || z > best.z) best = { normal: face.normal, loops: face.loops, vertex: face.vertex, z };
   }
-  return best ? { normal: best.normal, loops: best.loops } : null;
+  return best ? { normal: best.normal, loops: best.loops, vertex: best.vertex } : null;
 }
 
 /**

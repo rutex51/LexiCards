@@ -5,8 +5,12 @@
 // Bryła w scenie stoi prosto – osie bryły są osiami świata (W1: X = x bryły, Y = −z, Z = y) – podstawą na kartce,
 // środkiem nad środkiem swojego obrazka na kartce. Położenie obrazka (q) to w 2D tylko widok obrazka; w scenie bryły
 // pokazuje wspólna kamera. Kamera: azymut (od strony −Y w stronę +X) i wysokość nad kartką (0–90°).
+// Od 1.52 bryła ma położenie (core/solid-pose.js): wysokość podstawy nad kartką, obrót wokół Z, może stać na innej bryle.
 
-import { hasFeatures, isModel, quatFromMatrix, solidShape } from './solids.js';
+import { hasFeatures, isModel, quatFromMatrix } from './solids.js';
+import { baseOf, bodyExtent, placement, solidsById, worldRotation } from './solid-pose.js';
+
+export { bodyExtent };
 
 const D2R = Math.PI / 180;
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -39,53 +43,46 @@ export const toView = (camera, point) => [dot(camera.xv, point), dot(camera.yv, 
 /** Obrót bryły w scenie (wiersze: świat z układu bryły) – X = x, Y = −z, Z = y. */
 export const SCENE_POSE = Object.freeze([1, 0, 0, 0, 0, -1, 0, 1, 0]);
 /**
- * Położenie bryły dla rysowania z rozkładu 2D (quatMatrix – wiersze: widok z układu bryły): kamera razy obrót bryły w scenie.
- * Wszystkie bryły stoją tak samo, więc kwaternion jest jeden dla całej sceny.
+ * Położenie bryły dla rysowania z rozkładu 2D (quatMatrix – wiersze: widok z układu bryły): kamera razy obrót bryły w scenie
+ * (od 1.52 – z obrotem wokół Z o yaw stopni).
  */
-export function sceneQuat(camera) {
+export function sceneQuat(camera, yaw = 0) {
   const rows = [camera.xv, camera.yv, camera.zv];
-  const m = rows.flatMap((row) => [0, 1, 2].map((column) => row[0] * SCENE_POSE[column] + row[1] * SCENE_POSE[3 + column] + row[2] * SCENE_POSE[6 + column]));
+  const pose = worldRotation(yaw);
+  const m = rows.flatMap((row) => [0, 1, 2].map((column) => row[0] * pose[column] + row[1] * pose[3 + column] + row[2] * pose[6 + column]));
   return quatFromMatrix(m);
 }
 
 /** Punkt strony na kartce w świecie (Z = 0). */
 export const worldOfPage = (drawing, point) => [point.x, drawing.height - point.y, 0];
 
-/** Zasięg bryły w jej układzie: { min: [x, y, z], max } (kula – promień). */
-export function bodyExtent(solid) {
-  if (solid.kind === 'sphere') {
-    const r = solid.dims.d / 2;
-    return { min: [-r, -r, -r], max: [r, r, r] };
-  }
-  const mesh = solidShape(solid);
-  const min = [Infinity, Infinity, Infinity];
-  const max = [-Infinity, -Infinity, -Infinity];
-  for (const vertex of mesh.V) {
-    for (let axis = 0; axis < 3; axis += 1) {
-      min[axis] = Math.min(min[axis], vertex[axis]);
-      max[axis] = Math.max(max[axis], vertex[axis]);
-    }
-  }
-  return { min, max };
-}
-
 /**
  * Bryły sceny (bez brył w szykach): { solid, index – miejsce w rysunku, origin – punkt świata początku układu bryły,
- * center – środek jej zasięgu w świecie, height – wysokość nad kartką }. Bryła stoi podstawą na kartce: najniższy
- * punkt bryły (najmniejsze y bryły – Z) w Z = 0, początek układu bryły nad środkiem obrazka.
+ * center – środek jej zasięgu w świecie, half – połowa zasięgu wzdłuż X, Y, Z (prostopadłościan wzdłuż osi świata),
+ * height – wysokość bryły, base – wysokość podstawy nad kartką, yaw – obrót wokół Z, on – bryła pod spodem albo null }.
+ * Bryła stoi podstawą (najniższym punktem – najmniejsze y bryły) na wysokości z, początkiem układu nad punktem (x, y)
+ * – bez położenia: na kartce, nad środkiem obrazka; postawiona na innej – w miejscu względem tamtej (core/solid-pose.js).
  */
 export function sceneSolids(drawing) {
   const list = [];
+  const byId = solidsById(drawing.strokes);
   drawing.strokes.forEach((stroke, index) => {
     if (stroke.tool !== 'solid') return;
     const { min, max } = bodyExtent(stroke);
-    const [x, y] = worldOfPage(drawing, stroke);
-    const origin = [x, y, -min[1]];
-    // Środek zasięgu w świecie: x bryły → X, −z → Y, y → Z.
+    const place = placement(byId, stroke);
+    const [x, y] = worldOfPage(drawing, place);
+    const origin = [x, y, place.z - min[1]];
+    // Środek zasięgu i połowa zasięgu w świecie: obrót bryły (x → X, −z → Y, y → Z, potem wokół Z o yaw).
+    const m = worldRotation(place.yaw);
     const mid = [0, 1, 2].map((axis) => (min[axis] + max[axis]) / 2);
-    const center = [origin[0] + mid[0], origin[1] - mid[2], origin[2] + mid[1]];
-    const half = [(max[0] - min[0]) / 2, (max[2] - min[2]) / 2, (max[1] - min[1]) / 2];
-    list.push({ solid: stroke, index, origin, center, half, height: max[1] - min[1], model: isModel(stroke) || hasFeatures(stroke) });
+    const size = [0, 1, 2].map((axis) => (max[axis] - min[axis]) / 2);
+    const center = [0, 1, 2].map((row) => origin[row] + m[row * 3] * mid[0] + m[row * 3 + 1] * mid[1] + m[row * 3 + 2] * mid[2]);
+    const half = [0, 1, 2].map((row) => Math.abs(m[row * 3]) * size[0] + Math.abs(m[row * 3 + 1]) * size[1] + Math.abs(m[row * 3 + 2]) * size[2]);
+    list.push({
+      solid: stroke, index, origin, center, half, height: max[1] - min[1], base: place.z, yaw: place.yaw,
+      on: place.root === stroke ? null : baseOf(byId, stroke),
+      model: isModel(stroke) || hasFeatures(stroke)
+    });
   });
   return list;
 }
@@ -142,9 +139,27 @@ export function sheetMatrix(camera, view, drawing) {
   const H = drawing.height;
   return [s * xv[0], -s * yv[0], -s * xv[1], s * yv[1], ox + s * xv[1] * H, oy - s * yv[1] * H];
 }
-/** Kolejność rysowania: od najdalszej bryły (środek zasięgu); przy równej odległości – kolejność w rysunku. */
+/**
+ * Kolejność rysowania: od najdalszej bryły (środek zasięgu); przy równej odległości – kolejność w rysunku. Od 1.52 bryła
+ * postawiona na innej – zawsze po niej (kamera nigdy spod kartki, więc wierzch bryły pod spodem jej nie zasłania).
+ */
 export function paintOrder(camera, solids) {
-  return [...solids].sort((p, q) => toView(camera, p.center)[2] - toView(camera, q.center)[2] || p.index - q.index);
+  const order = [...solids].sort((p, q) => toView(camera, p.center)[2] - toView(camera, q.center)[2] || p.index - q.index);
+  for (let pass = 0; pass < order.length; pass += 1) {
+    let moved = false;
+    for (const item of [...order]) {
+      if (!item.on) continue;
+      const below = order.findIndex((other) => other.solid === item.on);
+      const at = order.indexOf(item);
+      if (below > at) {
+        order.splice(at, 1);
+        order.splice(below, 0, item);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return order;
 }
 
 /** Obrót sceny przeciągnięciem: piksele → stopnie; wysokość w granicach SCENE_ELEVATION. */

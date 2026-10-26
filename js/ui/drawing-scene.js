@@ -1,14 +1,22 @@
-// Scena 3D w edytorze rysunku (od 1.51) – tylko do oglądania: kartka jako płaszczyzna XY z całą treścią 2D, bryły stojące
-// na niej (core/scene.js), wspólna kamera. Przeciągnięcie obraca scenę, kółko myszy i dwa palce przybliżają (dwa palce
+// Scena 3D w edytorze rysunku (od 1.51): kartka jako płaszczyzna XY z całą treścią 2D, bryły stojące na niej
+// (core/scene.js), wspólna kamera. Przeciągnięcie obraca scenę, kółko myszy i dwa palce przybliżają (dwa palce
 // także przesuwają), gotowe widoki – przyciski u góry, dotknięcie bryły – zaznaczenie. W ruchu (obracanie, przybliżanie,
-// przejście do widoku) – same krawędzie, bez krycia i cieniowania; po puszczeniu – pełny obraz: kartka rysowana wektorowo,
-// bryły z krawędziami niewidocznymi i cieniowaniem, od najdalszej (zasłaniają się nawzajem).
+// przejście do widoku, przesuwanie bryły) – same krawędzie, bez krycia i cieniowania; po puszczeniu – pełny obraz: kartka
+// rysowana wektorowo, bryły z krawędziami niewidocznymi i cieniowaniem, od najdalszej (zasłaniają się nawzajem).
+//
+// Od 1.52 położenie brył (core/solid-pose.js): panel zaznaczonej bryły – X, Y, Z (wysokość podstawy) i obrót wokół Z
+// w układzie arkusza, „Postaw na ścianie” (dotknięcie wierzchu innej bryły), „Na arkusz (Z = 0)”; strzałki osi przy
+// zaznaczonej bryle – przeciągnięcie przesuwa ją wzdłuż tej osi (po jednej strzałce na oś, tylko przesuwanie). Zmiany idą
+// do rysunku przez onChange i onPlace (krok cofania w edytorze), „Cofnij” w pasku.
 
-import { quatMatrix, solidGeometry, solidLabel, solidShape } from '../core/solids.js';
+import { faceAt, quatMatrix, solidGeometry, solidLabel, solidShape } from '../core/solids.js';
 import {
   SCENE_VIEWS, SCENE_ZOOM, blendCamera, fitScale, orbit, paintOrder, projectWorld, sceneBounds, sceneCamera, sceneQuat, sceneSolids, sceneView, sceneViewId,
   sheetMatrix, toView, worldOfPage
 } from '../core/scene.js';
+import { facesUp, liftOff, normalYaw, placement, resolveStacks, solidsById, stackChanges, standsOn, withPose } from '../core/solid-pose.js';
+import { coordFactor, coordPlaces, coordUnit, formatCoord, fromSheet, toSheet } from '../core/sheet-coords.js';
+import { parseDecimal } from '../core/drawing.js';
 import { paintSolid } from './drawing-solids.js';
 import { textFont } from './canvas-text.js';
 import { h } from './dom.js';
@@ -19,17 +27,24 @@ const LINE = '#1d1d1f';
 const AXES = [['X', [1, 0, 0], '#d92d20'], ['Y', [0, 1, 0], '#1e8e3e'], ['Z', [0, 0, 1], '#1a6fdb']];
 /** Długość osi w początku układu (jednostki strony – dwie i pół kratki). */
 const AXIS_LENGTH = 110;
+/** Strzałki przesuwania zaznaczonej bryły: długość (px, oś w poprzek patrzenia), najkrótsza widoczna i zasięg dotknięcia (px). */
+const ARROW = Object.freeze({ length: 72, shortest: 16, hit: 14, touch: 22 });
 /** Przejście do gotowego widoku (ms) i chwila po ostatnim obrocie kółka myszy, po której wraca pełny obraz. */
 const BLEND_MS = 380;
 const WHEEL_SETTLE = 250;
 const TAP = 5;
+/** Jak długo widać komunikat w pastylce podpowiedzi (ms). */
+const NOTE_MS = 3200;
+const shortLabel = (solid) => solidLabel(solid).replace('Bryła: ', '');
 
 /**
- * Scena: { element, open({ drawing, origin, selected, paintPage, dimFormat }), close(), resize(), isOpen() }.
- * paintPage(ctx, skip) – treść kartki w jednostkach strony bez elementów ze zbioru skip (brył); origin – początek układu
- * arkusza (punkt strony); onSelect(bryła | null), onExit() – powrót do 2D.
+ * Scena: { element, open({ drawing, origin, selected, paintPage, dimFormat, canUndo }), update({ selected, canUndo }), close(),
+ * cancel(), resize(), isOpen() }. paintPage(ctx, skip) – treść kartki w jednostkach strony bez elementów ze zbioru skip (brył);
+ * origin – początek układu arkusza (punkt strony); onSelect(bryła | null), onExit() – powrót do 2D; onChange(mapa stara → nowa)
+ * – nowe położenie brył; onPlace(bryła, bryła pod spodem, punkt strony, wysokość ściany) – „Postaw na ścianie”; onUndo() –
+ * „Cofnij”. Po zmianie edytor zapisuje krok cofania i woła update.
  */
-export function createScene({ onSelect, onExit }) {
+export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
   const canvas = h('canvas', { class: 'drawing__scene-canvas', role: 'img', 'aria-label': 'Scena 3D', dataset: { testid: 'drawing-scene-canvas' } });
   const viewButtons = SCENE_VIEWS.map((item) => h('button', {
     type: 'button', class: 'drawing__scene-chip', 'aria-pressed': 'false', dataset: { testid: `drawing-scene-view-${item.id}`, view: item.id },
@@ -39,48 +54,229 @@ export function createScene({ onSelect, onExit }) {
     type: 'button', class: 'drawing__scene-chip drawing__scene-chip--exit', title: 'Wróć do kartki 2D (Esc)', dataset: { testid: 'drawing-scene-exit' },
     onClick: () => onExit()
   }, '2D');
+  const undoButton = h('button', {
+    type: 'button', class: 'drawing__scene-chip', title: 'Cofnij ostatnią zmianę', 'aria-label': 'Cofnij', disabled: true, dataset: { testid: 'drawing-scene-undo' },
+    onClick: () => onUndo()
+  }, icon('undo', { size: 16 }));
   const fitButton = h('button', {
     type: 'button', class: 'drawing__scene-chip', title: 'Cała scena – bez przybliżenia i przesunięcia', dataset: { testid: 'drawing-scene-fit' },
     onClick: () => {
       state.zoom = 1;
       state.pan = { x: 0, y: 0 };
+      state.bounds = sceneBounds(state.drawing, state.solids);
       state.base = fit(state.camera);
       render();
     }
   }, icon('zoomFit', { size: 16 }), 'Cała');
   const bar = h('div', { class: 'drawing__scene-bar', role: 'toolbar', 'aria-label': 'Scena 3D – widoki' },
-    exitButton, h('span', { class: 'drawing__scene-sep' }), ...viewButtons, h('span', { class: 'drawing__scene-sep' }), fitButton);
+    exitButton, undoButton, h('span', { class: 'drawing__scene-sep' }), ...viewButtons, h('span', { class: 'drawing__scene-sep' }), fitButton);
   const picked = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, dataset: { testid: 'drawing-scene-selected' } });
   const hint = h('span', { class: 'drawing__pill drawing__pill--info drawing__scene-hint', dataset: { testid: 'drawing-scene-hint' } });
+
+  // Panel położenia zaznaczonej bryły (od 1.52): liczby w układzie arkusza, zmiana po Enter albo po wyjściu z pola.
+  const poseInput = (key, label) => h('input', {
+    class: 'input drawing__scene-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': label, dataset: { testid: `drawing-scene-pose-${key}` },
+    onChange: () => applyFields(),
+    onKeydown: (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      applyFields();
+    }
+  });
+  const fields = { x: poseInput('x', 'X'), y: poseInput('y', 'Y'), z: poseInput('z', 'Z – wysokość podstawy'), yaw: poseInput('yaw', 'Obrót wokół Z (stopnie)') };
+  const field = (key, letter, mod, suffix = null) => h('label', { class: 'drawing__scene-field' },
+    h('span', { class: `drawing__coord-axis drawing__coord-axis--${mod}`, 'aria-hidden': 'true' }, letter), fields[key], ...(suffix ? [h('span', { class: 'drawing__scene-suffix' }, suffix)] : []));
+  const poseName = h('strong', { class: 'drawing__scene-card-name', dataset: { testid: 'drawing-scene-pose-name' } });
+  const poseOn = h('span', { class: 'drawing__scene-card-on', dataset: { testid: 'drawing-scene-pose-on' } });
+  const poseUnit = h('span', { class: 'drawing__scene-card-unit', dataset: { testid: 'drawing-scene-pose-unit' } });
+  const placeButton = h('button', {
+    type: 'button', class: 'drawing__scene-action', 'aria-pressed': 'false', dataset: { testid: 'drawing-scene-place' },
+    onClick: () => (state.placing ? stopPlacing() : startPlacing())
+  }, 'Postaw na ścianie…');
+  const floorButton = h('button', {
+    type: 'button', class: 'drawing__scene-action', dataset: { testid: 'drawing-scene-floor' },
+    onClick: () => {
+      if (!state.selected) return;
+      stopPlacing(false);
+      change(new Map([[state.selected, liftOff(state.drawing.strokes, state.selected)]]));
+    }
+  }, 'Na arkusz (Z = 0)');
+  const card = h('div', { class: 'drawing__scene-card', hidden: true, dataset: { testid: 'drawing-scene-pose' } },
+    h('div', { class: 'drawing__scene-card-head' }, poseName, poseOn, poseUnit),
+    h('div', { class: 'drawing__scene-fields' }, field('x', 'X', 'x'), field('y', 'Y', 'y'), field('z', 'Z', 'z'), field('yaw', '↻', 'turn', '°')),
+    h('div', { class: 'drawing__scene-actions' }, placeButton, floorButton));
   const element = h('div', { class: 'drawing__scene', hidden: true, dataset: { testid: 'drawing-scene' } },
-    canvas, bar, h('div', { class: 'drawing__scene-info' }, picked, hint));
+    canvas, bar, h('div', { class: 'drawing__scene-dock' }, h('div', { class: 'drawing__scene-info' }, picked, hint), card));
 
   const state = {
-    open: false, drawing: null, origin: null, paintPage: null, dimFormat: 'unit', selected: null,
+    open: false, drawing: null, origin: null, paintPage: null, dimFormat: 'unit', selected: null, canUndo: false,
     camera: sceneCamera(45, 35.264), base: 1, zoom: 1, pan: { x: 0, y: 0 }, moving: false,
-    solids: [], bounds: null, painted: [], blend: 0, wheelTimer: 0, sheetImage: null
+    solids: [], bounds: null, painted: [], blend: 0, wheelTimer: 0, sheetImage: null,
+    arrows: [], placing: false, note: '', noteTimer: 0, preview: null
   };
   const pointers = new Map();
   let gesture = null;
 
-  function open({ drawing, origin, selected = null, paintPage, dimFormat }) {
+  function open({ drawing, origin, selected = null, paintPage, dimFormat, canUndo = false }) {
     Object.assign(state, {
-      open: true, drawing, origin, paintPage, dimFormat, selected, camera: sceneCamera(45, 35.264), zoom: 1, pan: { x: 0, y: 0 }, moving: false, sheetImage: null
+      open: true, drawing, origin, paintPage, dimFormat, selected, canUndo, camera: sceneCamera(45, 35.264), zoom: 1, pan: { x: 0, y: 0 }, moving: false,
+      sheetImage: null, placing: false, note: '', preview: null
     });
     state.solids = sceneSolids(drawing);
     state.bounds = sceneBounds(drawing, state.solids);
     element.hidden = false;
     state.base = fit(state.camera);
+    fillCard();
+    render();
+  }
+  /** Po zmianie rysunku (położenie, cofnięcie): bryły od nowa, kamera i skala bez zmian (obraz nie skacze). */
+  function update({ selected = null, canUndo = false } = {}) {
+    if (!state.open) return;
+    state.selected = selected && state.drawing.strokes.includes(selected) ? selected : null;
+    state.canUndo = canUndo;
+    state.preview = null;
+    state.placing = false;
+    state.solids = sceneSolids(state.drawing);
+    fillCard();
     render();
   }
   function close() {
     state.open = false;
     state.sheetImage = null;
+    state.placing = false;
+    state.preview = null;
     window.cancelAnimationFrame(state.blend);
     clearTimeout(state.wheelTimer);
+    clearTimeout(state.noteTimer);
     pointers.clear();
     gesture = null;
     element.hidden = true;
+  }
+  /** Esc: przerywa przesuwanie strzałką albo „Postaw na ścianie”; zwraca, czy było co przerwać. */
+  function cancel() {
+    if (gesture?.kind === 'move') {
+      gesture = null;
+      pointers.clear();
+      state.moving = false;
+      dropPreview();
+      return true;
+    }
+    if (state.placing) {
+      stopPlacing();
+      return true;
+    }
+    return false;
+  }
+
+  // ---------------------------------------------------------------- położenie zaznaczonej bryły (od 1.52)
+
+  const factor = () => coordFactor(state.drawing);
+  const places = () => coordPlaces(state.drawing);
+  /** Zaznaczona bryła i jej położenie (w trakcie przesuwania – z podglądu). */
+  function selectedPlace() {
+    const index = state.drawing.strokes.indexOf(state.selected);
+    if (index < 0) return null;
+    const strokes = state.preview ?? state.drawing.strokes;
+    return { solid: strokes[index], place: placement(solidsById(strokes), strokes[index]) };
+  }
+  function fillCard() {
+    const current = state.selected ? selectedPlace() : null;
+    card.hidden = !current;
+    if (!current) return;
+    const { solid, place } = current;
+    const sheet = toSheet(state.drawing, place);
+    const digits = places();
+    poseName.textContent = shortLabel(solid);
+    const below = place.root === solid ? null : solidsById(state.drawing.strokes).get(solid.on.id);
+    poseOn.textContent = below ? `stoi na: ${shortLabel(below)}` : '';
+    poseOn.hidden = !below;
+    poseUnit.textContent = `${coordUnit(state.drawing)}, skala rysunku`;
+    const values = { x: formatCoord(sheet.x, digits), y: formatCoord(sheet.y, digits), z: formatCoord(place.z * factor(), digits), yaw: formatCoord(place.yaw, 1) };
+    for (const [key, input] of Object.entries(fields)) input.value = values[key];
+    floorButton.disabled = !below && place.z === 0;
+    placeButton.textContent = state.placing ? 'Anuluj – bez zmian' : 'Postaw na ścianie…';
+    placeButton.setAttribute('aria-pressed', String(state.placing));
+  }
+  /** Wpisane liczby → położenie zaznaczonej bryły (bez zmiany – nic). */
+  function applyFields() {
+    if (!state.selected || !state.open) return;
+    const read = (input) => (input.value.trim() === '' ? 0 : parseDecimal(input.value));
+    const [x, y, z, yaw] = ['x', 'y', 'z', 'yaw'].map((key) => read(fields[key]));
+    if ([x, y, z, yaw].some((value) => value === null)) {
+      fillCard();
+      note('Wpisz liczby, np. 25 albo −12,5.');
+      return;
+    }
+    if (z < 0) {
+      fillCard();
+      note('Wysokość podstawy – 0 albo więcej (bryła nie wchodzi pod arkusz).');
+      return;
+    }
+    const current = placement(solidsById(state.drawing.strokes), state.selected);
+    const sheet = toSheet(state.drawing, current);
+    const step = 10 ** -places();
+    const turn = normalYaw(yaw);
+    if (Math.abs(sheet.x - x) < step && Math.abs(sheet.y - y) < step && Math.abs(current.z * factor() - z) < step && Math.abs(normalYaw(current.yaw - turn)) < 0.05) return;
+    const point = fromSheet(state.drawing, { x, y });
+    change(new Map([[state.selected, withPose(state.drawing.strokes, state.selected, { x: point.x, y: point.y, z: z / factor(), yaw: turn })]]));
+  }
+  function change(map) {
+    state.preview = null;
+    onChange(map);
+  }
+  function dropPreview() {
+    state.preview = null;
+    state.solids = sceneSolids(state.drawing);
+    fillCard();
+    render();
+  }
+  function note(text) {
+    state.note = text;
+    clearTimeout(state.noteTimer);
+    state.noteTimer = setTimeout(() => {
+      state.note = '';
+      if (state.open) render();
+    }, NOTE_MS);
+    render();
+  }
+  function startPlacing() {
+    if (!state.selected) return;
+    state.placing = true;
+    fillCard();
+    render();
+  }
+  function stopPlacing(redraw = true) {
+    if (!state.placing) return;
+    state.placing = false;
+    fillCard();
+    if (redraw) render();
+  }
+  /** „Postaw na ścianie”: wierzch innej bryły pod punktem ekranu → zaznaczona bryła stoi na nim w tym miejscu. */
+  function placeAt(point) {
+    const view = layout();
+    const at = { x: (point.x - view.ox) / view.scale, y: (point.y - view.oy) / view.scale };
+    const byId = solidsById(state.drawing.strokes);
+    for (const { item, shown } of [...state.painted].reverse()) {
+      // Zaznaczona bryła i te, które na niej stoją, nie zasłaniają ściany pod spodem.
+      if (item.solid === state.selected || standsOn(byId, item.solid, state.selected)) continue;
+      const face = faceAt(shown, at);
+      if (!face) continue;
+      if (!facesUp(face.normal, item.yaw)) {
+        note('To nie jest wierzch – dotknij poziomej ściany od góry.');
+        return;
+      }
+      // Punkt ściany: promień od patrzącego przez punkt ekranu przecięty z płaszczyzną ściany (Z – wysokość ściany).
+      const z = item.origin[2] + face.vertex[1];
+      const { xv, yv, zv } = state.camera;
+      const [vx, vy] = [at.x, -at.y];
+      if (Math.abs(zv[2]) < 1e-6) return;
+      const t = (z - vx * xv[2] - vy * yv[2]) / zv[2];
+      const world = [0, 1].map((axis) => vx * xv[axis] + vy * yv[axis] + t * zv[axis]);
+      state.placing = false;
+      onPlace(state.selected, item.solid, { x: world[0], y: state.drawing.height - world[1] }, z);
+      return;
+    }
+    note('Dotknij wierzchu innej bryły – tam stanie zaznaczona.');
   }
 
   // ---------------------------------------------------------------- rysowanie
@@ -107,6 +303,8 @@ export function createScene({ onSelect, onExit }) {
     const view = sceneView(state.camera, state.bounds, { width: box.width, height: box.height, top, base: state.base, zoom: state.zoom, pan: state.pan });
     return { ...view, dpr, width: box.width, height: box.height };
   }
+  /** Bryły rysunku – na kartce ich nie ma (stoją w scenie). */
+  const solidSet = () => new Set(state.drawing.strokes.filter((stroke) => stroke.tool === 'solid'));
   /** Obraz treści kartki (do rysowania w ruchu – raz, potem tylko przekształcany). */
   function sheetImage() {
     if (state.sheetImage) return state.sheetImage;
@@ -117,7 +315,7 @@ export function createScene({ onSelect, onExit }) {
     image.height = Math.max(1, Math.round(drawing.height * k));
     const ctx = image.getContext('2d');
     ctx.setTransform(k, 0, 0, k, 0, 0);
-    state.paintPage(ctx, new Set(state.solids.map((item) => item.solid)));
+    state.paintPage(ctx, solidSet());
     state.sheetImage = { image, k };
     return state.sheetImage;
   }
@@ -154,30 +352,31 @@ export function createScene({ onSelect, onExit }) {
       ctx.beginPath();
       ctx.rect(0, 0, drawing.width, drawing.height);
       ctx.clip();
-      state.paintPage(ctx, new Set(state.solids.map((item) => item.solid)));
+      state.paintPage(ctx, solidSet());
     }
     ctx.restore();
   }
-  /** Bryła do rysowania rozkładem 2D: wspólne położenie sceny, środek – rzut początku układu bryły (jednostki widoku). */
-  function viewSolid(item, q) {
+  const isChosen = (item) => Boolean(state.selected) && item.index === state.drawing.strokes.indexOf(state.selected);
+  /** Bryła do rysowania rozkładem 2D: położenie w scenie (kamera i obrót wokół Z), środek – rzut początku układu bryły (jednostki widoku). */
+  function viewSolid(item) {
     const [vx, vy] = toView(state.camera, item.origin);
-    const selected = item.solid === state.selected;
-    return { ...item.solid, q, x: vx, y: -vy, showDims: false, shade: true, color: selected ? ACCENT : item.solid.color };
+    return { ...item.solid, q: sceneQuat(state.camera, item.yaw), x: vx, y: -vy, showDims: false, shade: true, color: isChosen(item) ? ACCENT : item.solid.color };
   }
   /** W ruchu: krawędzie ostre i obrys ścian gładkich, wszystkie (także z tyłu) – bez sortowania i zasłaniania. */
-  function paintWire(ctx, item, q, view) {
-    const shown = viewSolid(item, q);
+  function paintWire(ctx, item, view) {
+    const shown = viewSolid(item);
+    const chosen = isChosen(item);
     ctx.save();
     ctx.setTransform(view.dpr * view.scale, 0, 0, view.dpr * view.scale, view.dpr * view.ox, view.dpr * view.oy);
-    ctx.strokeStyle = item.solid === state.selected ? ACCENT : LINE;
-    ctx.lineWidth = (item.solid === state.selected ? 1.8 : 1.2) / view.scale;
+    ctx.strokeStyle = chosen ? ACCENT : LINE;
+    ctx.lineWidth = (chosen ? 1.8 : 1.2) / view.scale;
     ctx.lineJoin = 'round';
     ctx.beginPath();
     if (item.solid.kind === 'sphere') {
       ctx.arc(shown.x, shown.y, item.solid.dims.d / 2, 0, Math.PI * 2);
     } else {
       const mesh = solidShape(item.solid);
-      const m = quatMatrix(q);
+      const m = quatMatrix(shown.q);
       const rotate = (v) => [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
       const P = mesh.V.map((vertex) => {
         const v = rotate(vertex);
@@ -194,6 +393,25 @@ export function createScene({ onSelect, onExit }) {
     ctx.stroke();
     ctx.restore();
   }
+  /** Strzałka z grotem i literą osi (px płótna, bez dpr; grubość linii – z ctx). */
+  function arrow(ctx, from, to, color, label) {
+    const [dx, dy] = [to.x - from.x, to.y - from.y];
+    const length = Math.hypot(dx, dy);
+    const [ux, uy] = [dx / length, dy / length];
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x - ux * 8, to.y - uy * 8);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(to.x - ux * 11 - uy * 4.5, to.y - uy * 11 + ux * 4.5);
+    ctx.lineTo(to.x - ux * 11 + uy * 4.5, to.y - uy * 11 - ux * 4.5);
+    ctx.closePath();
+    ctx.fill();
+    halo(ctx, label, to.x + ux * 11, to.y + uy * 11, color);
+  }
   function paintAxes(ctx, view) {
     const { camera, drawing } = state;
     const origin = worldOfPage(drawing, state.origin);
@@ -204,16 +422,14 @@ export function createScene({ onSelect, onExit }) {
     ctx.font = textFont(13, '700');
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.lineWidth = 2.5;
     const tips = {};
     for (const [label, direction, color] of AXES) {
       const tip = projectWorld(camera, view, origin.map((value, axis) => value + direction[axis] * AXIS_LENGTH));
-      const [dx, dy] = [tip.x - start.x, tip.y - start.y];
-      const length = Math.hypot(dx, dy);
-      ctx.strokeStyle = color;
-      ctx.fillStyle = color;
-      ctx.lineWidth = 2.5;
-      if (length < 6) {
+      if (Math.hypot(tip.x - start.x, tip.y - start.y) < 6) {
         // Oś na patrzącego – kółko z kropką.
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(start.x, start.y, 6, 0, Math.PI * 2);
         ctx.stroke();
@@ -224,29 +440,66 @@ export function createScene({ onSelect, onExit }) {
         halo(ctx, label, start.x - 15, start.y, color);
         continue;
       }
-      const [ux, uy] = [dx / length, dy / length];
-      ctx.beginPath();
-      ctx.moveTo(start.x, start.y);
-      ctx.lineTo(tip.x - ux * 8, tip.y - uy * 8);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(tip.x, tip.y);
-      ctx.lineTo(tip.x - ux * 11 - uy * 4.5, tip.y - uy * 11 + ux * 4.5);
-      ctx.lineTo(tip.x - ux * 11 + uy * 4.5, tip.y - uy * 11 - ux * 4.5);
-      ctx.closePath();
-      ctx.fill();
+      arrow(ctx, start, tip, color, label);
       tips[label] = tip;
-      halo(ctx, label, tip.x + ux * 11, tip.y + uy * 11, color);
     }
     ctx.restore();
     return { start, tips };
   }
+  /**
+   * Strzałki przesuwania zaznaczonej bryły (od 1.52): X i Y od środka podstawy, Z od środka wierzchu, po jednej na oś, w kolorze
+   * osi; długość jak odcinek ARROW.length px w poprzek patrzenia (oś skrócona w rzucie – krótsza; prawie na patrzącego – bez
+   * strzałki). Wynik: [{ axis, label, color, a, b, per – px ekranu na jednostkę strony wzdłuż osi }].
+   */
+  function moveArrows(view) {
+    const item = state.solids.find(isChosen);
+    if (!item || state.placing) return [];
+    const { camera } = state;
+    const foot = [item.origin[0], item.origin[1], item.base];
+    const list = [];
+    AXES.forEach(([label, direction, color], axis) => {
+      const from = axis === 2 ? [foot[0], foot[1], item.base + item.height] : foot;
+      const a = projectWorld(camera, view, from);
+      const unit = projectWorld(camera, view, from.map((value, index) => value + direction[index]));
+      const per = [unit.x - a.x, unit.y - a.y];
+      const k = ARROW.length / view.scale;
+      if (Math.hypot(...per) * k < ARROW.shortest) return;
+      list.push({ axis, label, color, a, b: { x: a.x + per[0] * k, y: a.y + per[1] * k }, per });
+    });
+    return list;
+  }
+  function paintArrows(ctx, view, arrows) {
+    ctx.save();
+    ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+    ctx.lineCap = 'round';
+    ctx.font = textFont(13, '700');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const item of arrows) {
+      const active = gesture?.kind === 'move' && gesture.axis === item.axis;
+      // Biała obwódka – strzałka widoczna także na ciemnej bryle.
+      ctx.lineWidth = active ? 8 : 7;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.beginPath();
+      ctx.moveTo(item.a.x, item.a.y);
+      ctx.lineTo(item.b.x, item.b.y);
+      ctx.stroke();
+      ctx.lineWidth = active ? 4.5 : 3.5;
+      arrow(ctx, item.a, item.b, item.color, item.label);
+      ctx.beginPath();
+      ctx.arc(item.a.x, item.a.y, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
   function halo(ctx, text, x, y, color) {
+    const width = ctx.lineWidth;
     ctx.lineWidth = 4;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
     ctx.strokeText(text, x, y);
     ctx.fillStyle = color;
     ctx.fillText(text, x, y);
+    ctx.lineWidth = width;
   }
   function render() {
     if (!state.open) return;
@@ -255,15 +508,14 @@ export function createScene({ onSelect, onExit }) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     paintSheet(ctx, view);
-    const q = sceneQuat(state.camera);
     const order = paintOrder(state.camera, state.solids);
     state.painted = [];
     for (const item of order) {
       if (state.moving) {
-        paintWire(ctx, item, q, view);
+        paintWire(ctx, item, view);
         continue;
       }
-      const shown = viewSolid(item, q);
+      const shown = viewSolid(item);
       ctx.save();
       ctx.setTransform(view.dpr * view.scale, 0, 0, view.dpr * view.scale, view.dpr * view.ox, view.dpr * view.oy);
       paintSolid(ctx, shown, { scale: state.drawing.scale, dimFormat: state.dimFormat });
@@ -271,7 +523,9 @@ export function createScene({ onSelect, onExit }) {
       state.painted.push({ item, shown });
     }
     const axes = paintAxes(ctx, view);
-    // Dla testów: widok, ruch, środki brył (px płótna, w kolejności rysunku), zaznaczona bryła, osie w początku.
+    state.arrows = moveArrows(view);
+    paintArrows(ctx, view, state.arrows);
+    // Dla testów: widok, ruch, środki brył (px płótna, w kolejności rysunku), zaznaczona bryła, osie w początku, strzałki.
     const id = sceneViewId(state.camera);
     canvas.dataset.view = id ?? '';
     canvas.dataset.moving = String(state.moving);
@@ -281,20 +535,36 @@ export function createScene({ onSelect, onExit }) {
     }).join(';');
     canvas.dataset.selected = state.selected ? String(state.drawing.strokes.indexOf(state.selected)) : '';
     canvas.dataset.axes = ['X', 'Y', 'Z'].map((label) => `${Math.round(axes.tips[label].x)},${Math.round(axes.tips[label].y)}`).concat(`${Math.round(axes.start.x)},${Math.round(axes.start.y)}`).join(';');
+    canvas.dataset.arrows = state.arrows.map((item) => `${item.label}:${Math.round(item.a.x)},${Math.round(item.a.y)},${Math.round(item.b.x)},${Math.round(item.b.y)}`).join(';');
+    canvas.dataset.placing = String(state.placing);
     for (const button of viewButtons) button.setAttribute('aria-pressed', String(button.dataset.view === id));
+    undoButton.disabled = !state.canUndo;
     picked.hidden = !state.selected;
     if (state.selected) picked.textContent = solidLabel(state.selected);
-    hint.textContent = state.moving ? 'W ruchu – same krawędzie (bez krycia); po puszczeniu – pełny obraz'
-      : 'Przeciągnij – obrót sceny · kółko albo dwa palce – przybliżenie · dotknij bryły – zaznaczenie';
-    hint.classList.toggle('drawing__scene-hint--moving', state.moving);
+    const moving = gesture?.kind === 'move' ? selectedPlace() : null;
+    hint.textContent = state.note
+      || (moving ? `Przesuwanie wzdłuż ${AXES[gesture.axis][0]} – same krawędzie · ${poseText(moving.place)}`
+        : state.placing ? 'Dotknij wierzchu innej bryły – tam stanie zaznaczona · Esc – bez zmian'
+          : state.moving ? 'W ruchu – same krawędzie (bez krycia); po puszczeniu – pełny obraz'
+            : state.selected ? 'Przeciągnij – obrót sceny · strzałka – przesuwanie wzdłuż osi · liczby – w panelu'
+              : 'Przeciągnij – obrót sceny · kółko albo dwa palce – przybliżenie · dotknij bryły – zaznaczenie');
+    hint.classList.toggle('drawing__scene-hint--moving', state.moving || state.placing);
+    hint.classList.toggle('drawing__scene-hint--note', Boolean(state.note));
+  }
+  /** „X 120,0 · Y 80,0 · Z 30,0 mm” – położenie w układzie arkusza. */
+  function poseText(place) {
+    const sheet = toSheet(state.drawing, place);
+    const digits = places();
+    return `X ${formatCoord(sheet.x, digits)} · Y ${formatCoord(sheet.y, digits)} · Z ${formatCoord(place.z * factor(), digits)} ${coordUnit(state.drawing)}`;
   }
 
-  // ---------------------------------------------------------------- widoki, obrót, przybliżenie, zaznaczenie
+  // ---------------------------------------------------------------- widoki, obrót, przybliżenie, zaznaczenie, przesuwanie
 
   function goTo(target) {
     window.cancelAnimationFrame(state.blend);
     const from = { az: state.camera.az, el: state.camera.el, base: state.base, zoom: state.zoom, pan: state.pan };
     // Gotowy widok – cała scena w tym widoku (skala dopasowana, bez przybliżenia i przesunięcia).
+    state.bounds = sceneBounds(state.drawing, state.solids);
     const base = fit(sceneCamera(target.az, target.el));
     const started = performance.now();
     const step = (now) => {
@@ -338,6 +608,46 @@ export function createScene({ onSelect, onExit }) {
     }
     return null;
   }
+  /** Strzałka pod punktem ekranu (najbliższa) albo null. */
+  function arrowAt(point, touch) {
+    let best = null;
+    for (const item of state.arrows) {
+      const [dx, dy] = [item.b.x - item.a.x, item.b.y - item.a.y];
+      const t = Math.max(0, Math.min(1, ((point.x - item.a.x) * dx + (point.y - item.a.y) * dy) / (dx * dx + dy * dy)));
+      const distance = Math.hypot(point.x - item.a.x - dx * t, point.y - item.a.y - dy * t);
+      if (distance <= (touch ? ARROW.touch : ARROW.hit) && (!best || distance < best.distance)) best = { ...item, distance };
+    }
+    return best;
+  }
+  /**
+   * Przesunięcie wzdłuż osi: przesunięcie wskaźnika rzutowane na kierunek strzałki na ekranie → jednostki strony; liczba
+   * w układzie arkusza zaokrąglona (mm – do 1, cm – do 0,1, m – do 0,01), wysokość podstawy nie mniejsza niż 0.
+   */
+  function dragPose(point) {
+    const { per, start, place, axis } = gesture;
+    const t = ((point.x - start.x) * per[0] + (point.y - start.y) * per[1]) / (per[0] * per[0] + per[1] * per[1]);
+    const step = 10 ** (1 - places());
+    const snap = (value) => Math.round(value / step) * step;
+    const pose = { x: place.x, y: place.y, z: place.z, yaw: place.yaw };
+    if (axis === 2) {
+      pose.z = Math.max(0, snap((place.z + t) * factor())) / factor();
+      return pose;
+    }
+    const from = toSheet(state.drawing, place);
+    const moved = toSheet(state.drawing, { x: place.x + (axis === 0 ? t : 0), y: place.y - (axis === 1 ? t : 0) });
+    const target = fromSheet(state.drawing, axis === 0 ? { x: snap(moved.x), y: from.y } : { x: from.x, y: snap(moved.y) });
+    return { ...pose, x: target.x, y: target.y };
+  }
+  /** Podgląd w trakcie przesuwania: bryła w nowym położeniu, bryły na niej – za nią (rysunek bez zmian do puszczenia). */
+  function previewPose(pose) {
+    const strokes = [...state.drawing.strokes];
+    const index = strokes.indexOf(state.selected);
+    strokes[index] = withPose(state.drawing.strokes, state.selected, pose);
+    resolveStacks(strokes, stackChanges(state.drawing.strokes, strokes));
+    state.preview = strokes;
+    state.solids = sceneSolids({ ...state.drawing, strokes });
+    gesture.pose = pose;
+  }
   function settle() {
     if (!state.moving) return;
     state.moving = false;
@@ -353,6 +663,8 @@ export function createScene({ onSelect, onExit }) {
     }
     pointers.set(event.pointerId, local(event));
     window.cancelAnimationFrame(state.blend);
+    // W trakcie przesuwania strzałką drugi palec nic nie zmienia.
+    if (gesture?.kind === 'move') return;
     if (pointers.size === 2) {
       // Dwa palce: przybliżenie i przesunięcie (zaczęty obrót – koniec).
       const [p, q] = [...pointers.values()];
@@ -361,6 +673,15 @@ export function createScene({ onSelect, onExit }) {
     }
     if (pointers.size > 2) return;
     const point = local(event);
+    // Strzałka zaznaczonej bryły – przesuwanie wzdłuż osi (w trakcie – same krawędzie).
+    const handle = event.button === 0 && !event.shiftKey ? arrowAt(point, event.pointerType !== 'mouse') : null;
+    if (handle) {
+      const place = placement(solidsById(state.drawing.strokes), state.selected);
+      gesture = { kind: 'move', axis: handle.axis, start: point, per: handle.per, place, pose: null, moved: false };
+      state.moving = true;
+      render();
+      return;
+    }
     // Środkowy przycisk albo Shift – przesuwanie sceny; inaczej obrót.
     gesture = { kind: event.button === 1 || event.shiftKey ? 'pan' : 'orbit', start: point, last: point, moved: false, pan: { ...state.pan } };
   });
@@ -380,6 +701,14 @@ export function createScene({ onSelect, onExit }) {
       return;
     }
     const point = local(event);
+    if (gesture.kind === 'move') {
+      if (!gesture.moved && Math.hypot(point.x - gesture.start.x, point.y - gesture.start.y) < TAP) return;
+      gesture.moved = true;
+      previewPose(dragPose(point));
+      fillCard();
+      render();
+      return;
+    }
     if (!gesture.moved && Math.hypot(point.x - gesture.start.x, point.y - gesture.start.y) < TAP) return;
     gesture.moved = true;
     state.moving = true;
@@ -395,6 +724,28 @@ export function createScene({ onSelect, onExit }) {
   const release = (event, cancelled) => {
     if (!pointers.delete(event.pointerId)) return;
     const done = gesture;
+    if (done?.kind === 'move') {
+      if (pointers.size > 0) return;
+      gesture = null;
+      state.moving = false;
+      const { pose, place } = done;
+      // Dotknięcie strzałki bez przeciągania – jak dotknięcie sceny (zaznacza bryłę pod spodem, np. stojącą na zaznaczonej).
+      if (!cancelled && !done.moved) {
+        dropPreview();
+        state.selected = pick(done.start);
+        onSelect(state.selected);
+        fillCard();
+        render();
+        return;
+      }
+      const same = !pose || (Math.abs(pose.x - place.x) < 1e-6 && Math.abs(pose.y - place.y) < 1e-6 && Math.abs(pose.z - place.z) < 1e-6);
+      if (cancelled || same) {
+        dropPreview();
+        return;
+      }
+      change(new Map([[state.selected, withPose(state.drawing.strokes, state.selected, pose)]]));
+      return;
+    }
     if (done?.kind === 'pinch') {
       // Puszczony jeden palec – koniec przybliżania; drugi nie zaczyna obrotu.
       if (pointers.size === 0) gesture = null;
@@ -405,8 +756,13 @@ export function createScene({ onSelect, onExit }) {
     if (pointers.size > 0) return;
     gesture = null;
     if (!cancelled && done && done.kind !== 'none' && !done.moved) {
+      if (state.placing) {
+        placeAt(done.start);
+        return;
+      }
       state.selected = pick(done.start);
       onSelect(state.selected);
+      fillCard();
       render();
       return;
     }
@@ -428,7 +784,9 @@ export function createScene({ onSelect, onExit }) {
   return {
     element,
     open,
+    update,
     close,
+    cancel,
     isOpen: () => state.open,
     resize: () => {
       if (!state.open) return;

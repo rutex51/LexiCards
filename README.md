@@ -1,4 +1,4 @@
-# LexiCards 1.51
+# LexiCards 1.52
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -59,8 +59,9 @@ Rysunek – bryły ze szkicu: zaznaczone kształty → „Wyciągnij” albo „
 Rysunek – szkic na ścianie bryły: „Szkic na ścianie” (dotknięta ściana prosto do patrzącego), zamknięte kształty na niej → „Wytnij z bryły” (głębokość albo na wylot) albo „Dodaj do bryły”, niebieski uchwyt głębokości, operacje w historii modelu z „Edytuj szkic” (wersja 1.49): [docs/RELEASE-1.49.md](docs/RELEASE-1.49.md).
 Rysunek – układ współrzędnych arkusza: początek w lewym dolnym rogu arkusza albo kartki (do przesunięcia), osie X w prawo i Y w górę, współrzędne pod kursorem w mm przedmiotu w skali rysunku, „Punkt X, Y” – punkty nowego kształtu wpisane liczbami, „Położenie” zaznaczonego, DXF od początku układu; osie brył jak w programach CAD – X w prawo, Y w głąb, przód od strony −Y (wersja 1.50): [docs/RELEASE-1.50.md](docs/RELEASE-1.50.md).
 Rysunek – scena 3D do oglądania: „Scena 3D” przy bryłach – kartka jako płaszczyzna z całą treścią 2D, bryły stojące na niej w miejscu obrazków, obrót przeciąganiem, przybliżanie kółkiem i dwoma palcami, widoki (izometria, przód, boki, tył, góra), bryły zasłaniają się nawzajem, zaznaczanie; w ruchu same krawędzie (wersja 1.51): [docs/RELEASE-1.51.md](docs/RELEASE-1.51.md).
+Rysunek – położenie brył w scenie: panel X, Y, Z (wysokość podstawy) i obrót wokół Z w mm przedmiotu, strzałki osi do przesuwania (w trakcie same krawędzie), „Postaw na ścianie” – bryła na wierzchu innej (idzie za nią), „Na arkusz”, „Cofnij”; stos brył w 2D – jeden obrazek (wersja 1.52): [docs/RELEASE-1.52.md](docs/RELEASE-1.52.md).
 
-## Co potrafi wersja 1.51
+## Co potrafi wersja 1.52
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -176,7 +177,8 @@ Rysunek – scena 3D do oglądania: „Scena 3D” przy bryłach – kartka jako
   do wymiarowania. Od 1.49 **szkic na ścianie bryły**: kształty narysowane na płaskiej ścianie **wycinają** materiał
   w głąb (kieszeń albo otwór na wylot) albo **dodają** go na zewnątrz. Od 1.50 **układ współrzędnych arkusza**: początek
   w lewym dolnym rogu, współrzędne pod kursorem, punkty kształtów i położenie zaznaczonego wpisywane liczbami (mm w skali
-  rysunku). Od 1.51 **scena 3D**: kartka i bryły w przestrzeni – obrót, widoki, przybliżanie (do oglądania).
+  rysunku). Od 1.51 **scena 3D**: kartka i bryły w przestrzeni – obrót, widoki, przybliżanie; od 1.52 **położenie brył**
+  w scenie – X, Y, Z i obrót, strzałki osi, bryła postawiona na innej (w 2D – wspólny obrazek).
   Od 1.24.1 kartka w edytorze wygląda
   jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
@@ -1014,7 +1016,15 @@ też przesuwają, myszą – Shift albo środkowy przycisk). U góry: **2D** (po
 **Prawy bok**, **Lewy bok**, **Tył**, **Góra** (płynne przejście, cała scena w widoku) i **Cała**. W ruchu – same krawędzie,
 bez krycia i cieniowania; po puszczeniu – pełny obraz: bryły cieniowane, z krawędziami niewidocznymi, zasłaniają się
 nawzajem. Dotknięcie bryły ją zaznacza (nazwa w lewym dolnym rogu; zostaje zaznaczona po powrocie do 2D). W izometrii sceny
-bryła wygląda jak jej obrazek w izometrii. Scena jest tylko do oglądania – rysunek się nie zmienia.
+bryła wygląda jak jej obrazek w izometrii.
+**Położenie brył** (od 1.52): przy zaznaczonej w scenie bryle panel **X**, **Y** (punkt arkusza pod środkiem bryły), **Z**
+(wysokość podstawy) i **↻** (obrót wokół Z, stopnie) – w mm przedmiotu w skali rysunku, zmiana po Enter; trzy strzałki
+w kolorach osi (X, Y od środka podstawy, Z od wierzchu) – przeciągnięcie przesuwa bryłę wzdłuż osi, w trakcie same krawędzie.
+**Postaw na ścianie…** i dotknięcie wierzchu innej bryły – bryła staje na nim („stoi na: …”) i idzie za tamtą bryłą
+(przesunięcie, wysokość, obrót, zmiana wymiarów); **Na arkusz (Z = 0)** – z powrotem na arkusz; **Cofnij** w pasku (też
+Ctrl/⌘ + Z). W 2D stos brył to jeden obrazek w widoku bryły na dole – przesunięcie albo widok bryły z góry zmienia cały
+obrazek. Bryła stojąca sama: X, Y to też środek jej obrazka na kartce. Okno **Położenie** (układ współrzędnych włączony)
+ma przy bryle także Z i obrót. Format rysunku – 23.
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę
