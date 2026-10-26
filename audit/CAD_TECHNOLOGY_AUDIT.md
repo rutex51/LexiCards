@@ -186,3 +186,18 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
 - **P-01 i P-03:** bez zmian – osie w początku układu i strzałki nie zmieniają widoku; widoki – przyciski z nazwami.
 - Nowe pozycje rejestru algorytmów: G58–G60. Ryzyko wstępnie NISKIE.
 
+## Uzupełnienie: wersja 1.53 (26.10.2026) – pomiary 3D w scenie
+
+- **Kod:** `js/core/measure3d.js` (cechy bryły z siatki: ściany płaskie i powierzchnie zakrzywione – łączenie ścian
+  siatki przez krawędzie gładkie, krawędzie proste, narożniki, środki ścian, osie; pomiar odległości i kątów; zapis
+  pomiaru w bryle jako odnośnik rola + punkt + kierunek) i tryb „Pomiar” w `js/ui/drawing-scene.js` (wskazywanie cech,
+  wymiary pomiarów w scenie). Bez bibliotek; geometria analityczna (iloczyn skalarny i wektorowy, rzuty na prostą
+  i płaszczyznę, najbliższe punkty prostych skośnych).
+- **Funkcje:** pomiar odległości punkt–punkt z ΔX/ΔY/ΔZ, punkt–prosta, punkt–płaszczyzna, kąty i odległości równoległych
+  – standardowe funkcje programów CAD i oprogramowania maszyn pomiarowych (od lat 70.–80.); rozpoznawanie ścian płaskich
+  z siatki przez progi kąta – technika podręcznikowa (segmentacja siatek wg normalnych).
+- **Patenty:** szczególnego ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – bazy zablokowane,
+  AUDIT_LIMITATIONS.md). Interfejs: zwykły przycisk „Pomiar”, dotknięcie dwóch cech, wynik w panelu i liczba w scenie –
+  bez rozpoznawalnych elementów cudzych programów.
+- Nowe pozycje rejestru algorytmów: G61–G62. Ryzyko wstępnie NISKIE.
+
