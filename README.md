@@ -1,4 +1,4 @@
-# LexiCards 1.49
+# LexiCards 1.50
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -57,8 +57,9 @@ Rysunek – schematy procesów: grupa Procesy – kształty schematu blokowego (
 Rysunek – bryły: prostopadłościan, walec, stożek, ostrosłup, graniastosłup, kula; swobodny obrót przyciskiem „Obracaj” (od 1.48.1 obok bryły układ osi X/Y/Z zamiast kostki widoków), gotowe widoki (izometria, dimetria, przód, góra, boki), krawędzie niewidoczne przerywane, cieniowanie, wymiary i osie, DXF (wersja 1.47; numer 1.46 – zarezerwowany na wykresy z tabel): [docs/RELEASE-1.47.md](docs/RELEASE-1.47.md).
 Rysunek – bryły ze szkicu: zaznaczone kształty → „Wyciągnij” albo „Obróć wokół osi” (kształty w kształtach – otwory), niebieski uchwyt długości i kąta, historia modelu z „Edytuj szkic”, „Rzuty” – przód, góra i lewy bok metodą europejską jako kształty do wymiarowania (wersja 1.48); układ osi zamiast kostki widoków (1.48.1); osie jak w rysunku technicznym – Z do góry, szkic na płaszczyźnie XY (1.48.2): [docs/RELEASE-1.48.md](docs/RELEASE-1.48.md).
 Rysunek – szkic na ścianie bryły: „Szkic na ścianie” (dotknięta ściana prosto do patrzącego), zamknięte kształty na niej → „Wytnij z bryły” (głębokość albo na wylot) albo „Dodaj do bryły”, niebieski uchwyt głębokości, operacje w historii modelu z „Edytuj szkic” (wersja 1.49): [docs/RELEASE-1.49.md](docs/RELEASE-1.49.md).
+Rysunek – układ współrzędnych arkusza: początek w lewym dolnym rogu arkusza albo kartki (do przesunięcia), osie X w prawo i Y w górę, współrzędne pod kursorem w mm przedmiotu w skali rysunku, „Punkt X, Y” – punkty nowego kształtu wpisane liczbami, „Położenie” zaznaczonego, DXF od początku układu; osie brył jak w programach CAD – X w prawo, Y w głąb, przód od strony −Y (wersja 1.50): [docs/RELEASE-1.50.md](docs/RELEASE-1.50.md).
 
-## Co potrafi wersja 1.49
+## Co potrafi wersja 1.50
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -172,7 +173,9 @@ Rysunek – szkic na ścianie bryły: „Szkic na ścianie” (dotknięta ścian
   niewidocznymi, cieniowaniem i wymiarami. Od 1.48 **bryły ze szkicu**: zaznaczone kształty **wyciągnięte** albo **obrócone
   wokół osi** (kształty w kształtach – otwory), szkic zostaje w bryle do poprawy, a **Rzuty** dają przód, górę i lewy bok
   do wymiarowania. Od 1.49 **szkic na ścianie bryły**: kształty narysowane na płaskiej ścianie **wycinają** materiał
-  w głąb (kieszeń albo otwór na wylot) albo **dodają** go na zewnątrz. Od 1.24.1 kartka w edytorze wygląda
+  w głąb (kieszeń albo otwór na wylot) albo **dodają** go na zewnątrz. Od 1.50 **układ współrzędnych arkusza**: początek
+  w lewym dolnym rogu, współrzędne pod kursorem, punkty kształtów i położenie zaznaczonego wpisywane liczbami (mm w skali
+  rysunku). Od 1.24.1 kartka w edytorze wygląda
   jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
@@ -945,9 +948,10 @@ znacznikiem i kolorem (kolejne dotknięcia stawiają kolejne znaczniki). **Spagh
 **Bryły** (od 1.47): grupa **Bryły** na prawym kółku – **prostopadłościan**, **walec**, **stożek** (ostry albo ścięty),
 **ostrosłup**, **graniastosłup** foremny (3–12 boków) i **kula**. Dotknięcie wstawia bryłę na środku widocznej części strony,
 w izometrii. Obok zaznaczonej bryły jest **układ osi** (od 1.48.1; w 1.47–1.48 była tu kostka widoków): X – czerwona,
-Y – zielona, Z – niebieska, w położeniu bryły; oś skierowana od patrzącego jest bledsza. Od 1.48.2 osie są jak w rysunku
-technicznym: **Z do góry**, X i Y na dole (w izometrii X biegnie w lewo w dół, Y – w prawo w dół); widok z przodu patrzy
-wzdłuż X (Y w prawo, Z w górę), z góry – wzdłuż Z (Y w prawo, X w dół). Układ tylko pokazuje położenie –
+Y – zielona, Z – niebieska, w położeniu bryły; oś skierowana od patrzącego jest bledsza. Od 1.48.2 **Z do góry**, a od 1.50
+osie są wspólne z układem arkusza, jak w programach CAD i na maszynach pomiarowych: w izometrii X biegnie w prawo w dół,
+Y – w prawo w górę (w głąb); widok z przodu patrzy od strony −Y (X w prawo, Z w górę), z góry – wzdłuż Z (X w prawo, Y w górę,
+jak na kartce). Zapisane bryły wyglądają jak dotąd – zmieniły się tylko nazwy osi. Układ tylko pokazuje położenie –
 dotknięcie go niczego nie zmienia. **Obracaj** nad bryłą – przeciąganie samej bryły obraca ją swobodnie zamiast przesuwać
 (w każdą stronę, także od spodu; z Shift – tylko wokół osi pionowej i pochylenie); **Widok** – izometria, dimetria,
 przód, góra, boki, tył, dół (płynne przejście). Dotknięcie zaznaczonej bryły otwiera jej okno: rodzaj, wymiary w jednostce rysunku, położenie
@@ -987,6 +991,19 @@ wraca na nią zaznaczony). Zmiana wymiarów bryły albo głębokości operacji p
 ścianach (np. otwór w wierzchu idzie w górę razem z wierzchem). Bryła z operacjami nie zmienia rodzaju, a szkic bryły
 ze szkicu poprawisz po usunięciu operacji. Odbicie, skala, rzuty, obraz w notatce, PDF i DXF – jak przy innych bryłach.
 Format rysunku – 21.
+**Układ współrzędnych arkusza** (od 1.50): pastylka **Kratka: …** w lewym dolnym rogu otwiera panel **Linijka i skala**
+(wcześniej – tylko z linijki); tam przełącznik **Układ współrzędnych arkusza (X, Y)** (zapamiętany na urządzeniu). Włączony
+pokazuje osie w początku układu – X czerwona w prawo, Y zielona w górę, Z (z arkusza do Ciebie) – kółko z kropką –
+i współrzędne pod kursorem (pod palcem albo rysikiem – w trakcie rysowania; przy kształtach – w miejscu przyciągnięcia).
+Początek jest w lewym dolnym rogu arkusza (z ramką A4/A3 – arkusza wpasowanego w kartkę, bez ramki – kartki); **Przesuń
+początek…** – dotknij punktu (narożniki, krawędzie i środki przyciągają), **Początek w rogu** – z powrotem. Liczby to wymiary
+przedmiotu w skali rysunku, w tej samej jednostce co liczby wymiarów (styl „50” – mm, z jednostką – jednostka skali, np. cm).
+Przy kształtach przycisk **Punkt X, Y** otwiera okno punktów wpisanych liczbami: kształt z przeciągnięcia (odcinek, prostokąt,
+okrąg ze środka, wymiar…) – dwa punkty naraz, łamana, okrąg przez 3 punkty, łuk i kąt – punkt po punkcie (łamana:
+**Zakończ łamaną**, **Zamknij w wielokąt**), punkt – jeden. Przy zaznaczonym – **Położenie**: odcinek, strzałka, prosta i wymiar
+– początek i koniec, okrąg, łuk, wielokąt foremny, punkt i bryła – środek, reszta – lewy dolny róg obrysu (zaznaczone
+przesuwa się tak, by ten punkt był w podanym miejscu). Plik DXF ma ten sam początek: współrzędne w programie CAD są te same
+co w aplikacji. Format rysunku – 22 (przesunięty początek).
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę

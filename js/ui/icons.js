@@ -243,6 +243,9 @@ const ICONS = {
   solidFace: [p('M4 10h10v10H4z'), p('M4 10l4-4h10l-4 4'), p('M18 6v10l-4 4'), { d: 'M6.6 12.6h4.8v4.8H6.6z', 'stroke-dasharray': '1.6 1.4' }],
   solidCut: [p('M3 10h12v10H3z'), p('M3 10l5-4h12l-5 4'), p('M20 6v10l-5 4'), p('M9 8a2.6 1 0 1 0 5.2 0a2.6 1 0 1 0-5.2 0'), { d: 'M9 8v6.5M14.2 8v6.5', 'stroke-dasharray': '1.6 1.4' }],
   solidAdd: [p('M3 13h12v7H3z'), p('M3 13l5-4h12l-5 4'), p('M20 9v7l-5 4'), p('M9 4.5a2.6 1 0 1 0 5.2 0a2.6 1 0 1 0-5.2 0'), p('M9 4.5v6.3M14.2 4.5v6.3')],
+  // Od 1.50: układ współrzędnych arkusza (położenie X, Y) i punkt ze współrzędnych.
+  sheetAxes: [p('M5.5 18.5V4.5'), p('M5.5 18.5h14'), p('M3.2 7l2.3-2.5L7.8 7'), p('M17 16.2l2.5 2.3-2.5 2.3'), dot(5.5, 18.5, 1.7)],
+  coordPoint: [p('M12 3v5.5M12 15.5V21M3 12h5.5M15.5 12H21'), p('M12 8.2a3.8 3.8 0 1 0 .01 0'), dot(12, 12, 1.2)],
   // Widok bryły (od 1.48.1 – układ osi zamiast kostki).
   solidViews: [p('M11 13.5V4'), p('M11 13.5l9.5 5'), p('M11 13.5l-7.5 6'), dot(11, 3.6, 1.7), dot(20.6, 18.6, 1.7), dot(3.4, 19.8, 1.7), dot(11, 13.5, 1.4)],
   defects: [p('M3.5 3.5h17v17h-17z'), p('M7 8l3 3m0-3l-3 3'), p('M15 14.5l2.5 2.5m0-2.5L15 17'), p('M15.5 7.5a1.5 1.5 0 1 0 .01 0')],

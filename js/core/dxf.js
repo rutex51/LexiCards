@@ -7,7 +7,8 @@
 // Wynik to „prymitywy” w jednostkach pliku (oś y w górę), potem elementy rysunku w jednostkach strony.
 //
 // Zapis: DXF R12 (AC1009 – czyta go każdy program CAD): warstwy, rodzaje linii (CONTINUOUS, DASHED, CENTER,
-// PHANTOM, DOT), kolory ACI, elementy w milimetrach w skali rysunku (oś y w górę).
+// PHANTOM, DOT), kolory ACI, elementy w milimetrach w skali rysunku (oś y w górę); od 1.50 punkt (0, 0) pliku to początek
+// układu współrzędnych arkusza (core/sheet-coords.js) – współrzędne w programie CAD te same co w aplikacji.
 //
 // Bez przeglądarki – testy w Node.js.
 
@@ -18,6 +19,7 @@ import { frameLayout } from './title-block.js';
 import { diagramLayout, textWidth } from './diagrams.js';
 import { solidDimParts, solidGeometry } from './solids.js';
 import { pageLayoutGeometry } from './page-layouts.js';
+import { sheetOrigin } from './sheet-coords.js';
 import {
   arcFromPoints, arcGeometry, circleShape, cornerSize, curveSamples, dimGeometry, dimKeys, isMeasure, polyFromPoints, polyPoints, shapeAxes, shapeHatch,
   shapeInnerLines, shapeOutline, shapePoint, shownDims, DIM_ARROW, DIM_FONT, POLY_NODES_MAX
@@ -684,14 +686,16 @@ export function dxfString(value) {
 }
 
 /**
- * Kartka jako DXF R12 (tekst): elementy w milimetrach w skali rysunku (oś y w górę), warstwa – sygnatura rzędu 1
+ * Kartka jako DXF R12 (tekst): elementy w milimetrach w skali rysunku (oś y w górę; od 1.50 od początku układu
+ * współrzędnych arkusza – lewego dolnego rogu arkusza albo kartki, chyba że przesunięty), warstwa – sygnatura rzędu 1
  * (ukryta – wyłączona), kolor ACI, rodzaj linii; wymiary – linie, groty (SOLID) i liczba (TEXT), napisy – same
  * znaki ASCII (\U+XXXX). Zwraca { text, written – zapisane elementy kartki, skipped } (pominięte: tabele,
  * karteczki, symbole metrologiczne).
  */
 export function drawingToDxf(drawing) {
   const mm = pageUnitMillimeters(drawing.scale);
-  const pt = (point) => ({ x: point.x * mm, y: (drawing.height - point.y) * mm });
+  const origin = sheetOrigin(drawing);
+  const pt = (point) => ({ x: (point.x - origin.x) * mm, y: (origin.y - point.y) * mm });
   const layers = drawingLayers(drawing);
   const names = new Map(elementLayers(layers).map((layer) => [layer.id, dxfLayerName(layer.name)]));
   // Te same nazwy po uproszczeniu – z numerem.
@@ -1034,8 +1038,10 @@ export function drawingToDxf(drawing) {
   pair(0, 'SECTION'); pair(2, 'HEADER');
   pair(9, '$ACADVER'); pair(1, 'AC1009');
   pair(9, '$INSUNITS'); pair(70, 4);
-  pair(9, '$EXTMIN'); pair(10, 0); pair(20, 0); pair(30, 0);
-  pair(9, '$EXTMAX'); pair(10, fixed(drawing.width * mm)); pair(20, fixed(drawing.height * mm)); pair(30, 0);
+  // Zakres – cała kartka (od 1.50 w układzie arkusza: lewy dolny róg kartki może mieć współrzędne ujemne).
+  const [low, high] = [pt({ x: 0, y: drawing.height }), pt({ x: drawing.width, y: 0 })];
+  pair(9, '$EXTMIN'); pair(10, fixed(low.x)); pair(20, fixed(low.y)); pair(30, 0);
+  pair(9, '$EXTMAX'); pair(10, fixed(high.x)); pair(20, fixed(high.y)); pair(30, 0);
   pair(0, 'ENDSEC');
   pair(0, 'SECTION'); pair(2, 'TABLES');
   pair(0, 'TABLE'); pair(2, 'LTYPE'); pair(70, LINETYPES.length);

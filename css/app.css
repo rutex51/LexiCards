@@ -7972,3 +7972,26 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   .drawing:has(.drawing__choices--dock:not([hidden])) :is(.drawing__show--info, .drawing__show--status) { bottom: calc(198px + env(safe-area-inset-bottom)); }
   .drawing:has(.drawing__choices--dock:not([hidden])) .drawing__notice { bottom: calc(246px + env(safe-area-inset-bottom)); }
 }
+
+/* Od 1.50: układ współrzędnych arkusza – pastylka współrzędnych (cyfry równej szerokości), początek w panelu
+   „Linijka i skala” i okna z punktami X, Y (kolory osi jak przy bryłach: X czerwona, Y zielona). */
+.drawing__pill--coords { font-variant-numeric: tabular-nums; }
+.drawing__origin { margin-top: 4px; }
+.drawing__origin-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.drawing__origin-actions .drawing__chip { margin-left: 0; }
+.drawing__coords { display: flex; flex-direction: column; gap: 12px; }
+.drawing__coord-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 10px; }
+.drawing__coord-name { grid-column: 1 / -1; font-weight: 600; }
+.drawing__coord-field { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.drawing__coord-axis { flex: none; width: 1.2em; font-weight: 700; text-align: center; }
+.drawing__coord-axis--x { color: #d92d20; }
+.drawing__coord-axis--y { color: #1e8e3e; }
+.drawing__coord-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background-color: var(--fill);
+  font-variant-numeric: tabular-nums;
+}

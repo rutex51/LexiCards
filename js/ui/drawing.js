@@ -23,6 +23,8 @@
 // przyciągane do krawędzi i narożników innych elementów i przyklejane do nich (core/attach.js).
 // Od 1.30: kartki okna to rysunki notatki (przy zdjęciu – jej zdjęcia), obrót zaznaczenia uchwytem,
 // odbicie lustrzane (core/transform.js), Shift – kilka elementów kliknięciami i przełącznik palca.
+// Od 1.50: układ współrzędnych arkusza (core/sheet-coords.js) – osie w początku (lewy dolny róg arkusza albo punkt
+// wskazany), współrzędne pod kursorem, okno „Położenie” zaznaczonego (X, Y) i punkty nowego kształtu wpisane liczbami.
 //
 // Rysik i palec: gdy aplikacja raz zobaczy rysik (pointerType 'pen'), rysuje tylko rysik, a palec
 // przesuwa stronę (dłoń oparta o ekran nie zostawia śladów); bez rysika (iPhone) rysuje palec.
@@ -67,6 +69,7 @@ import {
   withStyleOf
 } from '../core/transform.js';
 import { FRAME_FIELDS, FRAME_FIELD_LABELS, FRAME_FIELD_MAX, FRAME_FORMATS, cleanFrame, frameScaleText } from '../core/title-block.js';
+import { coordPlaces, coordText, coordUnit, defaultOrigin, formatCoord, fromSheet, originText, sheetOrigin, toSheet } from '../core/sheet-coords.js';
 import { cleanColumnWidths, moveColumnBorder } from '../core/tables.js';
 import {
   DIAGRAM_LIMITS, DIAGRAM_SIZES, TIMELINE_UNITS, VSM_DEFAULTS, VSM_LABELS, VSM_SYMBOLS, causesText, cleanDiagram, diagramLabel, diagramTargetAt, newDiagram, parseCauses,
@@ -157,6 +160,8 @@ const ZERO_COLOR = '#0058be';
 const LASSO_STEP = 4;
 /** Zaznaczanie: całe kreski – niebieskie, fragmenty (tylko wnętrze obszaru) – zielone, kreskowane; wycinek (od 1.17) – fioletowy. */
 const SELECT_COLORS = { whole: '#0058be', region: '#1d8a3a', snip: '#8944ab' };
+/** Osie układu arkusza (od 1.50) – te same kolory co osie bryły: X czerwona, Y zielona, Z niebieska. */
+const SHEET_AXES = Object.freeze({ x: '#d92d20', y: '#1e8e3e', z: '#1a6fdb' });
 const SELECT_FILLS = { whole: 'rgba(0, 88, 190, 0.07)', region: 'rgba(29, 138, 58, 0.09)', snip: 'rgba(137, 68, 171, 0.08)' };
 const OUTLINE_LABELS = { rect: 'Prostokąt', lasso: 'Lasso' };
 const SELECT_MODE_TITLES = {
@@ -923,6 +928,8 @@ export function openDrawingEditor({
     mirrorButton.setAttribute('aria-haspopup', 'menu');
     // Od 1.41: skalowanie o współczynnik i „Styl jak…” – styl dotkniętego elementu na zaznaczonych.
     const scaleButton = selectionButton('drawing-selection-scale', 'scale', 'Skaluj', 'Skaluj o współczynnik – wokół środka zaznaczenia', () => openScaleSheet());
+    // Od 1.50 (przy włączonym układzie współrzędnych): położenie zaznaczonego – X i Y w układzie arkusza.
+    const positionButton = selectionButton('drawing-selection-position', 'sheetAxes', 'Położenie', 'Położenie X, Y w układzie arkusza – wpisz liczby', () => openPositionSheet());
     const matchButton = selectionButton('drawing-selection-match', 'brush', 'Styl jak…', 'Styl jak… – dotknij elementu, którego kolor, grubość, linię i wypełnienie przenieść na zaznaczone', () => startPointPick('match'));
     // Od 1.42: wymiary łańcuchowe i od bazy – po zaznaczonym wymiarze liniowym kolejne dotknięcia dodają wymiary.
     // Od 1.44: kolejne „Dlaczego?” zaznaczonego diagramu 5 × Dlaczego – okno z nowym polem.
@@ -956,7 +963,7 @@ export function openDrawingEditor({
       h('span', { class: 'drawing__selection-head' }, selectionCount, selectionMeasure), moveButton, editButton, solidViewButton, orbitButton, faceButton, projectButton, extrudeButton, revolveButton, cutButton, addButton,
       collapseButton, shapeTextButton, magnetButton,
       layersSelectionButton, copyButton, duplicateButton,
-      whyButton, chainButton, baselineButton, mirrorButton, scaleButton, matchButton, orderButton, arrayButton, explodeButton, embedButton, deleteButton);
+      whyButton, chainButton, baselineButton, mirrorButton, scaleButton, positionButton, matchButton, orderButton, arrayButton, explodeButton, embedButton, deleteButton);
     // Pola wymiarów zaznaczonego kształtu (od 1.17): na liniach ramki konstrukcyjnej, wpisywane z klawiatury.
     const dims = h('div', { class: 'drawing__dims', hidden: true, dataset: { testid: 'drawing-dims' } });
     // Od 1.22: animacja przewracania kartki (zdjęcia stron nad płótnem, tylko w trakcie).
@@ -2258,6 +2265,9 @@ export function openDrawingEditor({
       if (dimmed) paintDims(ctx, dimmed, drawing.scale, dimFormat(drawing), { text: false, offsets: active?.kind === 'dim-offset' ? { [active.key]: active.offset } : null });
       if (guide) paintGuide(ctx);
       ctx.restore();
+      // Układ współrzędnych arkusza (od 1.50) – pod zaznaczeniem i uchwytami.
+      if (tools.coords) paintSheetAxes(ctx);
+      else if (live.dataset.origin) delete live.dataset.origin;
       if (placing && drawing.template) paintPlacement(ctx);
       const bounds = active?.kind === 'box-edit' ? strokeBounds(active.preview) : selectionBounds([...selection]);
       // Jeden kształt: zamiast ramki – jego punkty konstrukcyjne.
@@ -2448,6 +2458,7 @@ export function openDrawingEditor({
       mirrorButton.hidden = Boolean(snip) || !canTurn(items);
       orderButton.hidden = Boolean(snip) || selectionKind !== 'whole' || items.length === drawing.strokes.length;
       scaleButton.hidden = Boolean(snip) || selectionKind !== 'whole' || !canTurn(items);
+      positionButton.hidden = Boolean(snip) || !tools.coords;
       const linearMeasure = Boolean(shape) && shape.shape === 'dim' && dimMode(shape) === 'linear';
       chainButton.hidden = !linearMeasure;
       whyButton.hidden = snip || !(only?.tool === 'diagram' && only.kind === 'whys' && (only.answers.length < DIAGRAM_LIMITS.answers || only.answers.some((answer) => !answer)));
@@ -2854,9 +2865,23 @@ export function openDrawingEditor({
     const pagePrev = pageStep(-1, 'Poprzednia kartka', 'chevronLeft', 'drawing-page-prev');
     const pageNext = pageStep(1, 'Następna kartka', 'chevronRight', 'drawing-page-next');
     // Od 1.32: po lewej – pastylki informacyjne (szare), po prawej – to, co można zmienić (białe).
-    const scalePill = h('span', { class: 'drawing__pill drawing__pill--info', dataset: { testid: 'drawing-scale-info' } });
-    const info = h('div', { class: 'drawing__info', dataset: { testid: 'drawing-info' } }, selectHint, shapeHint, lengthPill, scalePill, zoomButton);
-    const status = h('div', { class: 'drawing__status', dataset: { testid: 'drawing-status' } }, penPill, guidePill, rulerPill, perpendicularButton,
+    // Od 1.50 dotknięcie „Kratka: …” albo współrzędnych – panel „Linijka i skala” (skala, liczby wymiarów, układ współrzędnych)
+    // także bez linijki na stronie.
+    const scalePill = h('button', {
+      type: 'button', class: 'drawing__pill drawing__pill--gray', 'aria-haspopup': 'dialog', title: 'Skala rysunku, liczby wymiarów i układ współrzędnych',
+      dataset: { testid: 'drawing-scale-info' }, onClick: () => toggleRulerPanel()
+    });
+    // Od 1.50: współrzędne pod kursorem (albo pod palcem w trakcie rysowania) w układzie arkusza i punkty kształtu wpisane liczbami.
+    const coordPill = h('button', {
+      type: 'button', class: 'drawing__pill drawing__pill--gray drawing__pill--coords', hidden: true, 'aria-haspopup': 'dialog',
+      title: 'Współrzędne w układzie arkusza – dotknij: początek układu i skala', dataset: { testid: 'drawing-coords' }, onClick: () => toggleRulerPanel()
+    });
+    const coordButton = h('button', {
+      type: 'button', class: 'drawing__pill', hidden: true, 'aria-haspopup': 'dialog', title: 'Punkty kształtu ze współrzędnych X, Y',
+      dataset: { testid: 'drawing-coord-entry' }, onClick: () => openCoordEntry()
+    }, icon('coordPoint', { size: 14 }), 'Punkt X, Y');
+    const info = h('div', { class: 'drawing__info', dataset: { testid: 'drawing-info' } }, selectHint, shapeHint, lengthPill, coordPill, scalePill, zoomButton);
+    const status = h('div', { class: 'drawing__status', dataset: { testid: 'drawing-status' } }, penPill, guidePill, rulerPill, perpendicularButton, coordButton,
       h('div', { class: 'drawing__pages' }, pagePrev, pagePill, pageNext));
     let noticeTimer = 0;
     /** Krótki komunikat w edytorze (komunikaty aplikacji są pod oknem rysunku). */
@@ -3043,6 +3068,7 @@ export function openDrawingEditor({
       const activeName = layersNow().find((layer) => layer.id === (drawing.activeLayer ?? 1))?.name ?? 'Warstwa 1';
       layersButton.title = `Warstwy – nowe elementy: ${activeName}`;
       scalePill.textContent = `Kratka: ${formatLength(PAPER_STEP, drawing.scale)}`;
+      updateCoords();
       updateRings();
     }
 
@@ -3687,6 +3713,9 @@ export function openDrawingEditor({
         }
         unitSelect.value = drawing.scale.unit;
         dimUnitBox.hidden = dimFormat(drawing).style !== 'technical';
+        originBox.hidden = !tools.coords;
+        originInfo.textContent = `${originText(drawing)}. X w prawo, Y w górę – liczby w skali rysunku (${coordUnit(drawing)}).`;
+        originReset.hidden = !drawing.origin;
         const { millimeters, ratio } = estimate();
         screenText.textContent = `Przy powiększeniu ${Math.round(view.zoom * 100)}% kratka ma na tym ekranie ok. ${formatNumber(millimeters)} mm – `
           + `rysunek widać w skali ok. ${formatRatio(ratio)}. To szacunek: przeglądarka nie podaje wielkości ekranu.`;
@@ -3708,6 +3737,32 @@ export function openDrawingEditor({
       });
       dimUnitControl.dataset.testid = 'drawing-dim-unit';
       const dimUnitBox = h('div', null, h('p', { class: 'drawing__settings-label' }, 'Jednostka liczb bez jednostki'), dimUnitControl);
+      // Od 1.50: układ współrzędnych arkusza – włącznik (zapamiętany na urządzeniu) i początek (zapisany z rysunkiem).
+      const coordsToggle = toggle({
+        checked: tools.coords, label: 'Układ współrzędnych arkusza (X, Y)',
+        onChange: (checked) => {
+          tools.coords = checked;
+          saveTools(tools);
+          updateCoords();
+          updateToolbar();
+          requestLive();
+          refresh();
+        }
+      });
+      coordsToggle.querySelector('input').dataset.testid = 'drawing-coords-toggle';
+      const originInfo = h('p', { class: 'field__hint field__hint--live', dataset: { testid: 'drawing-origin-text' } });
+      const originReset = h('button', {
+        type: 'button', class: 'drawing__chip', dataset: { testid: 'drawing-origin-reset' },
+        onClick: () => {
+          setOrigin(null);
+          refresh();
+        }
+      }, 'Początek w rogu');
+      const originBox = h('div', { class: 'drawing__origin' },
+        originInfo,
+        h('div', { class: 'drawing__origin-actions' },
+          h('button', { type: 'button', class: 'drawing__chip', dataset: { testid: 'drawing-origin-pick' }, onClick: () => startOriginPick() }, 'Przesuń początek…'),
+          originReset));
       replaceChildren(rulerPanel,
         panelTitle('Linijka i skala'),
         h('p', { class: 'drawing__settings-label' }, 'Skala rysunku'),
@@ -3730,7 +3785,13 @@ export function openDrawingEditor({
         h('div', { class: 'drawing__settings-switch' }, snapToggle),
         h('p', { class: 'field__hint' }, 'Liczby na linijce są w tej skali, od zera na środku w obie strony. Zero przy krawędzi linijki '
           + 'przyskakuje do przecięcia kresek albo do linii, a linijka prawie prostopadła do tej linii ustawia się prostopadle. '
-          + 'Przycisk ⊥ obok kąta – prostopadle do linii pod zerem. Skala zapisuje się razem z rysunkiem.'));
+          + 'Przycisk ⊥ obok kąta – prostopadle do linii pod zerem. Skala zapisuje się razem z rysunkiem.'),
+        h('p', { class: 'drawing__settings-label' }, 'Układ współrzędnych'),
+        h('div', { class: 'drawing__settings-switch' }, coordsToggle),
+        originBox,
+        h('p', { class: 'field__hint' }, 'Osie w początku układu: X – czerwona, Y – zielona, Z – z arkusza do Ciebie (jak przy bryłach). '
+          + 'Pod kursorem – współrzędne, przy kształtach – „Punkt X, Y” (punkty wpisane liczbami), przy zaznaczonym – „Położenie”. '
+          + 'Plik DXF ma ten sam początek.'));
       refreshRulerPanel = () => refresh(document.activeElement !== valueInput);
       refresh();
     }
@@ -5238,6 +5299,300 @@ export function openDrawingEditor({
       if (result !== 'cancelled') flash(`Zapisano „${file.name}”${skipped > 0 ? ` – pominięte: ${skipped} (tabele, karteczki, symbole)` : ''}.`);
     }
 
+    // ---- układ współrzędnych arkusza (od 1.50)
+    /** Ostatni punkt strony pod kursorem (albo pod palcem w trakcie rysowania) – do pastylki współrzędnych. */
+    let coordShown = null;
+    function showCoords(point) {
+      coordShown = point;
+      const text = coordText(drawing, point);
+      if (coordPill.textContent !== text) coordPill.textContent = text;
+    }
+    /** Pastylka współrzędnych i „Punkt X, Y” – tylko przy włączonym układzie; przycisk – przy kształtach, które go znają. */
+    function updateCoords() {
+      coordPill.hidden = !tools.coords;
+      if (tools.coords) coordPill.textContent = coordShown ? coordText(drawing, coordShown) : `X – · Y – ${coordUnit(drawing)}`;
+      coordButton.hidden = !tools.coords || coordKind() === null;
+    }
+    /** Punkt czynności do pokazania (początek albo koniec kształtu z przyciągnięciem) albo null – wtedy punkt pod wskaźnikiem. */
+    function activeCoordPoint() {
+      if (active?.kind === 'shape-new') return active.endSnap ? { x: active.endSnap.x, y: active.endSnap.y } : active.point ?? active.start;
+      if (active?.kind === 'points') return active.point;
+      if (active?.kind === 'shape-edit' || active?.kind === 'box-edit') return active.snap ? { x: active.snap.x, y: active.snap.y } : active.point ?? null;
+      return null;
+    }
+    /** Początek układu: punkt strony albo null – lewy dolny róg arkusza (kartki). Zapisywany z rysunkiem, jak skala. */
+    function setOrigin(point) {
+      const corner = defaultOrigin(drawing);
+      if (!point || (Math.abs(point.x - corner.x) < 0.01 && Math.abs(point.y - corner.y) < 0.01)) delete drawing.origin;
+      else drawing.origin = { x: Math.round(point.x * 100) / 100, y: Math.round(point.y * 100) / 100 };
+      changed = true;
+      updateCoords();
+      refreshRulerPanel?.();
+      requestLive();
+    }
+    function startOriginPick() {
+      closeSettings();
+      if (pointPick) cancelPointPick();
+      pointPick = { kind: 'origin', first: null };
+      showPickHint();
+      requestLive();
+    }
+    /** Osie układu w początku (px ekranu): X – czerwona w prawo, Y – zielona w górę, Z – punkt (z arkusza do patrzącego). */
+    function paintSheetAxes(ctx) {
+      const origin = toScreen(sheetOrigin(drawing));
+      const where = `${Math.round(origin.x)},${Math.round(origin.y)}`;
+      if (live.dataset.origin !== where) live.dataset.origin = where;
+      const length = 46;
+      ctx.save();
+      ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.font = textFont(13, '700');
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const label = (text, x, y, color) => {
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+        ctx.strokeText(text, x, y);
+        ctx.fillStyle = color;
+        ctx.fillText(text, x, y);
+      };
+      const arrow = ([dx, dy], color, text) => {
+        const tip = { x: origin.x + dx * length, y: origin.y + dy * length };
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(origin.x, origin.y);
+        ctx.lineTo(tip.x - dx * 8, tip.y - dy * 8);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(tip.x, tip.y);
+        ctx.lineTo(tip.x - dx * 11 - dy * 4.5, tip.y - dy * 11 + dx * 4.5);
+        ctx.lineTo(tip.x - dx * 11 + dy * 4.5, tip.y - dy * 11 - dx * 4.5);
+        ctx.closePath();
+        ctx.fill();
+        label(text, tip.x + dx * 11 + (dy !== 0 ? 10 : 0), tip.y + dy * 11 + (dx !== 0 ? -10 : 0), color);
+      };
+      arrow([1, 0], SHEET_AXES.x, 'X');
+      arrow([0, -1], SHEET_AXES.y, 'Y');
+      // Z – oś do patrzącego: kółko z kropką.
+      ctx.strokeStyle = SHEET_AXES.z;
+      ctx.fillStyle = SHEET_AXES.z;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(origin.x, origin.y, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(origin.x, origin.y, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      // Litera Z z lewej strony kółka – przy dolnym brzegu ekranu też widoczna.
+      label('Z', origin.x - 15, origin.y, SHEET_AXES.z);
+      ctx.restore();
+    }
+    /** Punkty nowego kształtu wpisane liczbami: 'drag' – dwa (jak przeciągnięcie), 'points' – po kolei, 'one' – jeden; null – nie ten kształt. */
+    function coordKind() {
+      if (tool !== 'shape') return null;
+      const kind = multiKind();
+      // Okrąg styczny i długość łuku – przez dotknięcie elementu, nie punkty.
+      if (kind === 'ttr' || (tools.shape === 'dim' && tools.dimMode === 'arc')) return null;
+      if (kind) return 'points';
+      return tools.shape === 'point' ? 'one' : 'drag';
+    }
+    /** Nazwy dwóch punktów przy kształcie z przeciągnięcia. */
+    function dragPointNames() {
+      if (isSegment({ shape: tools.shape })) return ['Początek', 'Koniec'];
+      if (tools.shape === 'ellipse' && tools.ellipseMode === 'center') return ['Środek', 'Punkt na okręgu'];
+      if (tools.shape === 'ellipse' && tools.ellipseMode === 'two') return ['Punkt 1', 'Punkt 2 (koniec średnicy)'];
+      if (tools.shape === 'dim' && tools.dimMode === 'radius') return ['Środek', 'Punkt na okręgu'];
+      if (tools.shape === 'dim') return ['Początek', 'Koniec'];
+      return ['Narożnik', 'Narożnik naprzeciwko'];
+    }
+    /** Pola X i Y punktu (liczby w skali rysunku); `value` – punkt strony do wpisania na start albo null. */
+    function coordFields(name, testID, value = null) {
+      const places = coordPlaces(drawing);
+      const start = value ? toSheet(drawing, value) : null;
+      const input = (axis) => h('input', {
+        class: 'input drawing__coord-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': `${name} – ${axis.toUpperCase()}`,
+        placeholder: '0', value: start ? formatCoord(start[axis], places) : '', dataset: { testid: `${testID}-${axis}` }
+      });
+      const [x, y] = [input('x'), input('y')];
+      const box = h('div', { class: 'drawing__coord-row' },
+        h('span', { class: 'drawing__coord-name' }, name),
+        h('label', { class: 'drawing__coord-field' }, h('span', { class: 'drawing__coord-axis drawing__coord-axis--x' }, 'X'), x),
+        h('label', { class: 'drawing__coord-field' }, h('span', { class: 'drawing__coord-axis drawing__coord-axis--y' }, 'Y'), y));
+      /** Punkt strony z wpisanych liczb albo null (pole puste – 0). */
+      const read = () => {
+        const [vx, vy] = [x, y].map((field) => (field.value.trim() === '' ? 0 : parseDecimal(field.value)));
+        if (vx === null || vy === null) return null;
+        return fromSheet(drawing, { x: vx, y: vy });
+      };
+      return { box, read, inputs: [x, y], clear: () => { x.value = ''; y.value = ''; } };
+    }
+    /** Nowy kształt z dwóch punktów strony – jak przeciągnięcie od `a` do `b` (wymiar – z odsunięciem jak z przeciągnięcia). */
+    function addDraggedShape(a, b) {
+      clearSelection();
+      const shape = dragShape(a, b, null);
+      if (!shape) return;
+      if (tools.shape === 'dim') {
+        finishDim({ kind: 'shape-new', start: a, point: b, moved: true, shape, startSnap: null, endSnap: null, hadSelection: false });
+      } else {
+        const added = onActiveLayer(shape);
+        history.add(added);
+        changed = true;
+        selection = new Set([added]);
+        selectionKind = 'whole';
+      }
+      updateToolbar();
+      requestRender();
+    }
+    /**
+     * Okno „Punkt X, Y” (od 1.50): punkty nowego kształtu wpisane liczbami w układzie arkusza – dwa naraz przy kształtach
+     * z przeciągnięcia, po jednym przy łamanej, okręgu przez 3 punkty, łuku i kącie (okno zostaje do ostatniego punktu).
+     */
+    function openCoordEntry() {
+      const kind = coordKind();
+      if (!kind) return;
+      const label = SHAPE_LABELS[tools.shape] ?? 'Kształt';
+      const unit = coordUnit(drawing);
+      let rows = [];
+      let pointsText = null;
+      const multi = kind === 'points' ? multiKind() : null;
+      const pendingCount = () => (pending?.kind === multi ? pending.points.length : 0);
+      const describe = () => {
+        if (!pointsText) return;
+        const count = pendingCount();
+        pointsText.textContent = count === 0 ? 'Punkt 1 – wpisz liczby i dotknij „Dodaj punkt”.'
+          : `Postawione punkty: ${count}. Następny punkt – ${count + 1}.${multi === 'polyline' ? ' „Zakończ” – łamana z postawionych punktów.' : ''}`;
+      };
+      openFormSheet({
+        title: `${label} – punkty X, Y`,
+        submitLabel: kind === 'points' ? 'Dodaj punkt' : 'Rysuj',
+        cancelLabel: kind === 'points' ? 'Gotowe' : 'Anuluj',
+        build: (api) => {
+          const hint = h('p', { class: 'field__hint' }, `Liczby w układzie arkusza (${unit}, skala rysunku): X w prawo, Y w górę od początku układu. Puste pole – 0.`);
+          if (kind === 'drag') {
+            const [first, second] = dragPointNames();
+            rows = [coordFields(first, 'drawing-coord-a'), coordFields(second, 'drawing-coord-b')];
+            return h('div', { class: 'drawing__coords' }, ...rows.map((row) => row.box), hint);
+          }
+          rows = [coordFields('Punkt', 'drawing-coord-a')];
+          pointsText = kind === 'points' ? h('p', { class: 'field__hint field__hint--live', dataset: { testid: 'drawing-coord-count' } }) : null;
+          describe();
+          // Łamana: koniec z postawionych punktów – otwarta albo zamknięta w wielokąt (jak Enter i dotknięcie pierwszego punktu).
+          const finish = (closed) => {
+            completePolyline(closed);
+            api.close();
+          };
+          const finishButtons = multi === 'polyline' ? h('div', { class: 'drawing__origin-actions' },
+            h('button', { type: 'button', class: 'drawing__chip', dataset: { testid: 'drawing-coord-finish' }, onClick: () => finish(false) }, 'Zakończ łamaną'),
+            h('button', { type: 'button', class: 'drawing__chip', dataset: { testid: 'drawing-coord-close' }, onClick: () => finish(true) }, 'Zamknij w wielokąt')) : null;
+          return h('div', { class: 'drawing__coords' }, rows[0].box, pointsText, finishButtons, hint);
+        },
+        onSubmit: (api) => {
+          const points = rows.map((row) => row.read());
+          if (points.some((point) => !point)) {
+            api.setError('Wpisz liczby, np. 25 albo −12,5.');
+            return false;
+          }
+          if (points.some((point) => offPage(point))) {
+            api.setError('Punkt poza kartką – nowe elementy powstają tylko na niej (początek układu i skala – w „Linijka i skala”).');
+            return false;
+          }
+          if (kind === 'drag') {
+            const [a, b] = points;
+            if (Math.hypot(b.x - a.x, b.y - a.y) < 0.5) {
+              api.setError('Dwa różne punkty – kształt powstaje między nimi.');
+              return false;
+            }
+            addDraggedShape(a, b);
+            flash(`${label}: dodano ze współrzędnych`);
+            return true;
+          }
+          const [point] = points;
+          if (kind === 'one') {
+            clearSelection();
+            const shape = onActiveLayer(shapeFromDrag(tools.shape, point, point, newShapeStyle(), { lock: locked(), mode: tools.ellipseMode }));
+            history.add(shape);
+            changed = true;
+            selection = new Set([shape]);
+            selectionKind = 'whole';
+            updateToolbar();
+            requestRender();
+            return true;
+          }
+          // Punkt po punkcie – jak dotknięcie (te same kroki, podpowiedź i zakończenie przy ostatnim punkcie).
+          if (pending?.kind !== multi) {
+            clearSelection();
+            pending = { kind: multi, points: [] };
+          }
+          finishPoints({ start: point, point, moved: false, hadSelection: false });
+          updateToolbar();
+          requestRender();
+          if (pending?.kind !== multi) return true;
+          rows[0].clear();
+          rows[0].inputs[0].focus();
+          describe();
+          return false;
+        }
+      });
+    }
+    /**
+     * Okno „Położenie” zaznaczonego (od 1.50): odcinek, strzałka, prosta i wymiar – początek i koniec; okrąg, łuk, wielokąt
+     * foremny, punkt i bryła – środek; reszta (i kilka elementów) – lewy dolny róg obrysu. Jeden krok cofania.
+     */
+    function openPositionSheet() {
+      const items = orderedSelection();
+      if (items.length === 0) return;
+      const only = items.length === 1 ? items[0] : null;
+      const segment = only && isShape(only) && isSegment(only) && selectionKind === 'whole' ? only : null;
+      const arc = only && isShape(only) && isArc(only) ? arcGeometry(only) : null;
+      const centered = only && selectionKind === 'whole' && (only.tool === 'solid' || (isShape(only) && (only.shape === 'ellipse' || only.shape === 'ngon' || isPointShape(only) || (isArc(only) && arc))));
+      const bounds = selectionBounds(items);
+      const base = segment ? endPoint(segment, 'start') : centered ? (arc ? arc.center : { x: only.x, y: only.y }) : { x: bounds.minX, y: bounds.maxY };
+      const name = segment ? 'Początek' : centered ? (isPointShape(only) ? 'Punkt' : 'Środek') : 'Lewy dolny róg obrysu';
+      let rows = [];
+      openFormSheet({
+        title: 'Położenie',
+        submitLabel: 'Ustaw',
+        build: () => {
+          rows = [coordFields(name, 'drawing-position-a', base)];
+          if (segment) rows.push(coordFields('Koniec', 'drawing-position-b', endPoint(segment, 'end')));
+          return h('div', { class: 'drawing__coords' }, ...rows.map((row) => row.box),
+            h('p', { class: 'field__hint' }, `Układ arkusza (${coordUnit(drawing)}, skala rysunku): X w prawo, Y w górę od początku układu. `
+              + (segment ? 'Nowy początek i koniec – odcinek odkleja się od elementów, do których był przyklejony.' : 'Zaznaczone przesuwa się tak, by ten punkt był w podanym miejscu.')));
+        },
+        onSubmit: (api) => {
+          const points = rows.map((row) => row.read());
+          if (points.some((point) => !point)) {
+            api.setError('Wpisz liczby, np. 25 albo −12,5.');
+            return false;
+          }
+          if (segment) {
+            const [a, b] = points;
+            if (Math.hypot(b.x - a.x, b.y - a.y) < 1) {
+              api.setError('Początek i koniec – w różnych miejscach.');
+              return false;
+            }
+            const [oldA, oldB] = [endPoint(segment, 'start'), endPoint(segment, 'end')];
+            if (Math.hypot(a.x - oldA.x, a.y - oldA.y) < 1e-3 && Math.hypot(b.x - oldB.x, b.y - oldB.y) < 1e-3) return true;
+            replaceLinked(segment, segmentBetween(segment, a, b), [['start', null], ['end', null]]);
+            changed = true;
+            updateToolbar();
+            requestRender();
+            return true;
+          }
+          const [target] = points;
+          const [dx, dy] = [target.x - base.x, target.y - base.y];
+          if (Math.abs(dx) > 1e-3 || Math.abs(dy) > 1e-3) {
+            moveSelection(dx, dy);
+            changed = true;
+          }
+          return true;
+        }
+      });
+    }
+
     // ---- linijka
     function toggleRuler() {
       if (ruler) {
@@ -5447,7 +5802,8 @@ export function openDrawingEditor({
       match: ['Dotknij elementu, którego styl przenieść na zaznaczone (Esc – bez zmian)'],
       chain: ['Łańcuch: dotknij następnego punktu – wymiar od końca poprzedniego (Esc – koniec)'],
       baseline: ['Od bazy: dotknij następnego punktu – wymiar od początku bazowego, piętro dalej (Esc – koniec)'],
-      face: ['Szkic na ścianie: dotknij płaskiej ściany bryły – bryła stanie tą ścianą do Ciebie (Esc – bez zmian)']
+      face: ['Szkic na ścianie: dotknij płaskiej ściany bryły – bryła stanie tą ścianą do Ciebie (Esc – bez zmian)'],
+      origin: ['Początek układu: dotknij punktu na kartce – tu będzie X 0, Y 0 (narożniki i krawędzie przyciągają; Esc – bez zmian)']
     };
     /** Podpowiedź wyboru – zostaje do końca wyboru (bez znikania po kilku sekundach). */
     function showPickHint() {
@@ -5743,6 +6099,19 @@ export function openDrawingEditor({
         }
         cancelPointPick('Narysuj na ścianie zamknięte kształty (okrąg, prostokąt…) i wybierz „Wytnij z bryły” albo „Dodaj do bryły”');
         animateSolid(solid, faceView(solid, face.normal));
+        return;
+      }
+      if (pointPick.kind === 'origin') {
+        // Od 1.50: początek układu współrzędnych arkusza w dotkniętym punkcie (przyciągniętym do narożnika, krawędzi, środka).
+        const snap = edgeSnapAt(point, event);
+        const at = snap ? { x: snap.x, y: snap.y } : point;
+        if (offPage(at)) {
+          flash('Początek układu – na kartce (Esc – bez zmian)');
+          setTimeout(() => { if (pointPick) showPickHint(); }, 2500);
+          return;
+        }
+        setOrigin(at);
+        cancelPointPick('Początek układu w tym punkcie: X 0, Y 0');
         return;
       }
       if (pointPick.kind === 'match') {
@@ -9234,6 +9603,7 @@ export function openDrawingEditor({
       else if (tool === 'shape') startShape(event);
       else startStroke(event);
       if (active?.touch) active.client = local(event);
+      if (tools.coords) showCoords(activeCoordPoint() ?? point);
     });
     live.addEventListener('pointermove', (event) => {
       if (touches.has(event.pointerId)) {
@@ -9244,6 +9614,8 @@ export function openDrawingEditor({
       }
       if (!active || active.id !== event.pointerId) {
         if (active || event.pointerType === 'touch') return;
+        // Od 1.50: współrzędne pod myszą albo zawieszonym rysikiem (przy kształtach – w miejscu przyciągnięcia, niżej).
+        if (tools.coords) showCoords(toDrawing(event));
         // Lupa pipetki albo kółko gumki pod myszą lub zawieszonym nad ekranem rysikiem.
         if (picking) {
           pickHover = local(event);
@@ -9277,12 +9649,14 @@ export function openDrawingEditor({
             edgeHover = snap;
             requestLive();
           }
+          if (tools.coords && snap) showCoords({ x: snap.x, y: snap.y });
         }
         return;
       }
       event.preventDefault();
       if (active.touch) active.client = local(event);
       moveActive(event);
+      if (tools.coords && active) showCoords(activeCoordPoint() ?? toDrawing(event));
     });
     const release = (event, cancelled) => {
       if (touches.delete(event.pointerId)) {
@@ -9453,7 +9827,7 @@ export function openDrawingEditor({
       }
       if (event.key === 'Escape' && pointPick) {
         event.preventDefault();
-        cancelPointPick({ match: 'Bez przenoszenia stylu', chain: 'Koniec wymiarów łańcuchowych', baseline: 'Koniec wymiarów od bazy', face: 'Bez szkicu na ścianie', ...EDIT_END }[pointPick.kind] ?? 'Bez odbicia');
+        cancelPointPick({ match: 'Bez przenoszenia stylu', chain: 'Koniec wymiarów łańcuchowych', baseline: 'Koniec wymiarów od bazy', face: 'Bez szkicu na ścianie', origin: 'Początek układu bez zmian', ...EDIT_END }[pointPick.kind] ?? 'Bez odbicia');
         updateToolbar();
         return;
       }

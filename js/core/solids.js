@@ -2,9 +2,10 @@
 // (x, y) – środek bryły na stronie; dims – wymiary w jednostkach strony (jak w i h kształtu; liczby na rysunku – ze skali);
 // q – położenie w przestrzeni, kwaternion [w, x, y, z]. Układ bryły: x w prawo, y w górę, z do patrzącego – bez obrotu
 // widać ją z przodu. Rzut prostokątny, jak w rysunku technicznym; size – grubość krawędzi widocznych.
-// Osie dla użytkownika (od 1.48.2, jak w rysunku technicznym – Z do góry): X = z bryły (do patrzącego w widoku z przodu),
-// Y = x bryły (w prawo), Z = y bryły (w górę); w izometrii X i Y biegną w dół, Z do góry. Szkic leży na płaszczyźnie XY
-// (z góry: Y w prawo, X w dół – jak kartka), wyciągnięcie – wzdłuż Z.
+// Osie dla użytkownika (od 1.50 – wspólny układ z arkuszem, jak w programach CAD i na maszynach pomiarowych; Z do góry
+// od 1.48.2): X = x bryły (w prawo), Y = −z bryły (od patrzącego w widoku z przodu – w głąb), Z = y bryły (w górę);
+// w izometrii X biegnie w prawo w dół, Y w prawo w górę, Z do góry; przód – od strony −Y, lewy bok – od −X. Szkic leży
+// na płaszczyźnie XY (z góry: X w prawo, Y w górę – jak kartka i układ arkusza), wyciągnięcie – wzdłuż Z.
 //
 // Rodzaje: prostopadłościan { a – długość (x), b – szerokość (z), c – wysokość (y) }, walec { d, h }, stożek { d – podstawa,
 // t – góra (0 – ostry, więcej – ścięty), h }, ostrosłup { podstawa a × b, h }, graniastosłup foremny { n – boki (3–12),
@@ -593,7 +594,8 @@ export function solidMesh(kind, dims) {
 
 /**
  * Punkt z układu profilu bryły ze szkicu (x, y – płaszczyzna szkicu, z – wyciągnięcie; obrotowa: x – oś) do układu bryły
- * (od 1.48.2): szkic na płaszczyźnie XY (x bryły – Y, −y profilu – X), wyciągnięcie w górę (z profilu → y bryły – Z).
+ * (od 1.48.2): szkic na płaszczyźnie XY (x profilu → x bryły – X, y profilu → −z bryły – Y; od 1.50), wyciągnięcie
+ * w górę (z profilu → y bryły – Z).
  */
 export const fromSketch = ([x, y, z]) => [x, z, -y];
 

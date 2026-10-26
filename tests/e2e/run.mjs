@@ -8647,6 +8647,9 @@ test('dźwięki 1.31: fiszka odlatuje z szumem w stronę lotu („Umiem” – w
   await page.goto(`${page.url().split('#')[0]}#/settings`);
   const toggle = page.locator('[data-testid=sounds]');
   await toggle.waitFor({ state: 'attached' });
+  // Ustawienia rysują się jeszcze raz po policzeniu zajętego miejsca (od 1.45.2) – dopiero potem przełącznik zostaje na miejscu.
+  await page.locator('[data-testid=usage-refresh]').waitFor({ state: 'attached' });
+  await nextFrames(page);
   assert.equal(await toggle.isChecked(), true, 'domyślnie włączone');
   await page.locator('.row', { has: toggle }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(OUTPUT, 'dzwieki-ustawienia.png') });
@@ -11407,13 +11410,13 @@ test('rysunek 1.47: grupa Bryły – wstawienie, układ osi X/Y/Z obok ramki (od
   await cancel();
   await shot('prostopadloscian');
 
-  // Układ osi obok ramki (od 1.48.1 zamiast kostki widoków; od 1.48.2 Z do góry): w izometrii X w lewo i w dół, Y w prawo
-  // i w dół, Z pionowo w górę; osie czerwona, zielona, niebieska. Tarcza osi tylko pokazuje położenie – dotknięcie
-  // i przeciągnięcie niczego nie obracają i nie zdejmują zaznaczenia.
+  // Układ osi obok ramki (od 1.48.1 zamiast kostki widoków; od 1.48.2 Z do góry, od 1.50 jak w programach CAD – wspólny
+  // z arkuszem): w izometrii X w prawo i w dół, Y w prawo i w górę (w głąb), Z pionowo w górę; osie czerwona, zielona,
+  // niebieska. Tarcza osi tylko pokazuje położenie – dotknięcie i przeciągnięcie niczego nie obracają i nie zdejmują zaznaczenia.
   const iso = await where();
   const [ax, ay] = iso.axes;
-  assert.ok(iso.x[0] < ax - 10 && iso.x[1] > ay, `izometria – X: ${iso.x} (środek ${iso.axes})`);
-  assert.ok(iso.y[0] > ax + 10 && iso.y[1] > ay, `izometria – Y: ${iso.y}`);
+  assert.ok(iso.x[0] > ax + 10 && iso.x[1] > ay, `izometria – X: ${iso.x} (środek ${iso.axes})`);
+  assert.ok(iso.y[0] > ax + 10 && iso.y[1] < ay, `izometria – Y: ${iso.y}`);
   assert.ok(Math.abs(iso.z[0] - ax) <= 1 && iso.z[1] < ay - 15, `izometria – Z do góry: ${iso.z}`);
   assert.deepEqual(await axisColors({ x: iso.x, y: iso.y, z: iso.z }), { x: 'czerwona', y: 'zielona', z: 'niebieska' });
   assert.equal(await canvas.getAttribute('data-cube'), null, 'bez kostki widoków');
@@ -11424,16 +11427,16 @@ test('rysunek 1.47: grupa Bryły – wstawienie, układ osi X/Y/Z obok ramki (od
   await cancel();
   assert.deepEqual((await where()).solid, iso.solid, 'bryła w tym samym miejscu');
 
-  // Menu „Widok” – z góry (płynne przejście; jak kartka ze szkicem na XY): Z na patrzącego (sam punkt), X w dół ekranu,
-  // Y w prawo.
+  // Menu „Widok” – z góry (płynne przejście; jak kartka ze szkicem na XY i układ arkusza): Z na patrzącego (sam punkt),
+  // X w prawo, Y w górę ekranu.
   await editor.locator('[data-testid=drawing-selection-solid-view]').click();
   await page.locator('[data-testid=drawing-solid-view-top]').click();
   await settledAnimation();
   assert.deepEqual(await angles(), { yaw: '0', pitch: '90', roll: '0' }, 'widok z góry z menu');
   await cancel();
   const top = await where();
-  assert.ok(top.y[0] > top.axes[0] + 20 && Math.abs(top.y[1] - top.axes[1]) <= 1, `z góry – Y: ${top.y} (środek ${top.axes})`);
-  assert.ok(Math.abs(top.x[0] - top.axes[0]) <= 1 && top.x[1] > top.axes[1] + 20, `z góry – X: ${top.x}`);
+  assert.ok(top.x[0] > top.axes[0] + 20 && Math.abs(top.x[1] - top.axes[1]) <= 1, `z góry – X w prawo: ${top.x} (środek ${top.axes})`);
+  assert.ok(Math.abs(top.y[0] - top.axes[0]) <= 1 && top.y[1] < top.axes[1] - 20, `z góry – Y w górę: ${top.y}`);
   assert.ok(Math.hypot(top.z[0] - top.axes[0], top.z[1] - top.axes[1]) <= 1.5, `z góry – Z na patrzącego: ${top.z}`);
   await shot('osie-z-gory');
   await editor.locator('[data-testid=drawing-selection-solid-view]').click();
@@ -11554,15 +11557,16 @@ test('rysunek 1.47 na iPadzie: układ osi przy stożku (od 1.48.1) – palec na 
   await finger.end();
   await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Bryła: Stożek');
   assert.deepEqual(await angles(), { yaw: '45', pitch: '35,3', roll: '0' }, 'palec na tarczy osi niczego nie obraca');
-  // Menu „Widok” – przód: X na patrzącego (sam punkt; od 1.48.2 Z do góry).
+  // Menu „Widok” – przód: od 1.50 od strony −Y – Y od patrzącego (sam punkt), Z do góry.
   await editor.locator('[data-testid=drawing-selection-solid-view]').tap();
   await page.locator('[data-testid=drawing-solid-view-front]').tap();
   await page.waitForTimeout(500);
   assert.deepEqual(await angles(), { yaw: '0', pitch: '0', roll: '0' }, 'przód z menu');
   const front = await where();
-  assert.ok(Math.hypot(front.x[0] - front.axes[0], front.x[1] - front.axes[1]) <= 1.5, `z przodu – X na patrzącego: ${front.x}`);
+  assert.ok(Math.hypot(front.y[0] - front.axes[0], front.y[1] - front.axes[1]) <= 1.5, `z przodu – Y od patrzącego: ${front.y}`);
+  assert.ok(front.x[0] > front.axes[0] + 20, `z przodu – X w prawo: ${front.x}`);
   assert.ok(Math.abs(front.z[0] - front.axes[0]) <= 1 && front.z[1] < front.axes[1] - 20, `z przodu – Z do góry: ${front.z}`);
-  // „Obracaj”: palec na bryle obraca ją, bryła zostaje w miejscu, osie obracają się razem z nią (X schodzi w dół).
+  // „Obracaj”: palec na bryle obraca ją, bryła zostaje w miejscu, osie obracają się razem z nią (Y – w głąb – wychodzi w górę).
   await editor.locator('[data-testid=drawing-selection-orbit]').tap();
   const { solid } = await where();
   const drag = await touchAt(context, page, solid[0], solid[1] - 20);
@@ -11573,7 +11577,7 @@ test('rysunek 1.47 na iPadzie: układ osi przy stożku (od 1.48.1) – palec na 
   await nextFrames(page);
   const tiltedAxes = await where();
   assert.deepEqual(tiltedAxes.solid, solid, 'bryła w tym samym miejscu');
-  assert.ok(tiltedAxes.x[1] > tiltedAxes.axes[1] + 8, `oś X po pochyleniu w dół: ${tiltedAxes.x} (środek ${tiltedAxes.axes})`);
+  assert.ok(tiltedAxes.y[1] < tiltedAxes.axes[1] - 8, `oś Y po pochyleniu w górę: ${tiltedAxes.y} (środek ${tiltedAxes.axes})`);
   const tilted = await angles();
   assert.equal(tilted.yaw, '0');
   assert.ok(Number(tilted.pitch.replace(',', '.')) > 20, `pochylenie palcem w dół: ${tilted.pitch}`);
@@ -11911,23 +11915,24 @@ test('rysunek 1.48.2: osie jak w rysunku technicznym – Z do góry, szkic na p�
   await editor.locator('[data-testid=drawing-selection-extrude]').click();
   await expectText(count, 'Bryła: wyciągnięcie');
   await page.waitForTimeout(600);
-  // Izometria: Z pionowo w górę, X w lewo i w dół, Y w prawo i w dół; uchwyt długości nad bryłą (wyciągnięcie wzdłuż Z).
+  // Izometria (od 1.50 jak w programach CAD): Z pionowo w górę, X w prawo i w dół, Y w prawo i w górę; uchwyt długości nad
+  // bryłą (wyciągnięcie wzdłuż Z).
   const iso = await where();
   const [ax, ay] = iso.axes;
   assert.ok(Math.abs(iso.z[0] - ax) <= 1 && iso.z[1] < ay - 15, `Z do góry: ${iso.z} (środek ${iso.axes})`);
-  assert.ok(iso.x[0] < ax - 10 && iso.x[1] > ay, `X w lewo i w dół: ${iso.x}`);
-  assert.ok(iso.y[0] > ax + 10 && iso.y[1] > ay, `Y w prawo i w dół: ${iso.y}`);
+  assert.ok(iso.x[0] > ax + 10 && iso.x[1] > ay, `X w prawo i w dół: ${iso.x}`);
+  assert.ok(iso.y[0] > ax + 10 && iso.y[1] < ay, `Y w prawo i w górę: ${iso.y}`);
   assert.ok(iso.extent && Math.abs(iso.extent[0] - iso.solid[0]) <= 2 && iso.extent[1] < iso.solid[1] - 20, `uchwyt długości nad bryłą: ${iso.extent} (bryła ${iso.solid})`);
   await shot('izometria');
 
-  // Widok z góry: Z na patrzącego, Y w prawo, X w dół; obrys bryły tam, gdzie był szkic.
+  // Widok z góry: Z na patrzącego, X w prawo, Y w górę (jak szkic na kartce); obrys bryły tam, gdzie był szkic.
   await editor.locator('[data-testid=drawing-selection-solid-view]').click();
   await page.locator('[data-testid=drawing-solid-view-top]').click();
   await page.waitForTimeout(600);
   const top = await where();
   assert.ok(Math.hypot(top.z[0] - top.axes[0], top.z[1] - top.axes[1]) <= 1.5, `z góry – Z na patrzącego: ${top.z}`);
-  assert.ok(top.y[0] > top.axes[0] + 20 && Math.abs(top.y[1] - top.axes[1]) <= 1, `z góry – Y w prawo: ${top.y}`);
-  assert.ok(Math.abs(top.x[0] - top.axes[0]) <= 1 && top.x[1] > top.axes[1] + 20, `z góry – X w dół: ${top.x}`);
+  assert.ok(top.x[0] > top.axes[0] + 20 && Math.abs(top.x[1] - top.axes[1]) <= 1, `z góry – X w prawo: ${top.x}`);
+  assert.ok(Math.abs(top.y[0] - top.axes[0]) <= 1 && top.y[1] < top.axes[1] - 20, `z góry – Y w górę: ${top.y}`);
   await shot('z-gory');
   await page.keyboard.press('Escape');
   await waitUntil(() => editor.locator('.drawing__selection').isHidden(), 'Bez zaznaczenia');
@@ -12002,7 +12007,7 @@ test('rysunek 1.49: szkic na ścianie bryły – „Szkic na ścianie” (dotkni
   await settled();
   const top = await where();
   assert.ok(Math.hypot(top.z[0] - top.axes[0], top.z[1] - top.axes[1]) <= 1.5, `wierzch do patrzącego – Z punktem: ${top.z}`);
-  assert.ok(top.y[0] > top.axes[0] + 20 && Math.abs(top.x[0] - top.axes[0]) <= 1 && top.x[1] > top.axes[1] + 20, `z góry: Y w prawo, X w dół (${top.y} / ${top.x})`);
+  assert.ok(top.x[0] > top.axes[0] + 20 && Math.abs(top.y[0] - top.axes[0]) <= 1 && top.y[1] < top.axes[1] - 20, `z góry: X w prawo, Y w górę (${top.x} / ${top.y})`);
 
   // Okrąg ⌀ 80 na wierzchu (z prawej od środka): „Wytnij z bryły” – bryła nie musi być zaznaczona (pod okręgiem).
   const [px, py] = top.page;
@@ -12238,6 +12243,252 @@ test('rysunek 1.49 na telefonie: „Szkic na ścianie”, „Wytnij z bryły” 
   }
   await page.locator('[data-testid=drawing-solid-feature-depth-0]').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-149-okno-telefon.png') });
+}, { device: PHONE });
+
+test('rysunek 1.50: układ współrzędnych arkusza – „Kratka” otwiera „Linijka i skala”, włącznik, osie w lewym dolnym rogu kartki, współrzędne pod kursorem (mm w skali), odcinek i łamana ze współrzędnych, „Położenie”, przesunięty początek, zapis i DXF (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Układ</p>');
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  const coords = editor.locator('[data-testid=drawing-coords]');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const notice = editor.locator('[data-testid=drawing-notice]');
+  const panel = editor.locator('[data-testid=drawing-ruler-panel]');
+  const entry = editor.locator('[data-testid=drawing-coord-entry]');
+  const field = (id) => sheet(page).locator(`[data-testid=${id}]`);
+  const frame = await pageFrame(page);
+  const shot = async (name) => {
+    await nextFrames(page);
+    await page.screenshot({ path: path.join(OUTPUT, `rysunek-150-${name}.png`) });
+  };
+  /** Liczby z pastylki „X … · Y … mm”. */
+  const shown = async () => {
+    const text = (await coords.textContent()).trim();
+    const match = text.match(/^X (−?[\d,]+) · Y (−?[\d,]+) mm$/);
+    assert.ok(match, `pastylka współrzędnych: ${text}`);
+    return [match[1], match[2]].map((value) => Number(value.replace('−', '-').replace(',', '.')));
+  };
+  const near = (actual, expected, tolerance, message) => assert.ok(Math.abs(actual - expected) <= tolerance, `${message}: ${actual} ≈ ${expected}`);
+  /** Punkt strony (jednostki strony) z mm układu arkusza: 1 kratka (44) = 10 mm, początek – lewy dolny róg kartki (0, 1100). */
+  const fromMm = (x, y, origin = [0, 1100]) => [origin[0] + x * 4.4, origin[1] - y * 4.4];
+
+  // Bez układu: ani pastylki współrzędnych, ani osi; „Kratka: 1 cm” (od 1.50 – przycisk) otwiera „Linijka i skala”.
+  assert.equal(await coords.isVisible(), false, 'układ domyślnie wyłączony');
+  assert.equal(await canvas.getAttribute('data-origin'), null);
+  await editor.locator('[data-testid=drawing-scale-info]').click();
+  await panel.waitFor();
+  await panel.locator('[data-testid=drawing-dim-style] .segmented__option', { hasText: '„50”' }).click();
+  assert.equal(await panel.locator('[data-testid=drawing-origin-text]').isVisible(), false, 'początek – dopiero przy włączonym układzie');
+  await panel.locator('[data-testid=drawing-coords-toggle]').check({ force: true });
+  await expectText(panel.locator('[data-testid=drawing-origin-text]'), 'Początek w lewym dolnym rogu kartki. X w prawo, Y w górę – liczby w skali rysunku (mm).');
+  assert.equal(await panel.locator('[data-testid=drawing-origin-reset]').isVisible(), false, 'początek w rogu – bez „Początek w rogu”');
+  await shot('panel');
+  await panel.locator('[data-testid=drawing-panel-close]').click();
+  await waitUntil(() => panel.isHidden(), 'Panel zamknięty');
+
+  // Osie w lewym dolnym rogu kartki; mysz nad kartką – współrzędne w mm (1 kratka = 1 cm = 10 mm).
+  await expectText(coords, 'X – · Y – mm');
+  await waitUntil(async () => Boolean(await canvas.getAttribute('data-origin')), 'Osie układu');
+  const box = await canvas.boundingBox();
+  const [ox, oy] = (await canvas.getAttribute('data-origin')).split(',').map(Number);
+  const corner = frame.screen(0, 1100);
+  near(box.x + ox, corner[0], 2, 'początek – x lewego dolnego rogu kartki');
+  near(box.y + oy, corner[1], 2, 'początek – y lewego dolnego rogu kartki');
+  await page.mouse.move(...frame.screen(...fromMm(100, 50)));
+  await waitUntil(async () => (await coords.textContent()).startsWith('X 1'), 'Współrzędne pod myszą');
+  const [hx, hy] = await shown();
+  near(hx, 100, 0.6, 'X pod myszą');
+  near(hy, 50, 0.6, 'Y pod myszą (w górę od dołu kartki)');
+  await shot('osie-i-wspolrzedne');
+
+  // Odcinek ze współrzędnych: „Punkt X, Y” przy kształtach – początek (20; 30), koniec (120; 30).
+  assert.equal(await entry.isVisible(), false, 'bez kształtów – bez „Punkt X, Y”');
+  await press(editor, 'drawing-shape-line');
+  await entry.waitFor();
+  await entry.click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Odcinek – punkty X, Y');
+  await field('drawing-coord-a-x').fill('20');
+  await field('drawing-coord-a-y').fill('30');
+  await field('drawing-coord-b-x').fill('120');
+  await field('drawing-coord-b-y').fill('30');
+  await shot('odcinek-ze-wspolrzednych');
+  await saveSheet(page);
+  await expectText(count, 'Odcinek');
+
+  // „Położenie” zaznaczonego odcinka: początek i koniec w układzie arkusza; nowy początek (20; 80).
+  await editor.locator('[data-testid=drawing-selection-position]').click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Położenie');
+  assert.deepEqual(await Promise.all(['a-x', 'a-y', 'b-x', 'b-y'].map((id) => field(`drawing-position-${id}`).inputValue())), ['20,0', '30,0', '120,0', '30,0']);
+  await field('drawing-position-a-y').fill('80');
+  await saveSheet(page);
+  await expectText(count, 'Odcinek');
+  await editor.locator('[data-testid=drawing-selection-position]').click();
+  assert.deepEqual(await Promise.all(['a-x', 'a-y', 'b-x', 'b-y'].map((id) => field(`drawing-position-${id}`).inputValue())), ['20,0', '80,0', '120,0', '30,0']);
+  await page.keyboard.press('Escape');
+  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+
+  // Łamana punkt po punkcie ze współrzędnych: okno zostaje do „Zakończ łamaną”.
+  await press(editor, 'drawing-shape-polyline');
+  await entry.click();
+  await expectText(sheet(page).locator('.sheet__title'), 'Łamana – punkty X, Y');
+  for (const [x, y, done] of [['150', '20', 1], ['200', '20', 2], ['200', '60', 3]]) {
+    await field('drawing-coord-a-x').fill(x);
+    await field('drawing-coord-a-y').fill(y);
+    await sheet(page).locator('.sheet__submit').click();
+    await expectText(field('drawing-coord-count'), `Postawione punkty: ${done}.`);
+  }
+  await shot('lamana-punkty');
+  await field('drawing-coord-finish').click();
+  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno łamanej zamknięte');
+  await expectText(count, 'Łamana');
+  // Punkt poza kartką – komunikat w oknie, bez kształtu.
+  await press(editor, 'drawing-shape-line');
+  await entry.click();
+  await field('drawing-coord-a-x').fill('−10');
+  await field('drawing-coord-b-x').fill('50');
+  await sheet(page).locator('.sheet__submit').click();
+  await expectText(sheet(page).locator('.form-message--error'), 'Punkt poza kartką');
+  await page.keyboard.press('Escape');
+  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+
+  // Przesunięty początek: dotknięcie początku odcinka (20; 80) – przyciągnięty do końca odcinka.
+  await coords.click();
+  await panel.waitFor();
+  await panel.locator('[data-testid=drawing-origin-pick]').click();
+  await expectText(notice, 'Początek układu: dotknij punktu na kartce');
+  await page.mouse.click(...frame.screen(...fromMm(20.6, 79.5)));
+  await expectText(notice, 'Początek układu w tym punkcie: X 0, Y 0');
+  // Osie rysują się w następnej klatce (komunikat – od razu).
+  await waitUntil(async () => (await canvas.getAttribute('data-origin')) !== `${ox},${oy}`, 'Osie w nowym początku');
+  const [mx, my] = (await canvas.getAttribute('data-origin')).split(',').map(Number);
+  const start = frame.screen(...fromMm(20, 80));
+  near(box.x + mx, start[0], 2, 'nowy początek – x');
+  near(box.y + my, start[1], 2, 'nowy początek – y');
+  await page.mouse.move(...frame.screen(...fromMm(120, 30)));
+  await waitUntil(async () => (await coords.textContent()).startsWith('X 10'), 'Współrzędne od nowego początku');
+  const [ex, ey] = await shown();
+  near(ex, 100, 0.6, 'koniec odcinka – X od nowego początku');
+  near(ey, -50, 0.6, 'koniec odcinka – Y od nowego początku');
+  await shot('przesuniety-poczatek');
+  await coords.click();
+  await panel.waitFor();
+  await expectText(panel.locator('[data-testid=drawing-origin-text]'), 'Początek przesunięty: X 20,0 · Y 80,0 mm od lewego dolnego rogu kartki');
+  assert.equal(await panel.locator('[data-testid=drawing-origin-reset]').isVisible(), true);
+  await panel.locator('[data-testid=drawing-panel-close]').click();
+
+  // Zapis: początek w rysunku; odcinek i łamana tam, gdzie wpisano; DXF – od początku układu (początek odcinka = 0, 0).
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const drawingData = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  assert.deepEqual(drawingData.origin, { x: 88, y: 748 }, 'początek zapisany (punkt strony)');
+  assert.equal(drawingData.version, 22);
+  const line = drawingData.strokes.find((stroke) => stroke.tool === 'shape' && stroke.shape === 'line');
+  assert.deepEqual([line.x, line.y, Math.round(line.w)], [308, 858, Math.round(Math.hypot(440, 220))], 'odcinek (20; 80) – (120; 30)');
+  const polyline = drawingData.strokes.find((stroke) => stroke.tool === 'shape' && stroke.shape === 'polyline');
+  assert.ok(polyline, 'łamana zapisana');
+  const { drawingToDxf, parseDxf } = await import('../../js/core/dxf.js');
+  const lines = parseDxf(drawingToDxf(drawingData).text).entities.filter((item) => item.type === 'LINE')
+    .map((item) => [10, 20, 11, 21].map((code) => Number(item.codes.find(([key]) => key === code)?.[1])));
+  assert.ok(lines.some(([x1, y1, x2, y2]) => Math.hypot(x1, y1) < 0.01 && Math.abs(x2 - 100) < 0.01 && Math.abs(y2 + 50) < 0.01),
+    `DXF od początku układu: ${JSON.stringify(lines)}`);
+}, { device: DESKTOP });
+
+test('rysunek 1.50 na iPadzie: układ współrzędnych palcem – „Kratka”, włącznik, współrzędne pod palcem w trakcie rysowania, okrąg ze środka ze współrzędnych, „Położenie” okręgu', async ({ open, context }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>iPad</p>');
+  const coords = editor.locator('[data-testid=drawing-coords]');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const panel = editor.locator('[data-testid=drawing-ruler-panel]');
+  const field = (id) => sheet(page).locator(`[data-testid=${id}]`);
+  const frame = await pageFrame(page);
+  await editor.locator('[data-testid=drawing-scale-info]').tap();
+  await panel.waitFor();
+  await panel.locator('[data-testid=drawing-coords-toggle]').check({ force: true });
+  await panel.locator('[data-testid=drawing-panel-close]').tap();
+  await waitUntil(() => panel.isHidden(), 'Panel zamknięty');
+  // Styl „5 cm” – współrzędne w cm (dwa miejsca po przecinku).
+  await expectText(coords, 'X – · Y – cm');
+
+  // Okrąg ze środka palcem: w trakcie przeciągania pastylka pokazuje miejsce pod palcem (koniec – 3 kratki w prawo od środka).
+  await press(editor, 'drawing-shape-ellipse');
+  await editor.locator('[data-testid=drawing-ellipse-center]').tap();
+  const finger = await touchAt(context, page, ...frame.screen(440, 660));
+  await finger.move(...frame.screen(572, 660));
+  await nextFrames(page);
+  const during = (await coords.textContent()).trim();
+  assert.match(during, /^X 1[23],\d\d · Y (9,9\d|10,0\d) cm$/, `pod palcem w trakcie: ${during}`);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-150-ipad-palec.png') });
+  await finger.end();
+  await page.keyboard.press('Escape');
+
+  // „Punkt X, Y”: okrąg ze środka (5; 5) przez punkt (7; 5) cm – potem „Położenie” okręgu: środek.
+  await editor.locator('[data-testid=drawing-coord-entry]').tap();
+  await field('drawing-coord-a-x').fill('5');
+  await field('drawing-coord-a-y').fill('5');
+  await field('drawing-coord-b-x').fill('7');
+  await field('drawing-coord-b-y').fill('5');
+  await saveSheet(page);
+  await expectText(count, 'Elipsa');
+  await editor.locator('[data-testid=drawing-selection-position]').tap();
+  const centre = await Promise.all(['a-x', 'a-y'].map((id) => field(`drawing-position-${id}`).inputValue()));
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-150-ipad-polozenie.png') });
+  assert.deepEqual(centre, ['5,00', '5,00'], 'środek okręgu');
+  await field('drawing-position-a-x').fill('10');
+  await saveSheet(page);
+  await editor.locator('[data-testid=drawing-selection-position]').tap();
+  assert.equal(await field('drawing-position-a-x').inputValue(), '10,00', 'okrąg przesunięty');
+  await page.keyboard.press('Escape');
+}, { device: IPAD });
+
+test('rysunek 1.50 na telefonie: pastylka współrzędnych i „Punkt X, Y” na ekranie, okno punktów w szerokości ekranu, osie przy kartce', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const canvas = editor.locator('[data-testid=drawing-canvas]');
+  const panel = editor.locator('[data-testid=drawing-ruler-panel]');
+  const inScreen = async (locator, name) => {
+    const item = await locator.boundingBox();
+    assert.ok(item && item.x >= 0 && item.x + item.width <= 391, `${name} w szerokości ekranu (${JSON.stringify(item)})`);
+  };
+  await editor.locator('[data-testid=drawing-scale-info]').tap();
+  await panel.waitFor();
+  await panel.locator('[data-testid=drawing-coords-toggle]').scrollIntoViewIfNeeded();
+  await panel.locator('[data-testid=drawing-coords-toggle]').check({ force: true });
+  await panel.locator('[data-testid=drawing-origin-pick]').scrollIntoViewIfNeeded();
+  await inScreen(panel.locator('[data-testid=drawing-origin-pick]'), '„Przesuń początek…”');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-150-telefon-panel.png') });
+  await panel.locator('[data-testid=drawing-panel-close]').tap();
+  await waitUntil(() => panel.isHidden(), 'Panel zamknięty');
+  await waitUntil(async () => Boolean(await canvas.getAttribute('data-origin')), 'Osie układu');
+  await inScreen(editor.locator('[data-testid=drawing-coords]'), 'pastylka współrzędnych');
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  const shapePanel = editor.locator('[data-testid=drawing-shape-panel]');
+  if (await shapePanel.isVisible()) await shapePanel.locator('[data-testid=drawing-panel-close]').tap();
+  const entry = editor.locator('[data-testid=drawing-coord-entry]');
+  await entry.waitFor();
+  await inScreen(entry, '„Punkt X, Y”');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-150-telefon.png') });
+  await entry.tap();
+  await sheet(page).locator('[data-testid=drawing-coord-b-y]').waitFor();
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  assert.equal(await overflowX(page), 0, 'okno bez przewijania w bok');
+  for (const id of ['a-x', 'a-y', 'b-x', 'b-y']) await inScreen(sheet(page).locator(`[data-testid=drawing-coord-${id}]`), `pole ${id}`);
+  // Styl „5 cm” – liczby w cm (kartka ma ok. 36 × 25 cm przy 1 kratka = 1 cm).
+  await expectText(sheet(page).locator('.sheet__title'), 'Prostokąt – punkty X, Y');
+  await sheet(page).locator('[data-testid=drawing-coord-a-x]').fill('2');
+  await sheet(page).locator('[data-testid=drawing-coord-a-y]').fill('1,5');
+  await sheet(page).locator('[data-testid=drawing-coord-b-x]').fill('12');
+  await sheet(page).locator('[data-testid=drawing-coord-b-y]').fill('8');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-150-telefon-okno.png') });
+  await saveSheet(page);
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Prostokąt');
 }, { device: PHONE });
 
 // ---------------------------------------------------------------- nauka z fiszkami

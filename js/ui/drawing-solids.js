@@ -183,13 +183,14 @@ export function paintSolid(ctx, element, { scale = null, dimFormat = 'unit' } = 
 /**
  * Od 1.48.1 zamiast kostki widoków (1.47): mały układ osi przy zaznaczonej bryle – tylko wskaźnik położenia, bez dotykania
  * (widok – menu „Widok”, obrót – „Obracaj” albo kąty w oknie). Osie bryły: X – czerwona, Y – zielona, Z – niebieska.
- * Od 1.48.2 jak w rysunku technicznym (core/solids.js): X = z bryły, Y = x, Z = y – w izometrii X i Y w dół, Z do góry.
+ * Od 1.48.2 Z do góry; od 1.50 jak w programach CAD i na maszynach pomiarowych (wspólny układ z arkuszem, core/solids.js):
+ * X = x bryły, Y = −z, Z = y – w izometrii X w prawo w dół, Y w prawo w górę (w głąb), Z do góry; z góry X w prawo, Y w górę.
  */
 export const AXES_LENGTH = 26;
 /** Promień tarczy pod osiami i jej odstęp od ramki zaznaczenia (px ekranu). */
 export const AXES_RADIUS = 40;
 export const AXES_GAP = 16;
-const AXES = [['X', [0, 0, 1], '#d92d20'], ['Y', [1, 0, 0], '#1e8e3e'], ['Z', [0, 1, 0], '#1a6fdb']];
+const AXES = [['X', [1, 0, 0], '#d92d20'], ['Y', [0, 0, -1], '#1e8e3e'], ['Z', [0, 1, 0], '#1a6fdb']];
 
 /** Osie w położeniu `q` od środka `center` (px ekranu): { label, color, tip, along – długość na ekranie (0–1), depth }, od najdalszej. */
 export function solidAxes(q, center, length = AXES_LENGTH) {

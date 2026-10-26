@@ -44,6 +44,8 @@
 //   układ 'lanes' (tory); w ustawieniach narzędzi – zakończenia łącznika (connectorCaps).
 //   Od 1.47 (format 18) w strokes bryły { tool: 'solid', kind, x, y, dims, q, … } (core/solids.js) – rzut prostokątny
 //   bryły obracanej w przestrzeni.
+//   Od 1.50 (format 22) origin { x, y } – początek układu współrzędnych arkusza przesunięty przez użytkownika (punkt
+//   strony; brak – lewy dolny róg arkusza albo kartki, core/sheet-coords.js).
 
 import { ARRAY_ITEMS_MAX, ARRAY_KINDS, expandArray, isArray, makeArray, translateArray } from './arrays.js';
 import { DEFAULT_RECENT_FITS, cleanRecentFits } from './fits.js';
@@ -75,9 +77,9 @@ import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './la
  * arkusz A4 pionowo (1.42), 16 – diagramy Ishikawy i 5 × Dlaczego, układ kartki (1.44), 17 – kształty schematu blokowego,
  * łącznik, symbole i oś czasu VSM, legenda wad, tory (1.45), 18 – bryły (1.47), 19 – bryły ze szkicu: wyciągnięcie i obrót
  * profilu, szkic w bryle (1.48), 20 – szkic na płaszczyźnie XY, Z do góry (1.48.2), 21 – wycięcia i dodania na ścianach
- * brył (1.49).
+ * brył (1.49), 22 – początek układu współrzędnych arkusza (1.50).
  */
-export const DRAWING_VERSION = 21;
+export const DRAWING_VERSION = 22;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -465,7 +467,9 @@ export function defaultToolSettings() {
     ringPositions: cleanRingPositions(null),
     // Od 1.40: liczba boków nowego wielokąta foremnego i narożniki nowego prostokąta (null – ostre).
     ngonSides: NGON_DEFAULT,
-    rectCorner: null
+    rectCorner: null,
+    // Od 1.50: układ współrzędnych arkusza – osie w początku, współrzędne pod kursorem, pola X/Y i punkt ze współrzędnych.
+    coords: false
   };
 }
 
@@ -614,7 +618,8 @@ export function cleanToolSettings(raw) {
     shapeStyles: cleanShapeStyles(raw.shapeStyles),
     ringPositions: cleanRingPositions(raw.ringPositions),
     ngonSides: NGON_SIDES.includes(raw.ngonSides) ? raw.ngonSides : base.ngonSides,
-    rectCorner: cleanToolCorner(raw.rectCorner)
+    rectCorner: cleanToolCorner(raw.rectCorner),
+    coords: typeof raw.coords === 'boolean' ? raw.coords : base.coords
   };
 }
 
@@ -1370,8 +1375,17 @@ export function cleanDrawing(raw) {
     // Układ kartki (od 1.44) – też tylko bez zdjęcia.
     ...(!photo && cleanLayout(raw.layout) ? { layout: cleanLayout(raw.layout) } : {}),
     ...(layers ? { layers } : {}),
-    ...(Number.isInteger(raw.activeLayer) && raw.activeLayer !== 1 && known.has(raw.activeLayer) ? { activeLayer: raw.activeLayer } : {})
+    ...(Number.isInteger(raw.activeLayer) && raw.activeLayer !== 1 && known.has(raw.activeLayer) ? { activeLayer: raw.activeLayer } : {}),
+    // Początek układu współrzędnych arkusza (od 1.50) – punkt na kartce.
+    ...(cleanOrigin(raw.origin, width, height) ? { origin: cleanOrigin(raw.origin, width, height) } : {})
   };
+}
+
+/** Początek układu współrzędnych arkusza (od 1.50): punkt na kartce (jednostki strony, 2 miejsca) albo null. */
+export function cleanOrigin(raw, width, height) {
+  if (!raw || typeof raw !== 'object' || !finite(raw.x) || !finite(raw.y)) return null;
+  const round = (value) => Math.round(value * 100) / 100;
+  return { x: round(clamp(raw.x, 0, width)), y: round(clamp(raw.y, 0, height)) };
 }
 
 /** Kształt (i kształty w szyku) z tolerancjami długości przeliczonymi do mm – `factor` mm w dawnej jednostce. */

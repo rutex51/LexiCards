@@ -2011,6 +2011,32 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   **Usuń** / **Przywróć**, **Edytuj szkic** ostatniej – `restoreFeatureSketch`), bez wyboru rodzaju; zapis –
   `followFaces` z numerami zachowanych operacji.
 
+## Układ współrzędnych arkusza (od 1.50)
+
+- **Moduł** `js/core/sheet-coords.js` (bez przeglądarki): `defaultOrigin` – lewy dolny róg arkusza (`frameSheet` ramki A4 / A4V
+  / A3 wpasowanej w stronę) albo kartki (0, wysokość strony); `sheetOrigin` – `drawing.origin` (przesunięty przez użytkownika)
+  albo róg. `coordFactor` – jednostek liczb na jednostkę strony: `toScaleLength(1, scale) · dimFactor(scale, dimFormat)`, czyli
+  liczby jak w wymiarach (styl techniczny – wybrana jednostka, zwykle mm; styl „5 cm” – jednostka skali). `toSheet` /
+  `fromSheet` – punkt strony ↔ { x, y } układu (x w prawo, y w górę – y strony odwrócone). `coordPlaces` – miejsca po
+  przecinku z wielkości jednostki (mm – 1, cm – 2, m i cale – 3); `formatCoord` – stała liczba miejsc, przecinek, minus
+  typograficzny, bez „−0”; `coordText` – „X 103,2 · Y 36,7 mm”; `originText` – opis do panelu.
+- **Dane**: `drawing.origin { x, y }` – punkt strony (setne, przycięty do kartki, `cleanOrigin` w `cleanDrawing`); brak – róg.
+  Format rysunku 22. Ustawienie `tools.coords` (urządzenie, `defaultToolSettings` – wyłączone).
+- **Osie brył** (W1, wspólne z arkuszem): etykiety osi bez zmiany geometrii i zapisanych położeń – X = x bryły, Y = −z,
+  Z = y (`AXES` w `drawing-solids.js`). Widoki liczbowo bez zmian: przód (q bez obrotu) patrzy od −Y, z góry – X w prawo,
+  Y w górę; szkic na XY (`fromSketch`: x profilu → X, y profilu → −z bryły = Y) – z góry pokrywa się z kartką.
+- **DXF**: `drawingToDxf` – punkty od `sheetOrigin` (x − x₀, y₀ − y) razy mm na jednostkę strony; zakres `$EXTMIN` /
+  `$EXTMAX` – cała kartka w tym układzie. Bez ramki i bez przesunięcia – jak przed 1.50.
+- **Edytor** (`drawing.js`): pastylka skali (`drawing-scale-info`) i współrzędnych (`drawing-coords`) – przyciski otwierające
+  panel „Linijka i skala” (włącznik, opis początku, **Przesuń początek…** – `pointPick` 'origin', dotknięcie z `edgeSnapAt`,
+  `setOrigin`; **Początek w rogu**). `paintSheetAxes` – osie na warstwie bieżącej w px ekranu (`data-origin` płótna – dla
+  testów). `showCoords` – w `pointermove` (mysz i zawieszony rysik; przy kształtach – miejsce przyciągnięcia), w trakcie
+  czynności – `activeCoordPoint` (koniec kształtu, punkt, przeciągany uchwyt), przy `pointerdown`. **Punkt X, Y**
+  (`coordKind`: 'drag' – dwa punkty i `dragShape` jak przeciągnięcie, wymiar – `finishDim`; 'points' – `finishPoints` jak
+  dotknięcie, okno zostaje do ostatniego punktu; 'one' – punkt; okrąg styczny i długość łuku – bez okna); punkt poza kartką
+  – błąd w oknie. **Położenie** (`openPositionSheet`): odcinek i podobne – `segmentBetween` + `replaceLinked` (końce
+  odklejone), środek albo lewy dolny róg obrysu – `moveSelection`.
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).
@@ -2104,7 +2130,9 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   bryły – dane, kąty i kwaterniony, obrót z przeciągnięcia, rzut z krawędziami niewidocznymi, wymiary, przekształcenia, DXF;
   od 1.48.1 układ osi bryły – kierunki w widokach, kolory, kolejność; od 1.48.2 Z do góry i szkic na płaszczyźnie XY;
   od 1.49 operacje logiczne (objętości, siatki szczelne, scalanie ścian), ściana i widok na nią, wycięcie i dodanie,
-  dane, odbicie, skala, przesuwanie za ścianami, rozkład, rzuty i DXF brył z operacjami;
+  dane, odbicie, skala, przesuwanie za ścianami, rozkład, rzuty i DXF brył z operacjami; od 1.50 układ współrzędnych
+  arkusza (początek z ramką i bez, liczby w mm / cm / m / calach, w obie strony, napisy, zapis początku, DXF od początku)
+  i osie brył jak w programach CAD;
   od 1.48 bryły ze szkicu – profil z kształtów i oś, siatki zamknięte, krawędzie niewidoczne brył wklęsłych, ściany
   z płaszczyznami, wymiary, odbicie i skala z profilem, rzuty 2D, DXF),
   układ wzoru na płótnie, spójność plików wydania.
