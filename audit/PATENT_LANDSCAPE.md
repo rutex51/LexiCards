@@ -139,6 +139,12 @@ Bazy Urzędu Patentowego RP nie przeszukano. Nie odczytano treści zastrzeżeń 
   (`js/ui/drawing.js:6624-6648` i gałąź `extent`).
 - **Wstępne ryzyko:** NISKIE–ŚREDNIE. Uchwyty manipulatorów są powszechne w CAD; wymaga sprawdzenia statusu i zastrzeżeń.
 - **Źródło:** https://patents.justia.com/patent/20120078589
+- **Uzupełnienie 1.52 (26.10.2026):** z wyników wyszukiwania (bez dostępu do baz – do potwierdzenia): zgłoszenie
+  US 13/233,550 z 15.09.2011, pierwszeństwo US 61/386,750 z 27.09.2010, odpowiednik EP 2434456 A2 (publikacja 28.03.2012),
+  https://data.epo.org/gpi/EP2434456A2. Streszczenie: wskaźnik trybu wyciągania, punkt narzędzia i dwa przeciwległe uchwyty
+  na wspólnej osi. **Strzałki przesuwania w scenie 1.52** (`js/ui/drawing-scene.js`, `moveArrows`, `dragPose`): po jednej
+  strzałce na oś, tylko przesuwanie całej bryły, bez trybu wyciągania – zaprojektowane tak, by nie odtwarzać istoty
+  streszczenia; ryzyko dla nich wstępnie NISKIE. Uchwyt długości z 1.48 – ocena bez zmian.
 
 ### P-07. US D670,713 S – „Display screen or portion thereof with animated graphical user interface” (Apple) – przewracanie strony
 

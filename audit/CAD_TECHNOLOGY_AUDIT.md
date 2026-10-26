@@ -162,3 +162,27 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
   – zasada z 1.50 zachowana.
 - Nowe pozycje rejestru algorytmów: G56–G57. Ryzyko wstępnie NISKIE.
 
+## Uzupełnienie: wersja 1.52 (26.10.2026) – położenie brył w scenie
+
+- **Kod:** `js/core/solid-pose.js` (położenie bryły w układzie arkusza: wysokość podstawy, obrót wokół Z, bryła postawiona
+  na innej – położenie względne, wspólny obrazek stosu w 2D, porządkowanie stosów po zmianie), zmiany w `js/core/scene.js`
+  (obrót każdej bryły, kolejność – bryła na bryle po niej) i `js/ui/drawing-scene.js` (panel X/Y/Z/obrót, strzałki osi,
+  „Postaw na ścianie”, „Na arkusz”, „Cofnij”). Bez bibliotek; rachunek – macierze obrotu 3 × 3 i przecięcie promienia
+  z płaszczyzną.
+- **Funkcje:** pola położenia, przesuwanie wzdłuż osi przeciąganiem strzałki, obrót wokół osi pionowej, stawianie obiektu
+  na powierzchni innego, hierarchia rodzic–dziecko (obiekt idzie za obiektem pod spodem) – ogólne techniki edytorów 3D
+  i programów CAD od lat 80.–90. (manipulatory przesunięcia, grafy sceny).
+- **Patenty – P-06 (sprawdzone przed wdrożeniem strzałek, zgodnie z uwagą z 1.50):** wyszukiwanie z opisem zgłoszenia
+  (bazy patentowe nadal niedostępne – WebFetch do patents.google.com, patents.justia.com i data.epo.org: brak połączenia).
+  Dane z wyników wyszukiwania (do potwierdzenia w rejestrze): US 2012/0078589 A1, zgłoszenie US 13/233,550 z 15.09.2011,
+  pierwszeństwo z US 61/386,750 (27.09.2010), odpowiednik EP 2434456 A2 (publikacja 28.03.2012), Siemens. Streszczenie:
+  narzędzie ze **wskaźnikiem trybu wyciągania**, **punktem narzędzia** oznaczającym obiekt 3D i **dwoma przeciwległymi
+  uchwytami na wspólnej osi**; działanie na którymkolwiek uchwycie zmienia obiekt. Status (udzielony / wygasły / wycofany)
+  i zastrzeżenia – nieustalone.
+  **Rozwiązanie w 1.52 omija istotę streszczenia:** po jednej strzałce na oś (bez par przeciwległych uchwytów), strzałki
+  tylko **przesuwają** całą bryłę (bez wyciągania, zmiany wymiarów i bez wskaźnika ani przełącznika trybu); wyciągnięcie
+  i wymiary – jak dotąd osobno (pola wymiarów; jeden uchwyt długości z 1.48 – P-06 bez zmian). Liczby położenia w panelu
+  dają ten sam skutek bez strzałek (alternatywa, gdyby rzecznik wskazał ryzyko). Ryzyko dla strzałek 1.52 wstępnie NISKIE.
+- **P-01 i P-03:** bez zmian – osie w początku układu i strzałki nie zmieniają widoku; widoki – przyciski z nazwami.
+- Nowe pozycje rejestru algorytmów: G58–G60. Ryzyko wstępnie NISKIE.
+
