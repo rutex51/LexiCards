@@ -30,7 +30,7 @@ z konkretnych danych treningowych.
 | --- | --- |
 | Zweryfikowane dopasowania do kodu zewnętrznego (porównane z tekstem źródłowym) | 0 |
 | Jawne, opisane adaptacje kodu zewnętrznego | 1 – FSRS (py-fsrs 6.3.2, MIT), nota licencyjna w pliku |
-| Podejrzewane podobieństwa (hipotezy) | 3 (S-1 – S-3) |
+| Podejrzewane podobieństwa (hipotezy) | 4 (S-1 – S-4; S-4 – od 1.49) |
 
 ### Jawna adaptacja – FSRS (nie jest naruszeniem)
 
@@ -107,6 +107,27 @@ z konkretnych danych treningowych.
 8. **Skutki:** **NISKIE**. Stała liczbowa i schemat wymuszony problemem numerycznym nie stanowią utworu.
 9. **Zalecenie:** brak działań koniecznych. Opcjonalnie dobrać próg własny (np. 1 − 1e-6) i opisać powód w komentarzu.
 10. **Pewność:** niska (hipoteza).
+
+### S-4. Kolejność kroków różnicy i sumy w operacjach logicznych (od 1.49)
+
+1. **Plik:** `js/core/csg.js` – funkcje `subtract` i `union`.
+2. **Źródło porównawcze:** biblioteka csg.js (Evan Wallace, 2011, licencja MIT) – ta sama metoda BSP i, według pamięci
+   audytora, ta sama kolejność kroków (np. różnica: odwrócenie A, przycięcie A drzewem B, B drzewem A, odwrócenie B,
+   przycięcie, odwrócenie, dołożenie wielokątów B do drzewa A, odwrócenie A). **Niezweryfikowane** u źródła (sieć
+   środowiska bez dostępu).
+3. **Adres:** https://github.com/evanw/csg.js – nie pobrano.
+4. **Licencja odpowiednika:** MIT.
+5. **Charakter:** kolejność kroków wynika z metody (operacje na zbiorach przez dopełnienie i przycinanie drzewami).
+   Kod napisany od podstaw: drzewo bez rekurencji, wybór płaszczyzny podziału z kandydatów, pomijanie wielokątów z dala
+   od bryły tnącej, wspólne obiekty płaszczyzn, przebudowa siatki (scalanie ścian, T-złącza, szczeliny) – tego w csg.js
+   nie ma.
+6. **Dowód:** zbieżność kilku wierszy kolejności wywołań, wymuszonej algorytmem.
+7. **Standard czy wyróżnik:** standard (opisana metoda).
+8. **Skutki:** **NISKIE**. Nawet przy uznaniu inspiracji licencja MIT na to pozwala, pod warunkiem noty przy kopii kodu
+   (tu kod nie jest kopią).
+9. **Zalecenie:** wzmianka o metodzie i podobnych otwartych implementacjach w dokumentacji wydania 1.49 (zrobione);
+   przy pakowaniu aplikacji – opcjonalnie nota uznaniowa w THIRD_PARTY_NOTICES.
+10. **Pewność:** średnia (porównanie z pamięci, bez tekstu źródłowego).
 
 ## Elementy sprawdzone bez zastrzeżeń
 

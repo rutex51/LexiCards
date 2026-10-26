@@ -111,3 +111,21 @@ Pozostałe sposoby zmiany widoku nie dotyczą tego mechanizmu:
 - pola kątów w oknie bryły.
 
 Usunięcie samej kostki nie odbiera więc żadnej funkcji.
+
+## Uzupełnienie: wersja 1.49 (26.10.2026) – szkic na ścianie bryły, operacje logiczne
+
+Stan opisany wyżej dotyczy wersji 1.48.0. Od 1.49 aplikacja ma **operacje logiczne na bryłach** (różnica i suma)
+– zdanie „brak CSG i operacji logicznych” w 4.3 przestaje być aktualne. Ocena:
+
+- **Kod:** `js/core/csg.js` – własna implementacja metody drzew BSP (podział przestrzeni płaszczyznami ścian); metoda
+  opisana w literaturze od lat 80. (m.in. Thibault i Naylor, SIGGRAPH 1987; Naylor, Amanatides i Thibault, SIGGRAPH 1990).
+  Bez bibliotek i jąder CAD – punkt 4.4 bez zmian. Podobieństwo kolejności kroków do otwartej biblioteki csg.js – S-4
+  w SOURCE_CODE_SIMILARITY.md.
+- **Funkcje:** szkic na płaskiej ścianie bryły, widok prosto na ścianę, wyciągnięcie wycięcia i dodania prostopadle do
+  ściany, historia operacji – ogólne techniki modelowania cechami znane od końca lat 80. Nazwy w interfejsie opisowe
+  („Szkic na ścianie”, „Wytnij z bryły”, „Dodaj do bryły”), bez nazw handlowych.
+- **Patenty:** metoda BSP z 1987 r. – ewentualne patenty z tamtego okresu wygasły (ponad 20 lat). Celowanego wyszukiwania
+  patentów na „szkic na ścianie” nie robiono (bazy patentowe nadal zablokowane – AUDIT_LIMITATIONS.md); ryzyko oceniono
+  jako NISKIE na podstawie wieku techniki, nie wyników wyszukiwania.
+- Nowe pozycje rejestru algorytmów: G49–G53 (GEOMETRY_ALGORITHM_REGISTER.csv).
+
