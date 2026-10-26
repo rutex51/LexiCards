@@ -1,4 +1,4 @@
-# LexiCards 1.52
+# LexiCards 1.53
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -60,8 +60,9 @@ Rysunek – szkic na ścianie bryły: „Szkic na ścianie” (dotknięta ścian
 Rysunek – układ współrzędnych arkusza: początek w lewym dolnym rogu arkusza albo kartki (do przesunięcia), osie X w prawo i Y w górę, współrzędne pod kursorem w mm przedmiotu w skali rysunku, „Punkt X, Y” – punkty nowego kształtu wpisane liczbami, „Położenie” zaznaczonego, DXF od początku układu; osie brył jak w programach CAD – X w prawo, Y w głąb, przód od strony −Y (wersja 1.50): [docs/RELEASE-1.50.md](docs/RELEASE-1.50.md).
 Rysunek – scena 3D do oglądania: „Scena 3D” przy bryłach – kartka jako płaszczyzna z całą treścią 2D, bryły stojące na niej w miejscu obrazków, obrót przeciąganiem, przybliżanie kółkiem i dwoma palcami, widoki (izometria, przód, boki, tył, góra), bryły zasłaniają się nawzajem, zaznaczanie; w ruchu same krawędzie (wersja 1.51): [docs/RELEASE-1.51.md](docs/RELEASE-1.51.md).
 Rysunek – położenie brył w scenie: panel X, Y, Z (wysokość podstawy) i obrót wokół Z w mm przedmiotu, strzałki osi do przesuwania (w trakcie same krawędzie), „Postaw na ścianie” – bryła na wierzchu innej (idzie za nią), „Na arkusz”, „Cofnij”; stos brył w 2D – jeden obrazek (wersja 1.52): [docs/RELEASE-1.52.md](docs/RELEASE-1.52.md).
+Rysunek – pomiary 3D w scenie: „Pomiar” – dwie cechy brył (narożnik, środek ściany, krawędź, ściana, oś walca), odległość z ΔX, ΔY, ΔZ, odległość od prostej i płaszczyzny, kąty i odległość równoległych; wynik zostaje w scenie jako wymiar i idzie za bryłami (wersja 1.53): [docs/RELEASE-1.53.md](docs/RELEASE-1.53.md).
 
-## Co potrafi wersja 1.52
+## Co potrafi wersja 1.53
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -178,7 +179,8 @@ Rysunek – położenie brył w scenie: panel X, Y, Z (wysokość podstawy) i ob
   w głąb (kieszeń albo otwór na wylot) albo **dodają** go na zewnątrz. Od 1.50 **układ współrzędnych arkusza**: początek
   w lewym dolnym rogu, współrzędne pod kursorem, punkty kształtów i położenie zaznaczonego wpisywane liczbami (mm w skali
   rysunku). Od 1.51 **scena 3D**: kartka i bryły w przestrzeni – obrót, widoki, przybliżanie; od 1.52 **położenie brył**
-  w scenie – X, Y, Z i obrót, strzałki osi, bryła postawiona na innej (w 2D – wspólny obrazek).
+  w scenie – X, Y, Z i obrót, strzałki osi, bryła postawiona na innej (w 2D – wspólny obrazek); od 1.53 **pomiary 3D** –
+  odległości (z ΔX, ΔY, ΔZ) i kąty między cechami brył, zostają w scenie jako wymiary.
   Od 1.24.1 kartka w edytorze wygląda
   jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
@@ -1025,6 +1027,13 @@ w kolorach osi (X, Y od środka podstawy, Z od wierzchu) – przeciągnięcie pr
 Ctrl/⌘ + Z). W 2D stos brył to jeden obrazek w widoku bryły na dole – przesunięcie albo widok bryły z góry zmienia cały
 obrazek. Bryła stojąca sama: X, Y to też środek jej obrazka na kartce. Okno **Położenie** (układ współrzędnych włączony)
 ma przy bryle także Z i obrót. Format rysunku – 23.
+**Pomiary 3D** (od 1.53): **Pomiar** w pasku sceny, potem dotknięcie dwóch cech brył – **narożnik**, **środek ściany**
+(także środek wierzchu walca), **wierzchołek** stożka, **środek kuli**, **krawędź** prosta, **ściana** płaska, **oś**
+(dotknięcie pobocznicy walca, stożka, bryły obrotowej) – także na różnych bryłach. Wynik w panelu: odległość punktów z **ΔX,
+ΔY, ΔZ**, odległość punktu od prostej i płaszczyzny, **kąt** prostych i płaszczyzn (0–90°), a równoległych – odległość (∥).
+Pomiar zostaje w scenie jako wymiar (pomarańczowa liczba w ramce) i liczy się od nowa, gdy bryły się przesuwają albo
+zmieniają; dotknięcie liczby – szczegóły i **Usuń pomiar**; Esc – od nowa, potem koniec pomiaru. Pomiar jest zapisany
+w bryle pierwszej cechy (format rysunku 24), tylko w scenie (nie na kartce 2D).
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę

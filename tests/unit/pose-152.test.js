@@ -38,7 +38,7 @@ test('położenie 1.52: zapis – wysokość, obrót (−180°, 180°], odnośni
     { ...newSolid('cylinder', { x: 0, y: 0 }), id: 'top00001', on: { id: 'base0001', x: 20, y: 0, z: 0, yaw: 0 } }
   ];
   const clean = cleanDrawing(JSON.parse(JSON.stringify(drawing)));
-  assert.equal(clean.version, 23);
+  assert.ok(clean.version >= 23, 'format 23 albo nowszy');
   const [base, top] = clean.strokes;
   assert.equal(base.z, 30);
   assert.equal(base.yaw, 90);

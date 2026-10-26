@@ -33,6 +33,7 @@
 import { cleanShape, polyFromPoints, shapeOutline, shapePoint } from './shapes.js';
 import { meshPolygons, planeOf, subtract, toMesh, union } from './csg.js';
 import { cleanPose } from './solid-pose.js';
+import { cleanMeasures } from './measure3d.js';
 
 /** Kratka strony (drawing.js PAPER_STEP) – wymiary nowej bryły. */
 const STEP = 44;
@@ -278,7 +279,9 @@ export function cleanSolid(raw, pageWidth, pageHeight) {
     ...(sketch.length > 0 && raw.sketchMirror === true ? { sketchMirror: true } : {}),
     ...(features.length > 0 ? { features } : {}),
     // Od 1.52: położenie w scenie – wysokość podstawy, obrót wokół Z, bryła pod spodem (core/solid-pose.js).
-    ...cleanPose(raw)
+    ...cleanPose(raw),
+    // Od 1.53: pomiary 3D zapisane w bryle pierwszej cechy (core/measure3d.js).
+    ...cleanMeasures(raw.measures)
   };
 }
 

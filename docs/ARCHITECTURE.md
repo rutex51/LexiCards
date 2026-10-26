@@ -2095,6 +2095,32 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
 - **2D**: `paintDrawing` rysuje w kolejności `stackPaintOrder`; przesuwanie, obrót, widok i „Położenie” – zwykłą drogą
   edytora (stos poprawia `resolveStacks` w `commitStep`); okno „Położenie bryły” – X, Y, Z i obrót (`withPose`).
 
+## Pomiary 3D (od 1.53)
+
+- **Moduł** `js/core/measure3d.js` (bez przeglądarki). `solidFeatures(bryła)` (pamiętane dla obiektu bryły): z siatki
+  `solidShape` – ściany siatki łączone przez krawędzie gładkie (union-find); obszar o jednej normalnej – ściana płaska
+  (środek – środek ciężkości pól pętli z polem ze znakiem, otwory odjęte), o różnych – powierzchnia zakrzywiona (oś:
+  walec i stożek – y bryły, bryła obrotowa – x bryły; inne – bez cechy). Krawędzie proste – ostre krawędzie między dwiema
+  ścianami płaskimi, odcinki tej samej pary – jedna prosta (zasięg z rzutów końców). Narożniki – wierzchołki co najmniej
+  dwóch krawędzi prostych w różnych kierunkach; wierzchołek stożka ostrego; środek kuli. Każda cecha zna ściany płaskie przy
+  niej (`featureVisible` – widoczna, gdy któraś zwrócona do patrzącego). `facets` – ściana siatki → ściana płaska / oś.
+- `worldFeature(item, cecha)` – do świata sceny (`sceneSolids`: początek układu i obrót wokół Z). `measureFeatures` – pary
+  w kolejności punkt, prosta, płaszczyzna: odległość punktów (ΔX, ΔY, ΔZ – osie świata = osie arkusza), rzut punktu na
+  prostą i płaszczyznę, kąt `acos(|d₁·d₂|)` (prosta–płaszczyzna: `90° − acos(|d·n|)`), równoległe poniżej 0,01° – odległość,
+  proste skośne – najbliższe punkty. `measureTitle`, `angleText`.
+- **Zapis** (format 24): `measures [{ a, b }]` w bryle pierwszej cechy, odnośnik `{ id, role, p, d? }` (`featureRef`)
+  w układzie bryły; `resolveRef` – cecha tej samej roli (i kierunku: krawędź, ściana, środek ściany) najbliższa punktowi.
+  `drawingMeasures` – pomiary z obiema cechami; `resolveMeasures` (w `cleanDrawing`) usuwa resztę; `cleanMeasures`
+  w `cleanSolid` (najwyżej 20 na bryłę); `relinkCopies` i `withoutLinks` – jak przy stosach. Zmiany pomiarów to zmiany brył,
+  więc idą przez historię edytora (`applySceneChange` → `commitStep`).
+- **Scena** (`js/ui/drawing-scene.js`): tryb `measuring` (przycisk „Pomiar”), `featureAt` – punkty (12 px, palec 20 px),
+  krawędzie (8 / 14 px), ściana siatki najbliższa patrzącemu pod punktem (`facetAt` – głębokość z płaszczyzny ściany
+  w układzie widoku); `measureTap` – pierwsza i druga cecha, identyfikatory brył (`newElementId`), `withMeasure` →
+  `onChange`. `paintMeasures` – cechy, odcinek pomiaru, liczba w ramce (bez nachodzenia), podświetlenie pierwszej cechy
+  i cechy pod myszą; dotknięcie liczby – `chosen` (panel szczegółów, „Usuń pomiar”). Esc – `cancel`: pierwsza cecha,
+  wskazany pomiar, tryb pomiaru. Atrybuty płótna dla testów: `data-measuring`, `data-snaps`, `data-measures`, `data-first`,
+  `data-chosen`.
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).

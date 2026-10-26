@@ -297,11 +297,12 @@ export function newElementId(strokes) {
 
 /** Kopia elementu bez identyfikatora i przyklejeń (powielenie, wklejenie, szyk – kopia jest wolna). */
 export function withoutLinks(stroke) {
-  if (!stroke || (!('id' in stroke) && !('attach' in stroke) && !('on' in stroke))) return stroke;
+  if (!stroke || (!('id' in stroke) && !('attach' in stroke) && !('on' in stroke) && !('measures' in stroke))) return stroke;
   const copy = { ...stroke };
   delete copy.id;
   delete copy.attach;
   delete copy.on;
+  delete copy.measures;
   return copy;
 }
 
@@ -319,13 +320,20 @@ export function relinkCopies(copies, existing) {
     taken.push({ id });
   }
   return copies.map((copy) => {
-    if (!copy.id && !copy.attach && !copy.on) return copy;
+    if (!copy.id && !copy.attach && !copy.on && !copy.measures) return copy;
     const next = { ...copy };
     if (copy.id) next.id = ids.get(copy.id);
     // Bryła postawiona na innej (od 1.52) – na kopii tamtej bryły; bez niej stoi sama (w miejscu obrazka).
     if (copy.on) {
       if (ids.has(copy.on.id)) next.on = { ...copy.on, id: ids.get(copy.on.id) };
       else delete next.on;
+    }
+    // Pomiary 3D (od 1.53) – między kopiami; do brył spoza kopii – znikają.
+    if (copy.measures) {
+      const kept = copy.measures.filter((measure) => ids.has(measure.a.id) && ids.has(measure.b.id))
+        .map((measure) => ({ a: { ...measure.a, id: ids.get(measure.a.id) }, b: { ...measure.b, id: ids.get(measure.b.id) } }));
+      if (kept.length > 0) next.measures = kept;
+      else delete next.measures;
     }
     if (copy.attach) {
       const attach = Object.fromEntries(Object.entries(copy.attach).filter(([, ref]) => ids.has(ref.id)).map(([end, ref]) => [end, { ...ref, id: ids.get(ref.id) }]));

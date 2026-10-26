@@ -8,13 +8,22 @@
 // w układzie arkusza, „Postaw na ścianie” (dotknięcie wierzchu innej bryły), „Na arkusz (Z = 0)”; strzałki osi przy
 // zaznaczonej bryle – przeciągnięcie przesuwa ją wzdłuż tej osi (po jednej strzałce na oś, tylko przesuwanie). Zmiany idą
 // do rysunku przez onChange i onPlace (krok cofania w edytorze), „Cofnij” w pasku.
+//
+// Od 1.53 pomiary 3D (core/measure3d.js): „Pomiar” w pasku – dotknięcie dwóch cech brył (narożnik, środek ściany,
+// krawędź, ściana, oś walca), także na różnych bryłach; wynik (odległość z ΔX, ΔY, ΔZ albo kąt) zostaje w scenie jako
+// wymiar – zapisany w bryle pierwszej cechy, idzie za bryłami. Dotknięcie liczby pomiaru – szczegóły i „Usuń pomiar”.
 
 import { faceAt, quatMatrix, solidGeometry, solidLabel, solidShape } from '../core/solids.js';
 import {
   SCENE_VIEWS, SCENE_ZOOM, blendCamera, fitScale, orbit, paintOrder, projectWorld, sceneBounds, sceneCamera, sceneQuat, sceneSolids, sceneView, sceneViewId,
   sheetMatrix, toView, worldOfPage
 } from '../core/scene.js';
-import { facesUp, liftOff, normalYaw, placement, resolveStacks, solidsById, stackChanges, standsOn, withPose } from '../core/solid-pose.js';
+import { facesUp, liftOff, normalYaw, placement, resolveStacks, solidsById, stackChanges, standsOn, withPose, worldRotation } from '../core/solid-pose.js';
+import {
+  MEASURE_LIMITS, ROLE_LABELS, angleText, drawingMeasures, featureRef, featureVisible, measureFeatures, measureTitle, solidFeatures, withMeasure, withoutMeasure,
+  worldFeature
+} from '../core/measure3d.js';
+import { newElementId } from '../core/attach.js';
 import { coordFactor, coordPlaces, coordUnit, formatCoord, fromSheet, toSheet } from '../core/sheet-coords.js';
 import { parseDecimal } from '../core/drawing.js';
 import { paintSolid } from './drawing-solids.js';
@@ -35,6 +44,8 @@ const WHEEL_SETTLE = 250;
 const TAP = 5;
 /** Jak długo widać komunikat w pastylce podpowiedzi (ms). */
 const NOTE_MS = 3200;
+/** Pomiary 3D (od 1.53): kolor wymiarów, zasięg dotknięcia punktu i krawędzi (px; mysz / palec). */
+const MEASURE = Object.freeze({ color: '#c2410c', fill: 'rgba(194, 65, 12, 0.13)', point: [12, 20], line: [8, 14] });
 const shortLabel = (solid) => solidLabel(solid).replace('Bryła: ', '');
 
 /**
@@ -68,8 +79,13 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
       render();
     }
   }, icon('zoomFit', { size: 16 }), 'Cała');
+  const measureButton = h('button', {
+    type: 'button', class: 'drawing__scene-chip', 'aria-pressed': 'false', title: 'Pomiar 3D – odległość albo kąt między cechami brył',
+    dataset: { testid: 'drawing-scene-measure-toggle' },
+    onClick: () => (state.measuring ? stopMeasuring() : startMeasuring())
+  }, icon('caliper', { size: 16 }), 'Pomiar');
   const bar = h('div', { class: 'drawing__scene-bar', role: 'toolbar', 'aria-label': 'Scena 3D – widoki' },
-    exitButton, undoButton, h('span', { class: 'drawing__scene-sep' }), ...viewButtons, h('span', { class: 'drawing__scene-sep' }), fitButton);
+    exitButton, undoButton, measureButton, h('span', { class: 'drawing__scene-sep' }), ...viewButtons, h('span', { class: 'drawing__scene-sep' }), fitButton);
   const picked = h('span', { class: 'drawing__pill drawing__pill--info', hidden: true, dataset: { testid: 'drawing-scene-selected' } });
   const hint = h('span', { class: 'drawing__pill drawing__pill--info drawing__scene-hint', dataset: { testid: 'drawing-scene-hint' } });
 
@@ -105,14 +121,40 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
     h('div', { class: 'drawing__scene-card-head' }, poseName, poseOn, poseUnit),
     h('div', { class: 'drawing__scene-fields' }, field('x', 'X', 'x'), field('y', 'Y', 'y'), field('z', 'Z', 'z'), field('yaw', '↻', 'turn', '°')),
     h('div', { class: 'drawing__scene-actions' }, placeButton, floorButton));
+  // Panel pomiaru (od 1.53): co dotknąć, wynik, „Od nowa”, „Usuń pomiar”, „Zakończ pomiar”.
+  const measureTitleText = h('strong', { class: 'drawing__scene-card-name', dataset: { testid: 'drawing-scene-measure-title' } }, 'Pomiar 3D');
+  const measureUnit = h('span', { class: 'drawing__scene-card-unit' });
+  const measureText = h('p', { class: 'drawing__scene-measure-text', dataset: { testid: 'drawing-scene-measure-text' } });
+  const measureValue = h('p', { class: 'drawing__scene-measure-value', hidden: true, dataset: { testid: 'drawing-scene-measure-value' } });
+  const measureDetail = h('p', { class: 'drawing__scene-measure-text', hidden: true, dataset: { testid: 'drawing-scene-measure-detail' } });
+  const restartButton = h('button', {
+    type: 'button', class: 'drawing__scene-action', hidden: true, dataset: { testid: 'drawing-scene-measure-restart' },
+    onClick: () => {
+      state.first = null;
+      fillCard();
+      render();
+    }
+  }, 'Od nowa');
+  const deleteButton = h('button', {
+    type: 'button', class: 'drawing__scene-action drawing__scene-action--danger', hidden: true, dataset: { testid: 'drawing-scene-measure-delete' },
+    onClick: () => deleteMeasure()
+  }, 'Usuń pomiar');
+  const doneButton = h('button', {
+    type: 'button', class: 'drawing__scene-action', dataset: { testid: 'drawing-scene-measure-done' },
+    onClick: () => stopMeasuring()
+  }, 'Zakończ pomiar');
+  const measureCard = h('div', { class: 'drawing__scene-card', hidden: true, dataset: { testid: 'drawing-scene-measure' } },
+    h('div', { class: 'drawing__scene-card-head' }, measureTitleText, measureUnit), measureText, measureValue, measureDetail,
+    h('div', { class: 'drawing__scene-actions' }, restartButton, deleteButton, doneButton));
   const element = h('div', { class: 'drawing__scene', hidden: true, dataset: { testid: 'drawing-scene' } },
-    canvas, bar, h('div', { class: 'drawing__scene-dock' }, h('div', { class: 'drawing__scene-info' }, picked, hint), card));
+    canvas, bar, h('div', { class: 'drawing__scene-dock' }, h('div', { class: 'drawing__scene-info' }, picked, hint), card, measureCard));
 
   const state = {
     open: false, drawing: null, origin: null, paintPage: null, dimFormat: 'unit', selected: null, canUndo: false,
     camera: sceneCamera(45, 35.264), base: 1, zoom: 1, pan: { x: 0, y: 0 }, moving: false,
     solids: [], bounds: null, painted: [], blend: 0, wheelTimer: 0, sheetImage: null,
-    arrows: [], placing: false, note: '', noteTimer: 0, preview: null
+    arrows: [], placing: false, note: '', noteTimer: 0, preview: null,
+    measuring: false, first: null, hover: null, chosen: null, labels: []
   };
   const pointers = new Map();
   let gesture = null;
@@ -120,7 +162,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
   function open({ drawing, origin, selected = null, paintPage, dimFormat, canUndo = false }) {
     Object.assign(state, {
       open: true, drawing, origin, paintPage, dimFormat, selected, canUndo, camera: sceneCamera(45, 35.264), zoom: 1, pan: { x: 0, y: 0 }, moving: false,
-      sheetImage: null, placing: false, note: '', preview: null
+      sheetImage: null, placing: false, note: '', preview: null, measuring: false, first: null, hover: null, chosen: null
     });
     state.solids = sceneSolids(drawing);
     state.bounds = sceneBounds(drawing, state.solids);
@@ -137,6 +179,10 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
     state.preview = null;
     state.placing = false;
     state.solids = sceneSolids(state.drawing);
+    // Pomiar wskazany przed zmianą – jeśli dalej jest w tej samej bryle; pierwsza cecha – jeśli bryła się nie zmieniła.
+    if (state.chosen && !chosenMeasure()) state.chosen = null;
+    if (state.first && !state.drawing.strokes.includes(state.first.item.solid)) state.first = null;
+    state.hover = null;
     fillCard();
     render();
   }
@@ -145,6 +191,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
     state.sheetImage = null;
     state.placing = false;
     state.preview = null;
+    Object.assign(state, { measuring: false, first: null, hover: null, chosen: null });
     window.cancelAnimationFrame(state.blend);
     clearTimeout(state.wheelTimer);
     clearTimeout(state.noteTimer);
@@ -165,6 +212,23 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
       stopPlacing();
       return true;
     }
+    // Pomiar (od 1.53): najpierw pierwsza cecha, potem wskazany pomiar, potem tryb pomiaru.
+    if (state.first) {
+      state.first = null;
+      fillCard();
+      render();
+      return true;
+    }
+    if (state.chosen) {
+      state.chosen = null;
+      fillCard();
+      render();
+      return true;
+    }
+    if (state.measuring) {
+      stopMeasuring();
+      return true;
+    }
     return false;
   }
 
@@ -180,7 +244,8 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
     return { solid: strokes[index], place: placement(solidsById(strokes), strokes[index]) };
   }
   function fillCard() {
-    const current = state.selected ? selectedPlace() : null;
+    fillMeasureCard();
+    const current = state.selected && !state.measuring && !state.chosen ? selectedPlace() : null;
     card.hidden = !current;
     if (!current) return;
     const { solid, place } = current;
@@ -277,6 +342,305 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
       return;
     }
     note('Dotknij wierzchu innej bryły – tam stanie zaznaczona.');
+  }
+
+  // ---------------------------------------------------------------- pomiary 3D (od 1.53)
+
+  const itemOf = (solid) => state.solids.find((item) => item.solid === solid) ?? null;
+  const toWorld = (item, point) => {
+    const m = worldRotation(item.yaw ?? 0);
+    return [0, 1, 2].map((axis) => item.origin[axis] + m[axis * 3] * point[0] + m[axis * 3 + 1] * point[1] + m[axis * 3 + 2] * point[2]);
+  };
+  const lengthText = (value) => `${formatCoord(value * factor(), places())} ${coordUnit(state.drawing)}`;
+  /** Liczba pomiaru: odległość (równoległe – ze znakiem ∥) albo kąt. */
+  const valueText = (result) => (result.kind === 'angle' ? angleText(result.value) : `${result.parallel ? '∥ ' : ''}${lengthText(result.value)}`);
+  const describe = (role, solid) => `${ROLE_LABELS[role]} (${shortLabel(solid)})`;
+  /** Pomiary w scenie: cechy w świecie i wynik; bryły z podglądu w trakcie przesuwania strzałką. */
+  function sceneMeasures() {
+    const strokes = state.preview ?? state.drawing.strokes;
+    return drawingMeasures(strokes).map((entry) => {
+      const [first, second] = [itemOf(entry.a.solid), itemOf(entry.b.solid)];
+      if (!first || !second) return null;
+      const a = worldFeature(first, entry.a.feature);
+      const b = worldFeature(second, entry.b.feature);
+      return { ...entry, index: strokes.indexOf(entry.owner), worldA: a, worldB: b, result: measureFeatures(a, b) };
+    }).filter(Boolean);
+  }
+  function chosenMeasure() {
+    if (!state.chosen) return null;
+    return sceneMeasures().find((entry) => entry.index === state.chosen.index && entry.at === state.chosen.at) ?? null;
+  }
+  function startMeasuring() {
+    stopPlacing(false);
+    Object.assign(state, { measuring: true, first: null, hover: null, chosen: null });
+    fillCard();
+    render();
+  }
+  function stopMeasuring() {
+    Object.assign(state, { measuring: false, first: null, hover: null, chosen: null });
+    fillCard();
+    render();
+  }
+  function fillMeasureCard() {
+    const chosen = chosenMeasure();
+    measureCard.hidden = !state.measuring && !chosen;
+    measureButton.setAttribute('aria-pressed', String(state.measuring));
+    canvas.classList.toggle('drawing__scene-canvas--measure', state.measuring);
+    if (measureCard.hidden) return;
+    restartButton.hidden = !state.first;
+    deleteButton.hidden = !chosen || Boolean(state.first);
+    doneButton.hidden = !state.measuring;
+    measureUnit.textContent = `${coordUnit(state.drawing)}, skala rysunku`;
+    measureValue.hidden = true;
+    measureDetail.hidden = true;
+    measureTitleText.textContent = 'Pomiar 3D';
+    if (state.first) {
+      measureText.textContent = `1: ${describe(state.first.feature.role, state.first.item.solid)}. Dotknij drugiej cechy – może być na innej bryle.`;
+      return;
+    }
+    if (!chosen) {
+      measureText.textContent = 'Dotknij cechy bryły: narożnika, środka ściany, krawędzi, płaskiej ściany albo powierzchni walca (oś).';
+      return;
+    }
+    const { result } = chosen;
+    measureTitleText.textContent = measureTitle(result);
+    measureText.textContent = `${describe(chosen.a.ref.role, chosen.a.solid)} → ${describe(chosen.b.ref.role, chosen.b.solid)}`;
+    measureValue.hidden = false;
+    measureValue.textContent = valueText(result);
+    const k = factor();
+    const digits = places();
+    const detail = result.delta
+      ? `ΔX ${formatCoord(result.delta[0] * k, digits)} · ΔY ${formatCoord(result.delta[1] * k, digits)} · ΔZ ${formatCoord(result.delta[2] * k, digits)} ${coordUnit(state.drawing)}`
+      : result.distance !== undefined ? `Najmniejsza odległość prostych: ${lengthText(result.distance)}` : '';
+    measureDetail.hidden = !detail;
+    measureDetail.textContent = detail;
+  }
+  function deleteMeasure() {
+    const chosen = chosenMeasure();
+    if (!chosen) return;
+    state.chosen = null;
+    change(new Map([[chosen.owner, withoutMeasure(chosen.owner, chosen.at)]]));
+  }
+  /** Ściana siatki pod punktem ekranu najbliższa patrzącemu: { item, index } albo { item, sphere: true } albo null. */
+  function facetAt(point, view) {
+    const at = { x: (point.x - view.ox) / view.scale, y: (view.oy - point.y) / view.scale };
+    let best = null;
+    for (const item of state.solids) {
+      const [ox, oy, oz] = toView(state.camera, item.origin);
+      const [x, y] = [at.x - ox, at.y - oy];
+      if (item.solid.kind === 'sphere') {
+        const r = item.solid.dims.d / 2;
+        const inside = r * r - x * x - y * y;
+        if (inside >= 0 && (!best || oz + Math.sqrt(inside) > best.depth)) best = { item, sphere: true, depth: oz + Math.sqrt(inside) };
+        continue;
+      }
+      const mesh = solidShape(item.solid);
+      const m = quatMatrix(sceneQuat(state.camera, item.yaw));
+      const rotate = (v) => [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
+      const V = mesh.V.map(rotate);
+      mesh.F.forEach((loops, index) => {
+        const N = rotate(mesh.N[index]);
+        if (N[2] <= 1e-5) return;
+        let inside = false;
+        for (const loop of loops) {
+          for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+            const [a, b] = [V[loop[i]], V[loop[j]]];
+            if ((a[1] > y) !== (b[1] > y) && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
+          }
+        }
+        if (!inside) return;
+        const p0 = V[loops[0][0]];
+        const depth = oz + (N[0] * p0[0] + N[1] * p0[1] + N[2] * p0[2] - N[0] * x - N[1] * y) / N[2];
+        if (!best || depth > best.depth) best = { item, index, depth };
+      });
+    }
+    return best;
+  }
+  /**
+   * Cecha pod punktem ekranu: najpierw punkty (narożnik, środek ściany, wierzchołek, środek kuli) widoczne od strony
+   * patrzącego, potem krawędzie proste, na końcu ściana najbliższa patrzącemu (płaska – ściana, zakrzywiona – oś bryły).
+   * Wynik: { item, feature, world } albo { item, none: true } (powierzchnia bez cechy) albo null.
+   */
+  function featureAt(point, touch) {
+    const view = layout();
+    const { camera } = state;
+    const near = MEASURE.point[touch ? 1 : 0];
+    const reach = MEASURE.line[touch ? 1 : 0];
+    let best = null;
+    for (const item of state.solids) {
+      for (const feature of solidFeatures(item.solid).points) {
+        if (!featureVisible(item.solid, feature, item.yaw, camera.zv)) continue;
+        const world = worldFeature(item, feature);
+        const screen = projectWorld(camera, view, world.p);
+        const distance = Math.hypot(screen.x - point.x, screen.y - point.y);
+        if (distance > near) continue;
+        if (!best || distance < best.distance - 2 || (distance <= best.distance + 2 && screen.depth > best.depth)) best = { item, feature, world, distance, depth: screen.depth };
+      }
+    }
+    if (best) return best;
+    for (const item of state.solids) {
+      for (const feature of solidFeatures(item.solid).edges) {
+        if (!featureVisible(item.solid, feature, item.yaw, camera.zv)) continue;
+        for (const [start, end] of feature.segments) {
+          const [a, b] = [projectWorld(camera, view, toWorld(item, start)), projectWorld(camera, view, toWorld(item, end))];
+          const [dx, dy] = [b.x - a.x, b.y - a.y];
+          const t = dx * dx + dy * dy > 1e-9 ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy))) : 0;
+          const distance = Math.hypot(point.x - a.x - dx * t, point.y - a.y - dy * t);
+          const depth = a.depth + (b.depth - a.depth) * t;
+          if (distance <= reach && (!best || distance < best.distance - 1 || (distance <= best.distance + 1 && depth > best.depth))) {
+            best = { item, feature, world: worldFeature(item, feature), distance, depth };
+          }
+        }
+      }
+    }
+    if (best) return best;
+    const facet = facetAt(point, view);
+    if (!facet) return null;
+    const features = solidFeatures(facet.item.solid);
+    if (facet.sphere) return { item: facet.item, feature: features.points[0], world: worldFeature(facet.item, features.points[0]) };
+    const target = features.facets[facet.index];
+    if (!target) return { item: facet.item, none: true };
+    const feature = target.kind === 'face' ? features.faces[target.index] : features.axis;
+    return { item: facet.item, feature, world: worldFeature(facet.item, feature) };
+  }
+  /** Dotknięcie w trybie pomiaru: pierwsza cecha, potem druga – pomiar zapisany w bryle pierwszej. */
+  function measureTap(point, touch) {
+    const found = featureAt(point, touch);
+    if (!found) {
+      note('Tu nie ma bryły – dotknij narożnika, krawędzi albo ściany.');
+      return;
+    }
+    if (found.none) {
+      note('Na tej powierzchni nie ma cechy do pomiaru – dotknij krawędzi, narożnika albo płaskiej ściany.');
+      return;
+    }
+    if (!state.first) {
+      state.first = found;
+      state.chosen = null;
+      fillCard();
+      render();
+      return;
+    }
+    const { first } = state;
+    if (first.item.solid === found.item.solid && first.feature === found.feature) {
+      note('To ta sama cecha – dotknij innej.');
+      return;
+    }
+    const strokes = state.drawing.strokes;
+    const taken = [...strokes];
+    const withId = (solid) => {
+      if (solid.id) return solid;
+      const next = { ...solid, id: newElementId(taken) };
+      taken.push(next);
+      return next;
+    };
+    const owner = withId(first.item.solid);
+    const other = found.item.solid === first.item.solid ? owner : withId(found.item.solid);
+    const next = withMeasure(owner, featureRef(owner, first.feature), featureRef(other, found.feature));
+    if (!next) {
+      note(`W jednej bryle najwyżej ${MEASURE_LIMITS.count} pomiarów – usuń któryś.`);
+      return;
+    }
+    const map = new Map([[first.item.solid, next]]);
+    if (other !== owner && other !== found.item.solid) map.set(found.item.solid, other);
+    state.first = null;
+    state.hover = null;
+    state.chosen = { index: strokes.indexOf(first.item.solid), at: next.measures.length - 1 };
+    change(map);
+  }
+  /** Liczba pomiaru pod punktem ekranu (do wskazania pomiaru) albo null. */
+  function labelAt(point, touch) {
+    const pad = touch ? 8 : 3;
+    return [...state.labels].reverse().find((label) => point.x >= label.x - pad && point.x <= label.x + label.w + pad && point.y >= label.y - pad && point.y <= label.y + label.h + pad) ?? null;
+  }
+  /** Cecha w scenie: punkt – kropka, prosta – gruby odcinek, płaszczyzna – zabarwiony obrys (px płótna, bez dpr). */
+  function paintFeature(ctx, view, world, color, fill) {
+    const screen = (p) => projectWorld(state.camera, view, p);
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    if (world.kind === 'point') {
+      const p = screen(world.p);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+      return;
+    }
+    if (world.kind === 'line') {
+      const [a, b] = [screen(world.a), screen(world.b)];
+      ctx.lineWidth = 4;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      return;
+    }
+    ctx.beginPath();
+    for (const loop of world.loops) {
+      loop.forEach((point, index) => {
+        const p = screen(point);
+        if (index === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.closePath();
+    }
+    ctx.fillStyle = fill;
+    ctx.fill('evenodd');
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  /** Pomiary (wymiary w scenie), pierwsza cecha i cecha pod myszą; liczby pomiarów – miejsca do dotknięcia. */
+  function paintMeasures(ctx, view) {
+    const list = sceneMeasures();
+    state.labels = [];
+    ctx.save();
+    ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const entry of list) {
+      const active = state.chosen?.index === entry.index && state.chosen?.at === entry.at;
+      for (const world of [entry.worldA, entry.worldB]) paintFeature(ctx, view, world, MEASURE.color, active ? 'rgba(194, 65, 12, 0.22)' : MEASURE.fill);
+      const { result } = entry;
+      const [from, to] = [projectWorld(state.camera, view, result.from), projectWorld(state.camera, view, result.to)];
+      ctx.strokeStyle = MEASURE.color;
+      ctx.lineWidth = active ? 2.6 : 1.8;
+      ctx.setLineDash(result.kind === 'angle' ? [6, 4] : []);
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Liczba w białej ramce przy środku odcinka.
+      const text = valueText(result);
+      ctx.font = textFont(12.5, '700');
+      const w = ctx.measureText(text).width + 14;
+      const h = 22;
+      const x = (from.x + to.x) / 2 - w / 2;
+      let y = (from.y + to.y) / 2 - h - 6;
+      // Liczby nie zasłaniają się nawzajem – następna wyżej.
+      const overlaps = () => state.labels.some((label) => x < label.x + label.w + 2 && x + w + 2 > label.x && y < label.y + label.h + 2 && y + h + 2 > label.y);
+      for (let attempt = 0; attempt < 6 && overlaps(); attempt += 1) y -= h + 4;
+      ctx.fillStyle = active ? MEASURE.color : '#ffffff';
+      ctx.strokeStyle = MEASURE.color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 11);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = active ? '#ffffff' : MEASURE.color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x + w / 2, y + h / 2 + 0.5);
+      state.labels.push({ index: entry.index, at: entry.at, x, y, w, h });
+    }
+    if (state.hover && state.hover.feature !== state.first?.feature) paintFeature(ctx, view, worldFeature(itemOf(state.hover.item.solid) ?? state.hover.item, state.hover.feature), 'rgba(0, 88, 190, 0.55)', 'rgba(0, 88, 190, 0.1)');
+    if (state.first) paintFeature(ctx, view, worldFeature(itemOf(state.first.item.solid) ?? state.first.item, state.first.feature), ACCENT, 'rgba(0, 88, 190, 0.18)');
+    ctx.restore();
+    return list;
   }
 
   // ---------------------------------------------------------------- rysowanie
@@ -453,7 +817,8 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
    */
   function moveArrows(view) {
     const item = state.solids.find(isChosen);
-    if (!item || state.placing) return [];
+    // Strzałki – razem z panelem położenia (bez wyboru ściany i bez pomiaru).
+    if (!item || state.placing || state.measuring || state.chosen) return [];
     const { camera } = state;
     const foot = [item.origin[0], item.origin[1], item.base];
     const list = [];
@@ -523,6 +888,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
       state.painted.push({ item, shown });
     }
     const axes = paintAxes(ctx, view);
+    const measures = paintMeasures(ctx, view);
     state.arrows = moveArrows(view);
     paintArrows(ctx, view, state.arrows);
     // Dla testów: widok, ruch, środki brył (px płótna, w kolejności rysunku), zaznaczona bryła, osie w początku, strzałki.
@@ -537,6 +903,17 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
     canvas.dataset.axes = ['X', 'Y', 'Z'].map((label) => `${Math.round(axes.tips[label].x)},${Math.round(axes.tips[label].y)}`).concat(`${Math.round(axes.start.x)},${Math.round(axes.start.y)}`).join(';');
     canvas.dataset.arrows = state.arrows.map((item) => `${item.label}:${Math.round(item.a.x)},${Math.round(item.a.y)},${Math.round(item.b.x)},${Math.round(item.b.y)}`).join(';');
     canvas.dataset.placing = String(state.placing);
+    // Pomiary (od 1.53): tryb, środki liczb pomiarów (numer bryły.numer pomiaru:x,y), punkty do wskazania w trybie pomiaru.
+    canvas.dataset.measuring = String(state.measuring);
+    canvas.dataset.measures = state.labels.map((label) => `${label.index}.${label.at}:${Math.round(label.x + label.w / 2)},${Math.round(label.y + label.h / 2)}`).join(';');
+    canvas.dataset.snaps = state.measuring ? state.solids.flatMap((item) => solidFeatures(item.solid).points
+      .filter((feature) => featureVisible(item.solid, feature, item.yaw, state.camera.zv))
+      .map((feature) => {
+        const point = projectWorld(state.camera, view, worldFeature(item, feature).p);
+        return `${item.index}:${feature.role}:${Math.round(point.x)},${Math.round(point.y)}`;
+      })).join(';') : '';
+    canvas.dataset.first = state.first ? state.first.feature.role : '';
+    canvas.dataset.chosen = state.chosen && measures.some((entry) => entry.index === state.chosen.index && entry.at === state.chosen.at) ? `${state.chosen.index}.${state.chosen.at}` : '';
     for (const button of viewButtons) button.setAttribute('aria-pressed', String(button.dataset.view === id));
     undoButton.disabled = !state.canUndo;
     picked.hidden = !state.selected;
@@ -545,10 +922,11 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
     hint.textContent = state.note
       || (moving ? `Przesuwanie wzdłuż ${AXES[gesture.axis][0]} – same krawędzie · ${poseText(moving.place)}`
         : state.placing ? 'Dotknij wierzchu innej bryły – tam stanie zaznaczona · Esc – bez zmian'
+          : state.measuring && !state.moving ? 'Pomiar: dotknij dwóch cech brył · przeciągnij – obrót sceny · Esc – od nowa'
           : state.moving ? 'W ruchu – same krawędzie (bez krycia); po puszczeniu – pełny obraz'
             : state.selected ? 'Przeciągnij – obrót sceny · strzałka – przesuwanie wzdłuż osi · liczby – w panelu'
               : 'Przeciągnij – obrót sceny · kółko albo dwa palce – przybliżenie · dotknij bryły – zaznaczenie');
-    hint.classList.toggle('drawing__scene-hint--moving', state.moving || state.placing);
+    hint.classList.toggle('drawing__scene-hint--moving', state.moving || state.placing || state.measuring);
     hint.classList.toggle('drawing__scene-hint--note', Boolean(state.note));
   }
   /** „X 120,0 · Y 80,0 · Z 30,0 mm” – położenie w układzie arkusza. */
@@ -683,9 +1061,19 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
       return;
     }
     // Środkowy przycisk albo Shift – przesuwanie sceny; inaczej obrót.
-    gesture = { kind: event.button === 1 || event.shiftKey ? 'pan' : 'orbit', start: point, last: point, moved: false, pan: { ...state.pan } };
+    gesture = { kind: event.button === 1 || event.shiftKey ? 'pan' : 'orbit', start: point, last: point, moved: false, pan: { ...state.pan }, touch: event.pointerType !== 'mouse' };
   });
   canvas.addEventListener('pointermove', (event) => {
+    // Pomiar (od 1.53): cecha pod myszą podświetlona.
+    if (state.measuring && event.pointerType === 'mouse' && pointers.size === 0) {
+      const found = featureAt(local(event), false);
+      const hover = found && !found.none ? found : null;
+      if ((hover?.feature ?? null) !== (state.hover?.feature ?? null)) {
+        state.hover = hover;
+        render();
+      }
+      return;
+    }
     if (!pointers.has(event.pointerId) || !gesture) return;
     event.preventDefault();
     pointers.set(event.pointerId, local(event));
@@ -760,6 +1148,19 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo }) {
         placeAt(done.start);
         return;
       }
+      // Liczba pomiaru (od 1.53) – szczegóły pomiaru; w trybie pomiaru – cechy brył.
+      const label = state.first ? null : labelAt(done.start, done.touch);
+      if (label) {
+        state.chosen = { index: label.index, at: label.at };
+        fillCard();
+        render();
+        return;
+      }
+      if (state.measuring) {
+        measureTap(done.start, done.touch);
+        return;
+      }
+      state.chosen = null;
       state.selected = pick(done.start);
       onSelect(state.selected);
       fillCard();

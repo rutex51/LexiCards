@@ -138,7 +138,7 @@ test('wymiary techniczne 1.22.1: styl „50” (mm) i „5 cm”, znak ⌀ R □
   // Rysunek: styl liczb i wersja formatu; ustawienia – wzór odsunięcia.
   const drawing = cleanDrawing({ width: 1600, height: 1100, strokes: [cleaned], dimStyle: 'technical' });
   assert.equal(drawing.version, DRAWING_VERSION);
-  assert.equal(DRAWING_VERSION, 23, 'od 1.52 – położenie brył w scenie; 1.50 – początek układu współrzędnych arkusza; 1.49 – operacje na ścianach brył; 1.48.2 – szkic na XY (Z do góry); 1.48 – bryły ze szkicu; 1.47 – bryły; 1.45 – schematy procesów; 1.44 – diagramy jakości i układ kartki; 1.42 – wymiar długości łuku, kierunek wymiaru, osie okręgu; 1.41 – ramka rysunkowa; 1.40 – wielokąt foremny, półprosta, narożniki, kreskowanie (1.38 – uzupełnienia tolerancji i symboli)');
+  assert.equal(DRAWING_VERSION, 24, 'od 1.53 – pomiary 3D; 1.52 – położenie brył w scenie; 1.50 – początek układu współrzędnych arkusza; 1.49 – operacje na ścianach brył; 1.48.2 – szkic na XY (Z do góry); 1.48 – bryły ze szkicu; 1.47 – bryły; 1.45 – schematy procesów; 1.44 – diagramy jakości i układ kartki; 1.42 – wymiar długości łuku, kierunek wymiaru, osie okręgu; 1.41 – ramka rysunkowa; 1.40 – wielokąt foremny, półprosta, narożniki, kreskowanie (1.38 – uzupełnienia tolerancji i symboli)');
   assert.equal(drawing.dimStyle, 'technical');
   assert.equal('dimStyle' in cleanDrawing({ width: 1600, height: 1100, strokes: [], dimStyle: 'mm' }), false);
   assert.equal(defaultToolSettings().dimOffset, DIM_OFFSET);

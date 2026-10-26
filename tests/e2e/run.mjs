@@ -12929,7 +12929,7 @@ test('rysunek 1.52: położenie brył w scenie – strzałki osi (w trakcie same
   await dialog.locator('[data-testid=note-right]').click();
   await dialog.locator('[data-testid=note-text]').waitFor();
   const drawingData = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
-  assert.equal(drawingData.version, 23);
+  assert.ok(drawingData.version >= 23, 'format 23 albo nowszy');
   const [savedBox, savedCylinder] = drawingData.strokes.filter((stroke) => stroke.tool === 'solid');
   assert.equal(savedBox.yaw, 30, 'obrót prostopadłościanu zapisany');
   assert.ok(savedBox.id, 'prostopadłościan z identyfikatorem');
@@ -13018,6 +13018,254 @@ test('rysunek 1.52 na telefonie: panel położenia w szerokości ekranu (cztery 
   assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
   assert.ok((await sceneArrows(editor)).Z, 'strzałka Z na telefonie');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-152-telefon.png') });
+}, { device: PHONE });
+
+/** Pomiary 3D (od 1.53): punkty do wskazania – { bryła: [{ role, at: [x, y] }] } (px strony) i liczby pomiarów. */
+async function sceneSnaps(editor) {
+  const canvas = sceneCanvas(editor);
+  const box = await canvas.boundingBox();
+  const result = {};
+  for (const entry of ((await canvas.getAttribute('data-snaps')) ?? '').split(';').filter(Boolean)) {
+    const [index, role, xy] = entry.split(':');
+    const [x, y] = xy.split(',').map(Number);
+    (result[index] ??= []).push({ role, at: [box.x + x, box.y + y] });
+  }
+  return result;
+}
+async function sceneMeasureLabels(editor) {
+  const canvas = sceneCanvas(editor);
+  const box = await canvas.boundingBox();
+  return ((await canvas.getAttribute('data-measures')) ?? '').split(';').filter(Boolean).map((entry) => {
+    const [key, xy] = entry.split(':');
+    const [x, y] = xy.split(',').map(Number);
+    return { key, at: [box.x + x, box.y + y] };
+  });
+}
+/** Najwyżej na ekranie spośród środków ścian bryły – środek wierzchu. */
+const topCentre = (snaps) => snaps.filter((item) => item.role === 'center').reduce((best, item) => (item.at[1] < best.at[1] ? item : best)).at;
+/** Narożnik wierzchu najdalej w prawo (w izometrii: koniec długości a od strony patrzącego) – z dwóch na prawej krawędzi wyższy. */
+function rightTopCorner(snaps) {
+  const corners = snaps.filter((item) => item.role === 'corner');
+  const right = Math.max(...corners.map((item) => item.at[0]));
+  return corners.filter((item) => item.at[0] >= right - 2).reduce((best, item) => (item.at[1] < best.at[1] ? item : best)).at;
+}
+const numberIn = (text, prefix) => Number(new RegExp(`${prefix} (−?[\\d,]+)`).exec(text)[1].replace('−', '-').replace(',', '.'));
+
+test('rysunek 1.53: pomiary 3D w scenie – środek wierzchu do środka wierzchu (ΔX, ΔY, ΔZ), ściana i oś walca (kąt), liczba zostaje i idzie za bryłą, usuwanie, cofanie, Esc, zapis (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const dialog = noteDialog(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Pomiary</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const opener = editor.locator('[data-testid=drawing-scene-open]');
+  const scene = editor.locator('[data-testid=drawing-scene]');
+  const canvas = sceneCanvas(editor);
+  const toggle = editor.locator('[data-testid=drawing-scene-measure-toggle]');
+  const card = editor.locator('[data-testid=drawing-scene-measure]');
+  const text = editor.locator('[data-testid=drawing-scene-measure-text]');
+  const value = editor.locator('[data-testid=drawing-scene-measure-value]');
+  const detail = editor.locator('[data-testid=drawing-scene-measure-detail]');
+  const title = editor.locator('[data-testid=drawing-scene-measure-title]');
+  const shot = async (name) => {
+    await nextFrames(page);
+    await page.screenshot({ path: path.join(OUTPUT, `rysunek-153-${name}.png`) });
+  };
+  const settled = () => waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz po ruchu');
+  const selected = (index) => waitUntil(async () => (await canvas.getAttribute('data-selected')) === String(index), `Zaznaczona bryła ${index}`);
+
+  // Prostopadłościan (6 × 4 × 3 cm) przesunięty w lewo, walec (⌀4, wysokość 5 cm) na środku.
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').click();
+  await expectText(count, 'Bryła: Prostopadłościan');
+  const boxAt = await solidCenter2d(editor);
+  await page.mouse.move(...boxAt);
+  await page.mouse.down();
+  await page.mouse.move(boxAt[0] - 260, boxAt[1] + 40, { steps: 8 });
+  await page.mouse.up();
+  await editor.locator('[data-testid=drawing-insert-solid-cylinder]').click();
+  await expectText(count, 'Bryła: Walec');
+  await page.keyboard.press('Escape');
+  await opener.click();
+  await scene.waitFor();
+  await settled();
+  let centers = await sceneCenters(editor);
+  const [boxIndex, cylinderIndex] = Object.keys(centers).map(Number).sort((a, b) => a - b);
+  // Położenie obu brył z panelu (X, Y w cm) – do sprawdzenia ΔX i ΔY.
+  const where = async (index) => {
+    await page.mouse.click(...(await sceneCenters(editor))[index]);
+    await selected(index);
+    return [await poseValue(editor, 'x'), await poseValue(editor, 'y')];
+  };
+  const [boxX, boxY] = await where(boxIndex);
+  const [cylX, cylY] = await where(cylinderIndex);
+
+  // „Pomiar”: panel z podpowiedzią, bez panelu położenia i strzałek; punkty do wskazania.
+  await toggle.click();
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+  await card.waitFor();
+  await expectText(text, 'Dotknij cechy bryły');
+  assert.equal(await editor.locator('[data-testid=drawing-scene-pose]').isVisible(), false, 'bez panelu położenia');
+  assert.equal(await canvas.getAttribute('data-arrows'), '', 'bez strzałek');
+  let snaps = await sceneSnaps(editor);
+  assert.ok(snaps[boxIndex].filter((item) => item.role === 'corner').length === 7, `prostopadłościan – 7 widocznych narożników: ${JSON.stringify(snaps[boxIndex])}`);
+  assert.ok(snaps[cylinderIndex].some((item) => item.role === 'center'), 'walec – środek wierzchu');
+
+  // Środek wierzchu prostopadłościanu → środek wierzchu walca: odległość, ΔX, ΔY, ΔZ = 5 − 3 cm.
+  const boxTop = topCentre(snaps[boxIndex]);
+  const cylinderTop = topCentre(snaps[cylinderIndex]);
+  await page.mouse.click(...boxTop);
+  await waitUntil(async () => (await canvas.getAttribute('data-first')) === 'center', 'Pierwsza cecha');
+  await expectText(text, '1: Środek ściany (Prostopadłościan)');
+  await shot('pierwsza-cecha');
+  await page.mouse.click(...cylinderTop);
+  await expectText(title, 'Odległość');
+  const delta = await detail.textContent();
+  const dx = numberIn(delta, 'ΔX');
+  const dy = numberIn(delta, 'ΔY');
+  const dz = numberIn(delta, 'ΔZ');
+  assert.ok(Math.abs(dx - (cylX - boxX)) <= 0.011 && Math.abs(dy - (cylY - boxY)) <= 0.011, `ΔX, ΔY z położenia brył: ${delta} (${cylX - boxX}; ${cylY - boxY})`);
+  assert.equal(dz, 2, 'ΔZ – wierzch walca 2 cm wyżej');
+  const distance = Number((await value.textContent()).replace(' cm', '').replace(',', '.'));
+  assert.ok(Math.abs(distance - Math.hypot(dx, dy, dz)) <= 0.011, `odległość: ${distance}`);
+  await expectText(text, 'Środek ściany (Prostopadłościan) → Środek ściany (Walec)');
+  let labels = await sceneMeasureLabels(editor);
+  assert.equal(labels.length, 1, 'liczba pomiaru w scenie');
+  await shot('odleglosc');
+
+  // Wierzch prostopadłościanu (ściana, z dala od środka i krawędzi) i pobocznica walca (oś): kąt 90°.
+  const boxCenter = (await sceneCenters(editor))[boxIndex];
+  const face = [boxTop[0], boxTop[1] - (boxCenter[1] - boxTop[1]) * 0.55];
+  await page.mouse.click(...face);
+  await waitUntil(async () => (await canvas.getAttribute('data-first')) === 'face', 'Ściana jako pierwsza cecha');
+  await page.mouse.click(...(await sceneCenters(editor))[cylinderIndex]);
+  await expectText(title, 'Kąt prostej z płaszczyzną');
+  await expectText(value, '90,00°');
+  await expectText(text, 'Oś (Walec)');
+  labels = await sceneMeasureLabels(editor);
+  assert.equal(labels.length, 2, 'dwa pomiary w scenie');
+  await shot('kat');
+
+  // Esc: najpierw pierwsza cecha (wskazany pomiar przestaje być wskazany już przy jej wyborze), potem koniec pomiaru.
+  await page.mouse.click(...snaps[boxIndex].find((item) => item.role === 'corner').at);
+  await waitUntil(async () => (await canvas.getAttribute('data-first')) === 'corner', 'Narożnik jako pierwsza cecha');
+  assert.equal(await canvas.getAttribute('data-chosen'), '', 'nowa pierwsza cecha – bez wskazanego pomiaru');
+  await page.keyboard.press('Escape');
+  await waitUntil(async () => (await canvas.getAttribute('data-first')) === '', 'Esc – bez pierwszej cechy');
+  await page.keyboard.press('Escape');
+  await waitUntil(async () => (await toggle.getAttribute('aria-pressed')) === 'false', 'Esc – koniec pomiaru');
+  assert.equal(await scene.isVisible(), true, 'scena dalej otwarta');
+  assert.equal((await sceneMeasureLabels(editor)).length, 2, 'pomiary zostają w scenie');
+
+  // Pomiar idzie za bryłą: prostopadłościan strzałką X dalej – ΔX mniejsze o tyle, o ile przesunął się prostopadłościan.
+  await page.mouse.click(...(await sceneCenters(editor))[boxIndex]);
+  await selected(boxIndex);
+  const arrows = await sceneArrows(editor);
+  const push = alongArrow(arrows.X);
+  await page.mouse.move(...push);
+  await page.mouse.down();
+  await page.mouse.move(push[0] + (arrows.X[1][0] - arrows.X[0][0]), push[1] + (arrows.X[1][1] - arrows.X[0][1]), { steps: 8 });
+  await page.mouse.up();
+  await settled();
+  const movedX = await poseValue(editor, 'x');
+  assert.ok(movedX > boxX + 0.5, `prostopadłościan przesunięty: ${boxX} → ${movedX}`);
+  labels = await sceneMeasureLabels(editor);
+  const first = labels.find((label) => label.key === `${boxIndex}.0`);
+  await page.mouse.click(...first.at);
+  await waitUntil(async () => (await canvas.getAttribute('data-chosen')) === `${boxIndex}.0`, 'Wskazany pierwszy pomiar');
+  await expectText(title, 'Odległość');
+  const after = numberIn(await detail.textContent(), 'ΔX');
+  assert.ok(Math.abs(after - (cylX - movedX)) <= 0.011, `ΔX po przesunięciu: ${after} (${cylX - movedX})`);
+  assert.equal(await editor.locator('[data-testid=drawing-scene-pose]').isVisible(), false, 'wskazany pomiar – bez panelu położenia');
+  await shot('pomiar-za-bryla');
+
+  // Usuń pomiar – zostaje jeden; „Cofnij” – znów dwa.
+  await editor.locator('[data-testid=drawing-scene-measure-delete]').click();
+  await waitUntil(async () => (await sceneMeasureLabels(editor)).length === 1, 'Jeden pomiar po usunięciu');
+  await editor.locator('[data-testid=drawing-scene-undo]').click();
+  await waitUntil(async () => (await sceneMeasureLabels(editor)).length === 2, 'Dwa pomiary po cofnięciu');
+
+  // Zapis: format 24, pomiary w prostopadłościanie (do walca – odnośnik z identyfikatorem walca).
+  await editor.locator('[data-testid=drawing-scene-exit]').click();
+  await waitUntil(() => scene.isHidden(), 'Powrót do 2D');
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const drawingData = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  assert.equal(drawingData.version, 24);
+  const [savedBox, savedCylinder] = drawingData.strokes.filter((stroke) => stroke.tool === 'solid');
+  assert.equal(savedBox.measures.length, 2, 'dwa pomiary w prostopadłościanie');
+  assert.deepEqual(savedBox.measures.map((measure) => [measure.a.role, measure.b.role]), [['center', 'center'], ['face', 'axis']]);
+  assert.equal(savedBox.measures[0].b.id, savedCylinder.id, 'odnośnik do walca');
+  assert.equal(savedCylinder.measures, undefined);
+}, { device: DESKTOP });
+
+test('rysunek 1.53 na iPadzie: pomiar palcem – środek wierzchu i narożnik prostopadłościanu, wynik w panelu i liczba w scenie', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>iPad</p>');
+  const canvas = sceneCanvas(editor);
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').tap();
+  await expectText(editor.locator('[data-testid=drawing-selection-count]'), 'Bryła: Prostopadłościan');
+  await editor.locator('[data-testid=drawing-scene-open]').tap();
+  await editor.locator('[data-testid=drawing-scene]').waitFor();
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz');
+  await editor.locator('[data-testid=drawing-scene-measure-toggle]').tap();
+  const snaps = (await sceneSnaps(editor))['0'];
+  const top = topCentre(snaps);
+  // Narożnik wierzchu najdalej w prawo (koniec długości a): od środka wierzchu 3 cm w X i 2 cm w Y.
+  const corner = rightTopCorner(snaps);
+  await page.touchscreen.tap(top[0] + 4, top[1] - 3);
+  await waitUntil(async () => (await canvas.getAttribute('data-first')) === 'center', 'Pierwsza cecha palcem');
+  await page.touchscreen.tap(corner[0] - 5, corner[1] + 4);
+  await expectText(editor.locator('[data-testid=drawing-scene-measure-title]'), 'Odległość');
+  const detail = await editor.locator('[data-testid=drawing-scene-measure-detail]').textContent();
+  assert.equal(Math.abs(numberIn(detail, 'ΔX')), 3, `ΔX: ${detail}`);
+  assert.equal(Math.abs(numberIn(detail, 'ΔY')), 2, `ΔY: ${detail}`);
+  assert.equal(Math.abs(numberIn(detail, 'ΔZ')), 0, `ΔZ: ${detail}`);
+  await expectText(editor.locator('[data-testid=drawing-scene-measure-value]'), '3,61 cm');
+  assert.equal((await sceneMeasureLabels(editor)).length, 1);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-153-ipad.png') });
+}, { device: IPAD });
+
+test('rysunek 1.53 na telefonie: „Pomiar” w pasku, panel pomiaru w szerokości ekranu, wynik i „Zakończ pomiar”, bez przewijania w bok', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  const canvas = sceneCanvas(editor);
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').scrollIntoViewIfNeeded();
+  await editor.locator('[data-testid=drawing-insert-solid-box]').click();
+  await editor.locator('[data-testid=drawing-scene-open]').tap();
+  await editor.locator('[data-testid=drawing-scene]').waitFor();
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz');
+  const toggle = editor.locator('[data-testid=drawing-scene-measure-toggle]');
+  const bounds = await toggle.boundingBox();
+  assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 391, `„Pomiar” na ekranie bez przewijania paska: ${JSON.stringify(bounds)}`);
+  await toggle.tap();
+  const card = editor.locator('[data-testid=drawing-scene-measure]');
+  await card.waitFor();
+  const snaps = (await sceneSnaps(editor))['0'];
+  const top = topCentre(snaps);
+  const corner = rightTopCorner(snaps);
+  await page.touchscreen.tap(...top);
+  await waitUntil(async () => (await canvas.getAttribute('data-first')) === 'center', 'Pierwsza cecha na telefonie');
+  await page.touchscreen.tap(...corner);
+  await expectText(editor.locator('[data-testid=drawing-scene-measure-title]'), 'Odległość');
+  for (const id of ['drawing-scene-measure', 'drawing-scene-measure-value', 'drawing-scene-measure-detail', 'drawing-scene-measure-done']) {
+    const box = await editor.locator(`[data-testid=${id}]`).boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 391 && box.y + box.height <= 845, `${id} na ekranie: ${JSON.stringify(box)}`);
+  }
+  assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-153-telefon.png') });
+  await editor.locator('[data-testid=drawing-scene-measure-done]').tap();
+  await waitUntil(async () => (await toggle.getAttribute('aria-pressed')) === 'false', 'Zakończ pomiar');
+  await waitUntil(() => card.isHidden(), 'Panel pomiaru schowany');
+  assert.equal((await sceneMeasureLabels(editor)).length, 1, 'pomiar zostaje w scenie');
 }, { device: PHONE });
 
 // ---------------------------------------------------------------- nauka z fiszkami

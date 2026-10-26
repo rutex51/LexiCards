@@ -8112,6 +8112,14 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
 .drawing__scene-action[aria-pressed="true"] { background: var(--accent-fill); color: var(--on-accent); }
 .drawing__scene-action:disabled { color: var(--text-3); }
 .drawing__scene-chip:disabled { color: var(--text-3); }
+/* Od 1.53: pomiar 3D – kursor celownika, panel z wynikiem (liczba w kolorze wymiarów pomiaru). */
+.drawing__scene-canvas--measure { cursor: crosshair; }
+.drawing__scene-canvas--measure:active { cursor: crosshair; }
+.drawing__scene-action[hidden] { display: none; }
+.drawing__scene-action--danger { color: var(--danger); }
+.drawing__scene-measure-text { margin: 0; color: var(--text-2); font-size: var(--size-sub); }
+.drawing__scene-measure-text[hidden], .drawing__scene-measure-value[hidden] { display: none; }
+.drawing__scene-measure-value { margin: 0; color: #c2410c; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 @media (max-width: 599px) {
   .drawing__scene-chip { padding: 0 9px; }
   .drawing__scene-dock { left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); }
