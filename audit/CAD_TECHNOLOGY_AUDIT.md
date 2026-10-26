@@ -149,3 +149,16 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
 - Nowe pozycje rejestru algorytmów: G54–G55 (GEOMETRY_ALGORITHM_REGISTER.csv). Ryzyko wstępnie NISKIE (technika
   powszechna; wyszukiwania patentowego nie robiono – bazy zablokowane, AUDIT_LIMITATIONS.md).
 
+## Uzupełnienie: wersja 1.51 (26.10.2026) – scena 3D do oglądania
+
+- **Kod:** `js/core/scene.js` (kamera z azymutu i wysokości, rzut równoległy, przekształcenie płaszczyzny kartki, bryły
+  stojące na kartce, kolejność rysowania od najdalszej), `js/ui/drawing-scene.js` (płótno sceny, obrót przeciąganiem,
+  przybliżanie, gotowe widoki, w ruchu – same krawędzie). Bez bibliotek 3D (WebGL nie jest używany); rysowanie brył – ten
+  sam rozkład 2D co w 1.47–1.49.
+- **Funkcje:** obrót kamery wokół sceny („orbit”), rzut równoległy, widoki standardowe, rysowanie krawędziowe w trakcie
+  ruchu, zasłanianie kolejnością (algorytm malarza) – ogólne techniki grafiki komputerowej od lat 70.–80.
+- **Patenty – P-01 i P-03:** widoki wybiera się przyciskami z nazwami w pasku, obrót – przeciąganiem samej sceny; osie
+  w początku układu są tylko wskaźnikiem (bez dotykania, bez zmiany widoku). Brak „kostki widoków” i wskaźnika sterującego
+  – zasada z 1.50 zachowana.
+- Nowe pozycje rejestru algorytmów: G56–G57. Ryzyko wstępnie NISKIE.
+
