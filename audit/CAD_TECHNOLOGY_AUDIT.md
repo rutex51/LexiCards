@@ -219,3 +219,22 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
   w stylu aplikacji – bez rozpoznawalnych elementów cudzych programów. Nazwy płaszczyzn XY/XZ/YZ – zwykłe oznaczenia osi.
 - Nowe pozycje rejestru algorytmów: G63–G64. Ryzyko wstępnie NISKIE.
 
+## Uzupełnienie: wersja 1.55 (27.10.2026) – suma i różnica brył
+
+- **Kod:** nowy `js/core/solid-combine.js` (położenie drugiej bryły w układzie pierwszej – przesunięcie i obrót wokół osi
+  pionowej z położenia w scenie; sprawdzenie styku zasięgów; bryły stojące na bryłach w tym samym miejscu; „Wyjmij bryłę”),
+  operacja z bryłą w historii modelu w `js/core/solids.js` (zapis, siatka, odbicie, skalowanie, osie `bodyAxes`), przypisanie
+  osi powierzchniom zakrzywionym w `js/core/measure3d.js` (`regionAxis`), tryb „Połącz z…” / „Wytnij…” w
+  `js/ui/drawing-scene.js`, wiersze historii i „Wyjmij bryłę” w `js/ui/drawing.js`. Operacje logiczne – **ten sam moduł**
+  `js/core/csg.js` z 1.49 (G49–G51, S-4 bez zmian), bez nowego kodu BSP i bez bibliotek. Siatka kuli (48 × 24) przeniesiona
+  z `scene-projections.js` do `solids.js`.
+- **Funkcje:** suma i różnica dwóch brył ustawionych w scenie (konstrukcyjna geometria brył, CSG) – ogólna funkcja
+  programów CAD od lat 70.–80.; zapis operacji w historii modelu bryły (drzewo operacji) – modelowanie z historią, znane
+  od końca lat 80.; dopasowanie osi powierzchni obrotowej przez normalne ścian (normalne przecinają oś) – geometria
+  analityczna.
+- **Patenty:** szczególnego ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – bazy zablokowane,
+  AUDIT_LIMITATIONS.md); patenty na modelowanie z historią i operacje logiczne z przełomu lat 80. i 90. wygasły. Interfejs:
+  opisowe przyciski w panelu bryły i dotknięcie drugiej bryły, zaznaczona rysowana krawędziami – bez rozpoznawalnych
+  elementów cudzych programów (bez nazw handlowych operacji, bez ich ikon).
+- Nowe pozycje rejestru algorytmów: G65–G66. Ryzyko wstępnie NISKIE.
+
