@@ -211,6 +211,19 @@ function scaleShape(shape, map, factor) {
  * tekst na kształcie, znacznik punktu i kreskowanie – bez zmian), elementy stojące prosto (pola tekstowe, wzory, tabele,
  * karteczki, symbole) – zmienia się tylko ich miejsce; szyk – źródło i odstępy.
  */
+/**
+ * Szkic bryły (od 1.48) – razem z nią (współrzędne względem jej środka); od 1.49 – też szkice operacji na ścianach, od 1.55 –
+ * szkice drugiej bryły sumy i różnicy.
+ */
+function scaleSketches(solid, factor) {
+  const next = { ...solid };
+  if (solid.sketch) next.sketch = solid.sketch.map((shape) => scaleStroke(shape, 0, 0, factor));
+  if (solid.features) {
+    next.features = solid.features.map((feature) => (feature.body ? { ...feature, body: scaleSketches(feature.body, factor) }
+      : feature.sketch ? { ...feature, sketch: feature.sketch.map((shape) => scaleStroke(shape, 0, 0, factor)) } : feature));
+  }
+  return next;
+}
 export function scaleStroke(stroke, cx, cy, factor) {
   if (factor === 1) return stroke;
   const map = (point) => ({ x: cx + (point.x - cx) * factor, y: cy + (point.y - cy) * factor });
@@ -229,13 +242,7 @@ export function scaleStroke(stroke, cx, cy, factor) {
   }
   if (isUpright(stroke)) return placeUpright(stroke, map);
   if (isShape(stroke)) return scaleShape(stroke, map, factor);
-  if (isSolid(stroke)) {
-    // Szkic bryły (od 1.48) – razem z nią (współrzędne względem jej środka); od 1.49 – też szkice operacji na ścianach.
-    const next = scaleSolid(stroke, cx, cy, factor);
-    if (stroke.sketch) next.sketch = stroke.sketch.map((shape) => scaleStroke(shape, 0, 0, factor));
-    if (next.features) next.features = next.features.map((feature) => (feature.sketch ? { ...feature, sketch: feature.sketch.map((shape) => scaleStroke(shape, 0, 0, factor)) } : feature));
-    return next;
-  }
+  if (isSolid(stroke)) return scaleSketches(scaleSolid(stroke, cx, cy, factor), factor);
   const points = stroke.points.slice();
   for (let index = 0; index < points.length; index += 3) {
     points[index] = round(cx + (points[index] - cx) * factor, 1);

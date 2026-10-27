@@ -41,7 +41,7 @@ test('płaszczyzny 1.54: zapis – plane xz i yz z kątem osi, XY bez kąta; bra
   const old = cleanSolid(legacy, 1600, 1100);
   assert.equal(old.plane, 'xy');
   assert.notDeepEqual(old.q, viewQuat('front'));
-  assert.equal(cleanDrawing({ ...emptyDrawing(), strokes: [vertical] }).version, 25);
+  assert.ok(cleanDrawing({ ...emptyDrawing(), strokes: [vertical] }).version >= 25);
   // Obrazek na start – jak szkic: XZ z przodu, YZ z prawego boku.
   assert.deepEqual(extrude('xz').q, viewQuat('front'));
   assert.deepEqual(extrude('yz').q, viewQuat('right'));

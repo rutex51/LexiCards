@@ -13,8 +13,10 @@
 // krawędź, ściana, oś walca), także na różnych bryłach; wynik (odległość z ΔX, ΔY, ΔZ albo kąt) zostaje w scenie jako
 // wymiar – zapisany w bryle pierwszej cechy, idzie za bryłami. Dotknięcie liczby pomiaru – szczegóły i „Usuń pomiar”.
 // Od 1.54 „Rzuty” – rzuty całej sceny na kartkę (core/scene-projections.js; onProjections).
+// Od 1.55 suma i różnica brył (core/solid-combine.js): w panelu zaznaczonej bryły „Połącz z…” i „Wytnij…”, potem dotknięcie
+// drugiej bryły (zaznaczona – same krawędzie, widać bryłę w środku); zmiana idzie do rysunku przez onCombine.
 
-import { faceAt, quatMatrix, solidGeometry, solidLabel, solidShape } from '../core/solids.js';
+import { faceAt, isPlainSphere, quatMatrix, solidGeometry, solidLabel, solidShape } from '../core/solids.js';
 import {
   SCENE_VIEWS, SCENE_ZOOM, blendCamera, fitScale, orbit, paintOrder, projectWorld, sceneBounds, sceneCamera, sceneQuat, sceneSolids, sceneView, sceneViewId,
   sheetMatrix, toView, worldOfPage
@@ -51,12 +53,13 @@ const shortLabel = (solid) => solidLabel(solid).replace('Bryła: ', '');
 
 /**
  * Scena: { element, open({ drawing, origin, selected, paintPage, dimFormat, canUndo }), update({ selected, canUndo }), close(),
- * cancel(), resize(), isOpen() }. paintPage(ctx, skip) – treść kartki w jednostkach strony bez elementów ze zbioru skip (brył);
+ * cancel(), notify(tekst), resize(), isOpen() }. paintPage(ctx, skip) – treść kartki w jednostkach strony bez elementów ze zbioru skip (brył);
  * origin – początek układu arkusza (punkt strony); onSelect(bryła | null), onExit() – powrót do 2D; onChange(mapa stara → nowa)
  * – nowe położenie brył; onPlace(bryła, bryła pod spodem, punkt strony, wysokość ściany) – „Postaw na ścianie”; onUndo() –
- * „Cofnij”. Po zmianie edytor zapisuje krok cofania i woła update.
+ * „Cofnij”; onCombine(bryła, druga bryła, 'add' | 'cut') – suma albo różnica (zwraca opis błędu albo null). Po zmianie edytor
+ * zapisuje krok cofania i woła update; notify – komunikat w pastylce podpowiedzi.
  */
-export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onProjections }) {
+export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onProjections, onCombine }) {
   const canvas = h('canvas', { class: 'drawing__scene-canvas', role: 'img', 'aria-label': 'Scena 3D', dataset: { testid: 'drawing-scene-canvas' } });
   const viewButtons = SCENE_VIEWS.map((item) => h('button', {
     type: 'button', class: 'drawing__scene-chip', 'aria-pressed': 'false', dataset: { testid: `drawing-scene-view-${item.id}`, view: item.id },
@@ -124,10 +127,20 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
       change(new Map([[state.selected, liftOff(state.drawing.strokes, state.selected)]]));
     }
   }, 'Na arkusz (Z = 0)');
+  // Od 1.55: suma i różnica – dotknięcie drugiej bryły.
+  const combineButton = (op, label, title) => h('button', {
+    type: 'button', class: 'drawing__scene-action', 'aria-pressed': 'false', title, dataset: { testid: `drawing-scene-combine-${op}`, label },
+    onClick: () => (state.combining === op ? stopCombining() : startCombining(op))
+  }, label);
+  const combineButtons = {
+    add: combineButton('add', 'Połącz z…', 'Suma brył – dotknij bryły, którą dołączyć do zaznaczonej'),
+    cut: combineButton('cut', 'Wytnij…', 'Różnica brył – dotknij bryły, którą wyciąć z zaznaczonej')
+  };
   const card = h('div', { class: 'drawing__scene-card', hidden: true, dataset: { testid: 'drawing-scene-pose' } },
     h('div', { class: 'drawing__scene-card-head' }, poseName, poseOn, poseUnit),
     h('div', { class: 'drawing__scene-fields' }, field('x', 'X', 'x'), field('y', 'Y', 'y'), field('z', 'Z', 'z'), field('yaw', '↻', 'turn', '°')),
-    h('div', { class: 'drawing__scene-actions' }, placeButton, floorButton));
+    h('div', { class: 'drawing__scene-actions' }, placeButton, floorButton),
+    h('div', { class: 'drawing__scene-actions' }, combineButtons.add, combineButtons.cut));
   // Panel pomiaru (od 1.53): co dotknąć, wynik, „Od nowa”, „Usuń pomiar”, „Zakończ pomiar”.
   const measureTitleText = h('strong', { class: 'drawing__scene-card-name', dataset: { testid: 'drawing-scene-measure-title' } }, 'Pomiar 3D');
   const measureUnit = h('span', { class: 'drawing__scene-card-unit' });
@@ -160,7 +173,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     open: false, drawing: null, origin: null, paintPage: null, dimFormat: 'unit', selected: null, canUndo: false,
     camera: sceneCamera(45, 35.264), base: 1, zoom: 1, pan: { x: 0, y: 0 }, moving: false,
     solids: [], bounds: null, painted: [], blend: 0, wheelTimer: 0, sheetImage: null,
-    arrows: [], placing: false, note: '', noteTimer: 0, preview: null,
+    arrows: [], placing: false, combining: null, note: '', noteTimer: 0, preview: null,
     measuring: false, first: null, hover: null, chosen: null, labels: []
   };
   const pointers = new Map();
@@ -169,7 +182,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
   function open({ drawing, origin, selected = null, paintPage, dimFormat, canUndo = false }) {
     Object.assign(state, {
       open: true, drawing, origin, paintPage, dimFormat, selected, canUndo, camera: sceneCamera(45, 35.264), zoom: 1, pan: { x: 0, y: 0 }, moving: false,
-      sheetImage: null, placing: false, note: '', preview: null, measuring: false, first: null, hover: null, chosen: null
+      sheetImage: null, placing: false, combining: null, note: '', preview: null, measuring: false, first: null, hover: null, chosen: null
     });
     state.solids = sceneSolids(drawing);
     state.bounds = sceneBounds(drawing, state.solids);
@@ -185,6 +198,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     state.canUndo = canUndo;
     state.preview = null;
     state.placing = false;
+    state.combining = null;
     state.solids = sceneSolids(state.drawing);
     // Pomiar wskazany przed zmianą – jeśli dalej jest w tej samej bryle; pierwsza cecha – jeśli bryła się nie zmieniła.
     if (state.chosen && !chosenMeasure()) state.chosen = null;
@@ -197,6 +211,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     state.open = false;
     state.sheetImage = null;
     state.placing = false;
+    state.combining = null;
     state.preview = null;
     Object.assign(state, { measuring: false, first: null, hover: null, chosen: null });
     window.cancelAnimationFrame(state.blend);
@@ -206,7 +221,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     gesture = null;
     element.hidden = true;
   }
-  /** Esc: przerywa przesuwanie strzałką albo „Postaw na ścianie”; zwraca, czy było co przerwać. */
+  /** Esc: przerywa przesuwanie strzałką, „Postaw na ścianie” albo sumę i różnicę; zwraca, czy było co przerwać. */
   function cancel() {
     if (gesture?.kind === 'move') {
       gesture = null;
@@ -217,6 +232,10 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     }
     if (state.placing) {
       stopPlacing();
+      return true;
+    }
+    if (state.combining) {
+      stopCombining();
       return true;
     }
     // Pomiar (od 1.53): najpierw pierwsza cecha, potem wskazany pomiar, potem tryb pomiaru.
@@ -268,6 +287,10 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     floorButton.disabled = !below && place.z === 0;
     placeButton.textContent = state.placing ? 'Anuluj – bez zmian' : 'Postaw na ścianie…';
     placeButton.setAttribute('aria-pressed', String(state.placing));
+    for (const [op, button] of Object.entries(combineButtons)) {
+      button.textContent = state.combining === op ? 'Anuluj – bez zmian' : button.dataset.label;
+      button.setAttribute('aria-pressed', String(state.combining === op));
+    }
   }
   /** Wpisane liczby → położenie zaznaczonej bryły (bez zmiany – nic). */
   function applyFields() {
@@ -314,6 +337,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
   function startPlacing() {
     if (!state.selected) return;
     state.placing = true;
+    state.combining = null;
     fillCard();
     render();
   }
@@ -351,6 +375,32 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     note('Dotknij wierzchu innej bryły – tam stanie zaznaczona.');
   }
 
+  // ---------------------------------------------------------------- suma i różnica brył (od 1.55)
+
+  function startCombining(op) {
+    if (!state.selected) return;
+    state.placing = false;
+    state.combining = op;
+    fillCard();
+    render();
+  }
+  function stopCombining(redraw = true) {
+    if (!state.combining) return;
+    state.combining = null;
+    fillCard();
+    if (redraw) render();
+  }
+  /** Druga bryła pod punktem ekranu (także za zaznaczoną) → suma albo różnica; błąd – komunikat, tryb zostaje. */
+  function combineAt(point) {
+    const tool = pick(point, state.selected);
+    if (!tool) {
+      note(state.combining === 'add' ? 'Dotknij drugiej bryły – tej, którą dołączyć' : 'Dotknij drugiej bryły – tej, którą wyciąć');
+      return;
+    }
+    const error = onCombine(state.selected, tool, state.combining);
+    if (error) note(error);
+  }
+
   // ---------------------------------------------------------------- pomiary 3D (od 1.53)
 
   const itemOf = (solid) => state.solids.find((item) => item.solid === solid) ?? null;
@@ -379,6 +429,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
   }
   function startMeasuring() {
     stopPlacing(false);
+    stopCombining(false);
     Object.assign(state, { measuring: true, first: null, hover: null, chosen: null });
     fillCard();
     render();
@@ -435,7 +486,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     for (const item of state.solids) {
       const [ox, oy, oz] = toView(state.camera, item.origin);
       const [x, y] = [at.x - ox, at.y - oy];
-      if (item.solid.kind === 'sphere') {
+      if (isPlainSphere(item.solid)) {
         const r = item.solid.dims.d / 2;
         const inside = r * r - x * x - y * y;
         if (inside >= 0 && (!best || oz + Math.sqrt(inside) > best.depth)) best = { item, sphere: true, depth: oz + Math.sqrt(inside) };
@@ -507,7 +558,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     if (facet.sphere) return { item: facet.item, feature: features.points[0], world: worldFeature(facet.item, features.points[0]) };
     const target = features.facets[facet.index];
     if (!target) return { item: facet.item, none: true };
-    const feature = target.kind === 'face' ? features.faces[target.index] : features.axis;
+    const feature = target.kind === 'face' ? features.faces[target.index] : features.axes[target.index];
     return { item: facet.item, feature, world: worldFeature(facet.item, feature) };
   }
   /** Dotknięcie w trybie pomiaru: pierwsza cecha, potem druga – pomiar zapisany w bryle pierwszej. */
@@ -743,7 +794,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     ctx.lineWidth = (chosen ? 1.8 : 1.2) / view.scale;
     ctx.lineJoin = 'round';
     ctx.beginPath();
-    if (item.solid.kind === 'sphere') {
+    if (isPlainSphere(item.solid)) {
       ctx.arc(shown.x, shown.y, item.solid.dims.d / 2, 0, Math.PI * 2);
     } else {
       const mesh = solidShape(item.solid);
@@ -825,7 +876,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
   function moveArrows(view) {
     const item = state.solids.find(isChosen);
     // Strzałki – razem z panelem położenia (bez wyboru ściany i bez pomiaru).
-    if (!item || state.placing || state.measuring || state.chosen) return [];
+    if (!item || state.placing || state.combining || state.measuring || state.chosen) return [];
     const { camera } = state;
     const foot = [item.origin[0], item.origin[1], item.base];
     const list = [];
@@ -883,7 +934,8 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     const order = paintOrder(state.camera, state.solids);
     state.painted = [];
     for (const item of order) {
-      if (state.moving) {
+      // Suma i różnica (od 1.55): zaznaczona – same krawędzie (widać bryłę w środku, do dotknięcia).
+      if (state.moving || (state.combining && item.solid === state.selected)) {
         paintWire(ctx, item, view);
         continue;
       }
@@ -910,6 +962,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     canvas.dataset.axes = ['X', 'Y', 'Z'].map((label) => `${Math.round(axes.tips[label].x)},${Math.round(axes.tips[label].y)}`).concat(`${Math.round(axes.start.x)},${Math.round(axes.start.y)}`).join(';');
     canvas.dataset.arrows = state.arrows.map((item) => `${item.label}:${Math.round(item.a.x)},${Math.round(item.a.y)},${Math.round(item.b.x)},${Math.round(item.b.y)}`).join(';');
     canvas.dataset.placing = String(state.placing);
+    canvas.dataset.combining = state.combining ?? '';
     // Pomiary (od 1.53): tryb, środki liczb pomiarów (numer bryły.numer pomiaru:x,y), punkty do wskazania w trybie pomiaru.
     canvas.dataset.measuring = String(state.measuring);
     canvas.dataset.measures = state.labels.map((label) => `${label.index}.${label.at}:${Math.round(label.x + label.w / 2)},${Math.round(label.y + label.h / 2)}`).join(';');
@@ -929,11 +982,13 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     hint.textContent = state.note
       || (moving ? `Przesuwanie wzdłuż ${AXES[gesture.axis][0]} – same krawędzie · ${poseText(moving.place)}`
         : state.placing ? 'Dotknij wierzchu innej bryły – tam stanie zaznaczona · Esc – bez zmian'
+          : state.combining === 'add' ? 'Suma: dotknij bryły, którą dołączyć do zaznaczonej · Esc – bez zmian'
+          : state.combining === 'cut' ? 'Różnica: dotknij bryły, którą wyciąć z zaznaczonej (ta – same krawędzie) · Esc – bez zmian'
           : state.measuring && !state.moving ? 'Pomiar: dotknij dwóch cech brył · przeciągnij – obrót sceny · Esc – od nowa'
           : state.moving ? 'W ruchu – same krawędzie (bez krycia); po puszczeniu – pełny obraz'
             : state.selected ? 'Przeciągnij – obrót sceny · strzałka – przesuwanie wzdłuż osi · liczby – w panelu'
               : 'Przeciągnij – obrót sceny · kółko albo dwa palce – przybliżenie · dotknij bryły – zaznaczenie');
-    hint.classList.toggle('drawing__scene-hint--moving', state.moving || state.placing || state.measuring);
+    hint.classList.toggle('drawing__scene-hint--moving', state.moving || state.placing || Boolean(state.combining) || state.measuring);
     hint.classList.toggle('drawing__scene-hint--note', Boolean(state.note));
   }
   /** „X 120,0 · Y 80,0 · Z 30,0 mm” – położenie w układzie arkusza. */
@@ -970,8 +1025,8 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     const box = canvas.getBoundingClientRect();
     return { x: event.clientX - box.left, y: event.clientY - box.top };
   };
-  /** Bryła pod punktem ekranu – od najbliższej (ostatnio rysowanej); ściany z rozkładu pełnego obrazu. */
-  function pick(point) {
+  /** Bryła pod punktem ekranu – od najbliższej (ostatnio rysowanej); ściany z rozkładu pełnego obrazu; bez `skip`. */
+  function pick(point, skip = null) {
     const view = layout();
     const x = (point.x - view.ox) / view.scale;
     const y = (point.y - view.oy) / view.scale;
@@ -984,6 +1039,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
       return result;
     };
     for (const { item, shown } of [...state.painted].reverse()) {
+      if (item.solid === skip) continue;
       const geometry = solidGeometry(shown);
       if (geometry.sphere && Math.hypot(x - geometry.sphere.x, y - geometry.sphere.y) <= geometry.sphere.r) return item.solid;
       for (const face of geometry.faces ?? []) {
@@ -1155,6 +1211,10 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
         placeAt(done.start);
         return;
       }
+      if (state.combining) {
+        combineAt(done.start);
+        return;
+      }
       // Liczba pomiaru (od 1.53) – szczegóły pomiaru; w trybie pomiaru – cechy brył.
       const label = state.first ? null : labelAt(done.start, done.touch);
       if (label) {
@@ -1195,6 +1255,7 @@ export function createScene({ onSelect, onExit, onChange, onPlace, onUndo, onPro
     update,
     close,
     cancel,
+    notify: (text) => state.open && note(text),
     isOpen: () => state.open,
     resize: () => {
       if (!state.open) return;

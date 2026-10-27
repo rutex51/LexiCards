@@ -2101,7 +2101,7 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   `solidShape` – ściany siatki łączone przez krawędzie gładkie (union-find); obszar o jednej normalnej – ściana płaska
   (środek – środek ciężkości pól pętli z polem ze znakiem, otwory odjęte), o różnych – powierzchnia zakrzywiona (oś:
   walec i stożek – y bryły, bryła obrotowa – oś szkicu przez `sketchToBody`, od 1.54 w kierunku zależnym od płaszczyzny;
-  inne – bez cechy). Krawędzie proste – ostre krawędzie między dwiema
+  inne – bez cechy; od 1.55 bryła złożona – lista `axes`, zob. „Suma i różnica brył”). Krawędzie proste – ostre krawędzie między dwiema
   ścianami płaskimi, odcinki tej samej pary – jedna prosta (zasięg z rzutów końców). Narożniki – wierzchołki co najmniej
   dwóch krawędzi prostych w różnych kierunkach; wierzchołek stożka ostrego; środek kuli. Każda cecha zna ściany płaskie przy
   niej (`featureVisible` – widoczna, gdy któraś zwrócona do patrzącego). `facets` – ściana siatki → ściana płaska / oś.
@@ -2141,11 +2141,12 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   bryły obrotowej z kierunku osi na kartce, potem `onSketchPlane`. `lastPlane` – płaszczyzna na start (ostatnio wybrana
   albo płaszczyzna bryły po „Edytuj szkic”).
 - **Rzuty sceny** (`js/core/scene-projections.js`, bez przeglądarki): `sceneMesh(sceneSolids(rysunek))` – siatki brył
-  (`solidShape`; kula – `sphereMesh`, 48 × 24, krawędzie gładkie) w świecie sceny (`worldRotation(yaw)`, środek z `placement`)
+  (`bodyMesh` – od 1.55; kula – `sphereMesh`, 48 × 24, krawędzie gładkie, od 1.55 w `solids.js`) w świecie sceny (`worldRotation(yaw)`, środek z `placement`)
   w jednej siatce z przesuniętymi indeksami; `meshLines(siatka, widok, N)` (wydzielone z `modelGeometry` w `solids.js`)
   liczy linie widoczne i niewidoczne na całej siatce – stąd zasłanianie między bryłami. Kamery `sceneCamera` przód (0, 0),
-  góra (0, 90), lewy bok (−90, 0); osie (`solidAxis`): walec, stożek, graniastosłup, ostrosłup – y bryły, bryła obrotowa –
-  `sketchToBody`, kula – krzyżyk; w widoku wzdłuż osi – krzyżyk (`AXIS_OVERHANG`). Układ – `layoutProjections` (wspólny
+  góra (0, 90), lewy bok (−90, 0); osie (`bodyAxes` w `solids.js`, od 1.55 także osie drugich brył sumy i różnicy):
+  walec, stożek, graniastosłup, ostrosłup – y bryły, bryła obrotowa – `sketchToBody`, kula – krzyżyk; w widoku wzdłuż osi –
+  krzyżyk (`AXIS_OVERHANG`). Układ – `layoutProjections` (wspólny
   z `solidProjections`), kształty – `viewsToShapes` (wspólny z `projectionShapes`; łamana wracająca do początku –
   wielokąt). `sceneProjections(rysunek)` → `{ views, bounds }` albo `null` bez brył.
 - **Scena** (`js/ui/drawing-scene.js`): przycisk `drawing-scene-projections` → `onProjections`; w edytorze `projectScene` –
@@ -2153,6 +2154,37 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   na prawo od obrazków brył (na lewo, od lewej krawędzi) albo na środku nowej kartki (`addPage`), jeden krok historii,
   zaznaczenie i komunikat. „Pomiar” i „Rzuty” mają klasę `drawing__scene-chip--tool` – poniżej 600 px same ikony
   (`.drawing__scene-chip-label` ukryty, nazwa w `aria-label`).
+
+## Suma i różnica brył (od 1.55)
+
+- **Zapis** (format 26, `js/core/solids.js`): w `features` bryły obok operacji na ścianach (1.49) operacja z bryłą
+  `{ op: 'add' | 'cut', body, at, turn? }` (`isBodyFeature`): `body` – druga bryła bez położenia w scenie, identyfikatora
+  i pomiarów (`cleanBody` → `cleanSolid(…, depth + 1)`, zagnieżdżenie do `BODY_LIMITS.depth` = 4), `at` – jej początek układu
+  w układzie bryły, `turn` – obrót wokół osi y bryły w stopniach ((−180°, 180°]). `bodyPoint(operacja, punkt)` – punkt drugiej
+  bryły w układzie bryły. Kula: w zapisie tylko operacje z bryłą; `isPlainSphere` – kula bez operacji (okrąg, `solidShape` →
+  null), inaczej siatka (`basePolygons` – `sphereMesh`).
+- **Siatka**: `applyFeature` – siatka drugiej bryły (`bodyMesh`: `solidShape` albo `sphereMesh`) przesunięta przez
+  `bodyPoint`, `union` / `subtract` z `csg.js`; klucz pamięci operacji – rodzaj, `at`, `turn` i kształt drugiej bryły
+  (`shapeKey`, z jej operacjami). `followFaces` pomija operacje z bryłą (zostają w układzie bryły). `mirrorBody` – odbicie
+  kształtu (x → −x): `at` odbite, `turn` → −`turn`, druga bryła odbita; `scaleBody` – wymiary, profil, operacje, `at` i druga
+  bryła (szkice – `scaleSketches` w `transform.js`). `bodyAxes(bryła)` – oś bryły i osie drugich brył (rekurencyjnie).
+- **Operacje** (`js/core/solid-combine.js`, bez przeglądarki): `combineSolids(rysunek, bryła, druga, op, newId)` –
+  `frameOf` (placement, początek układu `[x, −y, z − min.y]`, `worldRotation`), `at = Rᵀ · (początek drugiej − początek
+  bryły)`, `turn` – różnica obrotów; błędy: ta sama bryła, bryła stoi na drugiej (`standsOn`), limit operacji, zagnieżdżenie,
+  zasięgi w scenie rozłączne (`boxOf`, `TOUCH`), różnica bez zmiany objętości (`meshVolume`), pusty wynik. Podstawa przesunięta
+  o zmianę dolnego zasięgu (początek układu zostaje), `withPose`; `keepStanding` – bryły stojące na drugiej (suma – na
+  wyniku, różnica – same) i na bryle – w tym samym miejscu w scenie. `extractBody(rysunek, bryła, newId)` – odwrotnie:
+  ostatnia operacja z bryłą usunięta, druga bryła (`{ tool: 'solid', ...body }`, nowy identyfikator) za bryłą w rysunku,
+  Z ≥ 0 (`lifted`). `bodyOf`, `bodyDepth`, `bodyName`.
+- **Pomiary** (`measure3d.js`): bryła z operacją z bryłą – kandydaci `bodyAxes`; każdy obszar zakrzywiony → oś
+  (`regionAxis`: średnie |n · (c − a) × d| / |(c − a) × d| < `AXIS_FIT`), `facets` → `{ kind: 'axis', index }`, `axes` (tylko
+  użyte), `axis` = pierwsza; środki kul – punkty `sphere`; `resolveRef` – najbliższa oś / środek kuli.
+- **Scena** (`drawing-scene.js`): `combineButtons` (`drawing-scene-combine-add` / `-cut`) w panelu położenia; `state.combining`
+  – zaznaczona rysowana `paintWire`, bez strzałek, `pick(punkt, zaznaczona)` pomija zaznaczoną; `combineAt` → `onCombine`
+  (błąd – `note`); Esc – `cancel`; `notify(tekst)`. Atrybut płótna `data-combining`. Edytor (`drawing.js`): `combineInScene`
+  i `extractSolidBody` – nowa tablica elementów w miejscu (`splice`), jeden krok historii; okno bryły – wiersze operacji
+  z bryłą (`BODY_LABELS`, `bodyName`), „Wyjmij bryłę” (`drawing-solid-feature-extract`) przy ostatniej; `featureHandle` –
+  bez uchwytu dla operacji z bryłą.
 
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 

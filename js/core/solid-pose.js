@@ -10,7 +10,7 @@
 // x, y, q bryły postawionej (i jej bezwzględne z, yaw) wylicza resolveStacks. Zmiana samego obrazka bryły postawionej
 // (przesunięcie, obrót obrazka, widok) przechodzi na cały obrazek – na bryłę na dole.
 
-import { quatFromMatrix, quatMatrix, solidShape } from './solids.js';
+import { isPlainSphere, quatFromMatrix, quatMatrix, solidShape } from './solids.js';
 
 const D2R = Math.PI / 180;
 const ID_RE = /^[a-z0-9]{6,16}$/;
@@ -49,7 +49,7 @@ export function bodyExtent(solid) {
   const cached = extentCache.get(solid);
   if (cached) return cached;
   let result;
-  if (solid.kind === 'sphere') {
+  if (isPlainSphere(solid)) {
     const r = solid.dims.d / 2;
     result = { min: [-r, -r, -r], max: [r, r, r] };
   } else {

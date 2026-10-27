@@ -8,8 +8,11 @@
 // punkt (narożnik, środek, środek krawędzi albo ściany) i kierunek (krawędź) albo normalna (ściana, środek ściany)
 // w układzie bryły. Po zmianie bryły (przesunięcie, obrót, wymiary) – cecha tej samej roli i kierunku najbliższa zapisanej:
 // pomiar idzie za bryłą, rysunek brył się nie zmienia.
+//
+// Od 1.55 bryła złożona (suma i różnica brył) ma osi tyle, ile brył z osią: powierzchnia zakrzywiona dostaje oś tej bryły,
+// do której pasuje (normalne ścian leżą w płaszczyznach przez oś) – np. oś otworu; środek kuli-narzędzia – punkt.
 
-import { sketchToBody, solidShape } from './solids.js';
+import { bodyAxes, isBodyFeature, isPlainSphere, sketchToBody, solidShape } from './solids.js';
 import { worldRotation } from './solid-pose.js';
 
 const ID_RE = /^[a-z0-9]{6,16}$/;
@@ -37,6 +40,8 @@ export const ROLE_LABELS = Object.freeze({
 });
 /** Najwięcej pomiarów w jednej bryle; kąt, poniżej którego proste i płaszczyzny są równoległe (stopnie). */
 export const MEASURE_LIMITS = Object.freeze({ count: 20, parallel: 0.01 });
+/** Powierzchnia pasuje do osi (od 1.55): średnie odchylenie normalnych ścian od płaszczyzn przez oś (sinus kąta). */
+const AXIS_FIT = 0.06;
 
 // ---------------------------------------------------------------- cechy bryły
 
@@ -50,12 +55,12 @@ const featureCache = new WeakMap();
 export function solidFeatures(solid) {
   const cached = featureCache.get(solid);
   if (cached) return cached;
-  const result = solid.kind === 'sphere' ? sphereFeatures() : meshFeatures(solid);
+  const result = isPlainSphere(solid) ? sphereFeatures() : meshFeatures(solid);
   featureCache.set(solid, result);
   return result;
 }
 function sphereFeatures() {
-  return { points: [{ role: 'sphere', p: [0, 0, 0] }], edges: [], faces: [], axis: null, facets: [], mesh: null };
+  return { points: [{ role: 'sphere', p: [0, 0, 0] }], edges: [], faces: [], axis: null, axes: [], facets: [], mesh: null };
 }
 function meshFeatures(solid) {
   const mesh = solidShape(solid);
@@ -81,12 +86,11 @@ function meshFeatures(solid) {
   }
   const faces = [];
   const facets = new Array(count).fill(null);
-  let curved = false;
+  const curvedRegions = [];
   for (const members of regions.values()) {
     const n = mesh.N[members[0]];
     if (!members.every((face) => dot(mesh.N[face], n) > 1 - 1e-6)) {
-      curved = true;
-      for (const face of members) facets[face] = { kind: 'axis' };
+      curvedRegions.push(members);
       continue;
     }
     // Środek ściany: środek ciężkości pól (otwory – z ujemnym polem, kolejność wierzchołków względem normalnej).
@@ -152,6 +156,27 @@ function meshFeatures(solid) {
   }
   faces.forEach((face, index) => points.push({ role: 'center', p: face.p, d: face.n, faces: [index] }));
   if (solid.kind === 'cone' && solid.dims.t === 0) points.push({ role: 'apex', p: [0, solid.dims.h / 2, 0] });
+  // Bryła złożona (od 1.55): osie wszystkich brył z osią, każda powierzchnia zakrzywiona – oś bryły, do której pasuje.
+  if (solid.features?.some(isBodyFeature)) {
+    const axes = [];
+    for (const candidate of bodyAxes(solid)) {
+      if (candidate.point) {
+        points.push({ role: 'sphere', p: candidate.a });
+        continue;
+      }
+      const d = unit(sub(candidate.b, candidate.a));
+      if (d) axes.push({ role: 'axis', p: mul(add(candidate.a, candidate.b), 0.5), d, a: candidate.a, b: candidate.b });
+    }
+    for (const members of curvedRegions) {
+      const index = regionAxis(mesh, members, axes);
+      for (const face of members) facets[face] = index === null ? null : { kind: 'axis', index };
+    }
+    const used = axes.filter((_, index) => facets.some((facet) => facet?.kind === 'axis' && facet.index === index));
+    // Numery osi – po odrzuceniu tych bez powierzchni (np. oś bryły w całości wyciętej).
+    for (const facet of facets) if (facet?.kind === 'axis') facet.index = used.indexOf(axes[facet.index]);
+    return { points, edges, faces, axis: used[0] ?? null, axes: used, facets, mesh };
+  }
+  const curved = curvedRegions.length > 0;
   // Oś: walec i stożek – y bryły, bryła obrotowa – x bryły; od podstawy do góry (obrotowa – na długości profilu).
   let axis = null;
   if (curved && (solid.kind === 'cylinder' || solid.kind === 'cone')) {
@@ -165,8 +190,29 @@ function meshFeatures(solid) {
     const [a, b] = [toBody([low, 0, 0]), toBody([high, 0, 0])];
     axis = { role: 'axis', p: mul(add(a, b), 0.5), d: unit(sub(b, a)), a, b };
   }
-  if (!axis) for (let face = 0; face < count; face += 1) if (facets[face]?.kind === 'axis') facets[face] = null;
-  return { points, edges, faces, axis, facets, mesh };
+  if (axis) for (const members of curvedRegions) for (const face of members) facets[face] = { kind: 'axis', index: 0 };
+  return { points, edges, faces, axis, axes: axis ? [axis] : [], facets, mesh };
+}
+
+/**
+ * Oś, do której pasuje powierzchnia zakrzywiona (od 1.55): normalne jej ścian leżą w płaszczyznach przez oś (ściana
+ * powierzchni obrotowej) – najmniejsze średnie odchylenie poniżej progu; numer osi albo null.
+ */
+function regionAxis(mesh, members, axes) {
+  let best = null;
+  axes.forEach((axis, index) => {
+    let error = 0;
+    for (const face of members) {
+      const loop = mesh.F[face][0];
+      const center = mul(loop.reduce((sum, vertex) => add(sum, mesh.V[vertex]), [0, 0, 0]), 1 / loop.length);
+      const along = cross(sub(center, axis.a), axis.d);
+      const reach = length(along);
+      error += reach < 1e-6 ? 1 : Math.abs(dot(mesh.N[face], along)) / reach;
+    }
+    error /= members.length;
+    if (error < AXIS_FIT && (!best || error < best.error)) best = { index, error };
+  });
+  return best ? best.index : null;
 }
 
 /** Cecha w świecie (bryła w scenie: origin – początek układu bryły, yaw): punkty i kierunki obrócone, przesunięte. */
@@ -198,10 +244,10 @@ export function resolveRef(solid, ref) {
     case 'corner': return nearest(features.points.filter((item) => item.role === 'corner'), ref.p);
     case 'center': return nearest(features.points.filter((item) => item.role === 'center' && dot(item.d, ref.d) > 0.999), ref.p);
     case 'apex': return features.points.find((item) => item.role === 'apex') ?? null;
-    case 'sphere': return features.points.find((item) => item.role === 'sphere') ?? null;
+    case 'sphere': return nearest(features.points.filter((item) => item.role === 'sphere'), ref.p);
     case 'edge': return nearest(features.edges.filter((item) => Math.abs(dot(item.d, ref.d)) > 0.999), ref.p);
     case 'face': return nearest(features.faces.filter((item) => dot(item.n, ref.d) > 0.999), ref.p);
-    case 'axis': return features.axis;
+    case 'axis': return nearest(features.axes, ref.p);
     default: return null;
   }
 }

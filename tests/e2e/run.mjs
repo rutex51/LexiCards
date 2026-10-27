@@ -13365,7 +13365,7 @@ test('rysunek 1.54: „Na płaszczyźnie…” – XY, XZ, YZ i odsunięcie, pł
   await dialog.locator('[data-testid=note-right]').click();
   await dialog.locator('[data-testid=note-text]').waitFor();
   const drawingData = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
-  assert.equal(drawingData.version, 25);
+  assert.ok(drawingData.version >= 25, `format ${drawingData.version}`);
   const plate = drawingData.strokes.find((stroke) => stroke.tool === 'solid' && stroke.kind === 'extrude');
   assert.equal(plate.plane, 'xz');
   const { sceneSolids } = await import('../../js/core/scene.js');
@@ -13455,6 +13455,218 @@ test('rysunek 1.54 na telefonie: „Na płaszczyźnie…” na ekranie, okno w s
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-154-telefon.png') });
   await saveSheet(page);
   await expectText(count, 'Bryła: wyciągnięcie');
+}, { device: PHONE });
+
+/** Scena (od 1.52): zaznacz bryłę `index` dotknięciem jej środka i wpisz położenie (cm) w panelu. */
+async function scenePose(editor, index, values, { touch = false } = {}) {
+  const page = editor.page();
+  const canvas = sceneCanvas(editor);
+  const point = (await sceneCenters(editor))[index];
+  if (touch) await page.touchscreen.tap(...point);
+  else await page.mouse.click(...point);
+  await waitUntil(async () => (await canvas.getAttribute('data-selected')) === String(index), `Zaznaczona bryła ${index}`);
+  for (const [key, value] of Object.entries(values)) {
+    const input = editor.locator(`[data-testid=drawing-scene-pose-${key}]`);
+    await input.fill(String(value).replace('.', ','));
+    await input.press('Enter');
+    await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz');
+  }
+}
+
+test('rysunek 1.55: suma i różnica brył w scenie – „Wytnij…” walec przez prostopadłościan (otwór na wylot), Cofnij, „Połącz z…” kula, historia modelu, „Wyjmij bryłę”, zapis (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const dialog = noteDialog(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Suma i różnica</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const scene = editor.locator('[data-testid=drawing-scene]');
+  const canvas = sceneCanvas(editor);
+  const hint = editor.locator('[data-testid=drawing-scene-hint]');
+  const cut = editor.locator('[data-testid=drawing-scene-combine-cut]');
+  const add = editor.locator('[data-testid=drawing-scene-combine-add]');
+  const shot = async (name) => {
+    await nextFrames(page);
+    await page.screenshot({ path: path.join(OUTPUT, `rysunek-155-${name}.png`) });
+  };
+  const settled = () => waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz po ruchu');
+  const solids = async () => Object.keys(await sceneCenters(editor)).length;
+
+  // Walec ⌀1,5 × 5 cm (z okna bryły), kula ⌀4 cm, prostopadłościan 6 × 4 × 3 cm – wstawiony ostatni, zaznaczony.
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-cylinder]').click();
+  await expectText(count, 'Bryła: Walec');
+  await page.mouse.click(...(await solidCenter2d(editor)));
+  await expectText(sheet(page).locator('.sheet__title'), 'Bryła: Walec');
+  await page.locator('[data-testid=drawing-solid-dim-d]').fill('1,5');
+  await saveSheet(page);
+  await editor.locator('[data-testid=drawing-insert-solid-sphere]').click();
+  await expectText(count, 'Bryła: Kula');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').click();
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await editor.locator('[data-testid=drawing-scene-open]').click();
+  await scene.waitFor();
+  await settled();
+  const [cylinderIndex, sphereIndex, boxIndex] = Object.keys(await sceneCenters(editor)).map(Number).sort((a, b) => a - b);
+  assert.equal(await canvas.getAttribute('data-selected'), String(boxIndex), 'scena z zaznaczonym prostopadłościanem');
+  // Prostopadłościan z dala od reszty; walec – przez prostopadłościan 1,5 cm od środka w X, kula – środkiem w lewym
+  // przednim narożniku wierzchu (Z podstawy 1 cm).
+  const [startX, startY] = [await poseValue(editor, 'x'), await poseValue(editor, 'y')];
+  const [boxX, boxY] = [Math.round(startX + 8), Math.round(startY + 6)];
+  for (const [key, value] of [['x', boxX], ['y', boxY]]) {
+    const input = editor.locator(`[data-testid=drawing-scene-pose-${key}]`);
+    await input.fill(String(value));
+    await input.press('Enter');
+    await settled();
+  }
+  await scenePose(editor, cylinderIndex, { x: boxX + 1.5, y: boxY });
+  await scenePose(editor, sphereIndex, { x: boxX - 3, y: boxY - 2, z: 1 });
+  await shot('przed');
+
+  // „Wytnij…”: tryb – podpowiedź, zaznaczona same krawędzie, bez strzałek; dotknięcie walca – otwór, walec znika.
+  await page.mouse.click(...(await sceneCenters(editor))[boxIndex]);
+  await waitUntil(async () => (await canvas.getAttribute('data-selected')) === String(boxIndex), 'Zaznaczony prostopadłościan');
+  await cut.click();
+  assert.equal(await canvas.getAttribute('data-combining'), 'cut');
+  assert.equal(await cut.getAttribute('aria-pressed'), 'true');
+  await expectText(cut, 'Anuluj – bez zmian');
+  await expectText(hint, 'Różnica: dotknij bryły');
+  assert.equal(await canvas.getAttribute('data-arrows'), '', 'bez strzałek');
+  await shot('wytnij');
+  // Esc – bez zmian; drugi raz „Wytnij…” i dotknięcie walca.
+  await page.keyboard.press('Escape');
+  await waitUntil(async () => (await canvas.getAttribute('data-combining')) === '', 'Koniec trybu');
+  assert.equal(await scene.isVisible(), true, 'Esc tylko kończy tryb');
+  await cut.click();
+  await page.mouse.click(...(await sceneCenters(editor))[cylinderIndex]);
+  await waitUntil(async () => (await solids()) === 2, 'Walec w prostopadłościanie');
+  await expectText(hint, 'Różnica: Prostopadłościan − Walec');
+  assert.equal(await canvas.getAttribute('data-combining'), '');
+  // Walec był przed prostopadłościanem w rysunku – numery brył za nim o jeden mniejsze.
+  assert.equal(await canvas.getAttribute('data-selected'), String(boxIndex - 1), 'prostopadłościan dalej zaznaczony');
+  await settled();
+  await shot('roznica');
+  // „Cofnij” – walec wraca; jeszcze raz wycięcie.
+  await editor.locator('[data-testid=drawing-scene-undo]').click();
+  await waitUntil(async () => (await solids()) === 3, 'Cofnięte');
+  await page.mouse.click(...(await sceneCenters(editor))[boxIndex]);
+  await waitUntil(async () => (await canvas.getAttribute('data-selected')) === String(boxIndex), 'Zaznaczony prostopadłościan');
+  await cut.click();
+  await page.mouse.click(...(await sceneCenters(editor))[cylinderIndex]);
+  await waitUntil(async () => (await solids()) === 2, 'Znów wycięty');
+  // Dotknięcie pustego miejsca w trybie – komunikat, tryb zostaje; potem „Połącz z…” kula.
+  await add.click();
+  assert.equal(await canvas.getAttribute('data-combining'), 'add');
+  const box = await canvas.boundingBox();
+  await page.mouse.click(box.x + 30, box.y + box.height - 30);
+  await expectText(hint, 'Dotknij drugiej bryły');
+  assert.equal(await canvas.getAttribute('data-combining'), 'add');
+  await page.mouse.click(...(await sceneCenters(editor))[sphereIndex - 1]);
+  await waitUntil(async () => (await solids()) === 1, 'Kula dołączona');
+  await expectText(hint, 'Suma: Prostopadłościan + Kula');
+  await settled();
+  await shot('suma');
+  await editor.locator('[data-testid=drawing-scene-view-front]').click();
+  await waitUntil(async () => (await canvas.getAttribute('data-view')) === 'front', 'Przód');
+  await settled();
+  await shot('suma-przod');
+
+  // 2D: okno bryły – historia: 1. Prostopadłościan, 2. Różnica – Walec, 3. Suma – Kula; „Wyjmij bryłę” przy ostatniej.
+  await editor.locator('[data-testid=drawing-scene-exit]').click();
+  await waitUntil(() => scene.isHidden(), 'Powrót do 2D');
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await page.mouse.click(...(await solidCenter2d(editor)));
+  await expectText(sheet(page).locator('.sheet__title'), 'Bryła: Prostopadłościan');
+  await expectText(page.locator('[data-testid=drawing-solid-feature-0]'), '2. Różnica – wycięta: Walec');
+  await expectText(page.locator('[data-testid=drawing-solid-feature-1]'), '3. Suma – dołączona: Kula');
+  assert.equal(await page.locator('[data-testid=drawing-solid-feature-0] [data-testid=drawing-solid-feature-extract]').count(), 0, 'Wyjmij – tylko ostatnia');
+  await page.waitForTimeout(500);
+  await shot('historia');
+  await page.locator('[data-testid=drawing-solid-feature-extract]').click();
+  await expectText(count, 'Bryła: Kula');
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Bryła wyjęta: Kula');
+  await page.waitForTimeout(600);
+  await shot('wyjeta');
+
+  // Zapis: format 26, prostopadłościan z różnicą (walec ⌀1,5 cm w środku – at x = z = 0), kula osobno.
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-text]').waitFor();
+  const drawingData = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  assert.equal(drawingData.version, 26);
+  const solidsSaved = drawingData.strokes.filter((stroke) => stroke.tool === 'solid');
+  assert.deepEqual(solidsSaved.map((stroke) => stroke.kind), ['box', 'sphere']);
+  const [feature] = solidsSaved[0].features;
+  assert.equal(solidsSaved[0].features.length, 1);
+  assert.equal(feature.op, 'cut');
+  assert.equal(feature.body.kind, 'cylinder');
+  assert.ok(Math.abs(feature.at[0] - 66) < 0.5 && Math.abs(feature.at[2]) < 0.5, `walec 1,5 cm od środka w X: ${feature.at}`);
+  assert.equal(solidsSaved[1].features, undefined);
+}, { device: DESKTOP });
+
+test('rysunek 1.55 na iPadzie: „Połącz z…” palcem – walec postawiony na prostopadłościanie dołączony, jedna bryła; „Wytnij…” i „Anuluj – bez zmian”', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>iPad</p>');
+  const count = editor.locator('[data-testid=drawing-selection-count]');
+  const canvas = sceneCanvas(editor);
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').tap();
+  await expectText(count, 'Bryła: Prostopadłościan');
+  await editor.locator('[data-testid=drawing-insert-solid-cylinder]').tap();
+  await expectText(count, 'Bryła: Walec');
+  await editor.locator('[data-testid=drawing-scene-open]').tap();
+  await editor.locator('[data-testid=drawing-scene]').waitFor();
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz');
+  const [boxIndex, cylinderIndex] = Object.keys(await sceneCenters(editor)).map(Number).sort((a, b) => a - b);
+  await page.touchscreen.tap(...(await sceneCenters(editor))[boxIndex]);
+  await waitUntil(async () => (await canvas.getAttribute('data-selected')) === String(boxIndex), 'Prostopadłościan');
+  const [boxX, boxY] = [await poseValue(editor, 'x'), await poseValue(editor, 'y')];
+  // Walec na wierzchu prostopadłościanu (Z = 3 cm), przy tylnym prawym narożniku (nie zasłania środka prostopadłościanu).
+  await scenePose(editor, cylinderIndex, { x: boxX + 2, y: boxY + 1, z: 3 }, { touch: true });
+  await page.touchscreen.tap(...(await sceneCenters(editor))[boxIndex]);
+  await waitUntil(async () => (await canvas.getAttribute('data-selected')) === String(boxIndex), 'Prostopadłościan');
+  // „Wytnij…” i „Anuluj – bez zmian”.
+  const cut = editor.locator('[data-testid=drawing-scene-combine-cut]');
+  await cut.tap();
+  assert.equal(await canvas.getAttribute('data-combining'), 'cut');
+  await cut.tap();
+  assert.equal(await canvas.getAttribute('data-combining'), '');
+  await editor.locator('[data-testid=drawing-scene-combine-add]').tap();
+  await page.touchscreen.tap(...(await sceneCenters(editor))[cylinderIndex]);
+  await waitUntil(async () => Object.keys(await sceneCenters(editor)).length === 1, 'Jedna bryła');
+  await expectText(editor.locator('[data-testid=drawing-scene-hint]'), 'Suma: Prostopadłościan + Walec');
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz');
+  // Wysokość bryły złożonej: 3 + 5 cm – walec stoi tam, gdzie stał.
+  assert.equal(await poseValue(editor, 'z'), 0);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-155-ipad.png') });
+}, { device: IPAD });
+
+test('rysunek 1.55 na telefonie: „Połącz z…” i „Wytnij…” w panelu bryły na ekranie, podpowiedź trybu, bez przewijania w bok', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Telefon</p>');
+  await pickGroup(editor, 'solids');
+  await editor.locator('[data-testid=drawing-insert-solid-box]').scrollIntoViewIfNeeded();
+  await editor.locator('[data-testid=drawing-insert-solid-box]').click();
+  await editor.locator('[data-testid=drawing-scene-open]').tap();
+  await editor.locator('[data-testid=drawing-scene]').waitFor();
+  const canvas = sceneCanvas(editor);
+  await waitUntil(async () => (await canvas.getAttribute('data-moving')) === 'false', 'Pełny obraz');
+  const [index] = Object.keys(await sceneCenters(editor)).map(Number);
+  await page.touchscreen.tap(...(await sceneCenters(editor))[index]);
+  await waitUntil(async () => (await canvas.getAttribute('data-selected')) === String(index), 'Zaznaczona');
+  for (const id of ['drawing-scene-combine-add', 'drawing-scene-combine-cut', 'drawing-scene-place', 'drawing-scene-floor']) {
+    const bounds = await editor.locator(`[data-testid=${id}]`).boundingBox();
+    assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 391 && bounds.y + bounds.height <= 845, `${id} na ekranie: ${JSON.stringify(bounds)}`);
+  }
+  await editor.locator('[data-testid=drawing-scene-combine-cut]').tap();
+  await expectText(editor.locator('[data-testid=drawing-scene-hint]'), 'Różnica: dotknij bryły');
+  assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-155-telefon.png') });
 }, { device: PHONE });
 
 // ---------------------------------------------------------------- nauka z fiszkami

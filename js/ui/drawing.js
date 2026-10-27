@@ -80,14 +80,15 @@ import {
 import { COLUMN_DEFAULTS, LAYOUT_KINDS, LAYOUT_LABELS, MATRIX_DEFAULT, cleanLayout } from '../core/page-layouts.js';
 import { paintDiagram, paintPageLayout } from './drawing-diagrams.js';
 import {
-  FEATURE_LABELS, FEATURE_LIMITS, SOLID_EDGES, SOLID_EDGE_LABELS, SOLID_FIELDS, SOLID_KINDS, SOLID_LABELS, SOLID_LIMITS, SOLID_LINE_LABELS, SOLID_LINE_WIDTHS, SOLID_VIEWS,
+  BODY_LABELS, FEATURE_LABELS, FEATURE_LIMITS, SOLID_EDGES, SOLID_EDGE_LABELS, SOLID_FIELDS, SOLID_KINDS, SOLID_LABELS, SOLID_LIMITS, SOLID_LINE_LABELS, SOLID_LINE_WIDTHS, SOLID_VIEWS,
   cleanSolid, cleanSolidDims, faceAt, faceView, featureBehind, featureNormal, featureQuat, featureView, followFaces, sketchToBody, hasAxis, hasFeatures, isModel,
-  newFeature, newModel, newSolid, orbitQuat, profileFromShapes, projectionShapes, viewsToShapes, quatFromAngles, quatMatrix, quatSlerp, scaleSolid, shapeLoop, sketchFrame,
+  isBodyFeature, newFeature, newModel, newSolid, orbitQuat, profileFromShapes, projectionShapes, viewsToShapes, quatFromAngles, quatMatrix, quatSlerp, scaleSolid, shapeLoop, sketchFrame,
   solidAngles, solidBox, solidLabel, solidProjections, solidView, viewQuat, withQuat, PROJECTION_GAP
 } from '../core/solids.js';
 import { AXES_GAP, AXES_RADIUS, paintSolid, paintSolidAxes, solidAxes } from './drawing-solids.js';
 import { createScene } from './drawing-scene.js';
 import { sceneProjections } from '../core/scene-projections.js';
+import { bodyName, combineSolids, extractBody } from '../core/solid-combine.js';
 import { openFitTable } from './fit-table.js';
 import { RING_SIDES, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPartHidden } from '../core/tool-ring.js';
 import { openToolGroups } from './drawing-groups.js';
@@ -883,7 +884,8 @@ export function openDrawingEditor({
         applySceneChange(new Map([[base, placed.base], [solid, placed.solid]]), solid);
       },
       onUndo: () => sceneUndo(),
-      onProjections: () => projectScene()
+      onProjections: () => projectScene(),
+      onCombine: (target, tool, op) => combineInScene(target, tool, op)
     });
     const base = h('canvas', { class: 'drawing__canvas', 'aria-hidden': 'true' });
     const live = h('canvas', { class: 'drawing__canvas drawing__canvas--live', role: 'img', 'aria-label': `Płótno rysunku: ${title}`, dataset: { testid: 'drawing-canvas' } });
@@ -5372,6 +5374,44 @@ export function openDrawingEditor({
       updateToolbar();
       requestRender();
     }
+    const shortSolid = (solid) => solidLabel(solid).replace('Bryła: ', '');
+    /**
+     * Suma albo różnica brył ze sceny (od 1.55): druga bryła trafia do historii modelu zaznaczonej (znika z rysunku), nic się nie
+     * przesuwa; jeden krok cofania. Zwraca opis błędu (komunikat w scenie) albo null.
+     */
+    function combineInScene(target, tool, op) {
+      const result = combineSolids(drawing.strokes, target, tool, op, newElementId);
+      if (result.error) return result.error;
+      history.begin();
+      drawing.strokes.splice(0, drawing.strokes.length, ...result.strokes);
+      selection = new Set([result.solid]);
+      selectionKind = 'whole';
+      commitStep();
+      changed = true;
+      const [next] = selection;
+      scene.update({ selected: next ?? null, canUndo: history.canUndo });
+      scene.notify(`${BODY_LABELS[op]}: ${shortSolid(target)} ${op === 'add' ? '+' : '−'} ${shortSolid(tool)} – historia w oknie bryły („Wyjmij bryłę”)`);
+      updateToolbar();
+      requestRender();
+      return null;
+    }
+    /** „Wyjmij bryłę” (od 1.55): ostatnia suma albo różnica – druga bryła z powrotem osobno, w tym samym miejscu. */
+    function extractSolidBody(element) {
+      const result = extractBody(drawing.strokes, element, newElementId);
+      if (result.error) {
+        flash(result.error);
+        return;
+      }
+      history.begin();
+      drawing.strokes.splice(0, drawing.strokes.length, ...result.strokes);
+      selection = new Set([result.tool]);
+      selectionKind = 'whole';
+      commitStep();
+      changed = true;
+      updateToolbar();
+      requestRender();
+      flash(`Bryła wyjęta: ${shortSolid(result.tool)} – osobno, w tym samym miejscu w scenie${result.lifted ? ' (podniesiona nad arkusz)' : ''}`);
+    }
     /**
      * Rzuty całej sceny (od 1.54): przód, góra i lewy bok wszystkich brył w położeniu ze sceny, z krawędziami zasłoniętymi
      * przez inne bryły – zwykłe kształty do wymiarowania, na tej kartce (obok brył) albo na nowej (na środku).
@@ -7477,6 +7517,8 @@ export function openDrawingEditor({
     function featureHandle(element) {
       const index = element.features.length - 1;
       const feature = element.features[index];
+      // Suma i różnica (od 1.55) – bez uchwytu głębokości.
+      if (isBodyFeature(feature)) return null;
       const m = quatMatrix(element.q);
       const n = featureNormal(feature);
       const at = (point) => ({ x: element.x + m[0] * point[0] + m[1] * point[1] + m[2] * point[2], y: element.y - (m[3] * point[0] + m[4] * point[1] + m[5] * point[2]) });
@@ -7552,7 +7594,7 @@ export function openDrawingEditor({
           const values = kind === element.kind ? element.dims : cleanSolidDims(kind, {});
           return [kind, Object.fromEntries(SOLID_FIELDS[kind].map(([key]) => [key, shown(key, values[key])]))];
         })),
-        features: features.map((feature) => ({ depth: shown('h', feature.depth), through: feature.through === true, removed: false }))
+        features: features.map((feature) => ({ depth: isBodyFeature(feature) ? '' : shown('h', feature.depth), through: feature.through === true, removed: false }))
       };
       const dimsBox = h('div', { class: 'drawing__solid-grid' });
       const axesRow = h('div', { class: 'drawing__settings-switch' }, toggle({ checked: draft.axes, label: 'Osie symetrii', onChange: (checked) => { draft.axes = checked; } }));
@@ -7594,9 +7636,33 @@ export function openDrawingEditor({
       let saved = false;
       let restore = false;
       let restoreFeature = false;
+      let extract = false;
       const first = model ? 3 : 2;
       const featureRows = features.map((feature, index) => {
         const row = draft.features[index];
+        const box = h('div', { class: 'drawing__solid-feature', dataset: { testid: `drawing-solid-feature-${index}` } });
+        const remove = h('button', {
+          type: 'button', class: 'button button--plain', dataset: { testid: `drawing-solid-feature-remove-${index}` },
+          onClick: () => {
+            row.removed = !row.removed;
+            box.classList.toggle('drawing__solid-feature--removed', row.removed);
+            remove.textContent = row.removed ? 'Przywróć' : 'Usuń';
+          }
+        }, 'Usuń');
+        // Od 1.55 suma i różnica z drugą bryłą: bez głębokości; ostatnia – „Wyjmij bryłę” (druga bryła znów osobno).
+        if (isBodyFeature(feature)) {
+          const extractButton = index === features.length - 1 ? h('button', {
+            type: 'button', class: 'button button--plain', dataset: { testid: 'drawing-solid-feature-extract' },
+            onClick: () => {
+              extract = true;
+              sheet.close();
+            }
+          }, 'Wyjmij bryłę') : null;
+          replaceChildren(box, h('div', { class: 'drawing__solid-history' },
+            h('span', null, `${first + index}. ${BODY_LABELS[feature.op]} – ${feature.op === 'add' ? 'dołączona' : 'wycięta'}: ${bodyName(feature.body)}`),
+            h('span', { class: 'drawing__solid-feature-actions' }, extractButton, remove)));
+          return box;
+        }
         const input = textInput({ value: row.depth, testID: `drawing-solid-feature-depth-${index}`, onInput: (value) => { row.depth = value; } });
         input.inputMode = 'decimal';
         input.disabled = row.through;
@@ -7609,15 +7675,6 @@ export function openDrawingEditor({
         }) : null;
         if (throughSwitch) throughSwitch.querySelector('input').dataset.testid = `drawing-solid-feature-through-${index}`;
         const through = throughSwitch ? h('div', { class: 'drawing__settings-switch' }, throughSwitch) : null;
-        const box = h('div', { class: 'drawing__solid-feature', dataset: { testid: `drawing-solid-feature-${index}` } });
-        const remove = h('button', {
-          type: 'button', class: 'button button--plain', dataset: { testid: `drawing-solid-feature-remove-${index}` },
-          onClick: () => {
-            row.removed = !row.removed;
-            box.classList.toggle('drawing__solid-feature--removed', row.removed);
-            remove.textContent = row.removed ? 'Przywróć' : 'Usuń';
-          }
-        }, 'Usuń');
         const sketchButton = index === features.length - 1 && feature.sketch?.length ? h('button', {
           type: 'button', class: 'button button--plain', dataset: { testid: 'drawing-solid-feature-sketch' },
           onClick: () => {
@@ -7652,8 +7709,11 @@ export function openDrawingEditor({
               }, 'Edytuj szkic') : null) : null,
             h('div', { class: 'drawing__solid-history' }, h('span', null, model ? `2. ${element.kind === 'extrude' ? 'Wyciągnięcie' : 'Obrót wokół osi'}` : `1. ${SOLID_LABELS[element.kind]}`)),
             ...featureRows,
-            features.length > 0 ? h('p', { class: 'field__hint' }, 'Wycięcia i dodania leżą na ścianach – zmiana wymiarów albo głębokości przesuwa operacje narysowane na przesuniętych ścianach.'
-              + (model && element.sketch?.length ? ' Szkic bryły poprawisz po usunięciu operacji.' : '')) : null) : null,
+            features.length > 0 ? h('p', { class: 'field__hint' }, [
+              features.some((feature) => !isBodyFeature(feature)) ? 'Wycięcia i dodania leżą na ścianach – zmiana wymiarów albo głębokości przesuwa operacje narysowane na przesuniętych ścianach.' : '',
+              features.some(isBodyFeature) ? 'Suma i różnica: druga bryła stoi tam, gdzie stała w scenie (w układzie tej bryły); „Wyjmij bryłę” przy ostatniej operacji – znów osobno.' : '',
+              model && element.sketch?.length ? 'Szkic bryły poprawisz po usunięciu operacji.' : ''
+            ].filter(Boolean).join(' ')) : null) : null,
           group({ title: model ? 'Operacja' : 'Wymiary' }, dimsBox),
           group({ title: 'Położenie' }, h('div', { class: 'drawing__solid-grid' }, yaw.field, pitch.field, roll.field),
             h('div', { class: 'drawing__solid-views', role: 'group', 'aria-label': 'Gotowe widoki' }, viewButtons)),
@@ -7684,6 +7744,10 @@ export function openDrawingEditor({
             restoreFeatureSketch(element);
             return;
           }
+          if (extract) {
+            extractSolidBody(element);
+            return;
+          }
           if (!saved) return;
           const number = (text, fallback) => {
             const value = parseDecimal(text);
@@ -7700,6 +7764,11 @@ export function openDrawingEditor({
           features.forEach((feature, index) => {
             const row = draft.features[index];
             if (row.removed) return;
+            if (isBodyFeature(feature)) {
+              nextFeatures.push(feature);
+              pairs.push(index);
+              return;
+            }
             const value = number(row.depth, null);
             const kept = { ...feature, depth: value === null ? feature.depth : units(value) };
             if (row.through) kept.through = true;

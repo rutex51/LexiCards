@@ -1,4 +1,4 @@
-# LexiCards 1.54
+# LexiCards 1.55
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -62,8 +62,9 @@ Rysunek – scena 3D do oglądania: „Scena 3D” przy bryłach – kartka jako
 Rysunek – położenie brył w scenie: panel X, Y, Z (wysokość podstawy) i obrót wokół Z w mm przedmiotu, strzałki osi do przesuwania (w trakcie same krawędzie), „Postaw na ścianie” – bryła na wierzchu innej (idzie za nią), „Na arkusz”, „Cofnij”; stos brył w 2D – jeden obrazek (wersja 1.52): [docs/RELEASE-1.52.md](docs/RELEASE-1.52.md).
 Rysunek – pomiary 3D w scenie: „Pomiar” – dwie cechy brył (narożnik, środek ściany, krawędź, ściana, oś walca), odległość z ΔX, ΔY, ΔZ, odległość od prostej i płaszczyzny, kąty i odległość równoległych; wynik zostaje w scenie jako wymiar i idzie za bryłami (wersja 1.53): [docs/RELEASE-1.53.md](docs/RELEASE-1.53.md).
 Rysunek – płaszczyzny szkicu i rzuty sceny: „Na płaszczyźnie…” – bryła ze szkicu poziomo na wysokości Z albo pionowo na XZ (widok z przodu) i YZ (widok z boku), np. stojący wspornik albo wazon; „Rzuty” w scenie – przód, góra i lewy bok wszystkich brył razem, krawędzie zasłonięte przez inne bryły przerywane, na tej albo nowej kartce (wersja 1.54): [docs/RELEASE-1.54.md](docs/RELEASE-1.54.md).
+Rysunek – suma i różnica brył: w scenie „Połącz z…” i „Wytnij…” – druga bryła dołączona albo wycięta pod dowolnym kątem (np. otwór skośny), nic się nie przesuwa; w historii modelu bryły – „Wyjmij bryłę”; osie otworów w pomiarach i rzutach (wersja 1.55): [docs/RELEASE-1.55.md](docs/RELEASE-1.55.md).
 
-## Co potrafi wersja 1.54
+## Co potrafi wersja 1.55
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -182,7 +183,8 @@ Rysunek – płaszczyzny szkicu i rzuty sceny: „Na płaszczyźnie…” – br
   rysunku). Od 1.51 **scena 3D**: kartka i bryły w przestrzeni – obrót, widoki, przybliżanie; od 1.52 **położenie brył**
   w scenie – X, Y, Z i obrót, strzałki osi, bryła postawiona na innej (w 2D – wspólny obrazek); od 1.53 **pomiary 3D** –
   odległości (z ΔX, ΔY, ΔZ) i kąty między cechami brył, zostają w scenie jako wymiary; od 1.54 **płaszczyzny szkicu** –
-  bryła ze szkicu poziomo na wysokości albo pionowo (przód XZ, bok YZ) – i **rzuty całej sceny** na kartkę.
+  bryła ze szkicu poziomo na wysokości albo pionowo (przód XZ, bok YZ) – i **rzuty całej sceny** na kartkę; od 1.55 **suma
+  i różnica brył** – dwie bryły ustawione w scenie połączone albo jedna wycięta z drugiej, pod dowolnym kątem.
   Od 1.24.1 kartka w edytorze wygląda
   jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
@@ -1047,6 +1049,14 @@ rysunku – 25. **Rzuty** w pasku sceny: przód, góra pod przodem i lewy bok na
 w położeniu ze sceny – krawędzie zasłonięte, także przez inne bryły, przerywane, osie linią osiową, kula – okrąg; **Na
 tej kartce** (na prawo od obrazków brył) albo **Na nowej kartce**. Rzuty to zwykłe linie – zaznaczone po wstawieniu, nie
 zmieniają się po przesunięciu brył.
+**Suma i różnica brył** (od 1.55): w scenie, w panelu zaznaczonej bryły, **Połącz z…** (suma) i **Wytnij…** (różnica), potem
+dotknięcie drugiej bryły – druga bryła zostaje dołączona albo wycięta (otwór na wylot, kieszeń, wycięcie kuli) i znika jako
+osobny element. Liczy się położenie ze sceny (X, Y, Z, obrót, bryła ze szkicu na płaszczyźnie pionowej pod kątem – np. otwór
+skośny); nic się nie przesuwa, bryły stojące na drugiej bryle zostają na miejscu. W trybie zaznaczona bryła ma same krawędzie
+(widać bryłę w środku); **Anuluj – bez zmian** albo Esc – koniec trybu; **Cofnij** – jeden krok. W oknie bryły w **Historii
+modelu**: „Różnica – wycięta: Walec”, „Suma – dołączona: Kula”; **Wyjmij bryłę** przy ostatniej – druga bryła znów osobno,
+w tym samym miejscu; **Usuń** – operacja znika razem z nią. Bryła złożona ma osie brył, z których powstała (oś otworu do
+**Pomiaru**, linie osiowe otworów w **Rzutach**); kula z wycięciem rysuje się z siatki. Format rysunku – 26.
 **Spirala na grzbiecie** (od 1.24.1): kartka w edytorze ma przy lewej krawędzi dziurki co kratkę
 i metalowe zwoje spirali, które wystają za krawędź (strona jest o tyle odsunięta od brzegu ekranu);
 przy przewracaniu kartka obraca się wokół spirali – od 1.25.1 przewracany płat przechodzi nad spiralę
