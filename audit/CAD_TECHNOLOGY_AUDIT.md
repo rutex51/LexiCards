@@ -262,3 +262,18 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
   `study-setup.js`). Miniatury z obrazów i tabel notatek użytkownika, bez zewnętrznych usług.
 - **Funkcje:** ogólne elementy interfejsu (kafelki z miniaturą i znacznikiem wyboru, przełącznik części); nazwy opisowe.
 - Nowych pozycji rejestru algorytmów brak. Ryzyko wstępnie NISKIE.
+
+## Uzupełnienie: wersja 1.57 (30.10.2026) – gumka przez kształty, kółko narzędzi, pełny ekran obrazu na fiszce
+
+- **Zakres:** `js/core/sketch-erase.js` – zamiana elementu (kształt, bryła, szyk, diagram) na kreski pióra z jego linii
+  (obrys, zakończenia, kreskowanie, osie, linie wymiarów; bryła – krawędzie z `solidGeometry`) i cięcie gumką: obszarem
+  (wielokąt – ten sam podział kresek brzegiem obszaru `splitByPolygon` co zaznaczanie fragmentów z 1.14) albo kołem
+  (`eraseFromStroke` z 1.12.1). `js/core/tool-ring.js` – promień okręgu kółka narzędzi z odstępu kółek (cięciwa
+  2·r·sin(krok/2)). `js/ui/zoom-view.js` – powiększenie obrazu z fiszki z animacją przesunięcia i skali (FLIP).
+  Stuknięcie w fiszkę obsługiwane przy `touchend` – istniejąca własna funkcja `onTap` (`js/ui/dom.js`, od 0.3.3).
+- **Funkcje:** gumka obszarem i rozbijanie obiektu na linie przy edycji to ogólne funkcje programów do rysowania
+  i CAD (np. „rozbij”/„explode” jako ogólna idea – nazwa w aplikacji opisowa: „Zaznaczenie”, „Także kształty”);
+  powiększanie obrazu z ciemnym tłem (lightbox) – powszechny wzorzec interfejsu. Kod własny, bez bibliotek.
+- **Patenty:** szczególnego ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – bazy zablokowane,
+  AUDIT_LIMITATIONS.md).
+- Nowa pozycja rejestru algorytmów: G67. Ryzyko wstępnie NISKIE.
