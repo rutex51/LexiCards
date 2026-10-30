@@ -2219,6 +2219,22 @@ a.row__main:active,
 
 .flashcard__body > .flashcard__media:first-child { margin-top: 0; }
 
+/* Od 1.56.2 kilka obrazów na stronie – jeden naraz, pod nim przyciski poprzedni / następny i licznik. */
+.flashcard__media-nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: -4px;
+}
+.flashcard__media-nav { color: var(--accent); }
+.flashcard__media-count {
+  min-width: 3.5em;
+  color: var(--text-2);
+  font-size: var(--size-sub);
+  font-variant-numeric: tabular-nums;
+}
+
 .flashcard__figure {
   display: flex;
   flex-direction: column;

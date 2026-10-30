@@ -2189,7 +2189,11 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
 
 ## Strony fiszki: kierunki, wyśrodkowanie, własne strony pojęcia (od 1.56)
 
-Od 1.56.1 (zmiany niżej opisanego): `FLIP_TURNS` = right, up, up, `RETURN_TURN` = left (`TURN_FRAMES` bez `down`). Czwarta
+Od 1.56.2 jeden kierunek obrotu: `FLIP_TURN` = 'right' (od prawej do lewej, także powrót do pytania), `FLIP_TURN_LABEL`;
+ekran sesji – `TURN_FRAME` (rotateY −90° / 90°), `data-turn` = right; podpisy stron bez kierunku. `#mediaView` – każdy
+obraz w `.flashcard__slide`; dwa i więcej – `flashcard__media--carousel`: widoczny jeden, `card-media-prev` /
+`card-media-next` (stopPropagation – fiszka się nie obraca, skrajne wyłączone), licznik `card-media-count`. Od 1.56.1 (zmiany niżej
+opisanego): `FLIP_TURNS` = right, up, up, `RETURN_TURN` = left (`TURN_FRAMES` bez `down`; w 1.56.2 zastąpione). Czwarta
 część strony `MEDIA_PART` ('media', „Obraz”): rodzaj strony = rodzaj tekstu z dopiskiem `+media` (np. `answer+media`,
 `details+media`) albo sam `media`; `faceKind([])` → null, `hasMediaPart`. Obrazy pojęcia `cardMedia` bez numeru strony
 (`cleanCardMedia` pomija `face` z 1.56) – trafiają na strony z częścią „Obraz” (`mediaFaces`; żadna – ostatnia),

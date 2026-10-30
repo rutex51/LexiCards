@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { cleanToolSettings, defaultToolSettings } from '../../js/core/drawing.js';
-import { DEFAULT_FLIP_FACES, FLIP_TURNS, flipFaces, sessionFlipFaces } from '../../js/core/study.js';
+import { DEFAULT_FLIP_FACES, FLIP_TURN, flipFaces, sessionFlipFaces } from '../../js/core/study.js';
 import { cleanRingPositions, ringFacing, ringItems } from '../../js/core/tool-ring.js';
 
 const base = { count: 7, rotation: 0, side: 'right', radius: 84, edge: 78, size: 46 };
@@ -39,7 +39,7 @@ test('fiszka 1.39: 1–3 obroty, treść stron (złe – domyślne), w sesji –
   assert.deepEqual(flipFaces(2), [...DEFAULT_FLIP_FACES[2]]);
   assert.deepEqual(flipFaces(3, { 3: ['example', 'nope', 'answer'] }), ['example', 'description', 'answer']);
   assert.deepEqual(flipFaces(7, { 3: ['answer'] }), ['all'], 'nieznana liczba obrotów – jeden');
-  assert.deepEqual(FLIP_TURNS, ['right', 'up', 'up'], 'od 1.56.1: pierwszy od prawej do lewej, następne z dołu do góry');
+  assert.equal(FLIP_TURN, 'right', 'od 1.56.2: każdy obrót od prawej do lewej');
   assert.deepEqual(sessionFlipFaces({ flips: 2, faces: ['details', 'answer'] }, { flashcardFlips: 3 }), ['details', 'answer']);
   assert.deepEqual(sessionFlipFaces({ front: 'term' }, { flashcardFlips: 3, flashcardFaces: { 3: ['answer', 'example', 'description'] } }), ['answer', 'example', 'description']);
   assert.deepEqual(sessionFlipFaces(null, null), ['all']);

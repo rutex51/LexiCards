@@ -13,7 +13,7 @@ import {
   DECISION_NAMES, DIRECTION_NAMES, RATING_LABELS, STUDY_FRONTS, buildQueue, formatInterval, reviewConfig
 } from '../core/study.js';
 import {
-  CARD_MEDIA_LIMIT, FACE_PART_IDS, FACE_PART_LABELS, FLIP_COUNTS, FLIP_TURNS, MEDIA_PART, TURN_LABELS, emptyCardFaces, faceKind,
+  CARD_MEDIA_LIMIT, FACE_PART_IDS, FACE_PART_LABELS, FLIP_COUNTS, MEDIA_PART, emptyCardFaces, faceKind,
   faceParts, flipFaces, hasMediaPart
 } from '../core/card-faces.js';
 import { findImageByLabel, withImageLabels } from '../core/note-refs.js';
@@ -349,7 +349,7 @@ function termCardGroups(library, state, thumbs) {
           // Inna liczba obrotów – strony jak w Nauce przy tej liczbie (potem do zmiany).
           onChange: (value) => setFaces([...flipFaces(Number(value), settings.flashcardFaces)])
         })),
-        own.faces.map((kind, index) => field(`Po ${index + 1}. obrocie (${TURN_LABELS[FLIP_TURNS[index]]})`, checkSegmented({
+        own.faces.map((kind, index) => field(`Po ${index + 1}. obrocie`, checkSegmented({
           name: `term-face-${index + 1}`, label: `Treść strony po ${index + 1}. obrocie`, testID: `term-face-${index + 1}`,
           values: faceParts(kind), options: parts.map((part) => ({ value: part, label: FACE_PART_LABELS[part] })),
           onChange: (part, checked) => {

@@ -1,8 +1,7 @@
 // Sesja nauki: fiszka z obrotem, trzy kafelki oceny, zatwierdzanie gestem lub przyciskiem,
 // cofanie ostatniej decyzji i podsumowanie. Od 1.39 fiszka może mieć 1–3 obroty: po każdym kolejna
-// strona z wybraną treścią, po ostatniej – powrót do pytania. Od 1.56 dwa pierwsze obroty w poziomie
-// (od lewej do prawej, od prawej do lewej), trzeci i powrót w pionie (z góry na dół, z dołu do góry);
-// treść stron wyśrodkowana; pojęcie może mieć własne strony i obrazy albo tabele z notatki lekcji
+// strona z wybraną treścią, po ostatniej – powrót do pytania. Od 1.56.2 każdy obrót od prawej do lewej;
+// od 1.56 treść stron wyśrodkowana; pojęcie może mieć własne strony i obrazy albo tabele z notatki lekcji
 // (core/card-faces.js).
 //
 // Ekran sam aktualizuje kafelki i stronę fiszki (bez przebudowy całego widoku), żeby
@@ -11,7 +10,7 @@
 
 import { ASSESSMENT_STATUS_NAMES } from '../../core/model.js';
 import {
-  DECISIONS, FLIP_FACES, FLIP_TURNS, RETURN_TURN, TILES, cardContent, emptyTiles, formatInterval, isSessionFinished, scoreTiles, sessionFlipFaces,
+  DECISIONS, FLIP_FACES, FLIP_TURN, TILES, cardContent, emptyTiles, formatInterval, isSessionFinished, scoreTiles, sessionFlipFaces,
   setAllTiles, summarizeSession
 } from '../../core/study.js';
 import { MEDIA_FACE, MEDIA_PART, faceKind, faceParts, mediaOnFace, termCardFaces } from '../../core/card-faces.js';
@@ -50,15 +49,8 @@ function faceAction(kind, fromQuestion) {
   const names = parts.filter((part) => part !== 'answer').map((part) => PART_NAMES[part]);
   return `Pokaż ${names.length > 1 ? `${names.slice(0, -1).join(', ')} i ${names.at(-1)}` : names[0]}`;
 }
-/**
- * Animacja obrotu (połowa przed zamianą strony i połowa po niej): od prawej do lewej, od lewej do prawej,
- * z dołu do góry.
- */
-const TURN_FRAMES = {
-  left: { axis: 'Y', out: 90, in: -90 },
-  right: { axis: 'Y', out: -90, in: 90 },
-  up: { axis: 'X', out: 90, in: -90 }
-};
+/** Animacja obrotu od prawej do lewej (od 1.56.2 jedyna): połowa przed zamianą strony i połowa po niej. */
+const TURN_FRAME = { out: -90, in: 90 };
 /** Krótki tekst na stronie (definicja, przykład) – pogrubiony jak pytanie (od 1.56). */
 const SHORT_LINE = 42;
 const LANGUAGE_LOCATIVE = { pl: 'po polsku', en: 'po angielsku' };
@@ -227,15 +219,13 @@ export class StudySessionScreen {
   }
 
   /**
-   * Obraca fiszkę na stronę `target`: połowa obrotu, zamiana strony, druga połowa. Kierunek – według obrotu,
-   * który prowadzi na następną stronę (FLIP_TURNS: od 1.56.1 pierwszy od prawej do lewej, następne z dołu do góry);
-   * powrót do pytania – od lewej do prawej.
+   * Obraca fiszkę na stronę `target`: połowa obrotu, zamiana strony, druga połowa – od 1.56.2 zawsze od prawej do lewej
+   * (także powrót do pytania).
    */
   async #flipTo(target) {
     const { card, faces } = this.elements;
     if (!card || !faces || this.flipping || this.busy || target === this.face) return;
     this.flipping = true;
-    const turnName = target === this.face + 1 ? FLIP_TURNS[this.face] ?? 'up' : RETURN_TURN;
     const hadFocus = card.contains(document.activeElement);
     const swap = () => {
       this.face = target;
@@ -252,12 +242,12 @@ export class StudySessionScreen {
       if (reducedMotion() || typeof card.animate !== 'function') {
         swap();
       } else {
-        const { axis, out, in: back } = TURN_FRAMES[turnName];
+        const { out, in: back } = TURN_FRAME;
         const turn = (from, to, easing) => card.animate(
-          [{ transform: `perspective(1100px) rotate${axis}(${from}deg)` }, { transform: `perspective(1100px) rotate${axis}(${to}deg)` }],
+          [{ transform: `perspective(1100px) rotateY(${from}deg)` }, { transform: `perspective(1100px) rotateY(${to}deg)` }],
           { duration: 170, easing }
         ).finished;
-        card.dataset.turn = turnName;
+        card.dataset.turn = FLIP_TURN;
         await turn(0, out, 'ease-in');
         swap();
         await turn(back, 0, 'ease-out');
@@ -644,7 +634,7 @@ export class StudySessionScreen {
 
   /**
    * Obrazy (rysunki, zdjęcia) i tabele z notatki lekcji przypięte do strony fiszki (od 1.56) – z podpisem-sygnaturą;
-   * obraz pojawia się po wczytaniu, sygnatury, której nie ma w notatce – krótka informacja.
+   * obraz pojawia się po wczytaniu, sygnatury, której nie ma w notatce – krótka informacja. Od 1.56.2 kilka – przewijane.
    */
   #mediaView(term, items) {
     if (items.length === 0) return null;
@@ -652,7 +642,7 @@ export class StudySessionScreen {
     const imageLabels = withImageLabels(note?.images ?? []).map((image) => image.label);
     const tables = withTableLabels(note?.tables ?? [], imageLabels);
     const missing = (item) => h('p', { class: 'flashcard__missing', dataset: { testid: 'card-media-missing' } }, `„${item.label}” – nie ma w notatce lekcji`);
-    return h('div', { class: 'flashcard__media', dataset: { testid: 'card-media' } }, items.map((item) => {
+    const figureOf = (item) => {
       const caption = h('figcaption', { class: 'flashcard__media-label' }, item.label);
       if (item.kind === 'table') {
         const index = findTableByLabel(tables, item.label);
@@ -673,7 +663,30 @@ export class StudySessionScreen {
         }
       });
       return figure;
-    }));
+    };
+    const slides = items.map((item) => h('div', { class: 'flashcard__slide' }, figureOf(item)));
+    if (slides.length === 1) return h('div', { class: 'flashcard__media', dataset: { testid: 'card-media' } }, slides);
+
+    // Od 1.56.2 kilka obrazów – na stronie jeden naraz, przyciski poprzedni / następny i licznik (fiszka się nie obraca).
+    let current = 0;
+    const count = h('span', { class: 'flashcard__media-count', 'aria-live': 'polite', dataset: { testid: 'card-media-count' } });
+    const navButton = (delta, label, iconName, testID) => h('button', {
+      type: 'button', class: 'icon-button flashcard__media-nav', 'aria-label': label, title: label, dataset: { testid: testID },
+      onClick: (event) => { event.stopPropagation(); show(current + delta); }
+    }, icon(iconName, { size: 22 }));
+    const prev = navButton(-1, 'Poprzedni obraz', 'chevronLeft', 'card-media-prev');
+    const next = navButton(1, 'Następny obraz', 'chevronRight', 'card-media-next');
+    const show = (index) => {
+      current = Math.max(0, Math.min(slides.length - 1, index));
+      slides.forEach((slide, at) => { slide.hidden = at !== current; });
+      count.textContent = `${current + 1} / ${slides.length}`;
+      prev.disabled = current === 0;
+      next.disabled = current === slides.length - 1;
+    };
+    show(0);
+    return h('div', { class: 'flashcard__media flashcard__media--carousel', dataset: { testid: 'card-media' } },
+      slides,
+      h('div', { class: 'flashcard__media-nav-row' }, prev, count, next));
   }
 
   /** Adres obrazu notatki lekcji o danej sygnaturze (null – nie ma); obrazy lekcji wczytywane raz na sesję. */

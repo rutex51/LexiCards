@@ -58,7 +58,7 @@ export const STUDY_FRONTS = Object.freeze([
  * Obroty fiszki (od 1.39): 1 – jak dotąd, na odwrocie cała odpowiedź; 2 i 3 – po każdym obrocie kolejna
  * strona z wybraną treścią (FLIP_FACES), po ostatniej – powrót do pytania. Od 1.56 w core/card-faces.js.
  */
-export { DEFAULT_FLIP_FACES, FLIP_COUNTS, FLIP_FACES, FLIP_TURNS, RETURN_TURN, flipFaces } from './card-faces.js';
+export { DEFAULT_FLIP_FACES, FLIP_COUNTS, FLIP_FACES, FLIP_TURN, flipFaces } from './card-faces.js';
 
 /** Strony fiszki w sesji: z ustawień sesji (od 1.39), a w sesji bez nich – z ustawień aplikacji. */
 export function sessionFlipFaces(config, settings) {

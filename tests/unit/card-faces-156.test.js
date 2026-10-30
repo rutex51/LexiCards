@@ -5,15 +5,15 @@ import { test } from 'node:test';
 
 import { createBackup, parseBackupText, restoreBackup } from '../../js/core/backup.js';
 import {
-  CARD_MEDIA_LIMIT, FLIP_TURNS, MEDIA_FACE, MEDIA_PART, RETURN_TURN, cleanCardFaces, cleanCardMedia, emptyCardFaces, faceKind,
+  CARD_MEDIA_LIMIT, FLIP_TURN, FLIP_TURN_LABEL, MEDIA_FACE, MEDIA_PART, cleanCardFaces, cleanCardMedia, emptyCardFaces, faceKind,
   faceParts, flipFaces, hasMediaPart, mediaFaces, mediaOnFace, termCardFaces
 } from '../../js/core/card-faces.js';
 import { emptyTermDraft, termFieldsFromDraft, termToDraft } from '../../js/core/model.js';
 import { addTerm, makeBranch, makeLibrary } from './helpers.js';
 
-test('kierunki (od 1.56.1): pierwszy obrót od prawej do lewej, następne z dołu do góry, powrót od lewej do prawej', () => {
-  assert.deepEqual(FLIP_TURNS, ['right', 'up', 'up']);
-  assert.equal(RETURN_TURN, 'left');
+test('kierunek (od 1.56.2): każdy obrót, także powrót do pytania – od prawej do lewej', () => {
+  assert.equal(FLIP_TURN, 'right');
+  assert.equal(FLIP_TURN_LABEL, 'od prawej do lewej');
 });
 
 test('części strony: każdy niepusty zestaw ma swój rodzaj, kolejność bez znaczenia; „Obraz” jako czwarta część', () => {

@@ -3,10 +3,10 @@
 
 import { pluralCards } from '../../core/text.js';
 import {
-  DIRECTION_NAMES, FLIP_COUNTS, FLIP_TURNS, MIXED, RETURN_TURN, STUDY_COUNTS, STUDY_DIRECTIONS, STUDY_FRONTS, STUDY_SCOPES, buildQueue,
+  DIRECTION_NAMES, FLIP_COUNTS, MIXED, STUDY_COUNTS, STUDY_DIRECTIONS, STUDY_FRONTS, STUDY_SCOPES, buildQueue,
   describeStudyMaterial, flipFaces, isSessionFinished, scopeCounts
 } from '../../core/study.js';
-import { FACE_PART_IDS, FACE_PART_LABELS, MEDIA_PART, TURN_LABELS, faceKind, faceParts, hasMediaPart } from '../../core/card-faces.js';
+import { FACE_PART_IDS, FACE_PART_LABELS, FLIP_TURN_LABEL, MEDIA_PART, faceKind, faceParts, hasMediaPart } from '../../core/card-faces.js';
 import { startTodaysReview, todaysReviewQueue } from '../actions.js';
 import { initialSelection, lessonsGroup, materialGroup, sanitizeSelection, selectionConfig } from '../material.js';
 import { REPEAT_LABELS } from './study-session.js';
@@ -86,8 +86,8 @@ export class StudySetupScreen {
 
   /**
    * Obroty fiszki (od 1.39): 1, 2 albo 3; przy 2 i 3 – co pokazuje każda następna strona. Od 1.56 części strony
-   * (tłumaczenie, definicja, przykład) zaznaczane dowolnie; pierwszy obrót od lewej do prawej, drugi od prawej do lewej,
-   * trzeci z góry na dół, powrót z dołu do góry.
+   * (tłumaczenie, definicja, przykład; od 1.56.1 też obraz) zaznaczane dowolnie; od 1.56.2 każdy obrót od prawej
+   * do lewej.
    */
   #flipsGroup() {
     const { ctx } = this;
@@ -102,7 +102,7 @@ export class StudySetupScreen {
         options: FLIP_COUNTS.map((count) => ({ value: String(count), label: count === 1 ? '1 obrót' : `${count} obroty` })),
         onChange: (value) => { this.flips = Number(value); ctx.refresh(); }
       }),
-      faces.map((face, index) => field(`Po ${index + 1}. obrocie (${TURN_LABELS[FLIP_TURNS[index]]})`, checkSegmented({
+      faces.map((face, index) => field(`Po ${index + 1}. obrocie`, checkSegmented({
         name: `study-face-${index + 1}`, label: `Treść strony po ${index + 1}. obrocie`, testID: `study-face-${index + 1}`,
         values: faceParts(face), options: parts.map((part) => ({ value: part, label: FACE_PART_LABELS[part] })),
         onChange: (part, checked) => {
@@ -116,7 +116,7 @@ export class StudySetupScreen {
       }))),
       h('p', { class: 'group__footer' }, this.flips === 1
         ? 'Na odwrocie: tłumaczenie, definicja i przykład (i obrazy z notatki przypięte do pojęcia). 2 albo 3 obroty – każda następna strona pokazuje wybrane części, po ostatniej fiszka wraca do pytania.'
-        : `Zaznacz, co pokazuje każda strona. Dotknięcie fiszki obraca ją na następną stronę; po ostatniej wraca do pytania (${TURN_LABELS[RETURN_TURN]}). `
+        : `Zaznacz, co pokazuje każda strona. Dotknięcie fiszki obraca ją (${FLIP_TURN_LABEL}) na następną stronę; po ostatniej wraca do pytania. `
           + `${media ? '„Obraz” – wszystkie obrazy i tabele z notatki przypięte do pojęcia (bez zaznaczenia – na ostatniej stronie). ' : ''}`
           + 'Pojęcie może mieć własne strony i obrazy z notatki – w oknie pojęcia.')
     );

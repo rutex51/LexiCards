@@ -2,8 +2,8 @@
 //
 // Fiszka ma pierwszą stronę (pytanie: pojęcie, definicja albo przykład w języku pytania) i 1–3 strony po obrotach.
 // Strona po obrocie pokazuje dowolny zestaw części: tłumaczenie, definicję, przykład i (od 1.56.1) obraz – wszystkie
-// rysunki, zdjęcia i tabele z notatki przypięte do pojęcia. Od 1.56.1 pierwszy obrót idzie od prawej do lewej, każdy
-// następny z dołu do góry, a powrót do pytania – od lewej do prawej.
+// rysunki, zdjęcia i tabele z notatki przypięte do pojęcia. Od 1.56.2 każdy obrót (także powrót do pytania) idzie
+// od prawej do lewej.
 //
 // Od 1.56 pojęcie może mieć własne strony – cardFaces { front, faces: [rodzaj strony…] } (zamiast ustawień nauki)
 // – i obrazy z notatki swojej lekcji – cardMedia [{ kind: 'image' | 'table', label }]: rysunek albo zdjęcie (sygnatura
@@ -38,13 +38,9 @@ const WITH_MEDIA = `+${MEDIA_PART}`;
 
 /** Strony domyślne przy 2 i 3 obrotach. */
 export const DEFAULT_FLIP_FACES = Object.freeze({ 2: Object.freeze(['answer', 'details']), 3: Object.freeze(['answer', 'description', 'example']) });
-/**
- * Kierunek kolejnych obrotów (od 1.56.1): pierwszy – od prawej do lewej, następne – z dołu do góry; powrót do pytania
- * – od lewej do prawej.
- */
-export const FLIP_TURNS = Object.freeze(['right', 'up', 'up']);
-export const RETURN_TURN = 'left';
-export const TURN_LABELS = Object.freeze({ right: 'od prawej do lewej', up: 'z dołu do góry', left: 'od lewej do prawej' });
+/** Kierunek obrotu fiszki (od 1.56.2 jeden dla wszystkich stron i powrotu do pytania): od prawej do lewej. */
+export const FLIP_TURN = 'right';
+export const FLIP_TURN_LABEL = 'od prawej do lewej';
 
 /** Części strony danego rodzaju (nieznany rodzaj – bez części). */
 export function faceParts(kind) {

@@ -1,4 +1,4 @@
-# LexiCards 1.56.1
+# LexiCards 1.56.2
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -65,8 +65,9 @@ Rysunek – płaszczyzny szkicu i rzuty sceny: „Na płaszczyźnie…” – br
 Rysunek – suma i różnica brył: w scenie „Połącz z…” i „Wytnij…” – druga bryła dołączona albo wycięta pod dowolnym kątem (np. otwór skośny), nic się nie przesuwa; w historii modelu bryły – „Wyjmij bryłę”; osie otworów w pomiarach i rzutach (wersja 1.55): [docs/RELEASE-1.55.md](docs/RELEASE-1.55.md).
 Fiszki – nowa kolejność obrotów (od lewej, od prawej, z góry na dół, powrót z dołu), treść każdej strony na środku z pogrubionymi krótkimi liniami, części stron (tłumaczenie, definicja, przykład) zaznaczane dowolnie w Nauce, własne strony pojęcia i obraz albo tabela z notatki lekcji na wybranej stronie; w oknie notatki „Edytuj” po lewej, „Zamknij” po prawej (wersja 1.56): [docs/RELEASE-1.56.md](docs/RELEASE-1.56.md).
 Fiszki – obroty: pierwszy od prawej do lewej, kolejne z dołu do góry, powrót od lewej do prawej; „Obraz” jako czwarta część strony (wszystkie obrazy i tabele z notatki przypięte do pojęcia), obrazy wybierane dotknięciem kafelka z miniaturą (wersja 1.56.1): [docs/RELEASE-1.56.1.md](docs/RELEASE-1.56.1.md).
+Fiszki – każdy obrót, także powrót do pytania, od prawej do lewej, bez obrotów w pionie; kilka obrazów na stronie – jeden naraz, przewijane przyciskami ‹ › z licznikiem (wersja 1.56.2): [docs/RELEASE-1.56.2.md](docs/RELEASE-1.56.2.md).
 
-## Co potrafi wersja 1.56.1
+## Co potrafi wersja 1.56.2
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -1221,8 +1222,8 @@ zaznaczasz części: **Tłumaczenie**, **Definicja**, **Przykład** – od 1.56 
 z definicją), co najmniej jedna część (domyślnie: 2 obroty – tłumaczenie, potem definicja i przykład;
 3 obroty – tłumaczenie, definicja, przykład). Od 1.56.1 czwarta część **Obraz** (widoczna, gdy któreś pojęcie ma
 przypięty obraz z notatki) – na tej stronie wszystkie obrazy i tabele przypięte do pojęcia; bez zaznaczenia „Obrazu”
-są na ostatniej stronie, a pojęcie bez obrazów pomija stronę z samym obrazem. Od 1.56.1 pierwszy obrót idzie od prawej
-do lewej, każdy następny z dołu do góry, a powrót do pytania – od lewej do prawej; na dole strony przycisk następnej
+są na ostatniej stronie, a pojęcie bez obrazów pomija stronę z samym obrazem. Od 1.56.2 każdy obrót – na kolejne strony
+i z powrotem do pytania – idzie od prawej do lewej; na dole strony przycisk następnej
 (np. „Pokaż przykład”), w nagłówku numer strony („3/4”), po ostatniej stronie dotknięcie wraca do pytania,
 a przycisk obrotu w nagłówku – od razu do pytania. Oceniać można już po pierwszym obrocie. Wybór jest
 zapamiętany (osobno dla 2 i 3 obrotów). Od 1.56 treść każdej strony stoi na środku fiszki (w pionie
@@ -1235,7 +1236,8 @@ Sekcja **Obrazy z notatki lekcji** (od 1.56.1): kafelki ze wszystkimi rysunkami,
 każdy z miniaturą i sygnaturą – dotknięcie przypina albo odpina (przypięte z niebieską obwódką i ✓, najwyżej 6).
 Na których stronach są obrazy – część **Obraz** w wierszu strony (pojawia się po przypięciu obrazu); strona może
 pokazywać sam obraz („Pokaż obraz z notatki”, nagłówek „Z notatki lekcji”), ale nie bez przypiętego obrazu – takiej
-strony nie da się zapisać. Fiszka pokazuje obrazy i tabele pod tekstem strony, z sygnaturą; gdy sygnatury nie ma już
+strony nie da się zapisać. Fiszka pokazuje obrazy i tabele pod tekstem strony, z sygnaturą; od 1.56.2 kilka – jeden naraz,
+pod nim przyciski **‹** i **›** z licznikiem („1 / 3”), przewijanie nie obraca fiszki. Gdy sygnatury nie ma już
 w notatce – kafelek „nie ma w notatce lekcji” (do odpięcia) i napis na fiszce.
 
 **Nauka w kalendarzu** (od 1.23): w zakładce **Nauka**, po wyborze materiału, **Zaplanuj naukę
