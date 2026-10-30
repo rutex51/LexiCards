@@ -1727,6 +1727,9 @@ a.row__main:active,
 
 .segmented__input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+/* Od 1.56 kilka opcji naraz (pola wyboru) – zaznaczone osobno, z odstępem między nimi. */
+.segmented--multi { gap: 2px; }
+
 .picker {
   display: flex;
   flex-direction: column;
@@ -2066,6 +2069,7 @@ a.row__main:active,
   min-width: 0;
   display: flex;
   flex-direction: column;
+  container-type: size;
   padding: 8px 18px 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -2102,8 +2106,24 @@ a.row__main:active,
 .flashcard__tools .flashcard__speak { margin-right: 0; }
 .flashcard__turn { color: var(--accent); }
 
-.flashcard__text {
+/*
+ * Od 1.56 treść strony fiszki to jeden blok na środku (w pionie i w poziomie) – pytanie, tłumaczenie, definicja, przykład
+ * i obraz z notatki; dłuższa treść przewija się od góry (margines auto znika).
+ */
+.flashcard__body {
   margin: auto 0;
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+}
+
+/* Wolne miejsce strony dzielą tylko marginesy treści – przycisk i wygaszenie na dole nie biorą z niego części. */
+.flashcard__body ~ .flashcard__flip,
+.flashcard__body ~ .flashcard__fade { margin-top: 0; }
+
+.flashcard__text {
+  margin: 0;
   padding: 6px 0;
   text-align: center;
   font-weight: 700;
@@ -2135,6 +2155,13 @@ a.row__main:active,
   border-top: 1px solid var(--separator);
 }
 
+/* Strona zaczynająca się od definicji albo przykładu – bez kreski nad nim. */
+.flashcard__body > .flashcard__section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .flashcard__section-title {
   font-size: var(--size-foot);
   font-weight: 600;
@@ -2144,8 +2171,15 @@ a.row__main:active,
 .flashcard__line {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: center;
   gap: 6px;
+}
+
+/* Od 1.56 krótka definicja albo krótki przykład (pierwszy język) – pogrubione i większe, jak pytanie. */
+.flashcard__line--short:first-of-type > span {
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .flashcard__line > span {
@@ -2172,6 +2206,57 @@ a.row__main:active,
   color: var(--text-2);
   font-style: italic;
 }
+
+/* Od 1.56 obrazy (rysunki, zdjęcia) i tabele z notatki lekcji na stronie fiszki – z sygnaturą pod spodem. */
+.flashcard__media {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.flashcard__body > .flashcard__media:first-child { margin-top: 0; }
+
+.flashcard__figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+
+.flashcard__image {
+  display: block;
+  max-width: 100%;
+  /* Obraz mieści się na stronie razem z krótkim tekstem: do 45% wysokości strony (starsze przeglądarki – 30% ekranu). */
+  max-height: min(30vh, 240px);
+  max-height: min(45cqh, 320px);
+  object-fit: contain;
+  border-radius: 8px;
+  -webkit-user-drag: none;
+}
+
+.flashcard__figure--loading .flashcard__image {
+  width: 120px;
+  height: 90px;
+  border-radius: 8px;
+  background: var(--fill);
+}
+
+.flashcard__media-label {
+  font-size: var(--size-foot);
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.flashcard__table {
+  max-width: 100%;
+  overflow-x: auto;
+  font-size: var(--size-sub);
+  text-align: left;
+}
+
+.flashcard__table .note-table { margin: 0 auto; }
 
 /*
  * Przycisk obrotu trzyma się dolnej krawędzi fiszki także wtedy, gdy treść się przewija.
@@ -3734,6 +3819,8 @@ a.row__main:active,
 
 .sheet__header .button:first-child { justify-self: start; }
 .sheet__header .sheet__submit { justify-self: end; font-weight: 600; }
+/* Od 1.56 w oknie notatki przycisk po prawej to „Zamknij” (zwykły), a „Edytuj” – po lewej. */
+.sheet__header .button:last-child { justify-self: end; }
 .sheet__header .button:disabled { color: var(--text-3); opacity: 1; }
 
 .sheet__title {
@@ -8131,3 +8218,31 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   .drawing__scene-dock { left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); }
   .drawing__scene-card { flex-basis: 100%; padding: 8px 10px 10px; }
 }
+
+/* Od 1.56: obraz albo tabela z notatki przypięta do strony fiszki (okno pojęcia). */
+.dialog.sheet:not(.note-dialog) .term-card .form-group__body > :is(.field__hint, .card-media-row, .form-message) {
+  margin: 0;
+  padding: 9px 14px 10px;
+  border-radius: 0;
+  box-shadow: 0 -1px 0 var(--outline);
+}
+.card-media-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+.card-media-row__name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.card-media-row__name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.card-media-row__name > small { color: var(--text-2); }
+.card-media-row__name > .card-media-row__missing { color: var(--danger); }
+.card-media-row .input--select { width: auto; max-width: 150px; }

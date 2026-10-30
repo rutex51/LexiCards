@@ -1,4 +1,4 @@
-# LexiCards 1.55
+# LexiCards 1.56
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -63,8 +63,9 @@ Rysunek – położenie brył w scenie: panel X, Y, Z (wysokość podstawy) i ob
 Rysunek – pomiary 3D w scenie: „Pomiar” – dwie cechy brył (narożnik, środek ściany, krawędź, ściana, oś walca), odległość z ΔX, ΔY, ΔZ, odległość od prostej i płaszczyzny, kąty i odległość równoległych; wynik zostaje w scenie jako wymiar i idzie za bryłami (wersja 1.53): [docs/RELEASE-1.53.md](docs/RELEASE-1.53.md).
 Rysunek – płaszczyzny szkicu i rzuty sceny: „Na płaszczyźnie…” – bryła ze szkicu poziomo na wysokości Z albo pionowo na XZ (widok z przodu) i YZ (widok z boku), np. stojący wspornik albo wazon; „Rzuty” w scenie – przód, góra i lewy bok wszystkich brył razem, krawędzie zasłonięte przez inne bryły przerywane, na tej albo nowej kartce (wersja 1.54): [docs/RELEASE-1.54.md](docs/RELEASE-1.54.md).
 Rysunek – suma i różnica brył: w scenie „Połącz z…” i „Wytnij…” – druga bryła dołączona albo wycięta pod dowolnym kątem (np. otwór skośny), nic się nie przesuwa; w historii modelu bryły – „Wyjmij bryłę”; osie otworów w pomiarach i rzutach (wersja 1.55): [docs/RELEASE-1.55.md](docs/RELEASE-1.55.md).
+Fiszki – nowa kolejność obrotów (od lewej, od prawej, z góry na dół, powrót z dołu), treść każdej strony na środku z pogrubionymi krótkimi liniami, części stron (tłumaczenie, definicja, przykład) zaznaczane dowolnie w Nauce, własne strony pojęcia i obraz albo tabela z notatki lekcji na wybranej stronie; w oknie notatki „Edytuj” po lewej, „Zamknij” po prawej (wersja 1.56): [docs/RELEASE-1.56.md](docs/RELEASE-1.56.md).
 
-## Co potrafi wersja 1.55
+## Co potrafi wersja 1.56
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -356,7 +357,8 @@ Obrazy w formatach EMF i WMF (Windows) są pomijane z ostrzeżeniem – zapisz j
 Notatkę otworzysz w module (ikona notatki przy lekcji albo „Dodaj notatkę” w menu „…”), na ekranie
 lekcji (wiersz „Notatka” nad listą pojęć, na delikatnie żółtym tle), w szczegółach pojęcia („Notatka lekcji”) i w trakcie nauki
 fiszek (ikona u góry). Okno pokazuje tekst i obrazy; dotknięcie obrazu powiększa go (dwa palce albo
-dwukrotne dotknięcie). Od 1.29 edycja ma dwa osobne okna nad podglądem:
+dwukrotne dotknięcie). Od 1.56 w nagłówku podglądu **Edytuj** jest po lewej, a **Zamknij** po prawej.
+Od 1.29 edycja ma dwa osobne okna nad podglądem:
 - **Edytuj** – okno tekstu na cały ekran (jak edytor rysunku): pasek formatowania i duże pole tekstu
   (na komputerze kolumna na środku). Obok nazwy lekcji: **mikrofon** (notatka głosowa nagrywa się
   w trakcie pisania) i **spinacz z liczbą** obrazów, tabel i załączników – otwiera nad tekstem okno
@@ -1214,12 +1216,23 @@ Na komputerze działa klawiatura: spacja odwraca, 1 2 3 przełączają kafelki, 
 
 **Obroty fiszki** (od 1.39, Nauka – grupa **Obroty fiszki**): **1 obrót** – jak dotąd, na odwrocie
 tłumaczenie, definicja i przykład. **2 obroty** albo **3 obroty** – fiszka ma więcej stron, a dla każdej
-wybierasz treść: tłumaczenie, definicję, przykład, definicję i przykład albo wszystko (domyślnie: 2 obroty –
-tłumaczenie, potem definicja i przykład; 3 obroty – tłumaczenie, definicja, przykład). Pierwszy obrót idzie
-od lewej do prawej, drugi z dołu do góry, trzeci od prawej do lewej; na dole strony przycisk następnej
+zaznaczasz części: **Tłumaczenie**, **Definicja**, **Przykład** – od 1.56 dowolny zestaw (np. tłumaczenie
+z definicją), co najmniej jedna część (domyślnie: 2 obroty – tłumaczenie, potem definicja i przykład;
+3 obroty – tłumaczenie, definicja, przykład). Od 1.56 pierwszy obrót idzie od lewej do prawej, drugi od prawej
+do lewej, trzeci z góry na dół, a powrót do pytania – z dołu do góry; na dole strony przycisk następnej
 (np. „Pokaż przykład”), w nagłówku numer strony („3/4”), po ostatniej stronie dotknięcie wraca do pytania,
 a przycisk obrotu w nagłówku – od razu do pytania. Oceniać można już po pierwszym obrocie. Wybór jest
-zapamiętany (osobno dla 2 i 3 obrotów).
+zapamiętany (osobno dla 2 i 3 obrotów). Od 1.56 treść każdej strony stoi na środku fiszki (w pionie
+i w poziomie), krótkie linie definicji i przykładu są pogrubione; dłuższa treść przewija się od góry.
+
+**Strony fiszki pojęcia i obrazy z notatki** (od 1.56, okno pojęcia – **Edytuj**): sekcja **Strony fiszki** –
+**Własne strony tej fiszki** (na start to, co w Nauce): pierwsza strona (pojęcie, definicja albo przykład),
+liczba obrotów i części każdej strony – ta fiszka wygląda tak w każdej sesji, niezależnie od ustawień Nauki.
+Sekcja **Obrazy z notatki lekcji** – **Przypnij do fiszki** rysunek, zdjęcie albo tabelę z notatki lekcji
+(lista po sygnaturach) i wybierz stronę: **Pytanie**, **Po 1. obrocie**… (najwyżej 6 na fiszce, ✕ odpina).
+Stronę bez zaznaczonych części można zostawić tylko z obrazem („Pokaż obraz z notatki”, nagłówek „Z notatki
+lekcji”); pustej strony nie da się zapisać. Fiszka pokazuje obraz albo tabelę pod tekstem strony, z sygnaturą;
+gdy sygnatury nie ma już w notatce – napis „nie ma w notatce lekcji”.
 
 **Nauka w kalendarzu** (od 1.23): w zakładce **Nauka**, po wyborze materiału, **Zaplanuj naukę
 w kalendarzu** otwiera okno planu: tytuł wydarzenia, **pierwszy dzień** (kalendarz), **godzina**

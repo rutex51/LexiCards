@@ -1,7 +1,9 @@
 // Sesja nauki: fiszka z obrotem, trzy kafelki oceny, zatwierdzanie gestem lub przyciskiem,
 // cofanie ostatniej decyzji i podsumowanie. Od 1.39 fiszka może mieć 1–3 obroty: po każdym kolejna
-// strona z wybraną treścią (pierwszy obrót od lewej do prawej, drugi z dołu do góry, trzeci od prawej
-// do lewej), po ostatniej – powrót do pytania.
+// strona z wybraną treścią, po ostatniej – powrót do pytania. Od 1.56 dwa pierwsze obroty w poziomie
+// (od lewej do prawej, od prawej do lewej), trzeci i powrót w pionie (z góry na dół, z dołu do góry);
+// treść stron wyśrodkowana; pojęcie może mieć własne strony i obrazy albo tabele z notatki lekcji
+// (core/card-faces.js).
 //
 // Ekran sam aktualizuje kafelki i stronę fiszki (bez przebudowy całego widoku), żeby
 // animacje nie zaczynały się od nowa. Pełna przebudowa następuje po zmianie danych,
@@ -9,9 +11,13 @@
 
 import { ASSESSMENT_STATUS_NAMES } from '../../core/model.js';
 import {
-  DECISIONS, FLIP_FACES, FLIP_TURNS, TILES, cardContent, emptyTiles, formatInterval, isSessionFinished, scoreTiles, sessionFlipFaces, setAllTiles,
-  summarizeSession
+  DECISIONS, FLIP_FACES, FLIP_TURNS, RETURN_TURN, TILES, cardContent, emptyTiles, formatInterval, isSessionFinished, scoreTiles, sessionFlipFaces,
+  setAllTiles, summarizeSession
 } from '../../core/study.js';
+import { MEDIA_FACE, faceParts, mediaOnFace, termCardFaces } from '../../core/card-faces.js';
+import { findImageByLabel, withImageLabels } from '../../core/note-refs.js';
+import { findTableByLabel, tableHtml, withTableLabels } from '../../core/tables.js';
+import { urlPool } from '../images.js';
 import { emptyState, iconButton, navButton } from '../components.js';
 import { openLessonNote } from '../notes.js';
 import { showError, toast } from '../dialogs.js';
@@ -32,19 +38,27 @@ const REPEAT_TEST_IDS = {
   repeat: 'summary-repeat', partial: 'summary-repeat-partial', unknown: 'summary-repeat-unknown', all: 'summary-repeat-all'
 };
 const LANGUAGE_NAMES = { pl: 'Polski', en: 'Angielski' };
-/** Przycisk przejścia na stronę z daną treścią (od 1.39). */
+/** Przycisk przejścia na stronę z daną treścią (od 1.39; od 1.56 też tłumaczenie z definicją albo przykładem i sam obraz). */
 const FACE_ACTIONS = {
-  answer: 'Pokaż odpowiedź', all: 'Pokaż odpowiedź', description: 'Pokaż definicję', example: 'Pokaż przykład', details: 'Pokaż definicję i przykład'
+  answer: 'Pokaż odpowiedź', all: 'Pokaż odpowiedź', 'answer-description': 'Pokaż odpowiedź', 'answer-example': 'Pokaż odpowiedź',
+  description: 'Pokaż definicję', example: 'Pokaż przykład', details: 'Pokaż definicję i przykład', [MEDIA_FACE]: 'Pokaż obraz z notatki'
+};
+/** Przycisk na dalszych stronach (od 1.56): mówi, co dochodzi poza tłumaczeniem. */
+const NEXT_ACTIONS = {
+  ...FACE_ACTIONS, answer: 'Pokaż tłumaczenie', all: 'Pokaż definicję i przykład', 'answer-description': 'Pokaż definicję', 'answer-example': 'Pokaż przykład'
 };
 /**
- * Animacja obrotu (połowa przed zamianą strony i połowa po niej): od lewej do prawej, z dołu do góry,
- * od prawej do lewej.
+ * Animacja obrotu (połowa przed zamianą strony i połowa po niej): od lewej do prawej, od prawej do lewej,
+ * z góry na dół, z dołu do góry.
  */
 const TURN_FRAMES = {
   left: { axis: 'Y', out: 90, in: -90 },
-  up: { axis: 'X', out: 90, in: -90 },
-  right: { axis: 'Y', out: -90, in: 90 }
+  right: { axis: 'Y', out: -90, in: 90 },
+  down: { axis: 'X', out: -90, in: 90 },
+  up: { axis: 'X', out: 90, in: -90 }
 };
+/** Krótki tekst na stronie (definicja, przykład) – pogrubiony jak pytanie (od 1.56). */
+const SHORT_LINE = 42;
 const LANGUAGE_LOCATIVE = { pl: 'po polsku', en: 'po angielsku' };
 const SWIPE_START = 12;
 const STATUS_ORDER = ['mastered', 'partiallyMastered', 'inProgress', 'toLearn'];
@@ -113,12 +127,18 @@ export class StudySessionScreen {
     /** Chwila pokazania bieżącej fiszki – czas nad fiszką trafia do statystyk. */
     this.cardShownAt = Date.now();
 
+    /** Obrazy notatek na fiszkach (od 1.56): lekcja → obietnica obrazów z adresami; adresy zwalniane przy wyjściu. */
+    this.noteImages = new Map();
+    this.urls = urlPool();
+
     this.onKeyDown = (event) => this.#handleKey(event);
     document.addEventListener('keydown', this.onKeyDown);
   }
 
   dispose() {
     this.disposed = true;
+    this.urls.release();
+    this.noteImages.clear();
     document.removeEventListener('keydown', this.onKeyDown);
     stopSpeaking();
     // Sesja doprowadzona do końca jest zamykana przy wyjściu z podsumowania.
@@ -206,13 +226,13 @@ export class StudySessionScreen {
 
   /**
    * Obraca fiszkę na stronę `target`: połowa obrotu, zamiana strony, druga połowa. Kierunek – według obrotu,
-   * który prowadzi na następną stronę (FLIP_TURNS); powrót do pytania – jak pierwszy obrót.
+   * który prowadzi na następną stronę (FLIP_TURNS); powrót do pytania – z dołu do góry (od 1.56).
    */
   async #flipTo(target) {
     const { card, faces } = this.elements;
     if (!card || !faces || this.flipping || this.busy || target === this.face) return;
     this.flipping = true;
-    const turnName = target === this.face + 1 ? FLIP_TURNS[this.face] ?? 'left' : 'left';
+    const turnName = target === this.face + 1 ? FLIP_TURNS[this.face] ?? 'left' : RETURN_TURN;
     const hadFocus = card.contains(document.activeElement);
     const swap = () => {
       this.face = target;
@@ -479,19 +499,20 @@ export class StudySessionScreen {
 
   #cardView(term, card, front) {
     const { library } = this.ctx;
-    const content = cardContent(term, card.direction, front);
-    const frontLabel = frontLabelOf(content);
-    // Strony po obrotach (od 1.39): 1 obrót – jedna strona z całą odpowiedzią.
+    // Strony po obrotach (od 1.39): 1 obrót – jedna strona z całą odpowiedzią; od 1.56 pojęcie może mieć własne strony.
     const session = library.getStudySession();
-    const kinds = sessionFlipFaces(session?.config, this.#settings());
+    const spec = termCardFaces(term, front, sessionFlipFaces(session?.config, this.#settings()));
+    const kinds = spec.faces;
+    const content = cardContent(term, card.direction, spec.front);
+    const frontLabel = frontLabelOf(content);
     const total = kinds.length + 1;
 
-    // Każdą linię opisu i przykładu można odsłuchać osobno, w jej języku.
+    // Każdą linię opisu i przykładu można odsłuchać osobno, w jej języku; od 1.56 krótkie linie – pogrubione.
     const section = (id, title, items, speakLabel) => h('div', { class: 'flashcard__section', dataset: { section: id } },
       h('h3', { class: 'flashcard__section-title' }, title),
       items.length === 0
         ? h('p', { class: 'flashcard__missing' }, 'Brak danych')
-        : items.map((item) => h('p', { class: 'flashcard__line', lang: item.lang },
+        : items.map((item) => h('p', { class: `flashcard__line${item.text.length <= SHORT_LINE ? ' flashcard__line--short' : ''}`, lang: item.lang },
             h('span', null, item.text),
             this.#speakerButton(item.text, item.lang, `${speakLabel} ${LANGUAGE_LOCATIVE[item.lang]}`)
           ))
@@ -507,14 +528,19 @@ export class StudySessionScreen {
         h('span', { class: 'flashcard__label' }, frontLabel),
         this.#speakerButton(content.front.text, content.front.lang, 'Odtwórz wymowę')
       ),
-      h('p', { class: `flashcard__text ${sizeClass(content.front.text)}`, lang: content.front.lang }, content.front.text),
+      // Od 1.56 treść strony w jednym bloku na środku (z obrazem albo tabelą z notatki pod spodem).
+      h('div', { class: 'flashcard__body' },
+        h('p', { class: `flashcard__text ${sizeClass(content.front.text)}`, lang: content.front.lang }, content.front.text),
+        this.#mediaView(term, mediaOnFace(term, 0, total))),
       nextButton(FACE_ACTIONS[kinds[0]], 'card-flip')
     );
 
-    /** Strona po obrocie `index` (1…) z treścią `kind`. */
+    /** Strona po obrocie `index` (1…) z treścią `kind` (od 1.56 – dowolny zestaw części albo sam obraz z notatki). */
     const backFace = (kind, index) => {
-      const answer = kind === 'all' || kind === 'answer';
-      const label = answer ? LANGUAGE_NAMES[content.target] : FLIP_FACES.find((face) => face.id === kind).label;
+      const parts = faceParts(kind);
+      const answer = parts.includes('answer');
+      const media = this.#mediaView(term, mediaOnFace(term, index, total));
+      const label = answer ? LANGUAGE_NAMES[content.target] : kind === MEDIA_FACE ? 'Z notatki lekcji' : FLIP_FACES.find((face) => face.id === kind).label;
       return h('div', {
         class: `flashcard__face flashcard__face--back flashcard__face--${kind}`, hidden: this.face !== index,
         dataset: { testid: index === 1 ? 'card-back' : `card-face-${index}`, kind }
@@ -533,12 +559,15 @@ export class StudySessionScreen {
             answer ? this.#speakerButton(content.back.answer.text, content.back.answer.lang, 'Odtwórz wymowę tłumaczenia') : null
           )
         ),
-        answer ? h('p', { class: `flashcard__text flashcard__text--answer ${sizeClass(content.back.answer.text)}`, lang: content.back.answer.lang },
-          content.back.answer.text) : null,
-        answer ? h('p', { class: 'flashcard__question', lang: content.back.question.lang }, content.back.question.text) : null,
-        kind === 'all' || kind === 'description' || kind === 'details' ? section('description', 'Definicja', content.back.descriptions, 'Odtwórz definicję') : null,
-        kind === 'all' || kind === 'example' || kind === 'details' ? section('example', 'Przykład', content.back.examples, 'Odtwórz przykład') : null,
-        index < kinds.length ? nextButton(FACE_ACTIONS[kinds[index]], `card-next-${index}`) : null,
+        h('div', { class: 'flashcard__body' },
+          answer ? h('p', { class: `flashcard__text flashcard__text--answer ${sizeClass(content.back.answer.text)}`, lang: content.back.answer.lang },
+            content.back.answer.text) : null,
+          answer ? h('p', { class: 'flashcard__question', lang: content.back.question.lang }, content.back.question.text) : null,
+          parts.includes('description') ? section('description', 'Definicja', content.back.descriptions, 'Odtwórz definicję') : null,
+          parts.includes('example') ? section('example', 'Przykład', content.back.examples, 'Odtwórz przykład') : null,
+          media,
+          parts.length === 0 && !media ? h('p', { class: 'flashcard__missing' }, 'Brak treści na tej stronie') : null),
+        index < kinds.length ? nextButton(NEXT_ACTIONS[kinds[index]], `card-next-${index}`) : null,
         h('span', { class: 'flashcard__fade', 'aria-hidden': 'true' })
       );
     };
@@ -591,7 +620,7 @@ export class StudySessionScreen {
 
   /** Strona z pytaniem następnej fiszki – wygląda jak prawdziwa, ale niczego nie obsługuje. */
   #previewFace(term, card, front) {
-    const content = cardContent(term, card.direction, front);
+    const content = cardContent(term, card.direction, termCardFaces(term, front, []).front);
     return h('div', { class: 'flashcard__face' },
       h('div', { class: 'flashcard__top' },
         h('span', { class: 'flashcard__label' }, frontLabelOf(content)),
@@ -599,9 +628,57 @@ export class StudySessionScreen {
           ? h('span', { class: 'icon-button flashcard__speak' }, icon('speaker', { size: 22 }))
           : null
       ),
-      h('p', { class: `flashcard__text ${sizeClass(content.front.text)}`, lang: content.front.lang }, content.front.text),
+      h('div', { class: 'flashcard__body' },
+        h('p', { class: `flashcard__text ${sizeClass(content.front.text)}`, lang: content.front.lang }, content.front.text)),
       h('span', { class: 'flashcard__flip' }, icon('flip', { size: 18 }), h('span', null, 'Pokaż odpowiedź'))
     );
+  }
+
+  /**
+   * Obrazy (rysunki, zdjęcia) i tabele z notatki lekcji przypięte do strony fiszki (od 1.56) – z podpisem-sygnaturą;
+   * obraz pojawia się po wczytaniu, sygnatury, której nie ma w notatce – krótka informacja.
+   */
+  #mediaView(term, items) {
+    if (items.length === 0) return null;
+    const note = this.ctx.library.getNote(term.lessonID);
+    const imageLabels = withImageLabels(note?.images ?? []).map((image) => image.label);
+    const tables = withTableLabels(note?.tables ?? [], imageLabels);
+    const missing = (item) => h('p', { class: 'flashcard__missing', dataset: { testid: 'card-media-missing' } }, `„${item.label}” – nie ma w notatce lekcji`);
+    return h('div', { class: 'flashcard__media', dataset: { testid: 'card-media' } }, items.map((item) => {
+      const caption = h('figcaption', { class: 'flashcard__media-label' }, item.label);
+      if (item.kind === 'table') {
+        const index = findTableByLabel(tables, item.label);
+        if (index < 0) return missing(item);
+        const box = h('div', { class: 'flashcard__table' });
+        // Komórki są zamieniane na tekst (tableHtml) – bez znaczników z treści.
+        box.innerHTML = tableHtml(tables[index]);
+        return h('figure', { class: 'flashcard__figure', dataset: { kind: 'table', label: item.label } }, box, caption);
+      }
+      const image = h('img', { class: 'flashcard__image', alt: item.label, draggable: 'false' });
+      const figure = h('figure', { class: 'flashcard__figure flashcard__figure--loading', dataset: { kind: 'image', label: item.label } }, image, caption);
+      this.#noteImageURL(term.lessonID, item.label).then((url) => {
+        if (url) {
+          image.src = url;
+          figure.classList.remove('flashcard__figure--loading');
+        } else {
+          figure.replaceWith(missing(item));
+        }
+      });
+      return figure;
+    }));
+  }
+
+  /** Adres obrazu notatki lekcji o danej sygnaturze (null – nie ma); obrazy lekcji wczytywane raz na sesję. */
+  async #noteImageURL(lessonID, label) {
+    if (!this.noteImages.has(lessonID)) {
+      this.noteImages.set(lessonID, this.ctx.library.noteImages(lessonID).then((images) => withImageLabels(images)).catch(() => []));
+    }
+    const images = await this.noteImages.get(lessonID);
+    const index = findImageByLabel(images, label);
+    if (index < 0 || this.disposed) return null;
+    const image = images[index];
+    image.url ??= this.urls.add(image);
+    return image.url;
   }
 
   #tilesView() {

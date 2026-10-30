@@ -555,12 +555,13 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
     let language = null;
     let dialog;
 
-    const leftButton = h('button', { type: 'button', class: 'button button--plain', dataset: { testid: 'note-left' } });
-    const rightButton = h('button', { type: 'button', class: 'button button--primary sheet__submit', dataset: { testid: 'note-right' } });
+    // Od 1.56 „Edytuj” po lewej, „Zamknij” po prawej (identyfikatory testów bez zmian: note-right – Edytuj, note-left – Zamknij).
+    const closeButton = h('button', { type: 'button', class: 'button button--plain', dataset: { testid: 'note-left' } });
+    const editButton = h('button', { type: 'button', class: 'button button--primary sheet__submit', dataset: { testid: 'note-right' } });
     const title = h('h2', { class: 'sheet__title', id: titleID }, 'Notatka');
     const body = h('div', { class: 'sheet__body note-sheet__body' });
     const panel = h('div', { class: 'sheet__panel note-sheet', 'aria-labelledby': titleID },
-      h('header', { class: 'sheet__header' }, leftButton, title, rightButton),
+      h('header', { class: 'sheet__header' }, editButton, title, closeButton),
       body
     );
 
@@ -788,8 +789,8 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
     function showEmpty() {
       mode = 'empty';
       setPaged(null);
-      leftButton.textContent = 'Zamknij';
-      rightButton.textContent = 'Edytuj';
+      closeButton.textContent = 'Zamknij';
+      editButton.textContent = 'Edytuj';
       replaceChildren(body, heading(), h('p', { class: 'note-sheet__only-files' }, 'Notatka jest pusta.'));
     }
 
@@ -803,9 +804,9 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       }
       mode = 'view';
       book?.destroy();
-      leftButton.textContent = 'Zamknij';
-      rightButton.textContent = 'Edytuj';
-      rightButton.disabled = false;
+      closeButton.textContent = 'Zamknij';
+      editButton.textContent = 'Edytuj';
+      editButton.disabled = false;
       language = pickLanguage(note);
       const attachments = files.length > 0 ? attachmentList(files, (meta) => openAttachment(meta, () => loadFile(meta))) : null;
       // Od 1.29 obrazy i tabele ukryte oczkiem (razem z odwołaniami) – poza podglądem, PDF, drukiem i Kopiuj.
@@ -912,8 +913,8 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       return h('div', { class: 'note-sheet__tools' }, tools);
     }
 
-    leftButton.addEventListener('click', () => close());
-    rightButton.addEventListener('click', () => openSession('text'));
+    closeButton.addEventListener('click', () => close());
+    editButton.addEventListener('click', () => openSession('text'));
     // Kółko myszy w podglądzie przewraca strony notatki (nasłuch nie pasywny – blokuje przewijanie).
     panel.addEventListener('wheel', (event) => {
       if (mode === 'view' && book?.handleWheel(event)) event.preventDefault();

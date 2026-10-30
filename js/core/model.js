@@ -5,6 +5,7 @@
 // i domainID, żeby filtrowanie i zliczanie nie wymagało przechodzenia po hierarchii.
 
 import { cleanDrawing } from './drawing.js';
+import { cleanCardFaces, cleanCardMedia } from './card-faces.js';
 import { blankToNull, collapseWhitespace, normalizeKey, uniqueTags } from './text.js';
 
 export const SCHEMA_VERSION = 2;
@@ -232,7 +233,10 @@ export function termFieldsFromDraft(draft) {
     tagKeys: tags.map(normalizeKey),
     difficulty: draft.difficulty ?? null,
     notes: blankToNull(draft.notes),
-    isFavorite: Boolean(draft.isFavorite)
+    isFavorite: Boolean(draft.isFavorite),
+    // Od 1.56: własne strony fiszki (null – jak w ustawieniach nauki) i obrazy z notatki lekcji na stronach.
+    cardFaces: cleanCardFaces(draft.cardFaces),
+    cardMedia: cleanCardMedia(draft.cardMedia)
   };
 }
 
@@ -341,7 +345,7 @@ export function noteImageMeta(record, label = null, caption = null, hidden = fal
 export function emptyTermDraft() {
   return {
     termPL: '', termEN: '', descriptionPL: '', descriptionEN: '', examplePL: '', exampleEN: '',
-    tags: [], difficulty: null, notes: '', isFavorite: false
+    tags: [], difficulty: null, notes: '', isFavorite: false, cardFaces: null, cardMedia: []
   };
 }
 
@@ -356,7 +360,9 @@ export function termToDraft(term) {
     tags: [...(term.tags ?? [])],
     difficulty: term.difficulty ?? null,
     notes: term.notes ?? '',
-    isFavorite: Boolean(term.isFavorite)
+    isFavorite: Boolean(term.isFavorite),
+    cardFaces: term.cardFaces ? { front: term.cardFaces.front, faces: [...term.cardFaces.faces] } : null,
+    cardMedia: (term.cardMedia ?? []).map((item) => ({ ...item }))
   };
 }
 

@@ -21,6 +21,7 @@ import {
   newID, nowISO
 } from './model.js';
 import { RATINGS, STATES, newCard } from './fsrs.js';
+import { FLIP_COUNTS, flipFaces } from './card-faces.js';
 
 export const MIXED = 'mixed';
 
@@ -55,31 +56,9 @@ export const STUDY_FRONTS = Object.freeze([
 
 /**
  * Obroty fiszki (od 1.39): 1 – jak dotąd, na odwrocie cała odpowiedź; 2 i 3 – po każdym obrocie kolejna
- * strona z wybraną treścią (FLIP_FACES), po ostatniej – powrót do pytania.
+ * strona z wybraną treścią (FLIP_FACES), po ostatniej – powrót do pytania. Od 1.56 w core/card-faces.js.
  */
-export const FLIP_COUNTS = Object.freeze([1, 2, 3]);
-export const FLIP_FACES = Object.freeze([
-  { id: 'answer', label: 'Tłumaczenie' },
-  { id: 'description', label: 'Definicja' },
-  { id: 'example', label: 'Przykład' },
-  { id: 'details', label: 'Definicja i przykład' },
-  { id: 'all', label: 'Wszystko' }
-]);
-/** Strony domyślne przy 2 i 3 obrotach. */
-export const DEFAULT_FLIP_FACES = Object.freeze({ 2: Object.freeze(['answer', 'details']), 3: Object.freeze(['answer', 'description', 'example']) });
-/** Kierunek kolejnych obrotów: pierwszy – od lewej do prawej, drugi – z dołu do góry, trzeci – od prawej do lewej. */
-export const FLIP_TURNS = Object.freeze(['left', 'up', 'right']);
-
-/**
- * Strony po kolejnych obrotach – tyle, ile obrotów (1 obrót – ['all']). `faces` – zapisany wybór
- * { 2: [...], 3: [...] }; złe i brakujące pozycje – domyślne.
- */
-export function flipFaces(count, faces) {
-  const flips = FLIP_COUNTS.includes(count) ? count : 1;
-  if (flips === 1) return ['all'];
-  const chosen = faces && typeof faces === 'object' && Array.isArray(faces[flips]) ? faces[flips] : [];
-  return DEFAULT_FLIP_FACES[flips].map((fallback, index) => (FLIP_FACES.some((face) => face.id === chosen[index]) ? chosen[index] : fallback));
-}
+export { DEFAULT_FLIP_FACES, FLIP_COUNTS, FLIP_FACES, FLIP_TURNS, RETURN_TURN, flipFaces } from './card-faces.js';
 
 /** Strony fiszki w sesji: z ustawień sesji (od 1.39), a w sesji bez nich – z ustawień aplikacji. */
 export function sessionFlipFaces(config, settings) {

@@ -10,11 +10,17 @@ import { EXPORT_FORMATS, buildExportFile, collectExportNotes, collectExportRows 
 import { ASSESSMENT_STATUS_NAMES } from '../core/model.js';
 import { RATING_NAMES } from '../core/fsrs.js';
 import {
-  DECISION_NAMES, DIRECTION_NAMES, RATING_LABELS, buildQueue, formatInterval, reviewConfig
+  DECISION_NAMES, DIRECTION_NAMES, RATING_LABELS, STUDY_FRONTS, buildQueue, formatInterval, reviewConfig
 } from '../core/study.js';
+import {
+  CARD_MEDIA_LIMIT, FACE_PART_IDS, FACE_PART_LABELS, FLIP_COUNTS, FLIP_TURNS, TURN_LABELS, emptyCardFaces, faceKind,
+  faceParts, flipFaces
+} from '../core/card-faces.js';
+import { withImageLabels } from '../core/note-refs.js';
+import { withTableLabels } from '../core/tables.js';
 import { installSampleData } from '../core/samples.js';
 import { formatTags, isBlank, parseTags, pluralNotes, pluralTerms } from '../core/text.js';
-import { field, formGroup, message, segmented, selectInput, textArea, textInput, toggle } from './components.js';
+import { checkSegmented, field, formGroup, message, segmented, selectInput, textArea, textInput, toggle } from './components.js';
 import { confirmDialog, openFormSheet, showError, toast, undoToast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { deliverFile } from './files.js';
@@ -268,6 +274,129 @@ export function openLessonForm(ctx, { lessonID = null, domainID = null, moduleID
 
 // ---------------------------------------------------------------- pojęcie
 
+const CARD_FACE_NAMES = ['Pytanie', 'Po 1. obrocie', 'Po 2. obrocie', 'Po 3. obrocie'];
+
+/**
+ * Od 1.56: sekcje „Strony fiszki” i „Obrazy z notatki lekcji” okna pojęcia – własne strony fiszki (zamiast ustawień
+ * nauki) i rysunki, zdjęcia albo tabele z notatki lekcji przypięte do wybranych stron (po sygnaturze). Zmienia
+ * state.draft.cardFaces i state.draft.cardMedia; odświeża tylko siebie, więc reszta okna i jego przewinięcie zostają.
+ */
+function termCardGroups(library, state) {
+  const slot = h('div', { class: 'form-stack term-card', dataset: { testid: 'term-card' } });
+  const settings = library.getSettings();
+  const mediaKey = (item) => `${item.kind}:${item.label.toLocaleLowerCase('pl')}`;
+  let render = () => {};
+
+  const facesGroup = () => {
+    const own = state.draft.cardFaces;
+    const pinned = (face) => state.draft.cardMedia.some((item) => Math.min(item.face, own.faces.length) === face);
+    const setFaces = (faces) => {
+      state.draft.cardFaces = { ...own, faces };
+      // Obraz przypięty dalej niż ostatnia strona – na ostatniej.
+      state.draft.cardMedia = state.draft.cardMedia.map((item) => ({ ...item, face: Math.min(item.face, faces.length) }));
+      render();
+    };
+    const empty = emptyCardFaces(own, state.draft.cardMedia);
+    return formGroup('Strony fiszki',
+      toggle({
+        checked: Boolean(own), label: 'Własne strony tej fiszki', testID: 'term-own-faces',
+        onChange: (value) => {
+          // Na start – to, co w ustawieniach nauki.
+          const front = STUDY_FRONTS.some((item) => item.id === settings.preferredFlashcardFront) ? settings.preferredFlashcardFront : 'term';
+          state.draft.cardFaces = value ? { front, faces: [...flipFaces(settings.flashcardFlips, settings.flashcardFaces)] } : null;
+          render();
+        }
+      }),
+      own ? [
+        field('Pierwsza strona (pytanie)', segmented({
+          name: 'term-front', label: 'Pierwsza strona fiszki', value: own.front,
+          options: STUDY_FRONTS.map((item) => ({ value: item.id, label: item.label })),
+          onChange: (value) => { state.draft.cardFaces = { ...own, front: value }; render(); }
+        })),
+        field('Obroty', segmented({
+          name: 'term-flips', label: 'Obroty fiszki', value: String(own.faces.length),
+          options: FLIP_COUNTS.map((count) => ({ value: String(count), label: count === 1 ? '1 obrót' : `${count} obroty` })),
+          // Inna liczba obrotów – strony jak w Nauce przy tej liczbie (potem do zmiany).
+          onChange: (value) => setFaces([...flipFaces(Number(value), settings.flashcardFaces)])
+        })),
+        own.faces.map((kind, index) => field(`Po ${index + 1}. obrocie (${TURN_LABELS[FLIP_TURNS[index]]})`, checkSegmented({
+          name: `term-face-${index + 1}`, label: `Treść strony po ${index + 1}. obrocie`, testID: `term-face-${index + 1}`,
+          values: faceParts(kind), options: FACE_PART_IDS.map((part) => ({ value: part, label: FACE_PART_LABELS[part] })),
+          onChange: (part, checked) => {
+            const parts = faceParts(kind).filter((item) => item !== part).concat(checked ? [part] : []);
+            // Strona bez zaznaczeń – tylko z obrazem z notatki.
+            if (parts.length === 0 && !pinned(index + 1)) return false;
+            setFaces(own.faces.map((item, at) => (at === index ? faceKind(parts) : item)));
+            return true;
+          }
+        }))),
+        empty.length > 0 ? message(`Strona po ${empty[0]}. obrocie nic nie pokazuje – zaznacz na niej treść albo przypnij obraz z notatki.`, 'warning') : null
+      ] : null,
+      h('p', { class: 'field__hint' }, own
+        ? 'Zaznacz, co pokazuje każda strona. Stronę bez zaznaczeń można zostawić, gdy jest na niej obraz z notatki.'
+        : 'Bez własnych stron fiszka wygląda jak w ustawieniach nauki (Pierwsza strona fiszki, Obroty fiszki).')
+    );
+  };
+
+  const mediaGroup = () => {
+    const title = 'Obrazy z notatki lekcji';
+    if (!state.lessonID) return formGroup(title, message('Najpierw wybierz lekcję – rysunki, zdjęcia i tabele pochodzą z jej notatki.'));
+    const own = state.draft.cardFaces;
+    const list = state.draft.cardMedia;
+    const note = library.getNote(state.lessonID);
+    const images = withImageLabels(note?.images ?? []);
+    const tables = withTableLabels(note?.tables ?? [], images.map((image) => image.label));
+    const available = [
+      ...images.map((image) => ({ kind: 'image', label: image.label, name: image.drawing ? 'rysunek' : 'zdjęcie' })),
+      ...tables.map((table) => ({ kind: 'table', label: table.label, name: 'tabela' }))
+    ];
+    const found = new Map(available.map((item) => [mediaKey(item), item]));
+    // Bez własnych stron – do 3. obrotu; gdy fiszka ma mniej stron, obraz jest na ostatniej.
+    const faceCount = own ? own.faces.length : FLIP_COUNTS.at(-1);
+    const faceOptions = CARD_FACE_NAMES.slice(0, faceCount + 1).map((label, face) => ({ value: String(face), label }));
+    const rows = list.map((item, index) => {
+      const source = found.get(mediaKey(item));
+      return h('div', { class: 'card-media-row', dataset: { testid: `term-media-${index}` } },
+        icon(item.kind === 'table' ? 'table' : 'image', { size: 18 }),
+        h('span', { class: 'card-media-row__name' },
+          h('span', null, item.label),
+          h('small', { class: source ? null : 'card-media-row__missing' }, source ? source.name : 'nie ma w notatce lekcji')),
+        selectInput({
+          value: String(Math.min(item.face, faceCount)), options: faceOptions, testID: `term-media-face-${index}`,
+          onChange: (value) => {
+            state.draft.cardMedia = list.map((other, at) => (at === index ? { ...other, face: Number(value) } : other));
+            render();
+          }
+        }),
+        h('button', {
+          type: 'button', class: 'icon-button', 'aria-label': `Odepnij: ${item.label}`, title: 'Odepnij', dataset: { testid: `term-media-remove-${index}` },
+          onClick: () => { state.draft.cardMedia = list.filter((_, at) => at !== index); render(); }
+        }, icon('close', { size: 18 }))
+      );
+    });
+    const free = available.filter((item) => !list.some((other) => mediaKey(other) === mediaKey(item)));
+    const add = list.length < CARD_MEDIA_LIMIT && free.length > 0 ? field('Przypnij do fiszki', selectInput({
+      value: NONE, testID: 'term-media-add',
+      options: [{ value: NONE, label: 'Wybierz rysunek, zdjęcie albo tabelę…' }, ...free.map((item, index) => ({ value: String(index), label: `${item.label} (${item.name})` }))],
+      onChange: (value) => {
+        if (value === NONE) return;
+        const item = free[Number(value)];
+        state.draft.cardMedia = [...list, { kind: item.kind, label: item.label, face: Math.min(1, faceCount) }];
+        render();
+      }
+    })) : null;
+    const hint = available.length === 0
+      ? 'Notatka tej lekcji nie ma rysunków, zdjęć ani tabel. Dodaj je w notatce – fiszka pokaże je po sygnaturze.'
+      : list.length >= CARD_MEDIA_LIMIT ? `Najwyżej ${CARD_MEDIA_LIMIT} na jednej fiszce.`
+        : `Obraz albo tabela z notatki pojawia się na wybranej stronie fiszki.${own ? '' : ' Gdy fiszka ma mniej stron – na ostatniej.'}`;
+    return formGroup(title, rows, add, h('p', { class: 'field__hint' }, hint));
+  };
+
+  render = () => replaceChildren(slot, facesGroup(), mediaGroup());
+  render();
+  return slot;
+}
+
 export function openTermForm(ctx, { termID = null, lessonID = null } = {}) {
   const { library } = ctx;
   const existing = termID ? library.getTerm(termID) : null;
@@ -287,6 +416,8 @@ export function openTermForm(ctx, { termID = null, lessonID = null } = {}) {
 
   const save = async (api, { addAnother }) => {
     const draft = { ...state.draft, tags: parseTags(state.tagsText) };
+    const empty = emptyCardFaces(draft.cardFaces, draft.cardMedia);
+    if (empty.length > 0) throw new Error(`Strona po ${empty[0]}. obrocie nic nie pokazuje – zaznacz na niej treść albo przypnij obraz z notatki.`);
     // Duplikat w lekcji nie blokuje zapisu, ale wymaga świadomego potwierdzenia.
     if (state.lessonID && !state.duplicateAcknowledged) {
       const duplicate = library.findTerm(draft.termPL, draft.termEN, state.lessonID);
@@ -398,6 +529,7 @@ export function openTermForm(ctx, { termID = null, lessonID = null } = {}) {
             field('Przykład po polsku', textArea({ value: state.draft.examplePL, lang: 'pl', onInput: bind('examplePL') })),
             field('Przykład po angielsku', textArea({ value: state.draft.exampleEN, lang: 'en', onInput: bind('exampleEN') }))
           ),
+          termCardGroups(library, state),
           formGroup('Dodatkowe',
             field('Tagi', textInput({ value: state.tagsText, placeholder: 'np. finanse, raporty', autocapitalize: 'none', onInput: (value) => { state.tagsText = value; } }), { hint: 'Rozdzielaj przecinkami.' }),
             field('Trudność', difficulty),

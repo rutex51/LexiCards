@@ -1,16 +1,17 @@
 // Przygotowanie sesji nauki: materiał, kierunek, zakres, liczba fiszek, kolejność, pierwsza strona,
-// od 1.39 obroty fiszki (1–3) i treść stron po kolejnych obrotach.
+// od 1.39 obroty fiszki (1–3) i treść stron po kolejnych obrotach (od 1.56 – dowolne części strony).
 
 import { pluralCards } from '../../core/text.js';
 import {
-  DIRECTION_NAMES, FLIP_COUNTS, FLIP_FACES, MIXED, STUDY_COUNTS, STUDY_DIRECTIONS, STUDY_FRONTS, STUDY_SCOPES, buildQueue, describeStudyMaterial,
-  flipFaces, isSessionFinished, scopeCounts
+  DIRECTION_NAMES, FLIP_COUNTS, FLIP_TURNS, MIXED, RETURN_TURN, STUDY_COUNTS, STUDY_DIRECTIONS, STUDY_FRONTS, STUDY_SCOPES, buildQueue,
+  describeStudyMaterial, flipFaces, isSessionFinished, scopeCounts
 } from '../../core/study.js';
+import { FACE_PART_IDS, FACE_PART_LABELS, TURN_LABELS, faceKind, faceParts } from '../../core/card-faces.js';
 import { startTodaysReview, todaysReviewQueue } from '../actions.js';
 import { initialSelection, lessonsGroup, materialGroup, sanitizeSelection, selectionConfig } from '../material.js';
 import { REPEAT_LABELS } from './study-session.js';
 import {
-  actionRow, emptyState, field, formGroup, group, segmented, selectInput, settingsAction, startBubble
+  actionRow, checkSegmented, emptyState, field, formGroup, group, segmented, selectInput, settingsAction, startBubble
 } from '../components.js';
 import { showError, toast } from '../dialogs.js';
 import { h } from '../dom.js';
@@ -84,12 +85,12 @@ export class StudySetupScreen {
   }
 
   /**
-   * Obroty fiszki (od 1.39): 1, 2 albo 3; przy 2 i 3 – co pokazuje każda następna strona (pierwszy obrót
-   * od lewej do prawej, drugi z dołu do góry, trzeci od prawej do lewej).
+   * Obroty fiszki (od 1.39): 1, 2 albo 3; przy 2 i 3 – co pokazuje każda następna strona. Od 1.56 części strony
+   * (tłumaczenie, definicja, przykład) zaznaczane dowolnie; pierwszy obrót od lewej do prawej, drugi od prawej do lewej,
+   * trzeci z góry na dół, powrót z dołu do góry.
    */
   #flipsGroup() {
     const { ctx } = this;
-    const turns = ['od lewej do prawej', 'z dołu do góry', 'od prawej do lewej'];
     const faces = this.flips > 1 ? this.faces[this.flips] : [];
     return h('section', { class: 'group study-flips', dataset: { testid: 'study-flips' } },
       h('h2', { class: 'form-group__title' }, 'Obroty fiszki'),
@@ -98,17 +99,22 @@ export class StudySetupScreen {
         options: FLIP_COUNTS.map((count) => ({ value: String(count), label: count === 1 ? '1 obrót' : `${count} obroty` })),
         onChange: (value) => { this.flips = Number(value); ctx.refresh(); }
       }),
-      faces.map((face, index) => field(`Po ${index + 1}. obrocie (${turns[index]})`, selectInput({
-        value: face, testID: `study-face-${index + 1}`,
-        options: FLIP_FACES.map((item) => ({ value: item.id, label: item.label })),
-        onChange: (value) => {
-          this.faces[this.flips] = this.faces[this.flips].map((item, at) => (at === index ? value : item));
+      faces.map((face, index) => field(`Po ${index + 1}. obrocie (${TURN_LABELS[FLIP_TURNS[index]]})`, checkSegmented({
+        name: `study-face-${index + 1}`, label: `Treść strony po ${index + 1}. obrocie`, testID: `study-face-${index + 1}`,
+        values: faceParts(face), options: FACE_PART_IDS.map((part) => ({ value: part, label: FACE_PART_LABELS[part] })),
+        onChange: (part, checked) => {
+          const parts = faceParts(face).filter((item) => item !== part).concat(checked ? [part] : []);
+          // Strona musi coś pokazywać – ostatniej zaznaczonej części nie da się odznaczyć.
+          if (parts.length === 0) return false;
+          this.faces[this.flips] = this.faces[this.flips].map((item, at) => (at === index ? faceKind(parts) : item));
           ctx.refresh();
+          return true;
         }
       }))),
       h('p', { class: 'group__footer' }, this.flips === 1
-        ? 'Na odwrocie: tłumaczenie, definicja i przykład. 2 albo 3 obroty – każda następna strona pokazuje wybraną część, po ostatniej fiszka wraca do pytania.'
-        : 'Dotknięcie fiszki obraca ją na następną stronę; po ostatniej wraca do pytania.')
+        ? 'Na odwrocie: tłumaczenie, definicja i przykład. 2 albo 3 obroty – każda następna strona pokazuje wybrane części, po ostatniej fiszka wraca do pytania.'
+        : `Zaznacz, co pokazuje każda strona. Dotknięcie fiszki obraca ją na następną stronę; po ostatniej wraca do pytania (${TURN_LABELS[RETURN_TURN]}). `
+          + 'Pojęcie może mieć własne strony i obrazy z notatki – w oknie pojęcia.')
     );
   }
 

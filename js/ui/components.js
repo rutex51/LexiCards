@@ -319,8 +319,30 @@ export function segmented({ name, value, options, onChange, label }) {
   );
 }
 
-export function toggle({ checked, onChange, label }) {
-  const input = h('input', { type: 'checkbox', class: 'switch__input', role: 'switch', checked, onChange: (event) => onChange(event.target.checked) });
+/**
+ * Od 1.56: kilka opcji naraz w wyglądzie przełącznika segmentowego (pola wyboru). onChange(wartość, zaznaczona) –
+ * zwraca false, gdy zmiany nie przyjęto (pole wraca do poprzedniego stanu).
+ */
+export function checkSegmented({ name, values, options, onChange, label, testID = null }) {
+  return h('div', { class: 'segmented segmented--multi', role: 'group', 'aria-label': label, dataset: { testid: testID } },
+    options.map((option) => {
+      const input = h('input', {
+        type: 'checkbox', name, value: option.value, class: 'segmented__input', checked: values.includes(option.value),
+        dataset: { testid: testID ? `${testID}-${option.value}` : null },
+        onChange: () => {
+          if (onChange(option.value, input.checked) === false) input.checked = !input.checked;
+        }
+      });
+      return h('label', { class: 'segmented__option' }, input, h('span', null, option.label));
+    })
+  );
+}
+
+export function toggle({ checked, onChange, label, testID = null }) {
+  const input = h('input', {
+    type: 'checkbox', class: 'switch__input', role: 'switch', checked, dataset: { testid: testID },
+    onChange: (event) => onChange(event.target.checked)
+  });
   return h('label', { class: 'switch' }, h('span', { class: 'switch__label' }, label), input, h('span', { class: 'switch__track', 'aria-hidden': 'true' }));
 }
 

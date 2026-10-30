@@ -2,6 +2,7 @@
 // Pełne opisy – docs/RELEASE-<wersja>.md. Pierwsza pozycja to bieżąca wersja aplikacji (sprawdza to test).
 
 export const CHANGELOG = Object.freeze([
+  ['1.56', 'Fiszki: obroty od lewej, od prawej i z góry; treść stron na środku; części stron do wyboru w Nauce i przy pojęciu; obraz lub tabela z notatki na stronie. Notatka: „Edytuj” po lewej.'],
   ['1.55', 'Rysunek – suma i różnica brył w scenie: „Połącz z…” i „Wytnij…” pod dowolnym kątem (np. otwór skośny), druga bryła w historii modelu, „Wyjmij bryłę”; osie otworów w pomiarach i rzutach.'],
   ['1.54', 'Rysunek – bryły na płaszczyźnie: szkic poziomo na wysokości Z albo pionowo na XZ (przód) i YZ (bok); „Rzuty” w scenie – przód, góra i lewy bok wszystkich brył, krawędzie zasłonięte przerywane.'],
   ['1.53', 'Rysunek – pomiary 3D w scenie: odległość z ΔX, ΔY, ΔZ i kąty między narożnikami, krawędziami, ścianami i osiami brył; wynik zostaje jako wymiar.'],

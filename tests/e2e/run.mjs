@@ -13669,6 +13669,308 @@ test('rysunek 1.55 na telefonie: „Połącz z…” i „Wytnij…” w panelu 
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-155-telefon.png') });
 }, { device: PHONE });
 
+// ---------------------------------------------------------------- fiszki 1.56
+
+/** Notatka lekcji z obrazem „Schemat” i tabelą „Koszty” (1.56 – do przypięcia na stronach fiszki). */
+async function seedCardMedia(page, lessonID) {
+  await page.evaluate(async (id) => {
+    const bytes = async (file) => (await fetch(file)).arrayBuffer();
+    await window.lexicards.library.saveNote(id, {
+      html: '<p>Bilans</p><p>[[Schemat]]</p><p>[[Koszty]]</p>',
+      images: [{ bytes: await bytes('./icons/icon-192.png'), type: 'image/png', width: 192, height: 192, label: 'Schemat' }],
+      tables: [{ label: 'Koszty', rows: [['Pozycja', 'Kwota'], ['Czynsz', '1200']], align: ['left', 'right'], header: true }]
+    });
+  }, lessonID);
+}
+
+/**
+ * Położenie treści strony fiszki (1.56): dx – odległość środka treści od środka strony w poziomie, gap – odstęp nad
+ * treścią i pod nią (do nagłówka i do przycisku na dole), align – wyrównanie tekstu.
+ */
+function faceLayout(face) {
+  return face.evaluate((element) => {
+    const body = element.querySelector('.flashcard__body');
+    const page = element.getBoundingClientRect();
+    const box = body.getBoundingClientRect();
+    const top = element.querySelector('.flashcard__top').getBoundingClientRect().bottom;
+    // Na dole przycisk „dalej”, a na ostatniej stronie – wygaszenie.
+    const bottom = element.querySelector('.flashcard__flip, .flashcard__fade').getBoundingClientRect().top;
+    return {
+      dx: Math.abs((box.left + box.right) / 2 - (page.left + page.right) / 2),
+      gap: [Math.round(box.top - top), Math.round(bottom - box.bottom)],
+      align: getComputedStyle(body).textAlign
+    };
+  });
+}
+const centered = (layout, what) => {
+  assert.equal(layout.align, 'center', `${what}: tekst wyśrodkowany`);
+  assert.ok(layout.dx < 2, `${what}: treść na środku w poziomie (${layout.dx})`);
+  assert.ok(Math.abs(layout.gap[0] - layout.gap[1]) <= 8, `${what}: treść na środku w pionie (${layout.gap})`);
+};
+const cardSettled = (page) => page.waitForFunction(() => document.getAnimations().length === 0);
+
+test('fiszki 1.56 na komputerze: notatka – „Edytuj” po lewej, „Zamknij” po prawej; trzy obroty – od lewej, od prawej, z góry, powrót z dołu; treść stron na środku, krótkie linie pogrubione', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await seedCardMedia(page, ids.basicsID);
+  await openNotePreview(page, ids.basicsID);
+  const dialog = noteDialog(page);
+  const edit = dialog.locator('[data-testid=note-right]');
+  const close = dialog.locator('[data-testid=note-left]');
+  await expectText(edit, 'Edytuj');
+  await expectText(close, 'Zamknij');
+  const [editBox, closeBox] = [await edit.boundingBox(), await close.boundingBox()];
+  assert.ok(editBox.x < 640 && closeBox.x > 640, `Edytuj po lewej (${Math.round(editBox.x)}), Zamknij po prawej (${Math.round(closeBox.x)})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-notatka-przyciski.png') });
+  await close.click();
+  await dialog.waitFor({ state: 'detached' });
+
+  await openStudySetup(page);
+  await choose(page, 'Obroty fiszki', '3 obroty');
+  const flips = page.locator('[data-testid=study-flips]');
+  await expectText(flips, 'Po 1. obrocie (od lewej do prawej)');
+  await expectText(flips, 'Po 2. obrocie (od prawej do lewej)');
+  await expectText(flips, 'Po 3. obrocie (z góry na dół)');
+  await expectText(flips, 'z dołu do góry');
+  // Druga strona: tłumaczenie i definicja (dowolny zestaw części).
+  await page.locator('[data-testid=study-face-2-answer]').locator('xpath=..').click();
+  await waitUntil(() => page.locator('[data-testid=study-face-2-answer]').isChecked(), 'Tłumaczenie zaznaczone');
+  await flips.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-ustawienia.png') });
+  await startStudy(page);
+  const card = flashcard(page);
+  assert.equal(await card.getAttribute('data-faces'), '4');
+  await cardSettled(page);
+  centered(await faceLayout(page.locator('[data-testid=card-front]')), 'pytanie');
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-pytanie.png') });
+
+  // 1. obrót – od lewej do prawej: tłumaczenie na środku.
+  await page.locator('[data-testid=card-flip]').click();
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '1', 'Strona 2');
+  assert.equal(await card.getAttribute('data-turn'), 'left');
+  await cardSettled(page);
+  centered(await faceLayout(page.locator('[data-testid=card-back]')), 'tłumaczenie');
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-strona-2.png') });
+
+  // 2. obrót – od prawej do lewej: tłumaczenie i definicja; krótka definicja pogrubiona, całość na środku.
+  await expectText(page.locator('[data-testid=card-next-1]'), 'Pokaż definicję');
+  await page.locator('[data-testid=card-next-1]').click();
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '2', 'Strona 3');
+  assert.equal(await card.getAttribute('data-turn'), 'right');
+  const third = page.locator('[data-testid=card-face-2]');
+  await expectText(third.locator('.flashcard__text--answer'), 'assets');
+  await expectText(third.locator('[data-testid=card-next-2]'), 'Pokaż przykład');
+  const line = third.locator('[data-section=description] .flashcard__line').first();
+  await expectText(line, 'Resources owned by a company.');
+  assert.equal(await line.evaluate((element) => element.classList.contains('flashcard__line--short')), true);
+  assert.equal(await line.locator('span').first().evaluate((element) => getComputedStyle(element).fontWeight), '700');
+  assert.equal(await line.evaluate((element) => getComputedStyle(element).justifyContent), 'center');
+  await cardSettled(page);
+  centered(await faceLayout(third), 'tłumaczenie i definicja');
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-strona-3.png') });
+
+  // 3. obrót – z góry na dół: przykład.
+  await page.locator('[data-testid=card-next-2]').click();
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '3', 'Strona 4');
+  assert.equal(await card.getAttribute('data-turn'), 'down');
+  const fourth = page.locator('[data-testid=card-face-3]');
+  await expectText(fourth, 'The assets of the company increased.');
+  await cardSettled(page);
+  centered(await faceLayout(fourth), 'przykład');
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-strona-4.png') });
+
+  // Powrót do pytania – z dołu do góry.
+  await fourth.getByText('The assets of the company increased.').click();
+  await waitUntil(async () => (await side(page)) === 'front', 'Powrót do pytania');
+  assert.equal(await card.getAttribute('data-turn'), 'up');
+  const settings = await page.evaluate(() => window.lexicards.library.getSettings());
+  assert.deepEqual(settings.flashcardFaces[3], ['answer', 'answer-description', 'example']);
+}, { device: DESKTOP });
+
+test('fiszki 1.56 na komputerze: okno pojęcia – własne strony (pierwsza strona, obroty, części) i obraz oraz tabela z notatki na wybranych stronach; pusta strona – błąd; nauka pokazuje strony pojęcia', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await seedCardMedia(page, ids.basicsID);
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.basicsID}`);
+  await page.getByRole('button', { name: 'Więcej poleceń: aktywa' }).click();
+  await menuItem(page, 'Edytuj');
+  const form = sheet(page);
+  const cardPart = form.locator('[data-testid=term-card]');
+  await expectText(cardPart, 'Bez własnych stron fiszka wygląda jak w ustawieniach nauki');
+  await form.locator('[data-testid=term-own-faces]').locator('xpath=..').click();
+  // Na start – ustawienia nauki (1 obrót: wszystko).
+  await waitUntil(async () => (await form.locator('[data-testid=term-face-1]').count()) === 1, 'Strona po 1. obrocie');
+  assert.equal(await form.getByRole('radiogroup', { name: 'Pierwsza strona fiszki' }).getByRole('radio', { name: 'Pojęcie', exact: true }).isChecked(), true);
+  await choose(page, 'Pierwsza strona fiszki', 'Przykład');
+  await choose(page, 'Obroty fiszki', '2 obroty');
+  await waitUntil(async () => (await form.locator('[data-testid=term-face-2]').count()) === 1, 'Strona po 2. obrocie');
+  const part = (face, name) => form.locator(`[data-testid=term-face-${face}-${name}]`);
+  // 2 obroty – strony jak w Nauce przy 2 obrotach: tłumaczenie, potem definicja i przykład.
+  const checkedParts = (face) => form.locator(`[data-testid=term-face-${face}] input:checked`).evaluateAll((list) => list.map((input) => input.value));
+  assert.deepEqual([await checkedParts(1), await checkedParts(2)], [['answer'], ['description', 'example']]);
+  // Po 2. obrocie – ostatniej części nie da się odznaczyć bez obrazu z notatki.
+  await part(2, 'description').locator('xpath=..').click();
+  await waitUntil(async () => !(await part(2, 'description').isChecked()), 'Bez definicji');
+  await part(2, 'example').locator('xpath=..').click();
+  assert.equal(await part(2, 'example').isChecked(), true, 'strona musi coś pokazywać');
+
+  // Obrazy z notatki: Schemat na pytaniu, Koszty po 2. obrocie.
+  const add = form.locator('[data-testid=term-media-add]');
+  assert.deepEqual(await add.locator('option').allTextContents(), ['Wybierz rysunek, zdjęcie albo tabelę…', 'Schemat (zdjęcie)', 'Koszty (tabela)']);
+  await add.selectOption({ label: 'Schemat (zdjęcie)' });
+  await form.locator('[data-testid=term-media-0]').waitFor();
+  assert.equal(await form.locator('[data-testid=term-media-face-0]').inputValue(), '1', 'na start po 1. obrocie');
+  assert.deepEqual(await form.locator('[data-testid=term-media-face-0] option').allTextContents(), ['Pytanie', 'Po 1. obrocie', 'Po 2. obrocie']);
+  await form.locator('[data-testid=term-media-face-0]').selectOption('0');
+  await form.locator('[data-testid=term-media-add]').selectOption({ label: 'Koszty (tabela)' });
+  await form.locator('[data-testid=term-media-1]').waitFor();
+  await form.locator('[data-testid=term-media-face-1]').selectOption('2');
+  // Teraz strona po 2. obrocie może pokazywać samą tabelę.
+  await part(2, 'example').locator('xpath=..').click();
+  await waitUntil(async () => !(await part(2, 'example').isChecked()), 'Sama tabela');
+  await cardPart.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-okno-pojecia.png') });
+
+  // Odpięta tabela – strona pusta: ostrzeżenie i błąd przy zapisie.
+  await form.locator('[data-testid=term-media-remove-1]').click();
+  await expectText(cardPart, 'Strona po 2. obrocie nic nie pokazuje');
+  await form.locator('.sheet__submit').click();
+  await expectText(form.locator('[role=alert]').first(), 'Strona po 2. obrocie nic nie pokazuje');
+  await form.locator('[data-testid=term-media-add]').selectOption({ label: 'Koszty (tabela)' });
+  await form.locator('[data-testid=term-media-face-1]').selectOption('2');
+  await saveSheet(page);
+  const saved = await page.evaluate((id) => {
+    const term = window.lexicards.library.getTerm(id);
+    return { cardFaces: term.cardFaces, cardMedia: term.cardMedia };
+  }, ids.assets);
+  assert.deepEqual(saved, {
+    cardFaces: { front: 'example', faces: ['answer', 'media'] },
+    cardMedia: [{ kind: 'image', label: 'Schemat', face: 0 }, { kind: 'table', label: 'Koszty', face: 2 }]
+  });
+  // Ponowne otwarcie – to samo.
+  await page.getByRole('button', { name: 'Więcej poleceń: aktywa' }).click();
+  await menuItem(page, 'Edytuj');
+  assert.equal(await sheet(page).locator('[data-testid=term-own-faces]').isChecked(), true);
+  assert.equal(await sheet(page).locator('[data-testid^=term-media-face-]').count(), 2);
+  await page.keyboard.press('Escape');
+  await waitUntil(async () => (await formSheets(page)) === 0, 'Okno zamknięte');
+
+  // Nauka (ustawienia: 1 obrót) – fiszka „aktywa” ma swoje strony.
+  await openStudySetup(page);
+  await startStudy(page);
+  const card = flashcard(page);
+  assert.equal(await card.getAttribute('data-faces'), '3');
+  const front = page.locator('[data-testid=card-front]');
+  await expectText(front.locator('.flashcard__text'), 'Aktywa spółki wzrosły.');
+  const figure = front.locator('[data-testid=card-media] figure[data-kind=image]');
+  await waitUntil(async () => (await figure.getAttribute('class')) === 'flashcard__figure', 'Obraz wczytany');
+  assert.match(await figure.locator('img').getAttribute('src'), /^blob:/);
+  await expectText(figure.locator('figcaption'), 'Schemat');
+  assert.ok(await figure.locator('img').evaluate((image) => image.naturalWidth === 192), 'obraz z notatki');
+  await cardSettled(page);
+  centered(await faceLayout(front), 'pytanie z obrazem');
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-pytanie-z-obrazem.png') });
+  await page.locator('[data-testid=card-flip]').click();
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '1', 'Strona 2');
+  await expectText(page.locator('[data-testid=card-back] .flashcard__text--answer'), 'assets');
+  assert.equal(await page.locator('[data-testid=card-back] [data-section]').count(), 0);
+  await expectText(page.locator('[data-testid=card-next-1]'), 'Pokaż obraz z notatki');
+  await page.locator('[data-testid=card-next-1]').click();
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '2', 'Strona 3');
+  const last = page.locator('[data-testid=card-face-2]');
+  await expectText(last.locator('.flashcard__label'), 'Z notatki lekcji');
+  const table = last.locator('[data-testid=card-media] figure[data-kind=table] table');
+  assert.deepEqual(await table.locator('td, th').allTextContents(), ['Pozycja', 'Kwota', 'Czynsz', '1200']);
+  await cardSettled(page);
+  centered(await faceLayout(last), 'tabela');
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-strona-z-tabela.png') });
+}, { device: DESKTOP });
+
+test('fiszki 1.56 na iPadzie (dotyk): części stron dotknięciem, kolejne strony dotknięciem fiszki – od lewej, od prawej, z dołu; obraz z notatki na stronie', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await seedCardMedia(page, ids.basicsID);
+  // Obraz z notatki po 2. obrocie (bez własnych stron – strony z ustawień nauki).
+  await page.evaluate(async (id) => {
+    const { library } = window.lexicards;
+    await library.updateTerm(id, { ...library.getTerm(id), cardMedia: [{ kind: 'image', label: 'Schemat', face: 2 }] });
+  }, ids.assets);
+  await openStudySetup(page);
+  await page.getByRole('radiogroup', { name: 'Obroty fiszki' }).locator('.segmented__option', { hasText: '2 obroty' }).tap();
+  await page.locator('[data-testid=study-face-1]').waitFor();
+  // Po 1. obrocie: tłumaczenie i definicja (dotknięcie „Definicja”).
+  await page.locator('[data-testid=study-face-1-description]').locator('xpath=..').tap();
+  await waitUntil(() => page.locator('[data-testid=study-face-1-description]').isChecked(), 'Definicja zaznaczona');
+  await startStudy(page);
+  const card = flashcard(page);
+  await card.locator('[data-testid=card-front] .flashcard__text').tap();
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '1', 'Strona 2');
+  assert.equal(await card.getAttribute('data-turn'), 'left');
+  const second = page.locator('[data-testid=card-back]');
+  await expectText(second.locator('.flashcard__text--answer'), 'assets');
+  await expectText(second.locator('[data-section=description]'), 'Resources owned by a company.');
+  await cardSettled(page);
+  centered(await faceLayout(second), 'iPad: tłumaczenie i definicja');
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-ipad-strona-2.png') });
+  await second.locator('.flashcard__text--answer').tap();
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '2', 'Strona 3');
+  assert.equal(await card.getAttribute('data-turn'), 'right');
+  const third = page.locator('[data-testid=card-face-2]');
+  const figure = third.locator('figure[data-kind=image]');
+  await waitUntil(async () => (await figure.getAttribute('class')) === 'flashcard__figure', 'Obraz wczytany');
+  await cardSettled(page);
+  // Definicja, przykład i obraz nie mieszczą się na fiszce: treść na środku w poziomie, przewija się od góry.
+  const layout = await faceLayout(third);
+  assert.equal(layout.align, 'center');
+  assert.ok(layout.dx < 2, `na środku w poziomie (${layout.dx})`);
+  assert.ok(layout.gap[0] >= 0 && layout.gap[0] <= 2, `od góry (${layout.gap})`);
+  assert.ok(await third.evaluate((element) => element.scrollHeight > element.clientHeight), 'strona się przewija');
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-ipad-strona-3.png') });
+  await third.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-ipad-strona-3-obraz.png') });
+  await third.locator('.flashcard__line span').first().tap();
+  await waitUntil(async () => (await side(page)) === 'front', 'Powrót do pytania');
+  assert.equal(await card.getAttribute('data-turn'), 'up');
+}, { device: IPAD });
+
+test('fiszki 1.56 na telefonie: okno pojęcia – strony fiszki i obrazy z notatki w szerokości ekranu; tabela na fiszce bez przewijania strony w bok', async ({ open }) => {
+  const page = await open();
+  const ids = await seedStudy(page);
+  await seedCardMedia(page, ids.basicsID);
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.basicsID}`);
+  await page.getByRole('button', { name: 'Więcej poleceń: aktywa' }).click();
+  await menuItem(page, 'Edytuj');
+  const form = sheet(page);
+  await form.locator('[data-testid=term-own-faces]').locator('xpath=..').click();
+  await choose(page, 'Obroty fiszki', '3 obroty');
+  await form.locator('[data-testid=term-media-add]').selectOption({ label: 'Koszty (tabela)' });
+  await form.locator('[data-testid=term-media-face-0]').selectOption('1');
+  const row = form.locator('[data-testid=term-media-0]');
+  await row.scrollIntoViewIfNeeded();
+  const box = await row.boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 390, `wiersz obrazu w szerokości ekranu (${Math.round(box.x)}–${Math.round(box.x + box.width)})`);
+  for (const face of [1, 2, 3]) {
+    const group = await form.locator(`[data-testid=term-face-${face}]`).boundingBox();
+    assert.ok(group.x + group.width <= 390, `części strony ${face} w szerokości ekranu`);
+  }
+  assert.equal(await form.evaluate((element) => element.querySelector('.sheet__body, .sheet__content')?.scrollWidth <= 390 ?? true), true);
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-telefon-okno-pojecia.png') });
+  await saveSheet(page);
+  await openStudySetup(page);
+  await startStudy(page);
+  const card = flashcard(page);
+  assert.equal(await card.getAttribute('data-faces'), '4');
+  await page.locator('[data-testid=card-flip]').click();
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '1', 'Strona 2');
+  const back = page.locator('[data-testid=card-back]');
+  await back.locator('figure[data-kind=table]').waitFor();
+  await cardSettled(page);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 390), 'bez przewijania w bok');
+  const table = await back.locator('figure[data-kind=table]').boundingBox();
+  assert.ok(table.x >= 0 && table.x + table.width <= 390, 'tabela na ekranie');
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-telefon-tabela.png') });
+}, { device: PHONE });
+
 // ---------------------------------------------------------------- nauka z fiszkami
 
 const flashcard = (page) => page.locator('[data-testid=flashcard]');
@@ -13971,19 +14273,25 @@ test('fiszki: obrót, trzy kafelki, wynik, decyzje, podsumowanie i runda powtór
   assert.equal(again.lastStatus, 'mastered');
 });
 
-test('fiszki 1.39: trzy obroty – wybór treści stron, kolejne strony (od lewej, z dołu do góry, od prawej), powrót do pytania; zapamiętane ustawienie (telefon)', async ({ open }) => {
+test('fiszki 1.39 (kierunki od 1.56): trzy obroty – wybór treści stron, kolejne strony (od lewej, od prawej, z góry), powrót do pytania z dołu; zapamiętane ustawienie (telefon)', async ({ open }) => {
   const page = await open();
   await seedStudy(page);
   await openStudySetup(page);
   const flips = page.locator('[data-testid=study-flips]');
+  const groups = flips.locator('[role=group]');
   // Domyślnie 1 obrót – bez wyboru stron.
-  assert.equal(await flips.locator('select').count(), 0);
+  assert.equal(await groups.count(), 0);
   await choose(page, 'Obroty fiszki', '3 obroty');
-  await waitUntil(async () => (await flips.locator('select').count()) === 3, 'Trzy wybory stron');
-  assert.deepEqual(await flips.locator('select').evaluateAll((selects) => selects.map((select) => select.value)), ['answer', 'description', 'example']);
-  // Druga strona: przykład zamiast definicji, trzecia – definicja.
-  await page.locator('[data-testid=study-face-2]').selectOption('example');
-  await page.locator('[data-testid=study-face-3]').selectOption('description');
+  await waitUntil(async () => (await groups.count()) === 3, 'Trzy wybory stron');
+  const checked = () => groups.evaluateAll((list) => list.map((group) => [...group.querySelectorAll('input:checked')].map((input) => input.value).join('+')));
+  assert.deepEqual(await checked(), ['answer', 'description', 'example']);
+  // Od 1.56 części strony zaznaczane dowolnie: druga strona – przykład zamiast definicji, trzecia – definicja.
+  const part = (face, name) => page.locator(`[data-testid=study-face-${face}-${name}]`).locator('xpath=..');
+  await part(2, 'example').click();
+  await part(2, 'description').click();
+  await part(3, 'description').click();
+  await part(3, 'example').click();
+  await waitUntil(async () => (await checked()).join() === 'answer,example,description', 'Przykład, potem definicja');
   await flips.scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(OUTPUT, 'fiszki-139-obroty-ustawienia.png') });
   await startStudy(page);
@@ -13999,26 +14307,27 @@ test('fiszki 1.39: trzy obroty – wybór treści stron, kolejne strony (od lewe
   assert.equal(await page.locator('[data-testid=card-back] [data-section]').count(), 0, 'na stronie z tłumaczeniem bez definicji i przykładu');
   assert.equal(await tile(page, 'term').isDisabled(), false, 'po pierwszym obrocie można oceniać');
   await expectText(page.locator('[data-testid=card-next-1]'), 'Pokaż przykład');
-  // 2. obrót (z dołu do góry): przykład.
+  // 2. obrót (od prawej do lewej): przykład.
   await page.locator('[data-testid=card-next-1]').click();
   await waitUntil(async () => (await card.getAttribute('data-face')) === '2', 'Strona 3');
-  assert.equal(await card.getAttribute('data-turn'), 'up');
+  assert.equal(await card.getAttribute('data-turn'), 'right');
   const third = page.locator('[data-testid=card-face-2]');
   await expectText(third, 'The assets of the company increased.');
   assert.equal(await third.locator('[data-section=description]').count(), 0);
   await page.waitForFunction(() => document.getAnimations().length === 0);
   await page.screenshot({ path: path.join(OUTPUT, 'fiszki-139-strona-przyklad.png') });
-  // 3. obrót (od prawej do lewej) – dotknięcie fiszki (tekstu przykładu; nagłówek sekcji jest tu ukryty): definicja;
+  // 3. obrót (z góry na dół) – dotknięcie fiszki (tekstu przykładu; nagłówek sekcji jest tu ukryty): definicja;
   // ostatnia strona bez przycisku „dalej”.
   await third.getByText('The assets of the company increased.').click();
   await waitUntil(async () => (await card.getAttribute('data-face')) === '3', 'Strona 4');
-  assert.equal(await card.getAttribute('data-turn'), 'right');
+  assert.equal(await card.getAttribute('data-turn'), 'down');
   const fourth = page.locator('[data-testid=card-face-3]');
   await expectText(fourth, 'Resources owned by a company.');
   assert.equal(await fourth.locator('.flashcard__flip').count(), 0);
   // Po ostatniej stronie – powrót do pytania; z dowolnej strony „Pokaż pytanie” też wraca.
   await fourth.getByText('Resources owned by a company.').click();
   await waitUntil(async () => (await side(page)) === 'front', 'Powrót do pytania');
+  assert.equal(await card.getAttribute('data-turn'), 'up', 'powrót z dołu do góry');
   await page.locator('[data-testid=card-flip]').click();
   await page.locator('[data-testid=card-next-1]').click();
   await waitUntil(async () => (await card.getAttribute('data-face')) === '2', 'Strona 3 znowu');

@@ -1682,7 +1682,8 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   `card-back` (strona 2), `card-face-3`, `card-face-4`, przyciski `card-flip`, `card-next-<n>`, `card-unflip`
   (`card-unflip-<n>`), numer `card-page-<n>`; `#flipTo` – animacja `TURN_FRAMES` (rotateY ±90°, rotateX dla obrotu
   z dołu do góry), `data-face`, `data-turn`. Formularz Nauka (`study-setup.js`): grupa `study-flips`, wybory
-  `study-face-<n>`.
+  `study-face-<n>`. Od 1.56 – zob. „Strony fiszki: kierunki, wyśrodkowanie, własne strony pojęcia” (inne kierunki,
+  zaznaczanie części).
 
 ## Etap D: wielokąt foremny, półprosta, narożniki, kreskowanie, pole, kolejność (od 1.40)
 
@@ -2185,6 +2186,37 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
   i `extractSolidBody` – nowa tablica elementów w miejscu (`splice`), jeden krok historii; okno bryły – wiersze operacji
   z bryłą (`BODY_LABELS`, `bodyName`), „Wyjmij bryłę” (`drawing-solid-feature-extract`) przy ostatniej; `featureHandle` –
   bez uchwytu dla operacji z bryłą.
+
+## Strony fiszki: kierunki, wyśrodkowanie, własne strony pojęcia (od 1.56)
+
+- **Moduł** `js/core/card-faces.js` (bez przeglądarki; `study.js` eksportuje dalej dawne nazwy): `FACE_PART_IDS`
+  (answer, description, example) i `FLIP_FACES` – każdy niepusty zestaw części ma rodzaj (dochodzą `answer-description`,
+  `answer-example`); `faceParts(rodzaj)`, `faceKind(części)` (pusty zestaw – `MEDIA_FACE` = 'media'). `FLIP_TURNS`
+  = left, right, down, `RETURN_TURN` = up, `TURN_LABELS`. Ustawienia Nauki: jak w 1.39 (`flashcardFaces`), rodzaj `media`
+  w nich odrzucany.
+- **Pojęcie** (`model.js`): `cardFaces` – `{ front, faces: [1–3 rodzaje] }` albo null (jak w Nauce), `cardMedia` –
+  `[{ kind: 'image' | 'table', label, face: 0–3 }]` (najwyżej `CARD_MEDIA_LIMIT` = 6, sygnatura do 40 znaków, bez
+  powtórzeń); sprawdzane przez `cleanCardFaces` / `cleanCardMedia` w `termFieldsFromDraft` (zapis, kopia zapasowa),
+  `termToDraft` – kopie. Import z arkusza ich nie zmienia (`mergeTermUpdate` – porównanie treścią). `termCardFaces(pojęcie,
+  front, faces)` – własne strony przed ustawieniami sesji; `mediaOnFace(pojęcie, strona, liczba stron)` – obraz przypięty dalej
+  niż ostatnia strona – na ostatniej; `emptyCardFaces` – strony 'media' bez obrazu (błąd zapisu).
+- **Sesja** (`study-session.js`): `#cardView` – `termCardFaces`, treść strony w `.flashcard__body` (margines auto
+  w kolumnie flex – środek w pionie; przycisk `.flashcard__flip` i `.flashcard__fade` po treści bez marginesu auto),
+  linie ≤ `SHORT_LINE` (42 znaki) – `flashcard__line--short` (pogrubienie pierwszej linii sekcji). `NEXT_ACTIONS` – napis
+  przycisku na dalszych stronach. `#mediaView` – `figure[data-kind]` (`card-media`): tabela – `tableHtml` (komórki jako
+  tekst), obraz – `library.noteImages` raz na lekcję (`withImageLabels`), adres z `urlPool` zwalniany w `dispose()`;
+  brak sygnatury – `card-media-missing`. Strona ma `container-type: size`, obraz – `max-height: min(45cqh, 320px)`
+  (starsze przeglądarki – 30vh). `#flipTo`: następna strona – `FLIP_TURNS[face]`, każdy powrót – `RETURN_TURN`;
+  `TURN_FRAMES.down` – rotateX.
+- **Formularze**: Nauka – `checkSegmented` (`components.js`, pola wyboru w wyglądzie przełącznika; `onChange` zwraca false
+  – cofnięcie), `study-face-<n>-<część>`. Okno pojęcia (`actions.js`, `termCardGroups`) – osobny blok `term-card`
+  odświeżany sam (`render`), przełącznik `term-own-faces`, radio `term-front`, `term-flips`, części `term-face-<n>-<część>`
+  (ostatniej nie odznaczysz bez obrazu na tej stronie), obrazy `term-media-<i>`, `term-media-face-<i>`,
+  `term-media-remove-<i>`, `term-media-add` (obrazy i tabele notatki lekcji – `withImageLabels`, `withTableLabels`);
+  zapis – `emptyCardFaces` → błąd.
+- **Notatka** (`notes.js`): przyciski nagłówka podglądu zamienione miejscami – `editButton` (`note-right`, „Edytuj”)
+  po lewej, `closeButton` (`note-left`, „Zamknij”) po prawej; identyfikatory testów bez zmian. Okna edycji (Anuluj /
+  Zapisz, Gotowe) – bez zmian.
 
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 

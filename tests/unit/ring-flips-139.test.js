@@ -39,7 +39,7 @@ test('fiszka 1.39: 1–3 obroty, treść stron (złe – domyślne), w sesji –
   assert.deepEqual(flipFaces(2), [...DEFAULT_FLIP_FACES[2]]);
   assert.deepEqual(flipFaces(3, { 3: ['example', 'nope', 'answer'] }), ['example', 'description', 'answer']);
   assert.deepEqual(flipFaces(7, { 3: ['answer'] }), ['all'], 'nieznana liczba obrotów – jeden');
-  assert.deepEqual(FLIP_TURNS, ['left', 'up', 'right']);
+  assert.deepEqual(FLIP_TURNS, ['left', 'right', 'down'], 'od 1.56: dwa obroty w poziomie, trzeci w pionie');
   assert.deepEqual(sessionFlipFaces({ flips: 2, faces: ['details', 'answer'] }, { flashcardFlips: 3 }), ['details', 'answer']);
   assert.deepEqual(sessionFlipFaces({ front: 'term' }, { flashcardFlips: 3, flashcardFaces: { 3: ['answer', 'example', 'description'] } }), ['answer', 'example', 'description']);
   assert.deepEqual(sessionFlipFaces(null, null), ['all']);

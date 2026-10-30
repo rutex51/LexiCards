@@ -185,6 +185,8 @@ function mergeTermUpdate(existing, draft) {
   const fields = termFieldsFromDraft(merged);
   const same = Object.entries(fields).every(([key, value]) => {
     const current = existing[key];
+    // Od 1.56 też pola z obiektami (własne strony fiszki, obrazy na stronach) – porównanie treści.
+    if (key === 'cardFaces' || key === 'cardMedia') return JSON.stringify(value) === JSON.stringify(current ?? (key === 'cardMedia' ? [] : null));
     return Array.isArray(value) ? value.join('\n') === (current ?? []).join('\n') : value === (current ?? null) || value === current;
   });
   return same ? null : fields;
