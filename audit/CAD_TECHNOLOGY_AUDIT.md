@@ -277,3 +277,14 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
 - **Patenty:** szczególnego ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – bazy zablokowane,
   AUDIT_LIMITATIONS.md).
 - Nowa pozycja rejestru algorytmów: G67. Ryzyko wstępnie NISKIE.
+
+## Uzupełnienie: wersja 1.58 (30.10.2026) – pierścienie na grzbiecie, odsuwanie zeszytu, kółko narzędzi
+
+- **Zakres:** `js/ui/drawing.js` – grzbiet kartki narysowany jako pierścienie (prostokątne dziurki, w każdej dwie pętle
+  drutu – elipsy z połyskiem); szerszy zakres przesuwania widoku (krawędź strony do środka ekranu).
+  `js/core/tool-ring.js` – rozkład małych kółek na okręgu o stałym promieniu: widoczne co stały kąt, pozostałe ściśnięte
+  w niewidocznej części (odwzorowanie odcinkami liniowe).
+- **Funkcje:** wygląd zeszytu na drucie podwójnym – ogólny motyw graficzny, rysunek własny z prymitywów (prostokąt, elipsa),
+  bez obrazów cudzych ani bibliotek. Przesuwanie widoku i rozkład elementów na okręgu – ogólne techniki interfejsu.
+- **Patenty:** szczególnego ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – bazy zablokowane,
+  AUDIT_LIMITATIONS.md). Nowej pozycji rejestru algorytmów nie dodano (geometria trywialna). Ryzyko wstępnie NISKIE.
