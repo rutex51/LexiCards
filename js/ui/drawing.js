@@ -49,7 +49,7 @@ import {
 import { eraseArea, eraseElementsAt } from '../core/sketch-erase.js';
 import {
   DrawingHistory, ELEMENT_TEXT_MAX, ERASER_AREAS, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA,
-  HIGHLIGHTER_COLORS, HIGHLIGHTER_RANGE, INK_COLORS, RAY_STEPS, WIDTH_LIMITS, STICKY_COLORS, STICKY_MIN, STICKY_TEXT_MAX, STICKY_TEXT_SIZES, TABLE_TEXT_SIZES, isBox, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
+  HIGHLIGHTER_COLORS, HIGHLIGHTER_RANGE, INK_COLORS, RAY_STEPS, WIDTH_LIMITS, STICKY_COLORS, STICKY_MIN, STICKY_TEXT_MAX, STICKY_TEXT_SIZES, TABLE_TEXT_SIZES, isBox, PAGE_HEIGHT, PAGE_WIDTH, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
   SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings, shapeToolStyle, stickyColor, withShapeToolStyle,
   DIM_UNITS, DRAWING_VERSION, defaultDimUnit, defaultToolSettings, dimFactor, dimFormat, dimMillimeters, dimUnitLabel, dimUnitNote, dimensionParts, formatTolerance, hasMeasuredContent, elementBox, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
   MAX_STROKES, isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
@@ -94,6 +94,7 @@ import { openFitTable } from './fit-table.js';
 import { RING_SIDES, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPartHidden } from '../core/tool-ring.js';
 import { openToolGroups } from './drawing-groups.js';
 import { createRing } from './drawing-ring.js';
+import { BOARD_WIDTH, boardViewport, fitsSheet, isBoard, setBoard } from '../core/board.js';
 import {
   DIM_FONT, DIM_PREFIXES, FIT_RE, LABEL_TEXT_MAX, POINT_MARKS, POINT_MARK_LABELS, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_DASHES, SHAPE_DASH_LABELS,
   SHAPE_FILLS, SHAPE_FILL_LABELS, SHAPE_LABELS, SKEW_DEGREES_LIMIT, canDash, hasCaps, isPointShape, pointMark, shapeDash, withDash,
@@ -637,17 +638,25 @@ function paintUnitNote(ctx, drawing, format) {
 /** Numer karteczki na rysunku (od 1.21): kolejność wśród karteczek (od 1). */
 const stickyNumber = (drawing, sticky) => drawing.strokes.filter((stroke) => stroke.tool === 'sticky').indexOf(sticky) + 1;
 
-/** Obraz rysunku do notatki: PNG strony albo JPEG, gdy pod kreskami jest zdjęcie. */
+/**
+ * Obraz rysunku do notatki: PNG strony albo JPEG, gdy pod kreskami jest zdjęcie. Od 1.59 tablica A0 – obszar
+ * z rysunkiem (boardViewport) w proporcjach kartki, przeskalowany do wielkości obrazu kartki zeszytu.
+ */
 export async function renderDrawingImage(drawing, media = {}) {
+  const area = isBoard(drawing) ? boardViewport(drawing) : null;
   const canvas = document.createElement('canvas');
-  canvas.width = drawing.width;
-  canvas.height = drawing.height;
+  canvas.width = area ? PAGE_WIDTH : drawing.width;
+  canvas.height = area ? PAGE_HEIGHT : drawing.height;
   const ctx = canvas.getContext('2d');
+  if (area) {
+    const scale = Math.min(PAGE_WIDTH / area.width, PAGE_HEIGHT / area.height);
+    ctx.setTransform(scale, 0, 0, scale, -area.x * scale, -area.y * scale);
+  }
   paintDrawing(ctx, drawing, media, null, null, { image: true });
   const type = drawing.photo ? 'image/jpeg' : 'image/png';
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, 0.9));
   if (!blob) throw new Error('Nie udało się zapisać rysunku.');
-  return { bytes: await blob.arrayBuffer(), type, width: drawing.width, height: drawing.height };
+  return { bytes: await blob.arrayBuffer(), type, width: canvas.width, height: canvas.height };
 }
 
 // ---------------------------------------------------------------- edytor
@@ -1003,8 +1012,13 @@ export function openDrawingEditor({
     const flipCanvas = h('canvas', { class: 'drawing__flip', hidden: true, 'aria-hidden': 'true' });
     stage.append(base, live, flipCanvas, dims, selectionBar);
 
-    /** Spirala przy lewej krawędzi (od 1.24.1) – kartki bez zdjęcia; miejsce na nią po obu stronach (strona na środku). */
-    const hasSpiral = () => !drawing.photo;
+    /**
+     * Grzbiet zeszytu przy lewej krawędzi (od 1.24.1, od 1.58 pierścienie) – kartki bez zdjęcia, od 1.59 nie tablica A0;
+     * miejsce na niego po obu stronach (strona na środku).
+     */
+    const hasSpiral = () => !drawing.photo && !isBoard(drawing);
+    /** Największe powiększenie: tablica A0 (od 1.59) – tyle razy więcej, ile razy jest większa od kartki. */
+    const maxZoom = () => MAX_ZOOM * (isBoard(drawing) ? BOARD_WIDTH / PAGE_WIDTH : 1);
     const spiralRoom = () => (hasSpiral() ? SPIRAL_OUT : 0);
     const fitScale = () => Math.min((view.width - STAGE_MARGIN * 2) / (drawing.width + spiralRoom() * 2), (view.height - view.top - view.bottom) / drawing.height);
     /**
@@ -1045,7 +1059,7 @@ export function openDrawingEditor({
       return view.x < x[0] - 0.5 || view.x > x[1] + 0.5 || view.y < y[0] - 0.5 || view.y > y[1] + 0.5;
     };
     const setZoom = (zoom, anchorX = view.width / 2, anchorY = view.height / 2) => {
-      const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+      const next = Math.min(maxZoom(), Math.max(MIN_ZOOM, zoom));
       const unitX = (anchorX - view.x) / view.scale;
       const unitY = (anchorY - view.y) / view.scale;
       view.zoom = next;
@@ -1097,8 +1111,44 @@ export function openDrawingEditor({
       const followers = activeFollowers();
       paintDrawing(ctx, drawing, media, followers ? new Set([...(moving ?? []), ...followers.keys()]) : moving, plainShape, { editor: true });
       paintHoles(ctx);
+      paintSheetArea(ctx);
       ctx.restore();
+      paintBoardEdge(ctx);
     };
+    /**
+     * Tablica A0 (od 1.59): przerywana ramka obszaru kartki zeszytu (lewy górny róg) – rysunek w niej da się zamienić
+     * z powrotem na kartkę zeszytu.
+     */
+    function paintSheetArea(ctx) {
+      if (!isBoard(drawing)) return;
+      ctx.save();
+      ctx.setLineDash([12 / view.scale, 8 / view.scale]);
+      ctx.lineWidth = 1.5 / view.scale;
+      ctx.strokeStyle = 'rgba(0, 113, 227, 0.55)';
+      ctx.strokeRect(0, 0, PAGE_WIDTH, PAGE_HEIGHT);
+      ctx.setLineDash([]);
+      ctx.font = textFont(12 / view.scale, '500');
+      ctx.fillStyle = 'rgba(0, 113, 227, 0.75)';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillText('Obszar kartki zeszytu', PAGE_WIDTH - 6 / view.scale, PAGE_HEIGHT + 5 / view.scale);
+      ctx.restore();
+    }
+    /** Brzeg tablicy A0 (od 1.59): szara rama stałej szerokości na ekranie zamiast kartki zeszytu. */
+    function paintBoardEdge(ctx) {
+      if (!isBoard(drawing)) return;
+      const band = 6 / view.scale;
+      ctx.save();
+      ctx.lineWidth = band;
+      ctx.strokeStyle = '#c7c7cc';
+      ctx.strokeRect(-band / 2, -band / 2, drawing.width + band, drawing.height + band);
+      ctx.lineWidth = 1 / view.scale;
+      ctx.strokeStyle = '#8e8e93';
+      ctx.strokeRect(-band, -band, drawing.width + band * 2, drawing.height + band * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.strokeRect(-band + 1 / view.scale, -band + 1 / view.scale, drawing.width + band * 2 - 2 / view.scale, drawing.height + band * 2 - 2 / view.scale);
+      ctx.restore();
+    }
 
     // ---- grzbiet (od 1.24.1 spirala, od 1.58 pierścienie): dziurki – na stronie, druty – na warstwie bieżącej (nad kreskami)
     /** Środki dziurek (y, jednostki strony) – co kratkę, na środku wysokości strony. */
@@ -4889,6 +4939,8 @@ export function openDrawingEditor({
      * prosi o ograniczenie ruchu.
      */
     const FLIP_MS = 900;
+    /** Zwijanie i rozwijanie tablicy A0 (od 1.59) – trochę dłużej niż przewracanie kartki. */
+    const ROLL_MS = 1100;
     let flipping = null;
     /** Kartka, na którą edytor przejdzie po jej wczytaniu (od 1.30 – zdjęcie albo szablon jeszcze się wczytuje). */
     let flipWanted = null;
@@ -4931,8 +4983,12 @@ export function openDrawingEditor({
       showPage(index);
       if (!motion) return;
       renderBase();
-      flipping = { forward, before, after: snapshotPage(), start: performance.now() };
-      playPage({ land: FLIP_MS, direction: forward ? 1 : -1 });
+      const after = snapshotPage();
+      // Tablica A0 (od 1.59): opuszczana – zwija się w rulon i odsłania następną kartkę; otwierana – rozwija się nad
+      // poprzednią. Między kartkami zeszytu – przewracanie jak dotąd.
+      const roll = before.board ? 'up' : after.board ? 'down' : null;
+      flipping = { forward, before, after, roll, start: performance.now() };
+      playPage({ land: roll ? ROLL_MS : FLIP_MS, direction: forward ? 1 : -1 });
       flipCanvas.width = base.width;
       flipCanvas.height = base.height;
       flipCanvas.hidden = false;
@@ -4941,7 +4997,10 @@ export function openDrawingEditor({
       // Pierwsza klatka od razu – inaczej przez chwilę widać już nową kartkę.
       stepFlip(flipping.start);
     }
-    /** Zdjęcie strony z płótna zapisanych kresek: { image, rect } – rect w pikselach urządzenia. */
+    /**
+     * Zdjęcie strony z płótna zapisanych kresek: { image, rect, board, rings } – rect w pikselach urządzenia; od 1.59
+     * board – tablica A0, rings – pierścienie zeszytu na osobnym płótnie wielkości ekranu (rulon je odsłania i zakrywa).
+     */
     function snapshotPage() {
       const rect = {
         x: Math.round(view.x * view.dpr), y: Math.round(view.y * view.dpr),
@@ -4951,16 +5010,86 @@ export function openDrawingEditor({
       image.width = rect.w;
       image.height = rect.h;
       image.getContext('2d').drawImage(base, -rect.x, -rect.y);
-      return { image, rect };
+      let rings = null;
+      if (hasSpiral()) {
+        rings = document.createElement('canvas');
+        rings.width = base.width;
+        rings.height = base.height;
+        const ctx = rings.getContext('2d');
+        ctx.setTransform(view.dpr * view.scale, 0, 0, view.dpr * view.scale, view.dpr * view.x, view.dpr * view.y);
+        paintCoils(ctx);
+      }
+      return { image, rect, board: isBoard(drawing), rings };
+    }
+    /** Kolor tła edytora za kartką (pierwsze nieprzezroczyste tło nad płótnem). */
+    function stageBackground() {
+      for (let element = stage; element; element = element.parentElement) {
+        const color = getComputedStyle(element).backgroundColor;
+        if (color && color !== 'transparent' && !/rgba\(.*,\s*0\)$/.test(color)) return color;
+      }
+      return '#f2f2f7';
+    }
+    /**
+     * Tablica A0 zwijana w rulon od prawego dolnego rogu (od 1.59; progress 0 – płasko, 1 – zwinięta i poza arkuszem):
+     * część dalej od rogu niż linia zwijania leży płasko, przy linii – rulon (walec z odwrotu papieru, coraz grubszy,
+     * wzdłuż prostopadłej do przekątnej), a na tym, co już odsłonięte – jego cień.
+     */
+    function paintRoll(ctx, page, progress) {
+      const { image, rect } = page;
+      const [width, height] = [rect.w, rect.h];
+      const diagonal = Math.hypot(width, height);
+      // t – odległość od prawego dolnego rogu w stronę lewego górnego, s – w poprzek.
+      const along = { x: -width / diagonal, y: -height / diagonal };
+      const across = { x: -along.y, y: along.x };
+      const at = (t, s) => ({ x: width + along.x * t + across.x * s, y: height + along.y * t + across.y * s });
+      const strip = (from, to) => {
+        const reach = diagonal * 2;
+        const corners = [at(from, -reach), at(from, reach), at(to, reach), at(to, -reach)];
+        ctx.beginPath();
+        corners.forEach((point, index) => (index === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y)));
+        ctx.closePath();
+      };
+      const radius = Math.max(3 * view.dpr, diagonal * (0.012 + 0.03 * progress));
+      const line = progress * (diagonal + radius * 2);
+      const gradient = (from, to, stops) => {
+        const [a, b] = [at(from, 0), at(to, 0)];
+        const fill = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+        for (const [offset, color] of stops) fill.addColorStop(offset, color);
+        return fill;
+      };
+      ctx.save();
+      ctx.translate(rect.x, rect.y);
+      ctx.beginPath();
+      ctx.rect(0, 0, width, height);
+      ctx.clip();
+      // Płaska część tablicy.
+      ctx.save();
+      strip(line, diagonal * 2);
+      ctx.clip();
+      ctx.drawImage(image, 0, 0);
+      ctx.restore();
+      // Cień rulonu na odsłoniętej kartce (od strony rogu).
+      const shade = radius * 1.6;
+      strip(line - radius * 2 - shade, line - radius * 2);
+      ctx.fillStyle = gradient(line - radius * 2 - shade, line - radius * 2, [[0, 'rgba(0,0,0,0)'], [0.6, 'rgba(0,0,0,0.08)'], [1, 'rgba(0,0,0,0.24)']]);
+      ctx.fill();
+      // Rulon: jasny środek, ciemniejsze brzegi walca, cienki zarys.
+      strip(line - radius * 2, line);
+      ctx.fillStyle = gradient(line - radius * 2, line, [[0, '#a9a9ae'], [0.16, '#d8d8dd'], [0.4, '#ffffff'], [0.62, '#f0f0f3'], [0.86, '#c9c9ce'], [1, '#9c9ca1']]);
+      ctx.fill();
+      ctx.lineWidth = Math.max(1, view.dpr * 0.75);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+      ctx.stroke();
+      ctx.restore();
     }
     const easeFlip = (t) => (t < 0.5 ? 4 * t * t * t : 1 - ((2 - 2 * t) ** 3) / 2);
     function stepFlip(now) {
       if (!flipping) return;
-      const t = Math.min(1, (now - flipping.start) / FLIP_MS);
+      const t = Math.min(1, (now - flipping.start) / (flipping.roll ? ROLL_MS : FLIP_MS));
       const ctx = flipCanvas.getContext('2d');
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, flipCanvas.width, flipCanvas.height);
-      const { forward, before, after } = flipping;
+      const { forward, before, after, roll } = flipping;
       // Spirala zostaje na miejscu (od 1.24.1): nad płaską częścią kartki, pod przewracanym płatem (od 1.25.1).
       const coils = () => {
         ctx.save();
@@ -4968,7 +5097,18 @@ export function openDrawingEditor({
         paintCoils(ctx);
         ctx.restore();
       };
-      if (forward) {
+      if (roll === 'up') {
+        // Tablica zwija się (od 1.59): pod spodem (na płótnie strony) już nowa kartka – z pierścieniami, gdy to zeszyt.
+        if (after.rings) ctx.drawImage(after.rings, 0, 0);
+        paintRoll(ctx, before, easeFlip(t));
+      } else if (roll === 'down') {
+        // Tablica rozwija się nad poprzednią kartką (zeszytem z pierścieniami).
+        ctx.fillStyle = stageBackground();
+        ctx.fillRect(0, 0, flipCanvas.width, flipCanvas.height);
+        ctx.drawImage(before.image, before.rect.x, before.rect.y);
+        if (before.rings) ctx.drawImage(before.rings, 0, 0);
+        paintRoll(ctx, after, 1 - easeFlip(t));
+      } else if (forward) {
         // Następna: pod spodem (na płótnie strony) już nowa kartka, stara przewraca się w lewo.
         paintTurn(ctx, before, easeFlip(t), coils);
       } else {
@@ -5097,7 +5237,7 @@ export function openDrawingEditor({
      * Nowa kartka za ostatnią: to samo tło (zdjęcie – kratka), jasność linii i skala, bez szablonu. Od 1.30
      * tylko przy rysunkach (przy zdjęciach kartki to zdjęcia notatki) i dopóki notatka ma miejsce na obraz.
      */
-    function addPage() {
+    function addPage({ board = false } = {}) {
       if (!newPages) return;
       const added = pages.filter((page) => page.added).length;
       if (added >= pageRoom) {
@@ -5109,6 +5249,8 @@ export function openDrawingEditor({
         ...(drawing.dimStyle ? { dimStyle: drawing.dimStyle } : {}),
         ...(drawing.dimUnit ? { dimUnit: drawing.dimUnit } : {})
       };
+      // Od 1.59 nowa kartka może być od razu tablicą A0.
+      if (board) setBoard(next, true);
       pages.push(makePage(next, { title: addedTitle?.(added + 1) ?? `Kartka ${pages.length + 1}`, added: true }));
       showPage(pages.length - 1);
       flash(`${pageTitle()} – po „Gotowe” trafi do notatki jako osobny rysunek.`);
@@ -5127,17 +5269,44 @@ export function openDrawingEditor({
       if (neighbour > index) pageIndex -= 1;
       updatePagePill();
     }
+    /**
+     * Tablica A0 albo kartka zeszytu (od 1.59): ta sama kartka w innym trybie, rysunek na swoim miejscu. Z tablicy na
+     * kartkę – tylko gdy cały rysunek mieści się w obszarze kartki (przerywana ramka na tablicy).
+     */
+    function convertPage(board) {
+      if (active || flipping || drawing.photo || isBoard(drawing) === board) return;
+      clearSelection();
+      if (!setBoard(drawing, board)) {
+        flash('Rysunek wychodzi poza obszar kartki zeszytu (przerywana ramka) – tej tablicy nie da się zamienić na kartkę. Przesuń rysunek do ramki albo zostaw tablicę.');
+        return;
+      }
+      changed = true;
+      view.zoom = 1;
+      view.width = 0;
+      resize();
+      zoomButton.textContent = '100%';
+      updatePagePill();
+      updateToolbar();
+      requestRender();
+      flash(board ? 'Tablica A0 – kartka zeszytu to przerywana ramka w lewym górnym rogu. Powiększ, żeby rysować w szczegółach.' : 'Znów kartka zeszytu.');
+    }
     function openPageMenu() {
       const added = pages[pageIndex].added;
       openMenu({
         title: 'Kartki',
         items: [
           newPages ? { label: 'Nowa kartka', icon: 'plus', testID: 'drawing-page-new', onSelect: () => addPage() } : null,
+          newPages ? { label: 'Nowa tablica A0', icon: 'plus', testID: 'drawing-page-new-board', onSelect: () => addPage({ board: true }) } : null,
           newPages && pages.length > 1 ? 'separator' : null,
           ...(pages.length > 1 ? pages.map((page, index) => ({
-            label: `Kartka ${index + 1} – ${page.title}`, checked: index === pageIndex, testID: `drawing-page-${index + 1}`,
+            label: `Kartka ${index + 1} – ${page.title}${isBoard(page.drawing) ? ' (tablica A0)' : ''}`, checked: index === pageIndex, testID: `drawing-page-${index + 1}`,
             onSelect: () => flipTo(index)
           })) : []),
+          // Od 1.59: tryb kartki – zeszyt albo tablica A0.
+          drawing.photo ? null : 'separator',
+          drawing.photo ? null : isBoard(drawing)
+            ? { label: fitsSheet(drawing) ? 'Zamień na kartkę zeszytu' : 'Zamień na kartkę zeszytu – rysunek wychodzi poza ramkę', icon: 'pageLayout', testID: 'drawing-to-sheet', onSelect: () => convertPage(false) }
+            : { label: 'Zamień na tablicę A0', icon: 'pageLayout', testID: 'drawing-to-board', onSelect: () => convertPage(true) },
           // Od 1.37: rysunek z pliku DXF i kartka jako DXF.
           'separator',
           { label: 'Wczytaj DXF…', icon: 'upload', testID: 'drawing-dxf-import', onSelect: () => importDxf() },
@@ -9914,7 +10083,7 @@ export function openDrawingEditor({
         // według odstępu palców, a punkt strony, który był pod środkiem palców na początku, zostaje
         // pod ich środkiem – także gdy palce przy tym idą (przesuwanie). Dawniej przesunięcie od początku
         // gestu łączyło się ze skalą z poprzedniej klatki i strona uciekała w stronę lewego górnego rogu.
-        const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, gesture.startZoom * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / gesture.distance));
+        const zoom = Math.min(maxZoom(), Math.max(MIN_ZOOM, gesture.startZoom * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / gesture.distance));
         const box = live.getBoundingClientRect();
         view.zoom = zoom;
         view.scale = fitScale() * zoom;

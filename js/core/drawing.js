@@ -84,9 +84,9 @@ import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './la
  * arkusz A4 pionowo (1.42), 16 – diagramy Ishikawy i 5 × Dlaczego, układ kartki (1.44), 17 – kształty schematu blokowego,
  * łącznik, symbole i oś czasu VSM, legenda wad, tory (1.45), 18 – bryły (1.47), 19 – bryły ze szkicu: wyciągnięcie i obrót
  * profilu, szkic w bryle (1.48), 20 – szkic na płaszczyźnie XY, Z do góry (1.48.2), 21 – wycięcia i dodania na ścianach
- * brył (1.49), 22 – początek układu współrzędnych arkusza (1.50).
+ * brył (1.49), 22 – początek układu współrzędnych arkusza (1.50), 27 – tablica A0 (`board`, 1.59).
  */
-export const DRAWING_VERSION = 26;
+export const DRAWING_VERSION = 27;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
@@ -1396,6 +1396,8 @@ export function cleanDrawing(raw) {
     ...(!photo && cleanLayout(raw.layout) ? { layout: cleanLayout(raw.layout) } : {}),
     ...(layers ? { layers } : {}),
     ...(Number.isInteger(raw.activeLayer) && raw.activeLayer !== 1 && known.has(raw.activeLayer) ? { activeLayer: raw.activeLayer } : {}),
+    // Tablica A0 (od 1.59, core/board.js) – kartka bez zdjęcia jako duży arkusz.
+    ...(raw.board === true && !photo ? { board: true } : {}),
     // Początek układu współrzędnych arkusza (od 1.50) – punkt na kartce.
     ...(cleanOrigin(raw.origin, width, height) ? { origin: cleanOrigin(raw.origin, width, height) } : {})
   };

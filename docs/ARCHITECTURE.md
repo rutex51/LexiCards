@@ -2235,6 +2235,23 @@ porównuje `cardFaces` / `cardMedia` po sprawdzeniu (zapis z 1.56 z numerami str
   po lewej, `closeButton` (`note-left`, „Zamknij”) po prawej; identyfikatory testów bez zmian. Okna edycji (Anuluj /
   Zapisz, Gotowe) – bez zmian.
 
+## Tablica A0 (od 1.59)
+
+- **Dane** (`js/core/board.js`, bez przeglądarki): `board: true` w rysunku (format 27, `cleanDrawing` – tylko bez zdjęcia),
+  `BOARD_WIDTH` × `BOARD_HEIGHT` = 6400 × 4525 (4 × kartka, proporcje √2). Kartka zeszytu – lewy górny róg tablicy (te same
+  współrzędne). `setBoard(rysunek, tak/nie)` – zmiana w miejscu (rysunek jest wspólny z historią zmian); z tablicy na kartkę
+  tylko przy `fitsSheet` (granice kresek `contentBounds` w obszarze kartki, zapas 12 jednostek na grubość). `boardViewport` –
+  obszar na obraz w notatce: granice rysunku + margines kratki, proporcje kartki, co najmniej kartka, w obrębie tablicy.
+- **Edytor** (`js/ui/drawing.js`): `hasSpiral` – bez pierścieni na tablicy; `maxZoom` – `MAX_ZOOM` × 4; `paintSheetArea`
+  (przerywana ramka obszaru kartki z podpisem) i `paintBoardEdge` (szara rama stałej szerokości na ekranie) w `renderBase`;
+  menu „Kartki” – `drawing-page-new-board`, `drawing-to-board`, `drawing-to-sheet` (`convertPage` – zamiana albo komunikat,
+  widok całej strony). `renderDrawingImage` – tablica: przekształcenie `boardViewport` → płótno 1600 × 1100.
+- **Rulon** (`flipTo`, `stepFlip`, `paintRoll`): `snapshotPage` zapisuje też `board` i pierścienie na osobnym płótnie
+  (`rings`). Opuszczana tablica (`roll: 'up'`) – na płótnie animacji pierścienie następnej kartki i zwijana tablica; otwierana
+  (`'down'`) – tło edytora (`stageBackground`), poprzednia kartka z pierścieniami i tablica z postępem 1 → 0. `paintRoll`:
+  współrzędna t wzdłuż przekątnej od prawego dolnego rogu, linia zwijania t = postęp × (przekątna + 2r), płaska część za nią,
+  walec szerokości 2r (gradient – odwrót papieru), cień na odsłoniętej części; promień rośnie z postępem. `ROLL_MS` 1100.
+
 ## Pierścienie, odsuwanie zeszytu, kółko narzędzi o stałym promieniu (od 1.58)
 
 - **Pierścienie** (`js/ui/drawing.js`, `SPIRAL`): te same miejsca co dziurki spirali (`spiralHoles` – co kratkę, na środku

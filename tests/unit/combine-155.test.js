@@ -58,7 +58,7 @@ test('suma i różnica 1.55: zapis – operacja z bryłą (bez położenia i ide
   ] }, 1600, 1100);
   assert.equal(ball.features.length, 1);
   assert.equal(isPlainSphere(ball), false);
-  assert.equal(cleanDrawing({ ...emptyDrawing(), strokes: [raw] }).version, 26);
+  assert.equal(cleanDrawing({ ...emptyDrawing(), strokes: [raw] }).version, 27, 'od 1.59 format 27');
   assert.equal(bodyName(feature.body), 'Walec');
 });
 
