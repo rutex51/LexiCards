@@ -1,4 +1,4 @@
-# LexiCards 1.59
+# LexiCards 1.60
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -69,8 +69,9 @@ Fiszki – każdy obrót, także powrót do pytania, od prawej do lewej, bez obr
 Fiszki – obraz z notatki wypełnia stronę (sygnatura i przyciski na dole), pełny ekran z przybliżeniem i ciemnym tłem; rysunek – większe odstępy małych kółek narzędzi, wybór grupy myszą za pierwszym kliknięciem, gumka „Zaznaczenie” (prostokąt albo lasso) i gumka fragmentów „Także kształty” – kształty, odcinki i bryły zamieniane na szkic piórem (wersja 1.57): [docs/RELEASE-1.57.md](docs/RELEASE-1.57.md).
 Rysunek – pierścienie na grzbiecie zeszytu zamiast spirali (w każdej prostokątnej dziurce dwa druty), zeszyt odsuwany w górę – dolna krawędź kartki do środka ekranu; kółko narzędzi o stałym promieniu – widoczne małe kółka z odstępem, reszta ściśnięta za wycinkiem (wersja 1.58): [docs/RELEASE-1.58.md](docs/RELEASE-1.58.md).
 Rysunek – tablica A0: kartka rysunku jako duży arkusz bez wyglądu zeszytu (w menu „Kartki” zamiana w obie strony – z powrotem tylko, gdy rysunek mieści się w obszarze kartki), obraz tablicy w notatce – obszar z rysunkiem w wielkości kartki; przy przejściu tablica zwija się w rulon albo rozwija nad zeszytem (wersja 1.59): [docs/RELEASE-1.59.md](docs/RELEASE-1.59.md).
+Notatki – edycja tekstu w dwóch widokach: „Ciągły” (jak dotąd) i „Książka” – tekst w stronach na wysokość okna, kartki przewracane przyciskami, PageUp / PageDown i same, gdy kursor przechodzi na inną stronę, z tym samym zagięciem kartki co w podglądzie (wersja 1.60): [docs/RELEASE-1.60.md](docs/RELEASE-1.60.md).
 
-## Co potrafi wersja 1.59
+## Co potrafi wersja 1.60
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -371,6 +372,11 @@ Od 1.29 edycja ma dwa osobne okna nad podglądem:
   w trakcie pisania) i **spinacz z liczbą** obrazów, tabel i załączników – otwiera nad tekstem okno
   **Obrazy i załączniki** („Gotowe” wraca do tekstu; zapisuje się wszystko razem). Obraz wklejony do
   tekstu (albo upuszczony na tekst) trafia do obrazów, a w tekście – jego odwołanie.
+  Od 1.60 nad polem przełącznik **Ciągły | Książka** (zapamiętany): w widoku **Książka** pole jest stroną na wysokość
+  okna, a tekst płynie na kolejne strony (akapit może przejść na następną stronę, „Nowa strona” zaczyna stronę). Pod stroną
+  **‹ Strona 2 z 7 ›**; strony przewraca się tymi przyciskami, klawiszami PageDown / PageUp (kursor na początek strony)
+  i same – gdy kursor przechodzi na inną stronę (pisanie za końcem strony, strzałki, Ctrl+End). Kartka zagina się od
+  dolnego rogu jak w podglądzie (na odwrocie prześwituje lustrzany tekst). Treść i zapis są takie same w obu widokach.
 - **Spinacz** w podglądzie – samo okno **Obrazy i załączniki** (Anuluj / Zapisz): obrazy, tabele,
   miejsce w podglądzie, numeracja, załączniki, na dole **Usuń notatkę**.
 

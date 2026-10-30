@@ -536,6 +536,66 @@ function placeBand(band, origin, normal, thickness, opacity, length) {
 const foldDepth = (geometry) => Math.max(0, ...geometry.folded.map((vertex) =>
   (vertex.x - geometry.point.x) * geometry.normal.x + (vertex.y - geometry.point.y) * geometry.normal.y));
 
+// ---------------------------------------------------------------- przewrócenie kartki nad dowolną stroną
+
+/**
+ * Jedno przewrócenie kartki od dolnego rogu (od 1.60 – edytor notatki w widoku książki), jak w książce poniżej:
+ * host – element z position: relative o wielkości strony (width × height), turning – przewracana strona leżąca już
+ * w host na wierzchu (np. kopia strony), back – jej odwrót (element, przez który prześwituje tekst w lustrze).
+ * forward – kartka idzie z płaskiej strony w lewo; wstecz – wraca z lewej na wierzch. Zwraca obietnicę końca animacji;
+ * warstwy cienia i płata są potem usunięte, a `turning` i `back` – do usunięcia przez wołającego.
+ */
+export function curlTurn({ host, turning, back, width, height, forward, duration = TURN_DURATION }) {
+  const corner = cornerOf('bottom', width, height);
+  const cast = h('div', { class: 'note-curl__layer', 'aria-hidden': 'true' }, h('span', { class: 'note-curl__band note-curl__band--cast' }));
+  const fold = h('div', { class: 'note-curl__layer', 'aria-hidden': 'true' }, h('span', { class: 'note-curl__band note-curl__band--fold' }));
+  const light = h('span', { class: 'note-curl__band note-curl__band--light', 'aria-hidden': 'true' });
+  back.classList.add('note-page--flap');
+  Object.assign(back.style, { position: 'absolute', left: '0px', top: '0px', width: `${width}px`, height: `${height}px` });
+  back.append(light);
+  const flap = h('div', { class: 'note-curl__flap', 'aria-hidden': 'true' }, h('div', { class: 'note-curl__lift' }, back));
+  turning.before(cast);
+  turning.after(fold, flap);
+  const layers = [cast, fold, flap];
+  const render = (point) => {
+    const geometry = foldGeometry({ width, height, corner, point });
+    if (!geometry) {
+      turning.style.clipPath = '';
+      for (const layer of layers) layer.hidden = true;
+      return;
+    }
+    for (const layer of layers) layer.hidden = false;
+    turning.style.clipPath = cssPolygon(geometry.flat);
+    back.style.transform = cssMatrix(geometry.reflection);
+    back.style.clipPath = cssPolygon(geometry.folded);
+    cast.style.clipPath = cssPolygon(geometry.folded);
+    fold.style.clipPath = cssPolygon(geometry.flat);
+    const lift = Math.sin(Math.PI * geometry.progress);
+    const length = 2 * (width + height);
+    placeBand(cast.firstChild, geometry.point, geometry.normal, width * (0.04 + 0.2 * lift), lift * 1.6, length);
+    placeBand(fold.firstChild, geometry.point, { x: -geometry.normal.x, y: -geometry.normal.y }, width * (0.03 + 0.12 * lift), lift * 2, length);
+    placeBand(light, geometry.point, geometry.normal, foldDepth(geometry) + 1, lift * 2.5, length);
+  };
+  render(forward ? corner : turnedCorner(corner));
+  playPage({ land: duration, direction: forward ? 1 : -1 });
+  return new Promise((resolve) => {
+    const started = performance.now();
+    const frame = (now) => {
+      const t = Math.min(1, (now - started) / duration);
+      const progress = easeInOut(t);
+      render(constrainCorner({ width, height, corner, point: cornerPath(corner, width, height, forward ? progress : 1 - progress) }));
+      if (t < 1 && host.isConnected) {
+        requestAnimationFrame(frame);
+        return;
+      }
+      for (const layer of layers) layer.remove();
+      light.remove();
+      resolve();
+    };
+    requestAnimationFrame(frame);
+  });
+}
+
 // ---------------------------------------------------------------- książka
 
 /**

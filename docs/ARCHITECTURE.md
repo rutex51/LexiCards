@@ -2235,6 +2235,25 @@ porównuje `cardFaces` / `cardMedia` po sprawdzeniu (zapis z 1.56 z numerami str
   po lewej, `closeButton` (`note-left`, „Zamknij”) po prawej; identyfikatory testów bez zmian. Okna edycji (Anuluj /
   Zapisz, Gotowe) – bez zmian.
 
+## Widok książki w edytorze notatki (od 1.60)
+
+- **Pole edycji jako strony** (`js/ui/notes.js`, `noteEditor`): to samo pole `contenteditable` (`note-editor`) z klasą
+  `note-editor__area--book` – stała wysokość (`--book-height`: do dołu okna, pod spodem przyciski stron), kolumny CSS
+  (`column-width` = szerokość treści, `column-gap` = poziome marginesy pola, `column-fill: auto`), `overflow: hidden`. Kolejne
+  strony leżą w prawo; strona n = `scrollLeft` n × szerokość pola (`pagePitch`), liczba stron = `scrollWidth / clientWidth`.
+  `hr` (Nowa strona) – `break-after: column`. Pole jest w `note-editor__stage` (position: relative) – tam kładą się kopie
+  do animacji. Treść, cofanie i zapis – bez zmian (style stron nie trafiają do HTML).
+- **Strony**: `turnPage(delta)` – kopia pola bez edycji (`pageCopy`, `scrollLeft` strony) jako przewracana kartka
+  i druga kopia na odwrocie (`note-editor__back`, wyblakła); w przód pole od razu na nowej stronie pod spodem, wstecz –
+  poprzednia strona wraca z lewej, pole przechodzi na nią po animacji. `followCaret` (przy `selectionchange`) – strona
+  kursora (`caretPage`: prostokąt kursora + `scrollLeft`) inna niż pokazana → przewrócenie; przeglądarka przesuwająca pole
+  do kursora jest cofana na pełną stronę (zdarzenie `scroll`). PageDown / PageUp w polu – przewrócenie i kursor na
+  początek strony (`caretRangeFromPoint`). `ResizeObserver` i `input` – nowe wymiary i liczba stron.
+- **Zagięcie kartki** (`js/ui/note-book.js`, `curlTurn`): jedno przewrócenie od dolnego rogu na dowolnych elementach –
+  ta sama geometria (`core/page-curl.js`), warstwy cienia (`note-curl__layer`), płat z odwrotem (`note-curl__flap`) i pasy
+  światła co w podglądzie jednej strony; podgląd notatki (książka) bez zmian.
+- **Ustawienie**: `noteEditBook` (`core/model.js`, domyślnie false) – ostatnio wybrany widok.
+
 ## Tablica A0 (od 1.59)
 
 - **Dane** (`js/core/board.js`, bez przeglądarki): `board: true` w rysunku (format 27, `cleanDrawing` – tylko bez zdjęcia),

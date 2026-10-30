@@ -6266,6 +6266,44 @@ svg.icon--note { color: var(--note-icon); }
 .note-edit-dialog .note-editor__text { flex: 1 0 auto; display: flex; flex-direction: column; }
 .note-edit-dialog .note-editor__area { flex: 1 0 auto; min-height: max(260px, 45vh); }
 
+/*
+ * Widok książki w edytorze notatki (od 1.60): pole edycji jest stroną – stała wysokość, tekst płynie w kolumny
+ * (jedna na ekranie, następne – w prawo, poza polem); przewracaną kartkę rysują kopie pola w tym samym miejscu.
+ */
+.note-editor__stage { position: relative; display: flex; flex-direction: column; }
+.note-edit-dialog .note-editor__stage { flex: 1 0 auto; }
+.note-edit-dialog .note-editor__area.note-editor__area--book,
+.note-editor__area--book {
+  flex: none;
+  height: var(--book-height, 60vh);
+  min-height: 0;
+  overflow: hidden;
+  column-width: var(--book-column, 20em);
+  column-gap: var(--book-gap, 32px);
+  column-fill: auto;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+.note-editor__area--book:focus { box-shadow: inset 0 0 0 2px var(--accent), 0 8px 24px rgba(0, 0, 0, 0.1); }
+/* „Nowa strona” zaczyna następną stronę książki; obrazy, tabele i wzory nie dzielą się między strony. */
+.note-editor__area--book hr { break-after: column; }
+.note-editor__area--book :is(img, table, .math, figure) { break-inside: avoid; }
+.note-editor__area--copy {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.note-editor__area.note-editor__area--copy:focus { box-shadow: none; }
+.note-editor__back { background: var(--page-back); overflow: hidden; }
+.note-editor__back > .note-editor__area--copy { opacity: 0.2; background: transparent; box-shadow: none; }
+.note-editor__stage .note-curl__layer,
+.note-editor__stage .note-curl__flap { z-index: 2; }
+/* Jak w podglądzie jednej strony: kartka znika za lewą krawędzią strony, w pionie może wyjść poza nią. */
+.note-editor__stage .note-curl__flap { clip-path: inset(-200vh 0); }
+.note-editor__pager { justify-content: center; margin: 10px auto 0; }
+.note-editor__view { flex: none; }
+.note-editor__view .segmented { min-width: 176px; }
+
 /* Przycisk okna „Obrazy i załączniki” (od 1.29): spinacz i liczba obiektów notatki. */
 .note-sheet__objects {
   display: inline-flex;

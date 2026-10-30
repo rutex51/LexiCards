@@ -40,7 +40,7 @@ import { clearFormatting, contentEditing, insertBlockAt, paragraphAt, setParagra
 import { openNotePdf } from './note-pdf.js';
 import { printNote } from './note-print.js';
 import { recordingSupported, startRecording } from './recorder.js';
-import { noteBook } from './note-book.js';
+import { curlTurn, noteBook } from './note-book.js';
 import { speakThen, speechAvailable, stopSpeaking } from './speech.js';
 import { symbolPanel } from './symbols.js';
 import { openTableEditor } from './table-editor.js';
@@ -680,7 +680,10 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
         titleID: sessionTitleID,
         textView: kind === 'text',
         onObjectsChange: () => { if (countButton) setObjectsCount(countButton, sessionEditor.objectCount()); },
-        beforeInsert: () => nested?.close('done')
+        beforeInsert: () => nested?.close('done'),
+        // Od 1.60: widok tekstu – ciągły albo książka (zapamiętany).
+        bookView: library.getSettings().noteEditBook === true,
+        onBookViewChange: (on) => library.updateSettings({ noteEditBook: on }).catch((error) => console.error(error))
       });
 
       /** Obrazy, tabele i załączniki nad oknem tekstu – ta sama edycja (bez osobnego zapisu). */
@@ -963,7 +966,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
  */
 function noteEditor({
   html, htmlEN = '', language = 'pl', images, tables = [], urls, imagesFirst = false, numberFigures = false, files = [], loadFile = null, titleID = 'note',
-  textView = true, onObjectsChange = null, beforeInsert = null
+  textView = true, onObjectsChange = null, beforeInsert = null, bookView = false, onBookViewChange = () => {}
 }) {
   const initialTexts = { pl: normalizeNoteHtml(html), en: normalizeNoteHtml(htmlEN) };
   const labeledImages = withImageLabels(images.map((image) => ({ ...image })));
@@ -1416,6 +1419,7 @@ function noteEditor({
     if (!area.contains(range.commonAncestorContainer)) return;
     state.range = range.cloneRange();
     updateToolbar();
+    followCaret();
   };
   document.addEventListener('selectionchange', onSelectionChange);
 
@@ -2253,6 +2257,168 @@ function noteEditor({
     attachInput
   );
 
+  // ---- widok książki (od 1.60): tekst płynie stronami – kolumny CSS w tym samym polu edycji, jedna kolumna na
+  // ekranie (scrollLeft = strona × szerokość pola); strony przewraca się przyciskami, PageUp / PageDown i same, gdy
+  // kursor przejdzie na inną stronę (pisanie, strzałki) – kartka zagina się od dolnego rogu jak w podglądzie notatki.
+  const page = { on: false, index: 0, count: 1, busy: false, frame: 0 };
+  const pageIndicator = h('span', { class: 'note-pager__indicator', 'aria-live': 'polite', dataset: { testid: 'note-edit-page' } });
+  const pagePrevious = h('button', {
+    type: 'button', class: 'icon-button note-pager__button', 'aria-label': 'Poprzednia strona', title: 'Poprzednia strona (PageUp)',
+    dataset: { testid: 'note-edit-page-previous' }, onClick: () => turnPage(-1)
+  }, icon('chevronLeft'));
+  const pageNext = h('button', {
+    type: 'button', class: 'icon-button note-pager__button', 'aria-label': 'Następna strona', title: 'Następna strona (PageDown)',
+    dataset: { testid: 'note-edit-page-next' }, onClick: () => turnPage(1)
+  }, icon('chevronRight'));
+  const pager = h('div', { class: 'note-pager note-editor__pager', hidden: true }, pagePrevious, pageIndicator, pageNext);
+  const stage = h('div', { class: 'note-editor__stage' }, area);
+  const pagePitch = () => area.clientWidth;
+  const showPageAt = (index) => {
+    page.index = index;
+    area.scrollLeft = index * pagePitch();
+    pageIndicator.textContent = `Strona ${index + 1} z ${page.count}`;
+    pagePrevious.disabled = index === 0;
+    pageNext.disabled = index >= page.count - 1;
+  };
+  /** Ile stron ma tekst (kolumn pola) – po każdej zmianie treści i wielkości. */
+  const countPages = () => {
+    page.count = Math.max(1, Math.round(area.scrollWidth / Math.max(1, pagePitch())));
+    showPageAt(Math.min(page.index, page.count - 1));
+  };
+  /**
+   * Wielkość strony: szerokość pola, wysokość – do dołu okna (pod spodem przyciski stron); kolumna = szerokość treści,
+   * odstęp kolumn = poziome marginesy pola, więc następna strona zaczyna się dokładnie o szerokość pola dalej.
+   */
+  function layoutPages(index = page.index) {
+    if (!page.on || !area.isConnected) return;
+    const scroller = area.closest('.sheet__body');
+    if (scroller) scroller.scrollTop = 0;
+    const style = getComputedStyle(area);
+    const sides = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    const bottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
+    const height = Math.max(240, Math.floor(bottom - area.getBoundingClientRect().top - pager.offsetHeight - 28));
+    area.style.setProperty('--book-height', `${height}px`);
+    area.style.setProperty('--book-column', `${Math.max(120, area.clientWidth - sides)}px`);
+    area.style.setProperty('--book-gap', `${sides}px`);
+    page.index = index;
+    countPages();
+  }
+  const relayout = () => {
+    window.cancelAnimationFrame(page.frame);
+    page.frame = requestAnimationFrame(() => layoutPages());
+  };
+  function setBookView(on) {
+    if (page.on === on) return;
+    page.on = on;
+    area.classList.toggle('note-editor__area--book', on);
+    stage.classList.toggle('note-editor__stage--book', on);
+    pager.hidden = !on;
+    if (!on) {
+      for (const name of ['--book-height', '--book-column', '--book-gap']) area.style.removeProperty(name);
+      area.scrollLeft = 0;
+      return;
+    }
+    // Od strony z kursorem (albo pierwszej).
+    requestAnimationFrame(() => {
+      layoutPages(0);
+      const at = caretPage();
+      if (at !== null) showPageAt(at);
+    });
+  }
+  /** Strona z kursorem albo null (kursora nie ma w polu). */
+  function caretPage() {
+    const selection = window.getSelection();
+    if (!page.on || !selection.rangeCount || !area.contains(selection.focusNode)) return null;
+    const range = document.createRange();
+    range.setStart(selection.focusNode, selection.focusOffset);
+    let rect = range.getClientRects()[0] ?? null;
+    if (!rect) {
+      const node = selection.focusNode.nodeType === window.Node.ELEMENT_NODE ? selection.focusNode : selection.focusNode.parentElement;
+      rect = node?.getBoundingClientRect() ?? null;
+    }
+    if (!rect) return null;
+    const box = area.getBoundingClientRect();
+    const index = Math.floor((rect.left + 1 - box.left - parseFloat(getComputedStyle(area).paddingLeft) + area.scrollLeft) / pagePitch() + 1e-6);
+    return Math.min(page.count - 1, Math.max(0, index));
+  }
+  /** Kursor przeszedł na inną stronę (pisanie, strzałki, wklejenie) – kartka się przewraca. */
+  function followCaret() {
+    if (!page.on || page.busy || document.activeElement !== area) return;
+    countPages();
+    const at = caretPage();
+    if (at !== null && at !== page.index) turnPage(at - page.index);
+  }
+  /** Kopia pola (bez edycji) pokazująca stronę `index` – do przewracania. */
+  function pageCopy(index, parent) {
+    const copy = area.cloneNode(true);
+    copy.removeAttribute('contenteditable');
+    copy.removeAttribute('role');
+    copy.removeAttribute('data-testid');
+    copy.setAttribute('aria-hidden', 'true');
+    copy.inert = true;
+    copy.classList.add('note-editor__area--copy');
+    parent.append(copy);
+    copy.scrollLeft = index * pagePitch();
+    return copy;
+  }
+  /**
+   * Przewraca o `delta` stron: w przód – bieżąca strona (kopia) zagina się i odsłania następną (pole już na niej),
+   * wstecz – poprzednia (kopia) wraca z lewej na bieżącą. Bez animacji, gdy system prosi o ograniczenie ruchu.
+   */
+  async function turnPage(delta) {
+    if (!page.on || page.busy) return;
+    countPages();
+    const target = Math.min(page.count - 1, Math.max(0, page.index + delta));
+    if (target === page.index) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      showPageAt(target);
+      return;
+    }
+    page.busy = true;
+    const forward = target > page.index;
+    const shown = forward ? page.index : target;
+    const turning = pageCopy(shown, stage);
+    const back = h('div', { class: 'note-editor__back', 'aria-hidden': 'true' });
+    if (forward) showPageAt(target);
+    const done = curlTurn({ host: stage, turning, back, width: area.offsetWidth, height: area.offsetHeight, forward });
+    pageCopy(shown, back);
+    await done;
+    turning.remove();
+    back.remove();
+    if (!forward) showPageAt(target);
+    page.busy = false;
+    // W trakcie przewracania kursor mógł pójść dalej.
+    followCaret();
+  }
+  // Przeglądarka przesuwa pole do kursora – w widoku książki pole stoi zawsze na całej stronie (resztę robi followCaret).
+  area.addEventListener('scroll', () => {
+    if (page.on && !page.busy && Math.abs(area.scrollLeft - page.index * pagePitch()) > 1) area.scrollLeft = page.index * pagePitch();
+  });
+  area.addEventListener('keydown', (event) => {
+    if (!page.on || (event.key !== 'PageDown' && event.key !== 'PageUp') || event.altKey || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    const delta = event.key === 'PageDown' ? 1 : -1;
+    turnPage(delta).then(() => {
+      // Kursor na początek pokazanej strony.
+      const box = area.getBoundingClientRect();
+      const style = getComputedStyle(area);
+      const point = document.caretRangeFromPoint?.(box.left + parseFloat(style.paddingLeft) + 2, box.top + parseFloat(style.paddingTop) + 6);
+      if (point && area.contains(point.startContainer)) {
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(point);
+      }
+    });
+  });
+  area.addEventListener('input', () => {
+    if (page.on) relayout();
+  });
+  const pageObserver = new ResizeObserver(() => {
+    if (page.on) relayout();
+  });
+  pageObserver.observe(stage);
+  if (bookView && textView) setBookView(true);
+
   // Od 1.29 dwie części w osobnych oknach: obrazy, tabele i załączniki (objects) oraz tekst (element).
   // Upuszczenie plików na edytor (komputer) dodaje obrazy albo załączniki.
   const objects = h('div', { class: 'note-editor note-editor--objects' },
@@ -2267,6 +2433,16 @@ function noteEditor({
     h('section', { class: 'note-editor__text' },
       h('div', { class: 'note-editor__text-head' },
         h('h3', { class: 'form-group__title' }, 'Tekst'),
+        h('div', { class: 'note-editor__view', dataset: { testid: 'note-edit-view' } }, segmented({
+          name: `${titleID}-edit-view`,
+          label: 'Widok tekstu',
+          value: page.on ? 'book' : 'flow',
+          options: [{ value: 'flow', label: 'Ciągły' }, { value: 'book', label: 'Książka' }],
+          onChange: (value) => {
+            setBookView(value === 'book');
+            onBookViewChange(page.on);
+          }
+        })),
         h('div', { class: 'note-editor__language', dataset: { testid: 'note-edit-language' } }, segmented({
           name: `${titleID}-edit-language`,
           label: 'Język treści',
@@ -2276,11 +2452,13 @@ function noteEditor({
             state.texts[state.language] = areaHtml();
             showLanguage(value);
             syncEmpty();
+            layoutPages(0);
           }
         }))
       ),
       h('div', { class: 'note-editor__toolbar' }, toolbar, colorPanel, sizePanel, paragraphPanel, symbolsPanel, objectsPanel),
-      area
+      stage,
+      pager
     )
   );
   for (const part of [element, objects]) {
@@ -2378,6 +2556,8 @@ function noteEditor({
     destroy() {
       document.removeEventListener('selectionchange', onSelectionChange);
       gridObserver.disconnect();
+      pageObserver.disconnect();
+      window.cancelAnimationFrame(page.frame);
       // Zamknięte bez zapisu – nagranie przepada, mikrofon zostaje zwolniony.
       recording?.cancel();
       recording = null;

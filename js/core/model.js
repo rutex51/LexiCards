@@ -139,6 +139,7 @@ export function defaultSettings() {
     desiredRetention: 0.9,         // FSRS: docelowa szansa przypomnienia w dniu powtórki
     consolidatedReviewDays: 30,    // lekcje oznaczone jako utrwalone: fiszki wracają najwcześniej po tylu dniach
     noteSpread: true,              // notatka na dużym ekranie: dwie strony obok siebie
+    noteEditBook: false,           // edycja tekstu notatki w widoku książki (od 1.60)
     consolidatedLast: true,        // utrwalone lekcje i moduły na końcu list (od 1.9 do wyboru)
     listSort: { domain: 'manual', module: 'manual', lesson: 'manual' }, // kolejność list biblioteki (od 1.16, core/sorting.js)
     noteLanguage: 'pl',            // wersja notatki w podglądzie: pl | en (gdy notatka ma obie)

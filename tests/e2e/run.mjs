@@ -14154,6 +14154,144 @@ test('rysunek 1.59: z tablicy A0 na kartkę – tablica zwija się w rulon od pr
   await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 2 z 2');
 }, { device: DESKTOP });
 
+// ---------------------------------------------------------------- notatka 1.60: widok książki w edytorze
+
+/** Długa notatka (1.60): 36 akapitów, „Nowa strona” przed akapitem 30. */
+async function seedLongNote(page) {
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate(async (id) => {
+    const text = (number) => `Akapit ${number}: aktywa to zasoby kontrolowane przez jednostkę, z których oczekuje się korzyści ekonomicznych w przyszłości.`;
+    const paragraphs = Array.from({ length: 36 }, (_, index) => `${index === 29 ? '<hr data-page="">' : ''}<p>${text(index + 1)}</p>`);
+    await window.lexicards.library.saveNote(id, { html: paragraphs.join(''), htmlEN: '', images: [], tables: [] });
+  }, ids.statements);
+  await openNotePreview(page, ids.statements);
+  return ids;
+}
+/** Stan widoku książki w edytorze: strona z napisu, scrollLeft pola i jego szerokość. */
+const bookState = (edit) => edit.locator('[data-testid=note-editor]').evaluate((area) => ({
+  book: area.classList.contains('note-editor__area--book'), scrollLeft: area.scrollLeft, width: area.clientWidth,
+  pages: Math.round(area.scrollWidth / area.clientWidth)
+}));
+/** Czy akapit z napisem `text` leży na pokazanej stronie pola (w całości w poziomie). */
+const onShownPage = (edit, text) => edit.locator('[data-testid=note-editor]').evaluate((area, needle) => {
+  const paragraph = [...area.querySelectorAll('p')].find((item) => item.textContent.includes(needle));
+  if (!paragraph) return null;
+  const box = area.getBoundingClientRect();
+  const rect = paragraph.getClientRects()[0];
+  return rect.left >= box.left - 1 && rect.right <= box.right + 1;
+}, text);
+
+test('notatka 1.60: edycja w widoku książki – tekst w stronach, przewracanie przyciskiem i PageDown (kartka zagina się od rogu), „Nowa strona” zaczyna stronę, kursor przy pisaniu przewraca na swoją stronę; widok zapamiętany; treść bez zmian w zapisie (komputer)', async ({ open }) => {
+  const page = await open();
+  const ids = await seedLongNote(page);
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-right]').click();
+  const edit = page.locator('dialog[data-testid=note-edit-dialog][open]');
+  await edit.waitFor();
+  await settled(edit);
+  // Domyślnie – widok ciągły.
+  assert.equal((await bookState(edit)).book, false);
+  assert.equal(await edit.locator('[data-testid=note-edit-page]').isVisible(), false);
+  // Książka: strony o wysokości okna, tekst płynie w kolejne strony.
+  await edit.locator('[data-testid=note-edit-view] label', { hasText: 'Książka' }).click();
+  await expectText(edit.locator('[data-testid=note-edit-page]'), 'Strona 1 z ');
+  const first = await bookState(edit);
+  assert.ok(first.book && first.pages >= 3, `kilka stron (${first.pages})`);
+  await expectText(edit.locator('[data-testid=note-edit-page]'), `Strona 1 z ${first.pages}`);
+  assert.equal(await onShownPage(edit, 'Akapit 1:'), true);
+  assert.equal(await onShownPage(edit, 'Akapit 36:'), false, 'koniec – na dalszej stronie');
+  const area = await edit.locator('[data-testid=note-editor]').boundingBox();
+  const dialogBox = await edit.boundingBox();
+  assert.ok(area.y + area.height <= dialogBox.y + dialogBox.height, 'strona mieści się w oknie (bez przewijania)');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-160-ksiazka.png') });
+
+  // Następna strona: kartka zagina się od dolnego rogu (w połowie – płat i kopia strony), potem strona 2.
+  const time = await freezeTime(page);
+  await edit.locator('[data-testid=note-edit-page-next]').click();
+  await time.moment(360);
+  assert.equal(await edit.locator('.note-editor__area--copy').count() >= 1, true, 'przewracana kartka');
+  assert.equal(await edit.locator('.note-editor__stage .note-curl__flap').isVisible(), true, 'zagięty płat');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-160-przewracanie.png') });
+  await time.release();
+  await expectText(edit.locator('[data-testid=note-edit-page]'), `Strona 2 z ${first.pages}`);
+  await waitUntil(async () => (await edit.locator('.note-editor__area--copy').count()) === 0, 'Kartka przewrócona');
+  const second = await bookState(edit);
+  assert.equal(second.scrollLeft, second.width, 'pole na drugiej stronie');
+  assert.equal(await onShownPage(edit, 'Akapit 1:'), false);
+  // „Nowa strona” przed akapitem 30 – akapit 30 zaczyna stronę (na górze), 29 jest na stronie wcześniej.
+  const breakPage = await edit.locator('[data-testid=note-editor]').evaluate((element) => {
+    const paragraph = [...element.querySelectorAll('p')].find((item) => item.textContent.includes('Akapit 30:'));
+    const before = [...element.querySelectorAll('p')].find((item) => item.textContent.includes('Akapit 29:'));
+    const box = element.getBoundingClientRect();
+    const rect = paragraph.getClientRects()[0];
+    const left = (rect.left - box.left + element.scrollLeft) / element.clientWidth;
+    const top = rect.top - box.top - parseFloat(getComputedStyle(element).paddingTop);
+    const previous = (before.getClientRects()[0].left - box.left + element.scrollLeft) / element.clientWidth;
+    return { page: Math.floor(left), top, previous: Math.floor(previous) };
+  });
+  assert.ok(breakPage.top < 30 && breakPage.page > breakPage.previous, `„Nowa strona” zaczyna stronę (${JSON.stringify(breakPage)})`);
+
+  // PageDown w polu – kolejna strona; kursor na jej początku.
+  await edit.locator('[data-testid=note-edit-page-previous]').click();
+  await expectText(edit.locator('[data-testid=note-edit-page]'), `Strona 1 z ${first.pages}`);
+  await waitUntil(async () => (await edit.locator('.note-editor__area--copy').count()) === 0, 'Kartka wróciła');
+  await edit.locator('[data-testid=note-editor]').click({ position: { x: 60, y: 40 } });
+  await page.keyboard.press('PageDown');
+  await expectText(edit.locator('[data-testid=note-edit-page]'), `Strona 2 z ${first.pages}`);
+
+  // Kursor na końcu tekstu (Ctrl+End) – książka przewraca się na ostatnią stronę; pisanie za końcem strony – nowa strona.
+  await page.keyboard.press('Control+End');
+  await expectText(edit.locator('[data-testid=note-edit-page]'), `Strona ${first.pages} z ${first.pages}`);
+  for (let line = 0; line < 30; line += 1) await page.keyboard.press('Enter');
+  await page.keyboard.type('Dopisane na nowej stronie');
+  await waitUntil(async () => (await bookState(edit)).pages > first.pages, 'Nowa strona za ostatnią');
+  const grown = await bookState(edit);
+  await expectText(edit.locator('[data-testid=note-edit-page]'), `Strona ${grown.pages} z ${grown.pages}`);
+  assert.equal(await onShownPage(edit, 'Dopisane na nowej stronie'), true, 'dopisany tekst na pokazanej stronie');
+  // Ctrl+Home – z powrotem na pierwszą stronę.
+  await page.keyboard.press('Control+Home');
+  await expectText(edit.locator('[data-testid=note-edit-page]'), `Strona 1 z ${grown.pages}`);
+
+  // Zapis: treść jak przy widoku ciągłym (bez stylów stron); widok zapamiętany przy następnej edycji.
+  await edit.locator('[data-testid=note-right]').click();
+  await edit.waitFor({ state: 'detached' });
+  const saved = await page.evaluate((id) => window.lexicards.library.getNote(id).html, ids.statements);
+  assert.ok(saved.includes('Dopisane na nowej stronie') && saved.includes('Akapit 36:') && !saved.includes('column'), 'treść zapisana');
+  await dialog.locator('[data-testid=note-right]').click();
+  const again = page.locator('dialog[data-testid=note-edit-dialog][open]');
+  await again.waitFor();
+  await expectText(again.locator('[data-testid=note-edit-page]'), 'Strona 1 z ');
+  assert.equal((await bookState(again)).book, true, 'widok książki zapamiętany');
+  // Widok ciągły – pole bez stron.
+  await again.locator('[data-testid=note-edit-view] label', { hasText: 'Ciągły' }).click();
+  await waitUntil(async () => !(await bookState(again)).book, 'Widok ciągły');
+  assert.equal((await bookState(again)).scrollLeft, 0);
+  assert.equal(await again.locator('[data-testid=note-edit-page]').isVisible(), false);
+}, { device: DESKTOP });
+
+test('notatka 1.60 na telefonie: widok książki – strona na szerokość ekranu, przyciski stron pod nią, przewracanie, bez przewijania w bok', async ({ open }) => {
+  const page = await open();
+  await seedLongNote(page);
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-right]').click();
+  const edit = page.locator('dialog[data-testid=note-edit-dialog][open]');
+  await edit.waitFor();
+  await settled(edit);
+  await edit.locator('[data-testid=note-edit-view] label', { hasText: 'Książka' }).click();
+  await expectText(edit.locator('[data-testid=note-edit-page]'), 'Strona 1 z ');
+  const state = await bookState(edit);
+  assert.ok(state.pages >= 5, `na telefonie więcej stron (${state.pages})`);
+  const next = await edit.locator('[data-testid=note-edit-page-next]').boundingBox();
+  assert.ok(next.y + next.height <= 844, 'przyciski stron na ekranie');
+  assert.equal(await overflowX(page), 0, 'bez przewijania w bok');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-160-ksiazka-telefon.png') });
+  await edit.locator('[data-testid=note-edit-page-next]').tap();
+  await expectText(edit.locator('[data-testid=note-edit-page]'), `Strona 2 z ${state.pages}`);
+  await waitUntil(async () => (await edit.locator('.note-editor__area--copy').count()) === 0, 'Kartka przewrócona');
+  assert.equal(await overflowX(page), 0);
+});
+
 // ---------------------------------------------------------------- fiszki 1.56
 
 /** Notatka lekcji z obrazem „Schemat” i tabelą „Koszty” (1.56 – do przypięcia na stronach fiszki). */
