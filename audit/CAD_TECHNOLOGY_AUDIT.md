@@ -288,3 +288,14 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
   bez obrazów cudzych ani bibliotek. Przesuwanie widoku i rozkład elementów na okręgu – ogólne techniki interfejsu.
 - **Patenty:** szczególnego ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – bazy zablokowane,
   AUDIT_LIMITATIONS.md). Nowej pozycji rejestru algorytmów nie dodano (geometria trywialna). Ryzyko wstępnie NISKIE.
+
+## Uzupełnienie: wersja 1.59 (30.10.2026) – tablica A0 i rulon
+
+- **Zakres:** `js/core/board.js` – tryb kartki „tablica A0” (wymiary 4 × kartka, proporcje √2), sprawdzenie, czy rysunek
+  mieści się w obszarze kartki (granice kresek z `strokeBounds`), obszar obrazu do notatki (prostokąt w proporcjach kartki
+  wokół rysunku, przesunięty w obręb tablicy); `js/ui/drawing.js` – rama tablicy, ramka obszaru kartki, kadrowanie obrazu
+  do notatki, animacja zwijania w rulon (pas walca z gradientem wzdłuż przekątnej, cień, przycięcie do arkusza).
+- **Funkcje:** duży arkusz rysunku, dopasowanie obrazu do zawartości i efekt zwijania kartki – ogólne funkcje programów
+  do rysowania i efekty interfejsu; kod własny, bez bibliotek i cudzych obrazów. Nazwy opisowe („Tablica A0”).
+- **Patenty:** szczególnego ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – bazy zablokowane,
+  AUDIT_LIMITATIONS.md). Nowa pozycja rejestru: G68. Ryzyko wstępnie NISKIE.
