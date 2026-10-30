@@ -238,3 +238,18 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
   elementów cudzych programów (bez nazw handlowych operacji, bez ich ikon).
 - Nowe pozycje rejestru algorytmów: G65–G66. Ryzyko wstępnie NISKIE.
 
+
+## Uzupełnienie: wersja 1.56 (30.10.2026) – strony fiszki (bez zmian w modułach CAD)
+
+- **Zakres:** moduły rysunku i brył bez zmian. Zmiany w nauce z fiszkami: kierunki obrotów (od lewej, od prawej, z góry;
+  powrót z dołu – animacja CSS `rotateY` / `rotateX`), treść stron na środku, części stron do wyboru w Nauce i przy pojęciu
+  (`js/core/card-faces.js`, `js/ui/screens/study-session.js`, `study-setup.js`, `js/ui/actions.js`), rysunek, zdjęcie albo
+  tabela z notatki lekcji użytkownika przypięta do strony fiszki (po sygnaturze); w oknie notatki „Edytuj” i „Zamknij”
+  zamienione stronami.
+- **Funkcje:** fiszki z kilkoma stronami, wybór treści stron i obraz na karcie – ogólne funkcje programów do nauki
+  z fiszkami (fiszki papierowe, programy z powtórkami); kod własny, bez bibliotek i zewnętrznych usług. Nazwy w interfejsie
+  opisowe („Własne strony tej fiszki”, „Obrazy z notatki lekcji”, „Przypnij do fiszki”) – bez nazw i układu okien cudzych
+  programów. Obrazy i tabele pochodzą wyłącznie z notatek użytkownika – aplikacja nie dołącza cudzych treści.
+- **Patenty:** szczególnego ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – bazy zablokowane,
+  AUDIT_LIMITATIONS.md).
+- Nowych pozycji rejestru algorytmów brak (bez algorytmów geometrii). Ryzyko wstępnie NISKIE.
