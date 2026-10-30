@@ -14,7 +14,7 @@ import {
   DECISIONS, FLIP_FACES, FLIP_TURNS, RETURN_TURN, TILES, cardContent, emptyTiles, formatInterval, isSessionFinished, scoreTiles, sessionFlipFaces,
   setAllTiles, summarizeSession
 } from '../../core/study.js';
-import { MEDIA_FACE, faceParts, mediaOnFace, termCardFaces } from '../../core/card-faces.js';
+import { MEDIA_FACE, MEDIA_PART, faceKind, faceParts, mediaOnFace, termCardFaces } from '../../core/card-faces.js';
 import { findImageByLabel, withImageLabels } from '../../core/note-refs.js';
 import { findTableByLabel, tableHtml, withTableLabels } from '../../core/tables.js';
 import { urlPool } from '../images.js';
@@ -38,23 +38,25 @@ const REPEAT_TEST_IDS = {
   repeat: 'summary-repeat', partial: 'summary-repeat-partial', unknown: 'summary-repeat-unknown', all: 'summary-repeat-all'
 };
 const LANGUAGE_NAMES = { pl: 'Polski', en: 'Angielski' };
-/** Przycisk przejścia na stronę z daną treścią (od 1.39; od 1.56 też tłumaczenie z definicją albo przykładem i sam obraz). */
-const FACE_ACTIONS = {
-  answer: 'Pokaż odpowiedź', all: 'Pokaż odpowiedź', 'answer-description': 'Pokaż odpowiedź', 'answer-example': 'Pokaż odpowiedź',
-  description: 'Pokaż definicję', example: 'Pokaż przykład', details: 'Pokaż definicję i przykład', [MEDIA_FACE]: 'Pokaż obraz z notatki'
-};
-/** Przycisk na dalszych stronach (od 1.56): mówi, co dochodzi poza tłumaczeniem. */
-const NEXT_ACTIONS = {
-  ...FACE_ACTIONS, answer: 'Pokaż tłumaczenie', all: 'Pokaż definicję i przykład', 'answer-description': 'Pokaż definicję', 'answer-example': 'Pokaż przykład'
-};
+const PART_NAMES = { description: 'definicję', example: 'przykład', [MEDIA_PART]: 'obraz' };
 /**
- * Animacja obrotu (połowa przed zamianą strony i połowa po niej): od lewej do prawej, od prawej do lewej,
- * z góry na dół, z dołu do góry.
+ * Przycisk przejścia na stronę `kind` (od 1.39): z pytania strona z tłumaczeniem – „Pokaż odpowiedź”; dalej (od 1.56)
+ * – co dochodzi poza tłumaczeniem, np. „Pokaż definicję i przykład”, sam obraz – „Pokaż obraz z notatki”.
+ */
+function faceAction(kind, fromQuestion) {
+  const parts = faceParts(kind);
+  if (parts.includes('answer') && (fromQuestion || parts.length === 1)) return fromQuestion ? 'Pokaż odpowiedź' : 'Pokaż tłumaczenie';
+  if (kind === MEDIA_FACE) return 'Pokaż obraz z notatki';
+  const names = parts.filter((part) => part !== 'answer').map((part) => PART_NAMES[part]);
+  return `Pokaż ${names.length > 1 ? `${names.slice(0, -1).join(', ')} i ${names.at(-1)}` : names[0]}`;
+}
+/**
+ * Animacja obrotu (połowa przed zamianą strony i połowa po niej): od prawej do lewej, od lewej do prawej,
+ * z dołu do góry.
  */
 const TURN_FRAMES = {
   left: { axis: 'Y', out: 90, in: -90 },
   right: { axis: 'Y', out: -90, in: 90 },
-  down: { axis: 'X', out: -90, in: 90 },
   up: { axis: 'X', out: 90, in: -90 }
 };
 /** Krótki tekst na stronie (definicja, przykład) – pogrubiony jak pytanie (od 1.56). */
@@ -226,13 +228,14 @@ export class StudySessionScreen {
 
   /**
    * Obraca fiszkę na stronę `target`: połowa obrotu, zamiana strony, druga połowa. Kierunek – według obrotu,
-   * który prowadzi na następną stronę (FLIP_TURNS); powrót do pytania – z dołu do góry (od 1.56).
+   * który prowadzi na następną stronę (FLIP_TURNS: od 1.56.1 pierwszy od prawej do lewej, następne z dołu do góry);
+   * powrót do pytania – od lewej do prawej.
    */
   async #flipTo(target) {
     const { card, faces } = this.elements;
     if (!card || !faces || this.flipping || this.busy || target === this.face) return;
     this.flipping = true;
-    const turnName = target === this.face + 1 ? FLIP_TURNS[this.face] ?? 'left' : RETURN_TURN;
+    const turnName = target === this.face + 1 ? FLIP_TURNS[this.face] ?? 'up' : RETURN_TURN;
     const hadFocus = card.contains(document.activeElement);
     const swap = () => {
       this.face = target;
@@ -528,21 +531,26 @@ export class StudySessionScreen {
         h('span', { class: 'flashcard__label' }, frontLabel),
         this.#speakerButton(content.front.text, content.front.lang, 'Odtwórz wymowę')
       ),
-      // Od 1.56 treść strony w jednym bloku na środku (z obrazem albo tabelą z notatki pod spodem).
+      // Od 1.56 treść strony w jednym bloku na środku.
       h('div', { class: 'flashcard__body' },
-        h('p', { class: `flashcard__text ${sizeClass(content.front.text)}`, lang: content.front.lang }, content.front.text),
-        this.#mediaView(term, mediaOnFace(term, 0, total))),
-      nextButton(FACE_ACTIONS[kinds[0]], 'card-flip')
+        h('p', { class: `flashcard__text ${sizeClass(content.front.text)}`, lang: content.front.lang }, content.front.text)),
+      nextButton(faceAction(kinds[0], true), 'card-flip')
     );
 
-    /** Strona po obrocie `index` (1…) z treścią `kind` (od 1.56 – dowolny zestaw części albo sam obraz z notatki). */
+    /**
+     * Strona po obrocie `index` (1…) z treścią `kind` (od 1.56 – dowolny zestaw części; od 1.56.1 część „Obraz” – wszystkie
+     * obrazy i tabele z notatki przypięte do pojęcia).
+     */
     const backFace = (kind, index) => {
       const parts = faceParts(kind);
       const answer = parts.includes('answer');
-      const media = this.#mediaView(term, mediaOnFace(term, index, total));
-      const label = answer ? LANGUAGE_NAMES[content.target] : kind === MEDIA_FACE ? 'Z notatki lekcji' : FLIP_FACES.find((face) => face.id === kind).label;
+      const text = parts.filter((part) => part !== MEDIA_PART);
+      const textKind = faceKind(text) ?? MEDIA_FACE;
+      const media = this.#mediaView(term, mediaOnFace(term, index, kinds));
+      const label = answer ? LANGUAGE_NAMES[content.target]
+        : textKind === MEDIA_FACE ? 'Z notatki lekcji' : FLIP_FACES.find((face) => face.id === textKind).label;
       return h('div', {
-        class: `flashcard__face flashcard__face--back flashcard__face--${kind}`, hidden: this.face !== index,
+        class: `flashcard__face flashcard__face--back flashcard__face--${textKind}`, hidden: this.face !== index,
         dataset: { testid: index === 1 ? 'card-back' : `card-face-${index}`, kind }
       },
         // Odwrót mieści dużo treści, więc powrót do pytania to mały przycisk w nagłówku
@@ -566,8 +574,8 @@ export class StudySessionScreen {
           parts.includes('description') ? section('description', 'Definicja', content.back.descriptions, 'Odtwórz definicję') : null,
           parts.includes('example') ? section('example', 'Przykład', content.back.examples, 'Odtwórz przykład') : null,
           media,
-          parts.length === 0 && !media ? h('p', { class: 'flashcard__missing' }, 'Brak treści na tej stronie') : null),
-        index < kinds.length ? nextButton(NEXT_ACTIONS[kinds[index]], `card-next-${index}`) : null,
+          text.length === 0 && !media ? h('p', { class: 'flashcard__missing' }, 'Brak treści na tej stronie') : null),
+        index < kinds.length ? nextButton(faceAction(kinds[index], false), `card-next-${index}`) : null,
         h('span', { class: 'flashcard__fade', 'aria-hidden': 'true' })
       );
     };

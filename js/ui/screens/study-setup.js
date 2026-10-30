@@ -6,7 +6,7 @@ import {
   DIRECTION_NAMES, FLIP_COUNTS, FLIP_TURNS, MIXED, RETURN_TURN, STUDY_COUNTS, STUDY_DIRECTIONS, STUDY_FRONTS, STUDY_SCOPES, buildQueue,
   describeStudyMaterial, flipFaces, isSessionFinished, scopeCounts
 } from '../../core/study.js';
-import { FACE_PART_IDS, FACE_PART_LABELS, TURN_LABELS, faceKind, faceParts } from '../../core/card-faces.js';
+import { FACE_PART_IDS, FACE_PART_LABELS, MEDIA_PART, TURN_LABELS, faceKind, faceParts, hasMediaPart } from '../../core/card-faces.js';
 import { startTodaysReview, todaysReviewQueue } from '../actions.js';
 import { initialSelection, lessonsGroup, materialGroup, sanitizeSelection, selectionConfig } from '../material.js';
 import { REPEAT_LABELS } from './study-session.js';
@@ -92,6 +92,9 @@ export class StudySetupScreen {
   #flipsGroup() {
     const { ctx } = this;
     const faces = this.flips > 1 ? this.faces[this.flips] : [];
+    // Od 1.56.1 część „Obraz” (obrazy i tabele z notatki przypięte do pojęcia), gdy któreś pojęcie ma obraz.
+    const media = ctx.library.hasCardMedia() || faces.some(hasMediaPart);
+    const parts = FACE_PART_IDS.filter((part) => media || part !== MEDIA_PART);
     return h('section', { class: 'group study-flips', dataset: { testid: 'study-flips' } },
       h('h2', { class: 'form-group__title' }, 'Obroty fiszki'),
       segmented({
@@ -101,7 +104,7 @@ export class StudySetupScreen {
       }),
       faces.map((face, index) => field(`Po ${index + 1}. obrocie (${TURN_LABELS[FLIP_TURNS[index]]})`, checkSegmented({
         name: `study-face-${index + 1}`, label: `Treść strony po ${index + 1}. obrocie`, testID: `study-face-${index + 1}`,
-        values: faceParts(face), options: FACE_PART_IDS.map((part) => ({ value: part, label: FACE_PART_LABELS[part] })),
+        values: faceParts(face), options: parts.map((part) => ({ value: part, label: FACE_PART_LABELS[part] })),
         onChange: (part, checked) => {
           const parts = faceParts(face).filter((item) => item !== part).concat(checked ? [part] : []);
           // Strona musi coś pokazywać – ostatniej zaznaczonej części nie da się odznaczyć.
@@ -112,8 +115,9 @@ export class StudySetupScreen {
         }
       }))),
       h('p', { class: 'group__footer' }, this.flips === 1
-        ? 'Na odwrocie: tłumaczenie, definicja i przykład. 2 albo 3 obroty – każda następna strona pokazuje wybrane części, po ostatniej fiszka wraca do pytania.'
+        ? 'Na odwrocie: tłumaczenie, definicja i przykład (i obrazy z notatki przypięte do pojęcia). 2 albo 3 obroty – każda następna strona pokazuje wybrane części, po ostatniej fiszka wraca do pytania.'
         : `Zaznacz, co pokazuje każda strona. Dotknięcie fiszki obraca ją na następną stronę; po ostatniej wraca do pytania (${TURN_LABELS[RETURN_TURN]}). `
+          + `${media ? '„Obraz” – wszystkie obrazy i tabele z notatki przypięte do pojęcia (bez zaznaczenia – na ostatniej stronie). ' : ''}`
           + 'Pojęcie może mieć własne strony i obrazy z notatki – w oknie pojęcia.')
     );
   }

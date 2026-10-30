@@ -2189,6 +2189,19 @@ widocznych wczytanych. Lewe dolne pastylki (`drawing-info`) nie zasłaniają kar
 
 ## Strony fiszki: kierunki, wyśrodkowanie, własne strony pojęcia (od 1.56)
 
+Od 1.56.1 (zmiany niżej opisanego): `FLIP_TURNS` = right, up, up, `RETURN_TURN` = left (`TURN_FRAMES` bez `down`). Czwarta
+część strony `MEDIA_PART` ('media', „Obraz”): rodzaj strony = rodzaj tekstu z dopiskiem `+media` (np. `answer+media`,
+`details+media`) albo sam `media`; `faceKind([])` → null, `hasMediaPart`. Obrazy pojęcia `cardMedia` bez numeru strony
+(`cleanCardMedia` pomija `face` z 1.56) – trafiają na strony z częścią „Obraz” (`mediaFaces`; żadna – ostatnia),
+`mediaOnFace(pojęcie, strona, rodzaje)`; pytanie bez obrazów. `termCardFaces` – pojęcie bez obrazów: część „Obraz”
+usunięta, strona z samym obrazem pominięta (żadna nie została – ['all']). Nauka: część „Obraz”, gdy
+`library.hasCardMedia()` albo strona już ją ma. Sesja: `faceAction(rodzaj, z pytania)` – napis przycisku z części
+(zamiast `FACE_ACTIONS` / `NEXT_ACTIONS`), klasa strony z rodzaju tekstu. Okno pojęcia: `noteThumbs` (adresy obrazów
+notatki raz na lekcję, `urlPool`, zwalniane w `onClose` okna), kafelki `.media-tile` (`term-media-tile-<i>`,
+`data-label`, `aria-pressed`) z miniaturą obrazu albo `tableThumb` (pierwsze 4 wiersze i 3 kolumny); przypięte, których
+nie ma w notatce – kafelek `media-tile--missing`. `.segmented--multi` – szerokość opcji według napisu. Import z arkusza
+porównuje `cardFaces` / `cardMedia` po sprawdzeniu (zapis z 1.56 z numerami stron – bez zmian).
+
 - **Moduł** `js/core/card-faces.js` (bez przeglądarki; `study.js` eksportuje dalej dawne nazwy): `FACE_PART_IDS`
   (answer, description, example) i `FLIP_FACES` – każdy niepusty zestaw części ma rodzaj (dochodzą `answer-description`,
   `answer-example`); `faceParts(rodzaj)`, `faceKind(części)` (pusty zestaw – `MEDIA_FACE` = 'media'). `FLIP_TURNS`

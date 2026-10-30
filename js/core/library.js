@@ -12,6 +12,7 @@ import {
   NOTE_IMAGE_LIMIT, NOTE_IMAGE_MAX_BYTES, SETTINGS_ID, TERM_HISTORY_STORES, defaultSettings, makeDomain, makeLesson, makeModule,
   makeNoteFile, makeNoteImage, makeTerm, newID, noteFileMeta, noteImageMeta, nowISO, termFieldsFromDraft, termToDraft
 } from './model.js';
+import { cleanCardFaces, cleanCardMedia } from './card-faces.js';
 import { createdRange, createdWithin } from './created.js';
 import { cleanFileName, fileTypeOf } from './note-files.js';
 import { NOTE_HTML_LIMIT, normalizeNoteHtml } from './note-format.js';
@@ -185,8 +186,9 @@ function mergeTermUpdate(existing, draft) {
   const fields = termFieldsFromDraft(merged);
   const same = Object.entries(fields).every(([key, value]) => {
     const current = existing[key];
-    // Od 1.56 też pola z obiektami (własne strony fiszki, obrazy na stronach) – porównanie treści.
-    if (key === 'cardFaces' || key === 'cardMedia') return JSON.stringify(value) === JSON.stringify(current ?? (key === 'cardMedia' ? [] : null));
+    // Od 1.56 też pola z obiektami (własne strony fiszki, obrazy na stronach) – porównanie treści po sprawdzeniu.
+    if (key === 'cardFaces') return JSON.stringify(value) === JSON.stringify(cleanCardFaces(current));
+    if (key === 'cardMedia') return JSON.stringify(value) === JSON.stringify(cleanCardMedia(current));
     return Array.isArray(value) ? value.join('\n') === (current ?? []).join('\n') : value === (current ?? null) || value === current;
   });
   return same ? null : fields;
@@ -533,6 +535,12 @@ export class Library {
 
   getTerms(ids) {
     return ids.map((id) => this.maps.terms.get(id)).filter(Boolean);
+  }
+
+  /** Od 1.56.1: czy któreś pojęcie ma przypięte obrazy z notatki (Nauka pokazuje wtedy część strony „Obraz”). */
+  hasCardMedia() {
+    for (const term of this.maps.terms.values()) if (term.cardMedia?.length > 0) return true;
+    return false;
   }
 
   findDomain(name) {

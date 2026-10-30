@@ -13,11 +13,11 @@ import {
   DECISION_NAMES, DIRECTION_NAMES, RATING_LABELS, STUDY_FRONTS, buildQueue, formatInterval, reviewConfig
 } from '../core/study.js';
 import {
-  CARD_MEDIA_LIMIT, FACE_PART_IDS, FACE_PART_LABELS, FLIP_COUNTS, FLIP_TURNS, TURN_LABELS, emptyCardFaces, faceKind,
-  faceParts, flipFaces
+  CARD_MEDIA_LIMIT, FACE_PART_IDS, FACE_PART_LABELS, FLIP_COUNTS, FLIP_TURNS, MEDIA_PART, TURN_LABELS, emptyCardFaces, faceKind,
+  faceParts, flipFaces, hasMediaPart
 } from '../core/card-faces.js';
-import { withImageLabels } from '../core/note-refs.js';
-import { withTableLabels } from '../core/tables.js';
+import { findImageByLabel, withImageLabels } from '../core/note-refs.js';
+import { tableHtml, withTableLabels } from '../core/tables.js';
 import { installSampleData } from '../core/samples.js';
 import { formatTags, isBlank, parseTags, pluralNotes, pluralTerms } from '../core/text.js';
 import { checkSegmented, field, formGroup, message, segmented, selectInput, textArea, textInput, toggle } from './components.js';
@@ -25,6 +25,7 @@ import { confirmDialog, openFormSheet, showError, toast, undoToast } from './dia
 import { h, replaceChildren } from './dom.js';
 import { deliverFile } from './files.js';
 import { icon } from './icons.js';
+import { urlPool } from './images.js';
 import { routes } from './router.js';
 
 const NEW = '__new__';
@@ -274,14 +275,43 @@ export function openLessonForm(ctx, { lessonID = null, domainID = null, moduleID
 
 // ---------------------------------------------------------------- pojęcie
 
-const CARD_FACE_NAMES = ['Pytanie', 'Po 1. obrocie', 'Po 2. obrocie', 'Po 3. obrocie'];
+/**
+ * Miniatury obrazów notatek (od 1.56.1, okno pojęcia): adres obrazu po sygnaturze, wczytany raz na lekcję; release()
+ * zwalnia adresy po zamknięciu okna.
+ */
+function noteThumbs(library) {
+  const urls = urlPool();
+  const lessons = new Map();
+  return {
+    async url(lessonID, label) {
+      if (!lessons.has(lessonID)) lessons.set(lessonID, library.noteImages(lessonID).then(withImageLabels).catch(() => []));
+      const images = await lessons.get(lessonID);
+      const image = images[findImageByLabel(images, label)];
+      if (!image?.bytes) return null;
+      image.url ??= urls.add(image);
+      return image.url;
+    },
+    release() {
+      urls.release();
+      lessons.clear();
+    }
+  };
+}
+
+/** Miniatura tabeli: pierwsze wiersze i kolumny (komórki jako tekst – tableHtml). */
+function tableThumb(table) {
+  const box = h('span', { class: 'media-tile__table', 'aria-hidden': 'true' });
+  box.innerHTML = tableHtml({ ...table, colWidths: null, rows: table.rows.slice(0, 4).map((row) => row.slice(0, 3)) });
+  return box;
+}
 
 /**
  * Od 1.56: sekcje „Strony fiszki” i „Obrazy z notatki lekcji” okna pojęcia – własne strony fiszki (zamiast ustawień
- * nauki) i rysunki, zdjęcia albo tabele z notatki lekcji przypięte do wybranych stron (po sygnaturze). Zmienia
+ * nauki) i rysunki, zdjęcia albo tabele z notatki lekcji przypięte do pojęcia (po sygnaturze). Od 1.56.1 obrazy wybiera
+ * się dotknięciem kafelka z miniaturą, a stronę z obrazami – częścią „Obraz” w wierszu strony. Zmienia
  * state.draft.cardFaces i state.draft.cardMedia; odświeża tylko siebie, więc reszta okna i jego przewinięcie zostają.
  */
-function termCardGroups(library, state) {
+function termCardGroups(library, state, thumbs) {
   const slot = h('div', { class: 'form-stack term-card', dataset: { testid: 'term-card' } });
   const settings = library.getSettings();
   const mediaKey = (item) => `${item.kind}:${item.label.toLocaleLowerCase('pl')}`;
@@ -289,13 +319,13 @@ function termCardGroups(library, state) {
 
   const facesGroup = () => {
     const own = state.draft.cardFaces;
-    const pinned = (face) => state.draft.cardMedia.some((item) => Math.min(item.face, own.faces.length) === face);
+    const hasMedia = state.draft.cardMedia.length > 0;
     const setFaces = (faces) => {
       state.draft.cardFaces = { ...own, faces };
-      // Obraz przypięty dalej niż ostatnia strona – na ostatniej.
-      state.draft.cardMedia = state.draft.cardMedia.map((item) => ({ ...item, face: Math.min(item.face, faces.length) }));
       render();
     };
+    // „Obraz” – gdy pojęcie ma przypięty obraz (albo strona już go pokazuje, żeby dało się go odznaczyć).
+    const parts = FACE_PART_IDS.filter((part) => part !== MEDIA_PART || hasMedia || own?.faces.some(hasMediaPart));
     const empty = emptyCardFaces(own, state.draft.cardMedia);
     return formGroup('Strony fiszki',
       toggle({
@@ -321,19 +351,19 @@ function termCardGroups(library, state) {
         })),
         own.faces.map((kind, index) => field(`Po ${index + 1}. obrocie (${TURN_LABELS[FLIP_TURNS[index]]})`, checkSegmented({
           name: `term-face-${index + 1}`, label: `Treść strony po ${index + 1}. obrocie`, testID: `term-face-${index + 1}`,
-          values: faceParts(kind), options: FACE_PART_IDS.map((part) => ({ value: part, label: FACE_PART_LABELS[part] })),
+          values: faceParts(kind), options: parts.map((part) => ({ value: part, label: FACE_PART_LABELS[part] })),
           onChange: (part, checked) => {
-            const parts = faceParts(kind).filter((item) => item !== part).concat(checked ? [part] : []);
-            // Strona bez zaznaczeń – tylko z obrazem z notatki.
-            if (parts.length === 0 && !pinned(index + 1)) return false;
-            setFaces(own.faces.map((item, at) => (at === index ? faceKind(parts) : item)));
+            const next = faceParts(kind).filter((item) => item !== part).concat(checked ? [part] : []);
+            // Strona musi coś pokazywać – ostatniej zaznaczonej części nie da się odznaczyć.
+            if (next.length === 0) return false;
+            setFaces(own.faces.map((item, at) => (at === index ? faceKind(next) : item)));
             return true;
           }
         }))),
-        empty.length > 0 ? message(`Strona po ${empty[0]}. obrocie nic nie pokazuje – zaznacz na niej treść albo przypnij obraz z notatki.`, 'warning') : null
+        empty.length > 0 ? message(`Strona po ${empty[0]}. obrocie pokazuje tylko obraz, a fiszka nie ma przypiętego obrazu – zaznacz inną część albo przypnij obraz.`, 'warning') : null
       ] : null,
       h('p', { class: 'field__hint' }, own
-        ? 'Zaznacz, co pokazuje każda strona. Stronę bez zaznaczeń można zostawić, gdy jest na niej obraz z notatki.'
+        ? `Zaznacz, co pokazuje każda strona.${parts.includes(MEDIA_PART) ? ' „Obraz” – wszystkie przypięte obrazy i tabele (bez zaznaczenia – na ostatniej stronie).' : ''}`
         : 'Bez własnych stron fiszka wygląda jak w ustawieniach nauki (Pierwsza strona fiszki, Obroty fiszki).')
     );
   };
@@ -341,55 +371,52 @@ function termCardGroups(library, state) {
   const mediaGroup = () => {
     const title = 'Obrazy z notatki lekcji';
     if (!state.lessonID) return formGroup(title, message('Najpierw wybierz lekcję – rysunki, zdjęcia i tabele pochodzą z jej notatki.'));
-    const own = state.draft.cardFaces;
+    const lessonID = state.lessonID;
     const list = state.draft.cardMedia;
-    const note = library.getNote(state.lessonID);
+    const note = library.getNote(lessonID);
     const images = withImageLabels(note?.images ?? []);
     const tables = withTableLabels(note?.tables ?? [], images.map((image) => image.label));
     const available = [
       ...images.map((image) => ({ kind: 'image', label: image.label, name: image.drawing ? 'rysunek' : 'zdjęcie' })),
-      ...tables.map((table) => ({ kind: 'table', label: table.label, name: 'tabela' }))
+      ...tables.map((table) => ({ kind: 'table', label: table.label, name: 'tabela', table }))
     ];
-    const found = new Map(available.map((item) => [mediaKey(item), item]));
-    // Bez własnych stron – do 3. obrotu; gdy fiszka ma mniej stron, obraz jest na ostatniej.
-    const faceCount = own ? own.faces.length : FLIP_COUNTS.at(-1);
-    const faceOptions = CARD_FACE_NAMES.slice(0, faceCount + 1).map((label, face) => ({ value: String(face), label }));
-    const rows = list.map((item, index) => {
-      const source = found.get(mediaKey(item));
-      return h('div', { class: 'card-media-row', dataset: { testid: `term-media-${index}` } },
-        icon(item.kind === 'table' ? 'table' : 'image', { size: 18 }),
-        h('span', { class: 'card-media-row__name' },
-          h('span', null, item.label),
-          h('small', { class: source ? null : 'card-media-row__missing' }, source ? source.name : 'nie ma w notatce lekcji')),
-        selectInput({
-          value: String(Math.min(item.face, faceCount)), options: faceOptions, testID: `term-media-face-${index}`,
-          onChange: (value) => {
-            state.draft.cardMedia = list.map((other, at) => (at === index ? { ...other, face: Number(value) } : other));
-            render();
-          }
-        }),
-        h('button', {
-          type: 'button', class: 'icon-button', 'aria-label': `Odepnij: ${item.label}`, title: 'Odepnij', dataset: { testid: `term-media-remove-${index}` },
-          onClick: () => { state.draft.cardMedia = list.filter((_, at) => at !== index); render(); }
-        }, icon('close', { size: 18 }))
+    const found = new Set(available.map(mediaKey));
+    // Przypięte, których nie ma już w notatce – też na liście (do odpięcia).
+    const missing = list.filter((item) => !found.has(mediaKey(item))).map((item) => ({ ...item, name: 'nie ma w notatce lekcji', missing: true }));
+    const tiles = [...available, ...missing].map((item, index) => {
+      const pinned = list.some((other) => mediaKey(other) === mediaKey(item));
+      const thumb = h('span', { class: 'media-tile__thumb' });
+      if (item.table) thumb.append(tableThumb(item.table));
+      else if (item.kind === 'table' || item.missing) thumb.append(icon(item.kind === 'table' ? 'table' : 'image', { size: 22 }));
+      else {
+        const image = h('img', { alt: '', draggable: 'false' });
+        thumb.append(image);
+        thumbs.url(lessonID, item.label).then((url) => {
+          if (url) image.src = url;
+        });
+      }
+      return h('button', {
+        type: 'button', class: `media-tile${pinned ? ' media-tile--on' : ''}${item.missing ? ' media-tile--missing' : ''}`,
+        'aria-pressed': String(pinned), disabled: !pinned && list.length >= CARD_MEDIA_LIMIT,
+        title: pinned ? `Odepnij: ${item.label}` : `Przypnij: ${item.label}`,
+        dataset: { testid: `term-media-tile-${index}`, kind: item.kind, label: item.label },
+        onClick: () => {
+          state.draft.cardMedia = pinned ? list.filter((other) => mediaKey(other) !== mediaKey(item)) : [...list, { kind: item.kind, label: item.label }];
+          render();
+        }
+      },
+        thumb,
+        h('span', { class: 'media-tile__label' }, item.label),
+        h('small', { class: 'media-tile__kind' }, item.name),
+        pinned ? h('span', { class: 'media-tile__check', 'aria-hidden': 'true' }, icon('check', { size: 14 })) : null
       );
     });
-    const free = available.filter((item) => !list.some((other) => mediaKey(other) === mediaKey(item)));
-    const add = list.length < CARD_MEDIA_LIMIT && free.length > 0 ? field('Przypnij do fiszki', selectInput({
-      value: NONE, testID: 'term-media-add',
-      options: [{ value: NONE, label: 'Wybierz rysunek, zdjęcie albo tabelę…' }, ...free.map((item, index) => ({ value: String(index), label: `${item.label} (${item.name})` }))],
-      onChange: (value) => {
-        if (value === NONE) return;
-        const item = free[Number(value)];
-        state.draft.cardMedia = [...list, { kind: item.kind, label: item.label, face: Math.min(1, faceCount) }];
-        render();
-      }
-    })) : null;
     const hint = available.length === 0
       ? 'Notatka tej lekcji nie ma rysunków, zdjęć ani tabel. Dodaj je w notatce – fiszka pokaże je po sygnaturze.'
-      : list.length >= CARD_MEDIA_LIMIT ? `Najwyżej ${CARD_MEDIA_LIMIT} na jednej fiszce.`
-        : `Obraz albo tabela z notatki pojawia się na wybranej stronie fiszki.${own ? '' : ' Gdy fiszka ma mniej stron – na ostatniej.'}`;
-    return formGroup(title, rows, add, h('p', { class: 'field__hint' }, hint));
+      : `Dotknij, aby przypiąć albo odpiąć (najwyżej ${CARD_MEDIA_LIMIT}). Przypięte są na stronach z częścią „Obraz”, a bez niej – na ostatniej stronie fiszki.`;
+    return formGroup(title,
+      tiles.length > 0 ? h('div', { class: 'media-tiles', dataset: { testid: 'term-media' } }, tiles) : null,
+      h('p', { class: 'field__hint' }, list.length > 0 ? `Przypięte: ${list.length}. ${hint}` : hint));
   };
 
   render = () => replaceChildren(slot, facesGroup(), mediaGroup());
@@ -413,6 +440,7 @@ export function openTermForm(ctx, { termID = null, lessonID = null } = {}) {
   let sheet;
   let rebuild = () => {};
   let showDuplicateWarning = () => {};
+  const thumbs = noteThumbs(library);
 
   const save = async (api, { addAnother }) => {
     const draft = { ...state.draft, tags: parseTags(state.tagsText) };
@@ -529,7 +557,7 @@ export function openTermForm(ctx, { termID = null, lessonID = null } = {}) {
             field('Przykład po polsku', textArea({ value: state.draft.examplePL, lang: 'pl', onInput: bind('examplePL') })),
             field('Przykład po angielsku', textArea({ value: state.draft.exampleEN, lang: 'en', onInput: bind('exampleEN') }))
           ),
-          termCardGroups(library, state),
+          termCardGroups(library, state, thumbs),
           formGroup('Dodatkowe',
             field('Tagi', textInput({ value: state.tagsText, placeholder: 'np. finanse, raporty', autocapitalize: 'none', onInput: (value) => { state.tagsText = value; } }), { hint: 'Rozdzielaj przecinkami.' }),
             field('Trudność', difficulty),
@@ -549,7 +577,8 @@ export function openTermForm(ctx, { termID = null, lessonID = null } = {}) {
       rebuild();
       return container;
     },
-    onSubmit: (api) => save(api, { addAnother: false })
+    onSubmit: (api) => save(api, { addAnother: false }),
+    onClose: () => thumbs.release()
   });
   return sheet;
 }
