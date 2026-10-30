@@ -299,3 +299,13 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
   do rysowania i efekty interfejsu; kod własny, bez bibliotek i cudzych obrazów. Nazwy opisowe („Tablica A0”).
 - **Patenty:** szczególnego ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – bazy zablokowane,
   AUDIT_LIMITATIONS.md). Nowa pozycja rejestru: G68. Ryzyko wstępnie NISKIE.
+
+## Uzupełnienie: wersja 1.60 (30.10.2026) – edycja notatki w widoku książki
+
+- **Zakres:** `js/ui/notes.js` – pole edycji notatki w kolumnach CSS (strona = szerokość pola), liczenie stron,
+  przewracanie do strony z kursorem; `js/ui/note-book.js` – `curlTurn`, wydzielone z podglądu przewrócenie kartki na
+  dowolnych elementach (geometria zagięcia z `core/page-curl.js`, już w rejestrze od 1.4). Poza modułami CAD.
+- **Funkcje:** edycja w stronach i przewracanie kartek – ogólne funkcje edytorów tekstu i czytników; kod własny, bez
+  bibliotek. Nazwy opisowe („Ciągły”, „Książka”).
+- **Patenty:** szczególnego ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – bazy zablokowane,
+  AUDIT_LIMITATIONS.md). Nowej pozycji rejestru algorytmów geometrii nie dodano. Ryzyko wstępnie NISKIE.
