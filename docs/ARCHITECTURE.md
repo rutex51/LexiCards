@@ -2235,6 +2235,38 @@ porównuje `cardFaces` / `cardMedia` po sprawdzeniu (zapis z 1.56 z numerami str
   po lewej, `closeButton` (`note-left`, „Zamknij”) po prawej; identyfikatory testów bez zmian. Okna edycji (Anuluj /
   Zapisz, Gotowe) – bez zmian.
 
+## Obraz na fiszce, kółko narzędzi, gumka przez kształty (od 1.57)
+
+- **Obraz na fiszce** (`study-session.js`, `css/app.css`): strona z obrazem – `.flashcard__body--media` (flex 1, bez marginesów
+  auto), obraz w ramce `.flashcard__frame` (flex 1, co najmniej 45cqh, obraz `position: absolute` + `object-fit: contain`),
+  tabela – `.flashcard__frame--table`; przy kilku obrazach sygnatura w wierszu przycisków (`card-media-title`), podpis pod
+  obrazem schowany. Przycisk `card-media-zoom` w rogu ramki → `openZoom` (`js/ui/zoom-view.js`): `<dialog>` na cały ekran
+  (`card-zoom`), cień `.zoom-view__shade` (0,88), obraz o wielkości dopasowanej do ekranu (96%), tabela – kopia; animacja
+  FLIP (`placeOn`: przesunięcie i skala z widocznego prostokąta obrazu na fiszce – `shownRect` dla object-fit), obraz na
+  fiszce na ten czas `visibility: hidden`; zamykanie – kliknięcie, ✕ (`card-zoom-close`), Esc (`cancel`) z animacją w drugą
+  stronę; `dispose()` sesji zamyka powiększenie.
+- **Stuknięcie w fiszkę** (`study-session.js`, `onTap` z `dom.js` – nowa opcja `ignore`): krótkie dotknięcie palcem
+  (≤ 10 px, ≤ 800 ms) obraca fiszkę przy `touchend` z `preventDefault()` (bez drugiego obrotu od syntetycznego click);
+  dotknięcia przycisków i odnośników na fiszce (`ignore`) zostają przy zwykłym click. Powód: po przeciągnięciu palcem
+  udawanym przez CDP Chromium czasem nie tworzy click z kolejnego dotknięcia (pointerdown/up i touchend dochodzą, click
+  i zdarzenia myszy – nie; ok. 1 na 60 przebiegów testu gestów, częściej przy obciążonym procesorze) – ta sama cecha
+  emulacji co w 1.54. Przesuwanie fiszki zaczyna się od 12 px, więc dotknięcie nie koliduje z gestem.
+- **Kółko narzędzi** (`drawing-ring.js`, `tool-ring.js`): `ringRadius(liczba, promień, średnica, odstęp)` – promień okręgu
+  rośnie, gdy krok kątowy jest mały (odstęp 18 px, telefon 12 px). Wciśnięcie wskaźnika na małym kółku (`pressing`, do
+  puszczenia – także poza kółkiem) – fokus nie obraca kółek; obrót przy fokusie zostaje dla klawiatury i `focus()`.
+  `.drawing__body` – `overflow: clip` (wcześniej hidden): większy okrąg wystaje poza ekran, a fokus na kółku za krawędzią
+  przewijał cały edytor w bok.
+- **Gumka** (`js/core/sketch-erase.js`, bez przeglądarki): `elementSketch(element)` – kształt (`shapeOutline`, zakończenia
+  `segmentCapList`, `shapeInnerLines`, `shapeHatch`, `shapeAxes`, linie wymiarów `dimGeometry`), bryła (`solidGeometry`:
+  widoczne, niewidoczne, osie), szyk (`expandArray`) i diagram (`diagramLayout`) jako kreski pióra (kolor, grubość `size`,
+  `layers`; punkty co 2 jednostki – wygładzanie kreski nie zaokrągla narożników). `eraseArea(kreski, wielokąt)` –
+  `splitByPolygon` na kreskach i na szkicu elementu (element bez dotkniętej linii zostaje sobą; pole tekstowe itp. – tylko
+  w całości), `eraseElementsAt(kreski, x, y, r)` – `eraseFromStroke` na szkicu. Ustawienia (`core/drawing.js`):
+  `ERASER_MODES` + 'area', `eraserArea` ('rect' | 'lasso'), `eraserShapes`. Edytor: tryb 'area' – gest `marquee` / `lasso`
+  z `erase: true` (`selectModeOf` → 'erase', czerwony obrys), `finishOutline` → `eraseArea` w jednym kroku historii;
+  `eraseTo` – przy `active.shapes` także `eraseElementsAt`. Przyciski `drawing-eraser-area`, `drawing-eraser-area-rect` /
+  `-lasso`, `drawing-eraser-shapes` (aria-pressed).
+
 ## Tolerancje i symbole – uzupełnienia (od 1.38)
 
 Format rysunku 12 (nowe pola; starsza wersja aplikacji je pominie przy zapisie).

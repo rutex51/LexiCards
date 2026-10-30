@@ -13669,6 +13669,152 @@ test('rysunek 1.55 na telefonie: „Połącz z…” i „Wytnij…” w panelu 
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-155-telefon.png') });
 }, { device: PHONE });
 
+// ---------------------------------------------------------------- 1.57
+
+test('rysunek 1.57: kółko narzędzi – odstęp między małymi kółkami (ponad 8 kółek – większy okrąg); kliknięcie myszą w kółko poza środkiem wycinka od razu wybiera grupę (wciśnięcie, chwila, puszczenie); klawiatura – fokus obraca grupę na środek', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Kółka</p>');
+  await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Pisanie');
+  // Odstęp między sąsiednimi małymi kółkami (środki na okręgu) – co najmniej 18 px.
+  const centers = await editor.locator('[data-testid=drawing-ring-right] .drawing-ring__group').evaluateAll((buttons) => buttons.map((button) => {
+    const box = button.getBoundingClientRect();
+    return { x: box.left + box.width / 2, y: box.top + box.height / 2, size: box.width };
+  }));
+  assert.ok(centers.length > 8, `${centers.length} kółek – cały okrąg`);
+  const gaps = centers.map((center, index) => {
+    const next = centers[(index + 1) % centers.length];
+    return Math.hypot(next.x - center.x, next.y - center.y) - center.size;
+  });
+  assert.ok(Math.min(...gaps) >= 17.5, `odstęp między kółkami ${Math.min(...gaps).toFixed(1)} px`);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-157-kolko.png') });
+
+  // „Kształty” – obok środka wycinka; wciśnięcie myszy, 300 ms, puszczenie – grupa wybrana za pierwszym razem.
+  const shapes = editor.locator('[data-testid=drawing-group-shapes]');
+  assert.equal(await groupOpacity(editor, 'shapes'), '1');
+  const box = await shapes.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(300);
+  await page.mouse.up();
+  await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Kształty');
+  assert.equal(await shapes.getAttribute('aria-pressed'), 'true');
+  // Po wyborze grupa obraca się na środek wycinka.
+  await page.waitForTimeout(400);
+  const moved = await shapes.boundingBox();
+  assert.ok(Math.hypot(moved.x - box.x, moved.y - box.y) > 20, 'wybrana grupa na środku wycinka');
+
+  // Klawiatura: Tab do kolejnej grupy – fokus obraca ją na środek (bez wyboru).
+  await shapes.focus();
+  await page.keyboard.press('Tab');
+  const focused = await page.evaluate(() => document.activeElement?.dataset.group ?? null);
+  assert.equal(focused, 'construct');
+  await waitUntil(async () => (await groupOpacity(editor, 'construct')) === '1', 'Grupa z fokusem w wycinku');
+  await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Kształty');
+}, { device: DESKTOP });
+
+test('rysunek 1.57: gumka „Zaznaczenie” – prostokątem: kreska pióra i fragment prostokąta (kształt → szkic piórem) w obszarze znikają, reszta zostaje, jeden krok cofania; lassem – narożnik; gumka fragmentów „Także kształty” – ściera fragment odcinka, bez opcji – nie; zapis bez kształtów', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Gumka</p>');
+  // Prostokąt, kreska pióra przez jego prawy bok i odcinek niżej.
+  await shapeTool(editor);
+  await press(editor, 'drawing-shape-rect');
+  await drawStroke(page, segment([0.3, 0.3], [0.5, 0.5], 10));
+  await press(editor, 'drawing-shape-line');
+  await drawStroke(page, segment([0.2, 0.7], [0.7, 0.7], 10));
+  await press(editor, 'drawing-tool-pen');
+  await drawStroke(page, segment([0.2, 0.36], [0.7, 0.36], 24));
+  await nextFrames(page);
+  assert.ok(await darkAt(page, 0.5, 0.33) && await darkAt(page, 0.55, 0.36) && await darkAt(page, 0.55, 0.7), 'prostokąt, kreska i odcinek');
+
+  // Gumka „Zaznaczenie” – prostokąt (domyślnie), obrys czerwony kreskowany.
+  await press(editor, 'drawing-tool-eraser');
+  await editor.locator('[data-testid=drawing-eraser-area]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-eraser-area]').getAttribute('aria-checked'), 'true');
+  assert.equal(await editor.locator('[data-testid=drawing-eraser-area-rect]').getAttribute('aria-checked'), 'true');
+  assert.equal(await editor.locator('[data-testid=drawing-eraser-shapes]').isVisible(), false, '„Także kształty” – tylko przy fragmentach');
+  assert.match(await editor.locator('[data-testid=drawing-tool-eraser]').getAttribute('aria-label'), /zaznaczenie/);
+  await drawStroke(page, segment([0.45, 0.25], [0.6, 0.42], 10), { up: false });
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-157-gumka-obszar-w-trakcie.png') });
+  await drawStroke(page, [[0.6, 0.42, 0]], { only: 'up' });
+  await nextFrames(page);
+  assert.equal(await darkAt(page, 0.5, 0.33), false, 'fragment prawego boku prostokąta starty');
+  assert.equal(await darkAt(page, 0.55, 0.36), false, 'fragment kreski starty');
+  assert.equal(await darkAt(page, 0.5, 0.47), true, 'reszta prawego boku');
+  assert.equal(await darkAt(page, 0.65, 0.36), true, 'reszta kreski');
+  assert.equal(await darkAt(page, 0.3, 0.4), true, 'lewy bok');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-157-gumka-obszar.png') });
+  // Jeden krok cofania: prostokąt i kreska wracają; ponów – znowu starte.
+  await editor.locator('[data-testid=drawing-undo]').click();
+  await nextFrames(page);
+  assert.ok(await darkAt(page, 0.5, 0.33) && await darkAt(page, 0.55, 0.36), 'Cofnij – całe');
+  await editor.locator('[data-testid=drawing-redo]').click();
+  await nextFrames(page);
+  assert.equal(await darkAt(page, 0.5, 0.33), false, 'Ponów – starte');
+
+  // Lasso wokół lewego dolnego narożnika (szkic prostokąta – już kreski pióra).
+  await editor.locator('[data-testid=drawing-eraser-area-lasso]').click();
+  assert.equal(await editor.locator('[data-testid=drawing-eraser-area-lasso]').getAttribute('aria-checked'), 'true');
+  const ring = Array.from({ length: 25 }, (_, index) => {
+    const angle = (index / 24) * Math.PI * 2;
+    return [0.3 + Math.cos(angle) * 0.05, 0.5 + Math.sin(angle) * 0.07, 0.5];
+  });
+  await drawStroke(page, ring);
+  await nextFrames(page);
+  assert.equal(await darkAt(page, 0.3, 0.5), false, 'narożnik starty lassem');
+  assert.equal(await darkAt(page, 0.3, 0.38), true, 'lewy bok nad lassem');
+
+  // Gumka fragmentów bez „Także kształty” – odcinek (kształt) zostaje; z opcją – traci fragment.
+  await editor.locator('[data-testid=drawing-eraser-pixel]').click();
+  const shapes = editor.locator('[data-testid=drawing-eraser-shapes]');
+  assert.equal(await shapes.isVisible(), true);
+  assert.equal(await shapes.getAttribute('aria-pressed'), 'false');
+  await drawStroke(page, segment([0.45, 0.66], [0.45, 0.74], 8));
+  await nextFrames(page);
+  assert.equal(await darkAt(page, 0.45, 0.7), true, 'bez opcji – odcinek cały');
+  await shapes.click();
+  assert.equal(await shapes.getAttribute('aria-pressed'), 'true');
+  await drawStroke(page, segment([0.55, 0.66], [0.55, 0.74], 8));
+  await nextFrames(page);
+  assert.equal(await darkAt(page, 0.55, 0.7), false, 'z opcją – fragment odcinka starty');
+  assert.ok(await darkAt(page, 0.35, 0.7) && await darkAt(page, 0.65, 0.7), 'reszta odcinka po obu stronach');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-157-gumka-ksztalty.png') });
+
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await dialog.locator('[data-testid=note-book]').waitFor();
+  const strokes = await savedStrokes(page, ids.statements);
+  assert.equal(strokes.filter((stroke) => stroke.tool === 'shape').length, 0, 'prostokąt i odcinek – szkic piórem');
+  assert.ok(strokes.filter((stroke) => stroke.tool === 'pen').length >= 6, `kawałki kresek (${strokes.length})`);
+}, { device: DESKTOP });
+
+test('rysunek 1.57 na telefonie: gumka – „Zaznaczenie” z wyborem prostokąt / lasso i „Także kształty” przy fragmentach mieszczą się na ekranie', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Gumka</p>');
+  await press(editor, 'drawing-tool-eraser', 'tap');
+  for (const id of ['drawing-eraser-stroke', 'drawing-eraser-pixel', 'drawing-eraser-area']) {
+    const box = await editor.locator(`[data-testid=${id}]`).boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 390, `${id} na ekranie`);
+  }
+  await editor.locator('[data-testid=drawing-eraser-area]').tap();
+  for (const id of ['drawing-eraser-area-rect', 'drawing-eraser-area-lasso']) {
+    const box = await editor.locator(`[data-testid=${id}]`).boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 390, `${id} na ekranie`);
+  }
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-157-telefon-gumka-obszar.png') });
+  await editor.locator('[data-testid=drawing-eraser-pixel]').tap();
+  const shapes = await editor.locator('[data-testid=drawing-eraser-shapes]').boundingBox();
+  assert.ok(shapes && shapes.x >= 0 && shapes.x + shapes.width <= 390, '„Także kształty” na ekranie');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-157-telefon-gumka-ksztalty.png') });
+}, { device: PHONE });
+
 // ---------------------------------------------------------------- fiszki 1.56
 
 /** Notatka lekcji z obrazem „Schemat” i tabelą „Koszty” (1.56 – do przypięcia na stronach fiszki). */
@@ -14032,6 +14178,111 @@ test('fiszki 1.56.1 na telefonie: okno pojęcia – cztery części strony i kaf
   assert.deepEqual([await card.getAttribute('data-face'), await counter(page).textContent()], ['3', '1 z 6'], 'bez obrotu i bez oceny');
   await page.screenshot({ path: path.join(OUTPUT, 'fiszki-156-telefon-obraz-2.png') });
 }, { device: PHONE });
+
+/** Fiszka „aktywa” z obrazem i tabelą z notatki na stronie po 2. obrocie (1.57); sesja otwarta na tej stronie. */
+async function openCardWithMedia(page, { tap = false } = {}) {
+  const ids = await seedStudy(page);
+  await seedCardMedia(page, ids.basicsID);
+  await page.evaluate(async (id) => {
+    const { library } = window.lexicards;
+    await library.updateTerm(id, {
+      ...library.getTerm(id), cardFaces: { front: 'term', faces: ['answer', 'media'] },
+      cardMedia: [{ kind: 'image', label: 'Schemat' }, { kind: 'table', label: 'Koszty' }]
+    });
+  }, ids.assets);
+  await openStudySetup(page);
+  await startStudy(page);
+  const card = flashcard(page);
+  const press = (locator) => (tap ? locator.tap() : locator.click());
+  await press(page.locator('[data-testid=card-flip]'));
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '1', 'Strona 2');
+  await press(page.locator('[data-testid=card-next-1]'));
+  await waitUntil(async () => (await card.getAttribute('data-face')) === '2', 'Strona 3');
+  const face = page.locator('[data-testid=card-face-2]');
+  const image = face.locator('figure[data-kind=image] img');
+  await waitUntil(() => image.evaluate((element) => element.complete && element.naturalWidth > 0), 'Obraz wczytany');
+  await cardSettled(page);
+  return { card, face, image };
+}
+/** Udział ramki obrazu w wysokości strony i odstęp przycisków przewijania od dolnej krawędzi strony (px). */
+const mediaFill = (face) => face.evaluate((element) => {
+  const page = element.getBoundingClientRect();
+  const slide = element.querySelector('.flashcard__slide:not([hidden])');
+  const frame = slide.querySelector('.flashcard__frame').getBoundingClientRect();
+  // Kilka obrazów – sygnatura w wierszu przycisków pod obrazem (od 1.57).
+  const nav = element.querySelector('.flashcard__media-nav-row').getBoundingClientRect();
+  const title = element.querySelector('[data-testid=card-media-title]');
+  return {
+    share: frame.height / page.height, captionUnder: nav.top >= frame.bottom - 1, title: title.textContent,
+    bottom: Math.round(page.bottom - nav.bottom)
+  };
+});
+
+test('fiszki 1.57 na komputerze: obraz wypełnia stronę (podpis i przyciski na dole); pełny ekran – przybliżenie z fiszki, ciemne tło, obraz prawie na cały ekran; ✕, Esc i dotknięcie tła oddalają; klawisze nauki w powiększeniu nie działają; tabela też', async ({ open }) => {
+  const page = await open();
+  const { card, face, image } = await openCardWithMedia(page);
+  const fill = await mediaFill(face);
+  assert.ok(fill.share > 0.55, `ramka obrazu – ${Math.round(fill.share * 100)}% wysokości strony`);
+  assert.equal(fill.captionUnder, true, 'podpis pod obrazem');
+  assert.equal(fill.title, 'Schemat');
+  assert.ok(fill.bottom <= 40, `przyciski przy dolnej krawędzi (${fill.bottom} px)`);
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-157-obraz-wypelnia.png') });
+
+  const zoomButton = face.locator('figure[data-kind=image] [data-testid=card-media-zoom]');
+  await zoomButton.click();
+  const zoom = page.locator('dialog[data-testid=card-zoom]');
+  await zoom.waitFor();
+  await page.waitForTimeout(110);
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-157-pelny-ekran-w-trakcie.png') });
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  const big = await zoom.locator('.zoom-view__image').boundingBox();
+  assert.ok(big.height >= (800 - 48) * 0.95, `obraz prawie na całą wysokość ekranu (${Math.round(big.height)} px)`);
+  assert.equal(await zoom.locator('.zoom-view__shade').evaluate((element) => getComputedStyle(element).backgroundColor), 'rgba(0, 0, 0, 0.88)');
+  await expectText(zoom.locator('.zoom-view__caption'), 'Schemat');
+  assert.equal(await image.evaluate((element) => element.style.visibility), 'hidden', 'na fiszce pusto – obraz „wyszedł” z fiszki');
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-157-pelny-ekran.png') });
+  // Klawisze nauki (← „Umiem”) w powiększeniu nic nie robią.
+  await page.keyboard.press('ArrowLeft');
+  await page.waitForTimeout(200);
+  await expectText(counter(page), '1 z 6');
+  // ✕ – oddalenie, obraz wraca na fiszkę; fiszka na tej samej stronie.
+  await zoom.locator('[data-testid=card-zoom-close]').click();
+  await zoom.waitFor({ state: 'detached' });
+  assert.equal(await image.evaluate((element) => element.style.visibility), '');
+  assert.equal(await card.getAttribute('data-face'), '2');
+  // Esc.
+  await zoomButton.click();
+  await zoom.waitFor();
+  await page.keyboard.press('Escape');
+  await zoom.waitFor({ state: 'detached' });
+  assert.deepEqual([await card.getAttribute('data-face'), await counter(page).textContent()], ['2', '1 z 6']);
+  // Tabela – powiększona kopia; dotknięcie tła oddala.
+  await face.locator('[data-testid=card-media-next]').click();
+  await face.locator('figure[data-kind=table] [data-testid=card-media-zoom]').click();
+  await zoom.waitFor();
+  assert.deepEqual(await zoom.locator('.zoom-view__table td, .zoom-view__table th').allTextContents(), ['Pozycja', 'Kwota', 'Czynsz', '1200']);
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-157-pelny-ekran-tabela.png') });
+  await page.mouse.click(40, 400);
+  await zoom.waitFor({ state: 'detached' });
+  assert.equal(await card.getAttribute('data-face'), '2');
+}, { device: DESKTOP });
+
+test('fiszki 1.57 na telefonie w poziomie (dotyk): pełny ekran – obraz prawie na całą wysokość ekranu; dotknięcie oddala', async ({ open }) => {
+  const page = await open();
+  const { card, face } = await openCardWithMedia(page, { tap: true });
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-157-telefon-poziomo.png') });
+  await face.locator('figure[data-kind=image] [data-testid=card-media-zoom]').tap();
+  const zoom = page.locator('dialog[data-testid=card-zoom]');
+  await zoom.waitFor();
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  const big = await zoom.locator('.zoom-view__image').boundingBox();
+  assert.ok(big.height >= (390 - 48) * 0.95, `obraz prawie na całą wysokość (${Math.round(big.height)} z 390 px)`);
+  await page.screenshot({ path: path.join(OUTPUT, 'fiszki-157-telefon-poziomo-pelny-ekran.png') });
+  await zoom.locator('.zoom-view__image').tap();
+  await zoom.waitFor({ state: 'detached' });
+  assert.equal(await card.getAttribute('data-face'), '2', 'bez obrotu fiszki');
+}, { device: { viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true } });
 
 // ---------------------------------------------------------------- nauka z fiszkami
 

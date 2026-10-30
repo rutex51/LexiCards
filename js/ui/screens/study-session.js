@@ -17,6 +17,7 @@ import { MEDIA_FACE, MEDIA_PART, faceKind, faceParts, mediaOnFace, termCardFaces
 import { findImageByLabel, withImageLabels } from '../../core/note-refs.js';
 import { findTableByLabel, tableHtml, withTableLabels } from '../../core/tables.js';
 import { urlPool } from '../images.js';
+import { openZoom } from '../zoom-view.js';
 import { emptyState, iconButton, navButton } from '../components.js';
 import { openLessonNote } from '../notes.js';
 import { showError, toast } from '../dialogs.js';
@@ -131,6 +132,7 @@ export class StudySessionScreen {
 
   dispose() {
     this.disposed = true;
+    this.zoom?.close();
     this.urls.release();
     this.noteImages.clear();
     document.removeEventListener('keydown', this.onKeyDown);
@@ -450,11 +452,13 @@ export class StudySessionScreen {
     };
     card.addEventListener('pointerup', (event) => finish(event, false));
     card.addEventListener('pointercancel', (event) => finish(event, true));
-    card.addEventListener('click', (event) => {
-      if (this.suppressClick) return;
-      if (event.target.closest('button, a')) return;
+    // Stuknięcie palcem obraca fiszkę już przy touchend (od 1.57, onTap): po przesunięciu fiszki przeglądarka potrafi
+    // nie wysłać click (dotyk udawany w Chromium; podobny błąd Safari w iOS 26). Przyciski na fiszce – zwykłym click.
+    const onButton = (event) => Boolean(event.target.closest('button, a'));
+    onTap(card, (event) => {
+      if (this.suppressClick || onButton(event)) return;
       this.#flip();
-    });
+    }, { ignore: onButton });
   }
 
   #handleKey(event) {
@@ -557,7 +561,8 @@ export class StudySessionScreen {
             answer ? this.#speakerButton(content.back.answer.text, content.back.answer.lang, 'Odtwórz wymowę tłumaczenia') : null
           )
         ),
-        h('div', { class: 'flashcard__body' },
+        // Od 1.57 strona z obrazem: tekst u góry, obraz wypełnia resztę strony, podpis i przyciski – na dole.
+        h('div', { class: media ? 'flashcard__body flashcard__body--media' : 'flashcard__body' },
           answer ? h('p', { class: `flashcard__text flashcard__text--answer ${sizeClass(content.back.answer.text)}`, lang: content.back.answer.lang },
             content.back.answer.text) : null,
           answer ? h('p', { class: 'flashcard__question', lang: content.back.question.lang }, content.back.question.text) : null,
@@ -642,6 +647,14 @@ export class StudySessionScreen {
     const imageLabels = withImageLabels(note?.images ?? []).map((image) => image.label);
     const tables = withTableLabels(note?.tables ?? [], imageLabels);
     const missing = (item) => h('p', { class: 'flashcard__missing', dataset: { testid: 'card-media-missing' } }, `„${item.label}” – nie ma w notatce lekcji`);
+    /** Od 1.57 przycisk w rogu: pełny ekran z przybliżeniem (zoom-view.js); fiszka się nie obraca. */
+    const zoomButton = (target, options) => h('button', {
+      type: 'button', class: 'flashcard__zoom', 'aria-label': `Pełny ekran: ${options.label}`, title: 'Pełny ekran', dataset: { testid: 'card-media-zoom' },
+      onClick: (event) => {
+        event.stopPropagation();
+        this.zoom = openZoom(target, { ...options, image: options.image?.() ?? null });
+      }
+    }, icon('zoomFit', { size: 20 }));
     const figureOf = (item) => {
       const caption = h('figcaption', { class: 'flashcard__media-label' }, item.label);
       if (item.kind === 'table') {
@@ -650,14 +663,18 @@ export class StudySessionScreen {
         const box = h('div', { class: 'flashcard__table' });
         // Komórki są zamieniane na tekst (tableHtml) – bez znaczników z treści.
         box.innerHTML = tableHtml(tables[index]);
-        return h('figure', { class: 'flashcard__figure', dataset: { kind: 'table', label: item.label } }, box, caption);
+        const frame = h('div', { class: 'flashcard__frame flashcard__frame--table' }, box);
+        frame.append(zoomButton(box, { table: box.firstElementChild, label: item.label }));
+        return h('figure', { class: 'flashcard__figure', dataset: { kind: 'table', label: item.label } }, frame, caption);
       }
       const image = h('img', { class: 'flashcard__image', alt: item.label, draggable: 'false' });
-      const figure = h('figure', { class: 'flashcard__figure flashcard__figure--loading', dataset: { kind: 'image', label: item.label } }, image, caption);
+      const frame = h('div', { class: 'flashcard__frame' }, image);
+      const figure = h('figure', { class: 'flashcard__figure flashcard__figure--loading', dataset: { kind: 'image', label: item.label } }, frame, caption);
       this.#noteImageURL(term.lessonID, item.label).then((url) => {
         if (url) {
           image.src = url;
           figure.classList.remove('flashcard__figure--loading');
+          frame.append(zoomButton(image, { image: () => image.src, label: item.label }));
         } else {
           figure.replaceWith(missing(item));
         }
@@ -670,6 +687,8 @@ export class StudySessionScreen {
     // Od 1.56.2 kilka obrazów – na stronie jeden naraz, przyciski poprzedni / następny i licznik (fiszka się nie obraca).
     let current = 0;
     const count = h('span', { class: 'flashcard__media-count', 'aria-live': 'polite', dataset: { testid: 'card-media-count' } });
+    // Od 1.57 sygnatura obrazu w wierszu przycisków (pod obrazem nie ma osobnego podpisu) – więcej miejsca na obraz.
+    const title = h('span', { class: 'flashcard__media-title', dataset: { testid: 'card-media-title' } });
     const navButton = (delta, label, iconName, testID) => h('button', {
       type: 'button', class: 'icon-button flashcard__media-nav', 'aria-label': label, title: label, dataset: { testid: testID },
       onClick: (event) => { event.stopPropagation(); show(current + delta); }
@@ -680,13 +699,14 @@ export class StudySessionScreen {
       current = Math.max(0, Math.min(slides.length - 1, index));
       slides.forEach((slide, at) => { slide.hidden = at !== current; });
       count.textContent = `${current + 1} / ${slides.length}`;
+      title.textContent = items[current].label;
       prev.disabled = current === 0;
       next.disabled = current === slides.length - 1;
     };
     show(0);
     return h('div', { class: 'flashcard__media flashcard__media--carousel', dataset: { testid: 'card-media' } },
       slides,
-      h('div', { class: 'flashcard__media-nav-row' }, prev, count, next));
+      h('div', { class: 'flashcard__media-nav-row' }, prev, title, count, next));
   }
 
   /** Adres obrazu notatki lekcji o danej sygnaturze (null – nie ma); obrazy lekcji wczytywane raz na sesję. */

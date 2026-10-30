@@ -9,14 +9,17 @@
 // i przeciągnięcie przesuwa całe kółko w dowolne miejsce (wycinek małych kółek obraca się w stronę
 // środka ekranu, z dala od brzegów – cały okrąg); schowanie przywraca stałe miejsce przy krawędzi.
 
-import { clampRotation, ringFacing, ringItems, ringStep, rotationFor, snapRotation } from '../core/tool-ring.js';
+import { clampRotation, ringFacing, ringItems, ringRadius, ringStep, rotationFor, snapRotation } from '../core/tool-ring.js';
 import { h } from './dom.js';
 import { icon } from './icons.js';
 
-/** Wymiary (px): duże kółko, małe kółko, promień okręgu, odległość środka dużego kółka od krawędzi ekranu. */
+/**
+ * Wymiary (px): duże kółko, małe kółko, najmniejszy promień okręgu, odległość środka dużego kółka od krawędzi ekranu
+ * i (od 1.57) najmniejszy odstęp między małymi kółkami – przy wielu kółkach okrąg jest większy (ringRadius).
+ */
 const SIZES = Object.freeze({
-  wide: { main: 84, small: 46, radius: 84, edge: 78 },
-  narrow: { main: 62, small: 40, radius: 62, edge: 54 }
+  wide: { main: 84, small: 46, radius: 84, edge: 78, gap: 18 },
+  narrow: { main: 62, small: 40, radius: 62, edge: 54, gap: 12 }
 });
 /** Przesunięcie (px), po którym gest przestaje być dotknięciem; po ilu px przesunięcia do krawędzi kółko się chowa. */
 const MOVE_SLOP = 8;
@@ -50,6 +53,8 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
   /** Przesuwanie kółka (od 1.39): { id, grabX, grabY } – przesunięcie wskaźnika względem środka. */
   let moving = null;
   let pressTimer = 0;
+  /** Od 1.57: wskaźnik wciśnięty na małym kółku – fokus z tego wciśnięcia nie obraca kółek (wybór przy kliknięciu). */
+  let pressing = false;
 
   const makeGroupButton = (group) => h('button', {
     type: 'button', class: 'drawing-ring__group', 'aria-label': group.label, title: group.label, 'aria-pressed': 'false',
@@ -59,8 +64,11 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
       turnTo(buttons.indexOf(event.currentTarget));
       onPick(group.id);
     },
-    // Klawiatura: grupa spoza wycinka obraca się na środek, gdy dostanie fokus.
-    onFocus: (event) => turnTo(buttons.indexOf(event.currentTarget))
+    // Klawiatura: grupa spoza wycinka obraca się na środek, gdy dostanie fokus. Od 1.57 nie przy wciśnięciu wskaźnika – mysz
+    // daje fokus już przy wciśnięciu, a obrót przesuwał kółko spod kursora i kliknięcie nie wybierało grupy.
+    onFocus: (event) => {
+      if (!pressing) turnTo(buttons.indexOf(event.currentTarget));
+    }
   }, icon(group.icon, { size: 22 }));
   // Ostatnie małe kółko – dobór grup (od 1.33): zestawy, własne grupy, kolejność.
   const editButton = h('button', {
@@ -70,7 +78,9 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
       if (suppressClick) return;
       onEdit();
     },
-    onFocus: () => turnTo(buttons.length - 1)
+    onFocus: () => {
+      if (!pressing) turnTo(buttons.length - 1);
+    }
   }, icon('ringEdit', { size: 22 }));
   let buttons = [...groups.map(makeGroupButton), editButton];
   const main = h('button', { type: 'button', class: 'drawing-ring__main', dataset: { testid: `drawing-ring-${side}-main` } });
@@ -100,8 +110,10 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
       y: Math.min(space.height - margin, Math.max(margin, position.y * space.height))
     };
   }
+  /** Promień okręgu przy obecnej liczbie małych kółek. */
+  const radius = () => ringRadius(buttons.length, sizes.radius, sizes.small, sizes.gap);
   function layout() {
-    const box = 2 * (sizes.radius + sizes.small / 2 + 4);
+    const box = 2 * (radius() + sizes.small / 2 + 4);
     element.style.width = `${box}px`;
     element.style.height = `${box}px`;
     element.style.setProperty('--ring-main', `${sizes.main}px`);
@@ -122,7 +134,7 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
       element.style.top = `calc(var(--drawing-ring-top, 10px) + ${sizes.main / 2 - box / 2}px)`;
     }
     element.classList.toggle('drawing-ring--placed', Boolean(free));
-    const items = ringItems({ count: buttons.length, rotation, side, radius: sizes.radius, edge: sizes.edge, size: sizes.small, free });
+    const items = ringItems({ count: buttons.length, rotation, side, radius: radius(), edge: sizes.edge, size: sizes.small, free });
     for (const item of items) {
       const button = buttons[item.index];
       button.style.left = `${box / 2 + item.x - sizes.small / 2}px`;
@@ -154,12 +166,21 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
     if (element.style.width) placeAtOnce();
   }
 
+  // ---- wciśnięcie małego kółka (od 1.57) – do puszczenia (także poza kółkiem) fokus nie obraca kółek
+  const release = () => setTimeout(() => { pressing = false; }, 0);
+  element.addEventListener('pointerdown', (event) => {
+    if (!event.target.closest?.('.drawing-ring__group')) return;
+    pressing = true;
+    window.addEventListener('pointerup', release, { once: true, capture: true });
+    window.addEventListener('pointercancel', release, { once: true, capture: true });
+  }, true);
+
   // ---- obracanie: przeciągnięcie po małych kółkach
   element.addEventListener('pointerdown', (event) => {
     if (main.contains(event.target) || (event.pointerType === 'mouse' && event.button !== 0) || drag) return;
     const origin = center();
     const distance = Math.hypot(event.clientX - origin.x, event.clientY - origin.y);
-    if (distance < sizes.main / 2 || distance > sizes.radius + sizes.small / 2 + 6) return;
+    if (distance < sizes.main / 2 || distance > radius() + sizes.small / 2 + 6) return;
     drag = { id: event.pointerId, origin, start: angleAt(event, origin), rotation, moved: false };
   });
   element.addEventListener('pointermove', (event) => {
@@ -172,7 +193,7 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
     }
     const delta = wrap(angleAt(event, drag.origin) - drag.start);
     if (!drag.moved) {
-      const reach = Math.abs((delta * Math.PI) / 180) * sizes.radius;
+      const reach = Math.abs((delta * Math.PI) / 180) * radius();
       if (reach < MOVE_SLOP) return;
       drag.moved = true;
       element.classList.add('drawing-ring--turning');
@@ -214,7 +235,7 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
     if (hidden || element.inert) return false;
     const origin = center();
     const distance = Math.hypot(event.clientX - origin.x, event.clientY - origin.y);
-    if (distance < sizes.main / 2 || distance > sizes.radius + sizes.small / 2 + 6) return false;
+    if (distance < sizes.main / 2 || distance > radius() + sizes.small / 2 + 6) return false;
     event.preventDefault();
     const now = performance.now();
     if (now - wheelTime > 300) wheelSum = 0;

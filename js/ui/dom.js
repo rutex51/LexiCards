@@ -121,9 +121,10 @@ const TAP_MAX_DURATION = 800;
  * w iOS 26: ekran reaguje dopiero na drugie dotknięcie). Dlatego krótkie dotknięcie bez
  * przesunięcia obsługujemy już przy touchend, a preventDefault() wyłącza syntetyczny
  * click, który inaczej mógłby trafić w nowy ekran. Mysz, klawiatura i VoiceOver nadal
- * działają przez zwykły click.
+ * działają przez zwykły click. ignore(event) – dotknięcia, które zostają przy zwykłym click
+ * (np. przyciski wewnątrz elementu).
  */
-export function onTap(element, handler) {
+export function onTap(element, handler, { ignore = null } = {}) {
   let start = null;
   element.addEventListener('touchstart', (event) => {
     const touch = event.touches.length === 1 ? event.touches[0] : null;
@@ -141,6 +142,7 @@ export function onTap(element, handler) {
     if (!begin || !touch || element.disabled) return;
     if (event.timeStamp - begin.time > TAP_MAX_DURATION) return;
     if (Math.hypot(touch.clientX - begin.x, touch.clientY - begin.y) > TAP_SLOP) return;
+    if (ignore?.(event)) return;
     event.preventDefault();
     handler(event);
   });

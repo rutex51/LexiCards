@@ -399,9 +399,14 @@ export function leaderStart(sticky) {
   return { x: center.x + dx * Math.min(1, scale), y: center.y + dy * Math.min(1, scale) };
 }
 
-/** Gumka (od 1.12.1): całe kreski albo fragmenty; wielkość gumki fragmentów – średnica na ekranie (px). */
-export const ERASER_MODES = Object.freeze(['stroke', 'pixel']);
-export const ERASER_MODE_LABELS = Object.freeze({ stroke: 'Całe kreski', pixel: 'Fragmenty' });
+/**
+ * Gumka (od 1.12.1): całe kreski albo fragmenty; wielkość gumki fragmentów – średnica na ekranie (px). Od 1.57 także
+ * „Zaznaczenie” – obszar (prostokąt albo lasso, ERASER_AREAS) starty po puszczeniu, razem z fragmentami kształtów i brył
+ * (zamienionych na szkic, core/sketch-erase.js); gumka fragmentów z opcją „Także kształty” (eraserShapes) – tak samo.
+ */
+export const ERASER_MODES = Object.freeze(['stroke', 'pixel', 'area']);
+export const ERASER_MODE_LABELS = Object.freeze({ stroke: 'Całe kreski', pixel: 'Fragmenty', area: 'Zaznaczenie' });
+export const ERASER_AREAS = Object.freeze(['rect', 'lasso']);
 export const ERASER_SIZES = Object.freeze([8, 16, 28, 48]);
 export const ERASER_SIZE_LABELS = Object.freeze(['Mała', 'Średnia', 'Duża', 'Bardzo duża']);
 
@@ -419,6 +424,8 @@ export function defaultToolSettings() {
     highlighterColor: 'yellow',
     eraserMode: 'stroke',
     eraserSize: 1,
+    eraserArea: 'rect',
+    eraserShapes: false,
     textSize: 1,
     customColors: [],
     selectShape: 'rect',
@@ -587,6 +594,8 @@ export function cleanToolSettings(raw) {
       ? raw.highlighterColor : base.highlighterColor,
     eraserMode: ERASER_MODES.includes(raw.eraserMode) ? raw.eraserMode : base.eraserMode,
     eraserSize: Number.isInteger(raw.eraserSize) && raw.eraserSize >= 0 && raw.eraserSize < ERASER_SIZES.length ? raw.eraserSize : base.eraserSize,
+    eraserArea: ERASER_AREAS.includes(raw.eraserArea) ? raw.eraserArea : base.eraserArea,
+    eraserShapes: typeof raw.eraserShapes === 'boolean' ? raw.eraserShapes : base.eraserShapes,
     textSize: Number.isInteger(raw.textSize) && raw.textSize >= 0 && raw.textSize < TEXT_SIZES.length ? raw.textSize : base.textSize,
     customColors: Array.isArray(raw.customColors)
       ? [...new Set(raw.customColors.filter(isHexColor).map((color) => color.toLowerCase()))].slice(0, CUSTOM_COLOR_LIMIT) : base.customColors,

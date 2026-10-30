@@ -2219,20 +2219,59 @@ a.row__main:active,
 
 .flashcard__body > .flashcard__media:first-child { margin-top: 0; }
 
-/* Od 1.56.2 kilka obrazów na stronie – jeden naraz, pod nim przyciski poprzedni / następny i licznik. */
+/*
+ * Od 1.56.2 kilka obrazów na stronie – jeden naraz, pod nim przyciski poprzedni / następny i licznik; od 1.57 w tym samym
+ * wierszu sygnatura (bez podpisu pod obrazem) i mniejsze przyciski – więcej miejsca na obraz.
+ */
 .flashcard__media-nav-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  margin-top: -4px;
+  gap: 8px;
+  min-width: 0;
 }
-.flashcard__media-nav { color: var(--accent); }
+.flashcard__media-nav {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  color: var(--accent);
+}
+.flashcard__media-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--size-foot);
+  font-weight: 600;
+  color: var(--text-2);
+}
 .flashcard__media-count {
-  min-width: 3.5em;
+  flex: none;
   color: var(--text-2);
   font-size: var(--size-sub);
   font-variant-numeric: tabular-nums;
+}
+.flashcard__media--carousel .flashcard__media-label { display: none; }
+.flashcard__body--media > .flashcard__media { gap: 2px; }
+
+/*
+ * Od 1.57 strona z obrazem: tekst u góry, obraz wypełnia resztę strony (ramka rośnie, obraz dopasowany bez przycinania),
+ * podpis i przyciski przewijania – na dole. Ramka ma co najmniej 45% wysokości strony – przy długim tekście strona się
+ * przewija (starsze przeglądarki bez jednostek kontenera – 30% ekranu).
+ */
+.flashcard__body--media {
+  flex: 1 1 auto;
+  margin: 0;
+}
+.flashcard__body--media > .flashcard__media,
+.flashcard__slide,
+.flashcard__body--media .flashcard__figure {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.flashcard__slide {
+  display: flex;
+  flex-direction: column;
 }
 
 .flashcard__figure {
@@ -2243,22 +2282,53 @@ a.row__main:active,
   margin: 0;
 }
 
+.flashcard__frame {
+  position: relative;
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-height: 30vh;
+  min-height: 45cqh;
+}
+
 .flashcard__image {
-  display: block;
-  max-width: 100%;
-  /* Obraz mieści się na stronie razem z krótkim tekstem: do 45% wysokości strony (starsze przeglądarki – 30% ekranu). */
-  max-height: min(30vh, 240px);
-  max-height: min(45cqh, 320px);
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
-  border-radius: 8px;
   -webkit-user-drag: none;
 }
 
-.flashcard__figure--loading .flashcard__image {
-  width: 120px;
-  height: 90px;
+.flashcard__frame--table {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.flashcard__figure--loading .flashcard__frame {
   border-radius: 8px;
   background: var(--fill);
+}
+
+/* Pełny ekran (od 1.57) – mały okrągły przycisk w prawym górnym rogu ramki. */
+.flashcard__zoom {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
+  opacity: 0.94;
+  cursor: pointer;
 }
 
 .flashcard__media-label {
@@ -2269,9 +2339,77 @@ a.row__main:active,
 
 .flashcard__table {
   max-width: 100%;
-  overflow-x: auto;
+  max-height: 100%;
+  overflow: auto;
   font-size: var(--size-sub);
   text-align: left;
+}
+
+/* Powiększenie obrazu albo tabeli z fiszki (od 1.57, zoom-view.js): ciemne tło, treść na środku. */
+.zoom-view {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: transparent;
+}
+.zoom-view:not([open]) { display: none; }
+.zoom-view::backdrop { background: transparent; }
+.zoom-view__shade {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.88);
+}
+.zoom-view__content {
+  position: relative;
+  transform-origin: 0 0;
+}
+.zoom-view__image {
+  display: block;
+  border-radius: 6px;
+  -webkit-user-drag: none;
+}
+.zoom-view__table {
+  max-width: 96vw;
+  max-height: 84vh;
+  overflow: auto;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.15rem;
+}
+.zoom-view__caption {
+  position: relative;
+  margin: 0;
+  color: #fff;
+  font-weight: 600;
+}
+.zoom-view__close {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  cursor: pointer;
 }
 
 .flashcard__table .note-table { margin: 0 auto; }
@@ -6179,6 +6317,10 @@ svg.icon--note { color: var(--note-icon); }
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* Od 1.57: kółka narzędzi wystają poza krawędź ekranu (większy okrąg) – przycięte, bez przewijania edytora w bok
+     (fokus na kółku za krawędzią przewijał cały edytor). Starsze przeglądarki – hidden. */
+  overflow: hidden;
+  overflow: clip;
   background: var(--bg);
 }
 
@@ -6321,7 +6463,8 @@ svg.icon--note { color: var(--note-icon); }
   white-space: nowrap;
 }
 
-.drawing__mode[aria-checked="true"] {
+.drawing__mode[aria-checked="true"],
+.drawing__mode[aria-pressed="true"] {
   background: var(--elevated);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
   font-weight: 600;

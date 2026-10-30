@@ -1,4 +1,4 @@
-# LexiCards 1.56.2
+# LexiCards 1.57
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -66,8 +66,9 @@ Rysunek – suma i różnica brył: w scenie „Połącz z…” i „Wytnij…�
 Fiszki – nowa kolejność obrotów (od lewej, od prawej, z góry na dół, powrót z dołu), treść każdej strony na środku z pogrubionymi krótkimi liniami, części stron (tłumaczenie, definicja, przykład) zaznaczane dowolnie w Nauce, własne strony pojęcia i obraz albo tabela z notatki lekcji na wybranej stronie; w oknie notatki „Edytuj” po lewej, „Zamknij” po prawej (wersja 1.56): [docs/RELEASE-1.56.md](docs/RELEASE-1.56.md).
 Fiszki – obroty: pierwszy od prawej do lewej, kolejne z dołu do góry, powrót od lewej do prawej; „Obraz” jako czwarta część strony (wszystkie obrazy i tabele z notatki przypięte do pojęcia), obrazy wybierane dotknięciem kafelka z miniaturą (wersja 1.56.1): [docs/RELEASE-1.56.1.md](docs/RELEASE-1.56.1.md).
 Fiszki – każdy obrót, także powrót do pytania, od prawej do lewej, bez obrotów w pionie; kilka obrazów na stronie – jeden naraz, przewijane przyciskami ‹ › z licznikiem (wersja 1.56.2): [docs/RELEASE-1.56.2.md](docs/RELEASE-1.56.2.md).
+Fiszki – obraz z notatki wypełnia stronę (sygnatura i przyciski na dole), pełny ekran z przybliżeniem i ciemnym tłem; rysunek – większe odstępy małych kółek narzędzi, wybór grupy myszą za pierwszym kliknięciem, gumka „Zaznaczenie” (prostokąt albo lasso) i gumka fragmentów „Także kształty” – kształty, odcinki i bryły zamieniane na szkic piórem (wersja 1.57): [docs/RELEASE-1.57.md](docs/RELEASE-1.57.md).
 
-## Co potrafi wersja 1.56.2
+## Co potrafi wersja 1.57
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -565,7 +566,8 @@ narzędzie w jego kolorze (wypełnienie w kolorze, biała obwódka; narzędzie b
 a małe kółka wokół niego to **grupy**: Pisanie, Kształty, Konstrukcja (prosta, od 1.40 półprosta, punkt), Tekst i wzory
 (pole tekstowe, wzór, tabela, karteczka), Symbole metrologiczne. Widać wycinek okręgu skierowany do
 środka ekranu; przeciągnięcie po małych kółkach albo kółko myszy obraca je (dalsze i te przy krawędzi
-ekranu płynnie znikają), dotknięcie wybiera grupę. Po lewej – lustrzane **kółko moich narzędzi**,
+ekranu płynnie znikają), dotknięcie wybiera grupę – od 1.57 także kliknięcie myszą w kółko poza środkiem wycinka (od razu,
+bez drugiego kliknięcia); przy wielu grupach okrąg jest większy, żeby małe kółka miały odstęp. Po lewej – lustrzane **kółko moich narzędzi**,
 na początek z zestawem **Metrologia** (odcinek, prosta, punkt, ramka tolerancji, baza, chropowatość).
 **Grupy narzędzi (od 1.33):** ostatnie małe kółko (suwaki, przerywana obwódka) otwiera okno doboru
 grup: zaznaczone grupy standardowe są na prawym kółku w ustawionej kolejności (≡ – przeciągnij,
@@ -622,7 +624,11 @@ niebieski), trzy grubości, **linijka**, **cofnij** i **ponów** (też Ctrl+Z, C
 oraz **Tło** (kratka, gładkie, linie). Gumka ma dwa tryby: **Całe kreski** (dotknięta kreska znika
 w całości) i **Fragmenty** (ściera tylko to, czego dotknie – kreska dzieli się na części) w czterech
 wielkościach; pod myszą i zawieszonym rysikiem widać kółko gumki. Gumka nie ściera zdjęcia pod
-kreskami. **Zaznaczanie:** prostokąt zaznacza kreski leżące w nim w całości, dotknięcie kreski –
+kreskami. Od 1.57 trzeci tryb **Zaznaczenie**: obrys prostokątem albo lassem (czerwony, kreskowany), po puszczeniu znika
+wszystko w środku – kreski cięte na brzegu, a kształt, odcinek, bryła, szyk albo diagram, przez który przechodzi obszar,
+zamienia się na zwykły szkic piórem i traci środek (napisy, wypełnienie i rodzaj linii takiego elementu znikają; pola
+tekstowe, wzory, tabele i karteczki – tylko w całości w obszarze). Jeden krok cofania. Gumka **Fragmenty** ma opcję
+**Także kształty** – ściera wtedy tak samo fragmenty kształtów i brył. **Zaznaczanie:** prostokąt zaznacza kreski leżące w nim w całości, dotknięcie kreski –
 tę jedną, **Zaznacz wszystko** (albo Ctrl+A) – wszystkie; nad ramką zaznaczenia są **Powiel**
 i **Usuń** (też klawisz Delete), a przeciągnięcie wewnątrz ramki przesuwa kreski (palcem także, gdy
 jest rysik). Esc zdejmuje zaznaczenie. Od 1.30 z wciśniętym **Shift** zaznaczenie zostaje: kliknięcie
@@ -1237,7 +1243,11 @@ każdy z miniaturą i sygnaturą – dotknięcie przypina albo odpina (przypięt
 Na których stronach są obrazy – część **Obraz** w wierszu strony (pojawia się po przypięciu obrazu); strona może
 pokazywać sam obraz („Pokaż obraz z notatki”, nagłówek „Z notatki lekcji”), ale nie bez przypiętego obrazu – takiej
 strony nie da się zapisać. Fiszka pokazuje obrazy i tabele pod tekstem strony, z sygnaturą; od 1.56.2 kilka – jeden naraz,
-pod nim przyciski **‹** i **›** z licznikiem („1 / 3”), przewijanie nie obraca fiszki. Gdy sygnatury nie ma już
+pod nim przyciski **‹** i **›** z licznikiem („1 / 3”), przewijanie nie obraca fiszki. Od 1.57 obraz wypełnia resztę strony
+(tekst u góry, sygnatura i przyciski na samym dole; przy kilku obrazach sygnatura w wierszu przycisków), a przycisk w rogu
+obrazu (cztery narożniki) otwiera **pełny ekran**: obraz albo tabela przybliża się z fiszki na środek ekranu, reszta
+ciemnieje, w poziomie ekranu obraz zajmuje prawie cały ekran; dotknięcie, ✕ albo Esc oddala. Od 1.57 stuknięcie palcem
+obraca fiszkę już przy podniesieniu palca (pewniej po przesunięciu fiszki). Gdy sygnatury nie ma już
 w notatce – kafelek „nie ma w notatce lekcji” (do odpięcia) i napis na fiszce.
 
 **Nauka w kalendarzu** (od 1.23): w zakładce **Nauka**, po wyborze materiału, **Zaplanuj naukę

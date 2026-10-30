@@ -214,6 +214,15 @@ export function rotationFor(index, count, current = 0) {
   return current + wrapAngle(target - current);
 }
 
+/**
+ * Promień okręgu małych kółek (od 1.57): co najmniej `base`, a przy wielu kółkach (mniejszy odstęp kątowy) większy –
+ * tak, żeby między sąsiednimi kółkami o średnicy `size` było co najmniej `gap` px.
+ */
+export function ringRadius(count, base, size, gap) {
+  const { step } = ringStep(count);
+  return Math.max(base, Math.ceil((size + gap) / (2 * Math.sin((step * Math.PI) / 360))));
+}
+
 /** Środek widocznego wycinka: kółko po prawej – w dół i w lewo (do środka ekranu), po lewej – w dół i w prawo. */
 export const RING_CENTER = Object.freeze({ right: 122, left: 58 });
 /** Pełna widoczność do tylu stopni od środka wycinka, potem zanikanie do RING_FADE_END. */

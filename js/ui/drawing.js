@@ -46,8 +46,9 @@ import {
 import {
   endPoint, findSnap, followersOf, keepLinksTo, newElementId, relinkCopies, resolveAttachments, segmentBetween, snapGeometry, snapNormal, withLink
 } from '../core/attach.js';
+import { eraseArea, eraseElementsAt } from '../core/sketch-erase.js';
 import {
-  DrawingHistory, ELEMENT_TEXT_MAX, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA,
+  DrawingHistory, ELEMENT_TEXT_MAX, ERASER_AREAS, ERASER_MODES, ERASER_MODE_LABELS, ERASER_SIZES, ERASER_SIZE_LABELS, HIGHLIGHTER_ALPHA,
   HIGHLIGHTER_COLORS, HIGHLIGHTER_RANGE, INK_COLORS, RAY_STEPS, WIDTH_LIMITS, STICKY_COLORS, STICKY_MIN, STICKY_TEXT_MAX, STICKY_TEXT_SIZES, TABLE_TEXT_SIZES, isBox, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
   SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings, shapeToolStyle, stickyColor, withShapeToolStyle,
   DIM_UNITS, DRAWING_VERSION, defaultDimUnit, defaultToolSettings, dimFactor, dimFormat, dimMillimeters, dimUnitLabel, dimUnitNote, dimensionParts, formatTolerance, hasMeasuredContent, elementBox, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
@@ -164,10 +165,10 @@ const ZERO_COLOR = '#0058be';
 /** Lasso: najmniejszy odstęp kolejnych punktów obrysu (px ekranu). */
 const LASSO_STEP = 4;
 /** Zaznaczanie: całe kreski – niebieskie, fragmenty (tylko wnętrze obszaru) – zielone, kreskowane; wycinek (od 1.17) – fioletowy. */
-const SELECT_COLORS = { whole: '#0058be', region: '#1d8a3a', snip: '#8944ab' };
+const SELECT_COLORS = { whole: '#0058be', region: '#1d8a3a', snip: '#8944ab', erase: '#d70015' };
 /** Osie układu arkusza (od 1.50) – te same kolory co osie bryły: X czerwona, Y zielona, Z niebieska. */
 const SHEET_AXES = Object.freeze({ x: '#d92d20', y: '#1e8e3e', z: '#1a6fdb' });
-const SELECT_FILLS = { whole: 'rgba(0, 88, 190, 0.07)', region: 'rgba(29, 138, 58, 0.09)', snip: 'rgba(137, 68, 171, 0.08)' };
+const SELECT_FILLS = { whole: 'rgba(0, 88, 190, 0.07)', region: 'rgba(29, 138, 58, 0.09)', snip: 'rgba(137, 68, 171, 0.08)', erase: 'rgba(215, 0, 21, 0.08)' };
 const OUTLINE_LABELS = { rect: 'Prostokąt', lasso: 'Lasso' };
 const SELECT_MODE_TITLES = {
   auto: 'Według kierunku: prostokąt od lewej i lasso przeciwnie do wskazówek zegara – całe kreski; od prawej i zgodnie ze wskazówkami – fragmenty',
@@ -1423,6 +1424,8 @@ export function openDrawingEditor({
      * tryb, a w trybie „Auto” – kierunek (prostokąt – w lewo, lasso – zgodnie ze wskazówkami).
      */
     const selectModeOf = (gesture) => {
+      // Gumka „Zaznaczenie” (od 1.57) – obrys czerwony, kreskowany.
+      if (gesture.erase) return 'erase';
       if (gesture.snip) return 'snip';
       // Shift (od 1.30) dokłada całe elementy – bez względu na kierunek obrysu i tryb.
       if (gesture.add) return 'whole';
@@ -2382,7 +2385,7 @@ export function openDrawingEditor({
       if (pointPick && EDIT_END[pointPick.kind]) paintEditPick(ctx);
       if (ruler) paintRuler(ctx);
       if (active?.kind === 'stroke' && active.edge && active.edge.to >= active.edge.from) paintLength(ctx, active.edge);
-      const cursor = active?.kind === 'erase' ? active.last : (tool === 'eraser' ? hover : null);
+      const cursor = active?.kind === 'erase' ? active.last : (tool === 'eraser' && tools.eraserMode !== 'area' ? hover : null);
       if (cursor) {
         ctx.save();
         ctx.lineWidth = 1.2 / view.scale;
@@ -2737,6 +2740,19 @@ export function openDrawingEditor({
         title: ERASER_SIZE_LABELS[index], dataset: { size: String(index), testid: `drawing-eraser-size-${index}` },
         onClick: () => { tools.eraserSize = index; saveTools(tools); updateToolbar(); requestLive(); }
       }, h('span', { style: { width: `${Math.round(6 + index * 4)}px`, height: `${Math.round(6 + index * 4)}px` } }))));
+    // Od 1.57: gumka „Zaznaczenie” – prostokąt albo lasso; gumka fragmentów – „Także kształty” (kształty i bryły – szkic).
+    const eraserAreas = h('div', { class: 'drawing__group', role: 'radiogroup', 'aria-label': 'Obszar gumki' },
+      ERASER_AREAS.map((shape) => h('button', {
+        type: 'button', class: 'drawing__tool', role: 'radio', 'aria-label': `Gumka: ${OUTLINE_LABELS[shape].toLowerCase()}`, title: OUTLINE_LABELS[shape],
+        dataset: { shape, testid: `drawing-eraser-area-${shape}` },
+        onClick: () => { tools.eraserArea = shape; saveTools(tools); updateToolbar(); requestLive(); }
+      }, icon(shape === 'lasso' ? 'lasso' : 'marquee', { size: 24 }))));
+    const eraserShapes = h('div', { class: 'drawing__group drawing__modes' },
+      h('button', {
+        type: 'button', class: 'drawing__mode', 'aria-pressed': 'false', dataset: { testid: 'drawing-eraser-shapes' },
+        title: 'Gumka ściera też fragmenty kształtów, odcinków i brył – zamienia je na szkic piórem',
+        onClick: () => { tools.eraserShapes = !tools.eraserShapes; saveTools(tools); updateToolbar(); }
+      }, 'Także kształty'));
     // Zaznaczanie (od 1.14): kształt – prostokąt albo lasso – i tryb (kierunek, całe kreski, fragmenty).
     const selectShapes = h('div', { class: 'drawing__group', role: 'radiogroup', 'aria-label': 'Kształt zaznaczenia' },
       SELECT_SHAPES.map((shape) => h('button', {
@@ -2820,7 +2836,7 @@ export function openDrawingEditor({
     // wypełnienie, zakończenia; kilka grup – przyciski z rozwijanym wyborem; ⓘ rozwija w dół resztę (przełączniki, opis).
     const styleRow = h('div', { class: 'drawing__group drawing__style-row', hidden: true, dataset: { testid: 'drawing-style-row' } });
     const styleDrop = h('div', { class: 'drawing__style-drop', hidden: true, dataset: { testid: 'drawing-style-drop' } });
-    const choices = h('div', { class: 'drawing__choices', dataset: { testid: 'drawing-choices' } }, eraserModes, ellipseModes, arcModes, dimAxes, styleRow);
+    const choices = h('div', { class: 'drawing__choices', dataset: { testid: 'drawing-choices' } }, eraserModes, eraserAreas, eraserShapes, ellipseModes, arcModes, dimAxes, styleRow);
     // Od 1.35 wybór narzędzi ogólnych (zaznaczanie: obszar, tryb, „Wklej”, „Zaznacz wszystko”) – nad dolnym paskiem.
     const dockChoices = h('div', { class: 'drawing__choices drawing__choices--dock', hidden: true, dataset: { testid: 'drawing-dock-choices' } }, selectShapes, selectModes, selectGroup);
     const topHandle = h('button', {
@@ -3063,6 +3079,10 @@ export function openDrawingEditor({
       eraserSizes.hidden = tool !== 'eraser' || tools.eraserMode !== 'pixel';
       for (const button of eraserSizes.children) button.setAttribute('aria-checked', String(Number(button.dataset.size) === tools.eraserSize));
       eraserButton.setAttribute('aria-label', `Gumka – ${ERASER_MODE_LABELS[tools.eraserMode].toLowerCase()}`);
+      eraserAreas.hidden = eraserModes.hidden || tools.eraserMode !== 'area';
+      for (const button of eraserAreas.children) button.setAttribute('aria-checked', String(button.dataset.shape === tools.eraserArea));
+      eraserShapes.hidden = eraserModes.hidden || tools.eraserMode !== 'pixel';
+      eraserShapes.firstElementChild.setAttribute('aria-pressed', String(tools.eraserShapes));
       for (const group of [selectShapes, selectModes, selectGroup]) group.hidden = tool !== 'select';
       // Wiersz koloru i pastylka wyboru – tylko gdy mają co pokazać.
       optionRow.hidden = [swatches, widths, eraserSizes].every((group) => group.hidden);
@@ -3077,7 +3097,7 @@ export function openDrawingEditor({
       for (const button of dimAxes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.dimAxis));
       for (const [mode, button] of dimButtons) button.setAttribute('aria-pressed', String(tool === 'shape' && tools.shape === 'dim' && tools.dimMode === mode));
       renderStyleRow();
-      choices.hidden = [eraserModes, ellipseModes, arcModes, dimAxes, styleRow].every((group) => group.hidden);
+      choices.hidden = [eraserModes, eraserAreas, eraserShapes, ellipseModes, arcModes, dimAxes, styleRow].every((group) => group.hidden);
       dockChoices.hidden = [selectShapes, selectModes, selectGroup].every((group) => group.hidden);
       updateShapeHint();
       for (const button of selectShapes.children) button.setAttribute('aria-checked', String(button.dataset.shape === tools.selectShape));
@@ -8880,7 +8900,16 @@ export function openDrawingEditor({
     }
     function startErase(event) {
       const point = toDrawing(event);
-      active = { kind: 'erase', id: event.pointerId, touch: event.pointerType === 'touch', mode: tools.eraserMode, last: point };
+      if (tools.eraserMode === 'area') {
+        // Gumka „Zaznaczenie” (od 1.57): obrys jak przy zaznaczaniu, po puszczeniu – starte wszystko w środku.
+        const common = { id: event.pointerId, touch: event.pointerType === 'touch', start: point, client: local(event), erase: true };
+        active = tools.eraserArea === 'lasso'
+          ? { kind: 'lasso', ...common, polygon: [point.x, point.y] }
+          : { kind: 'marquee', ...common, rect: { x0: point.x, y0: point.y, x1: point.x, y1: point.y } };
+        requestLive();
+        return;
+      }
+      active = { kind: 'erase', id: event.pointerId, touch: event.pointerType === 'touch', mode: tools.eraserMode, shapes: tools.eraserMode === 'pixel' && tools.eraserShapes, last: point };
       history.begin();
       eraseTo(point);
     }
@@ -8893,8 +8922,13 @@ export function openDrawingEditor({
       for (let step = 1; step <= steps; step += 1) {
         const x = from.x + ((point.x - from.x) * step) / steps;
         const y = from.y + ((point.y - from.y) * step) / steps;
-        if (active.mode === 'pixel') erased = eraseAt(drawing.strokes, x, y, radius, someHidden() ? isShown : null) || erased;
-        else erased = history.remove(shownIndexes(strokesAt(drawing.strokes, x, y, radius))) || erased;
+        if (active.mode === 'pixel') {
+          erased = eraseAt(drawing.strokes, x, y, radius, someHidden() ? isShown : null) || erased;
+          // Od 1.57 „Także kształty”: kształt, odcinek, bryła pod gumką – szkic piórem bez startego fragmentu.
+          if (active.shapes) erased = eraseElementsAt(drawing.strokes, x, y, radius, { canErase: someHidden() ? isShown : null }) || erased;
+        } else {
+          erased = history.remove(shownIndexes(strokesAt(drawing.strokes, x, y, radius))) || erased;
+        }
       }
       active.last = point;
       if (erased) {
@@ -9659,7 +9693,22 @@ export function openDrawingEditor({
       const polygon = done.kind === 'lasso' ? done.polygon : rectPolygon(done.rect);
       const xs = polygon.filter((_, index) => index % 2 === 0);
       const ys = polygon.filter((_, index) => index % 2 === 1);
-      if ((Math.max(...xs) - Math.min(...xs)) * view.scale < TAP_SLOP && (Math.max(...ys) - Math.min(...ys)) * view.scale < TAP_SLOP) {
+      const tapped = (Math.max(...xs) - Math.min(...xs)) * view.scale < TAP_SLOP && (Math.max(...ys) - Math.min(...ys)) * view.scale < TAP_SLOP;
+      if (done.erase) {
+        // Gumka „Zaznaczenie” (od 1.57): wszystko w obszarze znika – jeden krok cofania; dotknięcie nic nie robi.
+        if (tapped || polygon.length < 6) return;
+        history.begin();
+        if (eraseArea(drawing.strokes, polygon, { canErase: someHidden() ? isShown : null })) {
+          commitStep();
+          changed = true;
+          if (selection.size > 0) selection = new Set(drawing.strokes.filter((stroke) => selection.has(stroke)));
+        } else {
+          history.commit();
+        }
+        requestRender();
+        return;
+      }
+      if (tapped) {
         // Dotknięcie kreski zaznacza ją (najwyższą w tym miejscu).
         const [top] = shownIndexes(strokesAt(drawing.strokes, done.start.x, done.start.y, SELECTION_PAD / view.scale));
         // Dotknięcie pustego środka kształtu też go zaznacza (najwyższego).
