@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { cleanToolSettings, defaultToolSettings, ERASER_MODES } from '../../js/core/drawing.js';
 import { canSketch, elementSketch, eraseArea, eraseElementsAt } from '../../js/core/sketch-erase.js';
 import { newSolid, solidGeometry } from '../../js/core/solids.js';
-import { ringRadius, ringStep } from '../../js/core/tool-ring.js';
+import { ringFacing, ringItems, ringPitch } from '../../js/core/tool-ring.js';
 
 const rect = (extra = {}) => ({ tool: 'shape', shape: 'rect', color: '#d70015', size: 3, x: 100, y: 100, w: 80, h: 40, angle: 0, skew: 0, adjust: 0, ...extra });
 const line = (extra = {}) => ({ tool: 'shape', shape: 'line', color: '#1d1d1f', size: 2, x: 100, y: 200, w: 100, h: 0, angle: 0, skew: 0, adjust: 0, ...extra });
@@ -86,13 +86,32 @@ test('gumka fragmentów „Także kształty”: odcinek pod kołem – szkic z d
   assert.ok(cut.length > 0 && cut.every((stroke) => stroke.tool === 'pen'), 'bryła – szkic');
 });
 
-test('kółko narzędzi: promień rośnie z liczbą kółek – odstęp między kółkami co najmniej zadany', () => {
-  for (const count of [2, 8, 9, 11, 12]) {
-    const radius = ringRadius(count, 84, 46, 18);
-    const { step } = ringStep(count);
-    const gap = 2 * radius * Math.sin((step * Math.PI) / 360) - 46;
-    assert.ok(radius >= 84 && gap >= 18 - 1e-9, `${count} kółek: promień ${radius}, odstęp ${gap.toFixed(1)}`);
+test('kółko narzędzi (od 1.58): stały promień – widoczne kółka co ringPitch (odstęp co najmniej zadany), reszta ściśnięta za wycinkiem', () => {
+  assert.equal(ringPitch(84, 46, 18), 45);
+  assert.ok(Math.abs(ringPitch(62, 40, 12) - 49.6) < 0.05, 'telefon – trochę szerzej niż co 45°');
+  const room = (left, top, width = 1280, height = 746) => ({ left, right: width - left, top, bottom: height - top });
+  for (const [radius, size, gap] of [[84, 46, 18], [62, 40, 12]]) {
+    const pitch = ringPitch(radius, size, gap);
+    for (const count of [2, 5, 8, 9, 11, 12]) {
+      for (const free of [null, { angle: ringFacing(640, 373, 1280, 746), room: room(640, 373) }]) {
+        let visible = 0;
+        for (let rotation = 0; rotation < 360; rotation += 1) {
+          const items = ringItems({ count, rotation, side: 'right', radius, edge: 400, size, free, pitch });
+          for (const item of items) assert.ok(Math.abs(Math.hypot(item.x, item.y) - radius) < 1e-9, 'promień bez zmian');
+          const shown = items.filter((item) => item.opacity > 0.3);
+          visible = Math.max(visible, shown.length);
+          for (const a of shown) {
+            for (const b of shown) {
+              if (a !== b) assert.ok(Math.hypot(a.x - b.x, a.y - b.y) - size >= gap - 0.5, `${count} kółek, obrót ${rotation}: odstęp`);
+            }
+          }
+        }
+        assert.ok(visible >= Math.min(count, 3), `${count} kółek: widać co najmniej 3 (${visible})`);
+      }
+    }
   }
-  assert.equal(ringRadius(4, 84, 46, 18), 84, 'mało kółek – bez zmian');
-  assert.ok(ringRadius(11, 84, 46, 18) > 84);
+  // 11 kółek przy krawędzi: dwa sąsiednie co 45°, za wycinkiem gęściej (niewidoczne).
+  const angles = ringItems({ count: 11, rotation: 0, side: 'right', radius: 84, edge: 400, size: 46, pitch: 45 }).map((item) => item.angle - 122);
+  assert.deepEqual(angles.slice(0, 3).map(Math.round), [0, 45, 90]);
+  assert.ok(angles[3] - angles[2] < 45 && angles[3] - angles[2] > 14, `ściśnięte: ${angles[3] - angles[2]}`);
 });

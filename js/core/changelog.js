@@ -2,6 +2,7 @@
 // Pełne opisy – docs/RELEASE-<wersja>.md. Pierwsza pozycja to bieżąca wersja aplikacji (sprawdza to test).
 
 export const CHANGELOG = Object.freeze([
+  ['1.58', 'Rysunek: pierścienie na grzbiecie zamiast spirali, zeszyt odsuwany w górę (dolna krawędź do środka ekranu), kółko narzędzi o stałym promieniu – reszta kółek ściśnięta za wycinkiem.'],
   ['1.57', 'Fiszki: obraz wypełnia stronę, pełny ekran z przybliżeniem. Rysunek: odstępy kółek, wybór grupy jednym kliknięciem, gumka obszarem i przez kształty (szkic piórem).'],
   ['1.56.2', 'Fiszki: każdy obrót, także powrót do pytania, od prawej do lewej – bez obrotów w pionie; kilka obrazów na stronie – jeden naraz, przewijane przyciskami.'],
   ['1.56.1', 'Fiszki: 1. obrót od prawej do lewej, następne z dołu do góry, powrót od lewej do prawej; „Obraz” wśród części strony; obrazy z notatki wybierane na miniaturach.'],

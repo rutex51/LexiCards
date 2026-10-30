@@ -1,4 +1,4 @@
-# LexiCards 1.57
+# LexiCards 1.58
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -67,8 +67,9 @@ Fiszki – nowa kolejność obrotów (od lewej, od prawej, z góry na dół, pow
 Fiszki – obroty: pierwszy od prawej do lewej, kolejne z dołu do góry, powrót od lewej do prawej; „Obraz” jako czwarta część strony (wszystkie obrazy i tabele z notatki przypięte do pojęcia), obrazy wybierane dotknięciem kafelka z miniaturą (wersja 1.56.1): [docs/RELEASE-1.56.1.md](docs/RELEASE-1.56.1.md).
 Fiszki – każdy obrót, także powrót do pytania, od prawej do lewej, bez obrotów w pionie; kilka obrazów na stronie – jeden naraz, przewijane przyciskami ‹ › z licznikiem (wersja 1.56.2): [docs/RELEASE-1.56.2.md](docs/RELEASE-1.56.2.md).
 Fiszki – obraz z notatki wypełnia stronę (sygnatura i przyciski na dole), pełny ekran z przybliżeniem i ciemnym tłem; rysunek – większe odstępy małych kółek narzędzi, wybór grupy myszą za pierwszym kliknięciem, gumka „Zaznaczenie” (prostokąt albo lasso) i gumka fragmentów „Także kształty” – kształty, odcinki i bryły zamieniane na szkic piórem (wersja 1.57): [docs/RELEASE-1.57.md](docs/RELEASE-1.57.md).
+Rysunek – pierścienie na grzbiecie zeszytu zamiast spirali (w każdej prostokątnej dziurce dwa druty), zeszyt odsuwany w górę – dolna krawędź kartki do środka ekranu; kółko narzędzi o stałym promieniu – widoczne małe kółka z odstępem, reszta ściśnięta za wycinkiem (wersja 1.58): [docs/RELEASE-1.58.md](docs/RELEASE-1.58.md).
 
-## Co potrafi wersja 1.57
+## Co potrafi wersja 1.58
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -190,7 +191,8 @@ Fiszki – obraz z notatki wypełnia stronę (sygnatura i przyciski na dole), pe
   bryła ze szkicu poziomo na wysokości albo pionowo (przód XZ, bok YZ) – i **rzuty całej sceny** na kartkę; od 1.55 **suma
   i różnica brył** – dwie bryły ustawione w scenie połączone albo jedna wycięta z drugiej, pod dowolnym kątem.
   Od 1.24.1 kartka w edytorze wygląda
-  jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
+  jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich), od 1.58 – na pierścieniach
+  (prostokątne dziurki, w każdej dwa druty); zeszyt można odsunąć w górę, aż dolna krawędź kartki dojdzie do środka ekranu. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
@@ -567,7 +569,9 @@ a małe kółka wokół niego to **grupy**: Pisanie, Kształty, Konstrukcja (pro
 (pole tekstowe, wzór, tabela, karteczka), Symbole metrologiczne. Widać wycinek okręgu skierowany do
 środka ekranu; przeciągnięcie po małych kółkach albo kółko myszy obraca je (dalsze i te przy krawędzi
 ekranu płynnie znikają), dotknięcie wybiera grupę – od 1.57 także kliknięcie myszą w kółko poza środkiem wycinka (od razu,
-bez drugiego kliknięcia); przy wielu grupach okrąg jest większy, żeby małe kółka miały odstęp. Po lewej – lustrzane **kółko moich narzędzi**,
+bez drugiego kliknięcia). Od 1.58 okrąg ma stały promień: widoczne małe kółka leżą co 45° (na telefonie co ok. 50°), z odstępem
+co najmniej 18 px (na telefonie 12 px), a gdy grup jest więcej, niż mieści się tak na okręgu, kółka za wycinkiem (niewidoczne)
+są ściśnięte i rozsuwają się dopiero, gdy obrót wprowadza je do wycinka. Po lewej – lustrzane **kółko moich narzędzi**,
 na początek z zestawem **Metrologia** (odcinek, prosta, punkt, ramka tolerancji, baza, chropowatość).
 **Grupy narzędzi (od 1.33):** ostatnie małe kółko (suwaki, przerywana obwódka) otwiera okno doboru
 grup: zaznaczone grupy standardowe są na prawym kółku w ustawionej kolejności (≡ – przeciągnij,
@@ -747,6 +751,10 @@ odcinek i strzałka idą co 15°, a narożnik zaznaczonego kształtu nie zmienia
 klawiatury – przełącznik **Proporcje jak z Shift** w panelu kształtów). Przytrzymany **Ctrl** przy
 dowolnym narzędziu włącza zaznaczanie (tryb Auto); puszczony – wraca poprzednie narzędzie, a zaznaczenie
 znika (przesuń je, usuń albo skopiuj, trzymając Ctrl). Wciśnięte **kółko myszy** i ruch przesuwa stronę.
+**Odsuwanie zeszytu** (od 1.58): stronę można przesunąć poza jej zwykłe miejsce – palcem (gdy rysuje tylko rysik), dwoma
+palcami, wciśniętym kółkiem myszy albo kółkiem myszy (przy jednej kartce; przy kilku ruch kółka w pionie przewraca kartki) –
+tak daleko, że dowolna krawędź kartki dochodzi do środka ekranu. Np. dolny brzeg kartki można podnieść do połowy ekranu
+i rysować przy nim wyżej, z dala od dolnego paska. Dotknięcie „100%” i przejście na inną kartkę – strona znów na swoim miejscu.
 **Zakończenia odcinka** (od 1.19): początek i koniec odcinka albo strzałki – brak, grot, trójkąt, koło,
 kwadrat, romb; dla nowych w panelu kształtów (po wybraniu odcinka), dla zaznaczonego – polecenie **Końce**
 (od 1.27 w oknie **Styl**); od 1.35 – **Końce** w trzecim menu (początek i koniec), dla nowych i zaznaczonych.
@@ -1074,7 +1082,10 @@ i dalej poza ekran, a gdy zgięcie dochodzi do grzbietu, płynnie znika i spiral
 (poprzednia kartka wraca tą samą drogą); od 1.26 płat znika później – widać go prawie do końca przewracania. Od 1.35 drut
 kończy się w ostatniej dziurce (bez zwoju w powietrzu pod kartką), a odblask na zwojach przechodzi łagodniej. To tylko wygląd edytora – obraz rysunku w notatce,
 wycinek i „Osadź” są bez spirali, a kreska narysowana pod dziurką zostaje cała. Strona ze zdjęciem
-(„Rysuj na zdjęciu”) – bez spirali.
+(„Rysuj na zdjęciu”) – bez spirali. Od 1.58 zamiast spirali **pierścienie** na jednej osi (jak w zeszycie na drucie
+podwójnym): co kratkę prostokątna, ciemna dziurka, a w niej dwa druty – każdy to zamknięta pętla, która wychodzi z dziurki,
+wygina się nad lewą krawędzią kartki (z połyskiem i cieniem na kartce) i wraca pod kartką. Przewracanie kartki, obraz w notatce
+i miejsce przy lewym brzegu ekranu działają jak przy spirali.
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno
 **Nowe pole tekstowe** – tekst (Enter zaczyna nowy wiersz, długi wiersz łamie się sam), wielkość
 (Mała, Średnia, Duża, od 1.18 Bardzo duża) i kolor; przycisk **Σ** – okno **Nowy wzór**: zapis jak we wzorze w notatce,

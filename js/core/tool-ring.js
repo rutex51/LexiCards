@@ -215,12 +215,48 @@ export function rotationFor(index, count, current = 0) {
 }
 
 /**
- * Promień okręgu małych kółek (od 1.57): co najmniej `base`, a przy wielu kółkach (mniejszy odstęp kątowy) większy –
- * tak, żeby między sąsiednimi kółkami o średnicy `size` było co najmniej `gap` px.
+ * Odstęp kątowy widocznych małych kółek (od 1.58, stopnie): co najmniej 45°, a tyle, żeby między kółkami o średnicy
+ * `size` na okręgu o promieniu `radius` było co najmniej `gap` px – promień się nie zmienia.
  */
-export function ringRadius(count, base, size, gap) {
-  const { step } = ringStep(count);
-  return Math.max(base, Math.ceil((size + gap) / (2 * Math.sin((step * Math.PI) / 360))));
+export function ringPitch(radius, size, gap) {
+  const half = Math.min(1, (size + gap) / (2 * radius));
+  return Math.max(45, Math.round(((Math.asin(half) * 360) / Math.PI) * 10) / 10);
+}
+/** Najmniejszy odstęp kółek ściśniętych za wycinkiem (stopnie). */
+const PACKED_MIN = 14;
+
+/**
+ * Do ilu stopni od środka wycinka kółka leżą co `pitch` (dalej – ściśnięte): `span`, ale najwyżej tyle, żeby za tą
+ * częścią zostało co najmniej PACKED_MIN° na kółko. Infinity – kółka nie są ściskane (wszystkie co `pitch`, a okrąg
+ * zamknięty – równo: 8 kółek co 45°; bez zamkniętego okręgu – co `pitch`).
+ */
+function evenSpan(count, pitch, span) {
+  const { wrap } = ringStep(count);
+  if (!wrap || count * pitch <= 360) return Infinity;
+  const room = (180 - (PACKED_MIN * count) / 2) / (1 - PACKED_MIN / pitch);
+  return Math.max(0, Math.min(span, room));
+}
+
+/**
+ * Kąt (stopnie od środka wycinka) kółka oddalonego o `slots` miejsc od środka (od 1.58): widoczne kółka co `pitch`;
+ * gdy na całym okręgu co `pitch` się nie mieszczą (zamknięty okrąg), kółka dalej niż `span` stopni od środka – tam,
+ * gdzie kółka już nie widać – są ściśnięte w pozostałej części okręgu.
+ */
+export function slotAngle(slots, count, pitch, span) {
+  const uniform = evenSpan(count, pitch, span);
+  if (uniform === Infinity) return slots * (ringStep(count).wrap ? 360 / count : pitch);
+  const half = count / 2;
+  const even = uniform / pitch;
+  const size = Math.abs(slots);
+  if (size <= even) return slots * pitch;
+  return Math.sign(slots) * (uniform + ((size - even) * (180 - uniform)) / (half - even));
+}
+
+/** Przeciągnięcie palcem o 1° obraca kółka o tyle stopni obrotu (`ringStep`) – kółko pod palcem idzie za nim. */
+export function ringDragRatio(count, pitch) {
+  const { step, wrap } = ringStep(count);
+  if (!wrap) return step / pitch;
+  return count * pitch <= 360 ? 1 : step / pitch;
 }
 
 /** Środek widocznego wycinka: kółko po prawej – w dół i w lewo (do środka ekranu), po lewej – w dół i w prawo. */
@@ -240,17 +276,24 @@ const EDGE_FADE = 26;
  * brzegów }: im dalej od brzegów, tym szerszy wycinek, z dala od nich – cały okrąg; kółka przy którymkolwiek
  * brzegu znikają.
  */
-export function ringItems({ count, rotation, side, radius, edge, size, free = null }) {
+export function ringItems({ count, rotation, side, radius, edge, size, free = null, pitch = 45 }) {
   const { step, wrap } = ringStep(count);
   const center = free ? free.angle : RING_CENTER[side] ?? RING_CENTER.right;
   const right = side !== 'left';
   const clearance = free ? Math.min(free.room.left, free.room.right, free.room.top, free.room.bottom) : 0;
   const open = free ? clamp((clearance - radius * 0.6) / (radius * 0.9), 0, 1) : 0;
-  const full = RING_FULL + (180 - RING_FULL) * open;
-  const fadeEnd = RING_FADE_END + (181 - RING_FADE_END) * open;
+  let full = RING_FULL + (180 - RING_FULL) * open;
+  let fadeEnd = RING_FADE_END + (181 - RING_FADE_END) * open;
+  // Od 1.58: kółka ściśnięte za widoczną częścią (slotAngle) nie prześwitują – wycinek (z zanikaniem) kończy się razem
+  // z nią, więc kółko wchodzi do wycinka dopiero z pełnym odstępem.
+  const even = evenSpan(count, pitch, fadeEnd);
+  if (even < fadeEnd) {
+    fadeEnd = even;
+    full = Math.min(full, even - (RING_FADE_END - RING_FULL));
+  }
   return Array.from({ length: count }, (_, index) => {
     const raw = index * step - rotation;
-    const offset = wrap ? wrapAngle(raw) : raw;
+    const offset = slotAngle((wrap ? wrapAngle(raw) : raw) / step, count, pitch, fadeEnd);
     const angle = right ? center + offset : center - offset;
     const rad = (angle * Math.PI) / 180;
     const x = radius * Math.cos(rad);

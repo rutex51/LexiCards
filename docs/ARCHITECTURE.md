@@ -2235,6 +2235,25 @@ porównuje `cardFaces` / `cardMedia` po sprawdzeniu (zapis z 1.56 z numerami str
   po lewej, `closeButton` (`note-left`, „Zamknij”) po prawej; identyfikatory testów bez zmian. Okna edycji (Anuluj /
   Zapisz, Gotowe) – bez zmian.
 
+## Pierścienie, odsuwanie zeszytu, kółko narzędzi o stałym promieniu (od 1.58)
+
+- **Pierścienie** (`js/ui/drawing.js`, `SPIRAL`): te same miejsca co dziurki spirali (`spiralHoles` – co kratkę, na środku
+  wysokości). `paintHoles` – prostokątna dziurka (`slot`: x 12, 22 × 20, zaokrąglona, ciemny gradient, jaśniejszy dolny i
+  prawy brzeg); `paintCoils` – w każdej dziurce dwa druty (y ± `pair`), każdy to elipsa wokół osi `axis` (−10) o promieniu
+  `radius` (32) i spłaszczeniu `tilt` (12): przednia połowa (kąt 0…π, w górę) – z cieniem i pasmami połysku `WIRE_SHINE`,
+  tylna (π…2π) – ciemniejsza, przycięta do x < 0 (pod kartką jej nie widać). `SPIRAL_OUT` 48 – miejsce za lewą krawędzią.
+  Płótno animacji przewracania korzysta z tych samych funkcji (`coilsOnFlip`).
+- **Odsuwanie zeszytu**: `fittedRange()` – dawne położenie (strona na środku albo w obrębie krawędzi); `clampView()` – zakres
+  rozszerzony tak, że każda krawędź strony może dojść do środka ekranu (`view.width / 2`, `view.height / 2`); `fitView()` –
+  przy „100%” i nowej kartce (`keepFit` w `resize`); przewracanie kartki z odsuniętej strony najpierw ustawia widok całej
+  strony (`viewShifted`), jak przy powiększeniu.
+- **Kółko narzędzi** (`core/tool-ring.js`): promień znów stały (`sizes.radius`; `ringRadius` z 1.57 usunięte).
+  `ringPitch(promień, średnica, odstęp)` – kąt między widocznymi kółkami (≥ 45°; telefon ok. 49,6°). `slotAngle(miejsca,
+  liczba, pitch, span)` – kółko o `miejsca` od środka wycinka: do `span` stopni co `pitch`, dalej (gdy okrąg zamknięty i nie
+  mieści wszystkich co `pitch`) – ściśnięte równo w reszcie okręgu, nie gęściej niż co 14°; `evenSpan` ogranicza `span`, żeby
+  było na to miejsce, a `ringItems` kończy na nim zanikanie (ściśnięte kółka zawsze niewidoczne). Obrót (`rotation`) –
+  nadal w krokach `ringStep`; przeciąganie przelicza ruch palca przez `ringDragRatio` (kółko pod palcem idzie za nim).
+
 ## Obraz na fiszce, kółko narzędzi, gumka przez kształty (od 1.57)
 
 - **Obraz na fiszce** (`study-session.js`, `css/app.css`): strona z obrazem – `.flashcard__body--media` (flex 1, bez marginesów

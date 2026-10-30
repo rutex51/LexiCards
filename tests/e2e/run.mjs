@@ -3386,9 +3386,12 @@ test('rysunek: „Narysuj” – pióro z naciskiem rysika, mysz, palec przesuwa
   await page.mouse.up();
   await waitUntil(() => darkAt(page, 0.35, 0.65), 'Kreska myszą');
 
-  // Palec po użyciu rysika nie rysuje (przesuwa stronę).
+  // Palec po użyciu rysika nie rysuje (przesuwa stronę – od 1.58 także przy 100%; „100%” – strona z powrotem na miejscu).
   await drawStroke(page, segment([0.2, 0.55], [0.6, 0.55]), { type: 'touch', id: 12 });
   await nextFrames(page);
+  assert.equal(await darkAt(page, 0.55, 0.3), false, 'palec przesunął stronę (kreska rysika – dalej w prawo)');
+  await editor.locator('[data-testid=drawing-zoom]').click();
+  await waitUntil(() => darkAt(page, 0.55, 0.3), 'Po „100%” strona na miejscu');
   assert.equal(await darkAt(page, 0.4, 0.55), false, 'palec nie rysuje, gdy jest rysik');
 
   // Dwa palce rozsuwane – powiększenie; pigułka „100%” wraca do całej strony.
@@ -7288,11 +7291,18 @@ test('rysunek 1.24 na telefonie: pole tekstowe na kółku liniuszka – dotknię
 
 /** Piksel [r, g, b, a] płótna animacji kartki w punkcie (ułamki płótna). */
 const flipPixel = (page, x, y) => page.locator('.drawing__flip').evaluate((canvas, [fx, fy]) => [...canvas.getContext('2d').getImageData(Math.round(canvas.width * fx), Math.round(canvas.height * fy), 1, 1).data], [x, y]);
-/** Zwój spirali na płótnie przewracanej kartki – najmniej przezroczysty piksel z okolicy 5 × 5 px (od 1.32 strona bywa mniejsza, zwój cieńszy). */
+/**
+ * Drut grzbietu na płótnie przewracanej kartki – z okolicy 5 × 5 px (od 1.32 strona bywa mniejsza, drut cieńszy) najmniej
+ * przezroczysty piksel, a od 1.58 spośród prawie nieprzezroczystych – najciemniejszy (drut pierścienia ma jasny połysk).
+ */
 const flipCoil = (page, x, y) => page.locator('.drawing__flip').evaluate((canvas, [fx, fy]) => {
   const data = canvas.getContext('2d').getImageData(Math.round(canvas.width * fx) - 2, Math.round(canvas.height * fy) - 2, 5, 5).data;
   let best = [0, 0, 0, 0];
-  for (let index = 0; index < data.length; index += 4) if (data[index + 3] > best[3]) best = [...data.slice(index, index + 4)];
+  const dark = (pixel) => Math.max(pixel[0], pixel[1], pixel[2]);
+  for (let index = 0; index < data.length; index += 4) {
+    const pixel = [...data.slice(index, index + 4)];
+    if (pixel[3] > best[3] + 30 || (pixel[3] > 200 && dark(pixel) < dark(best))) best = pixel;
+  }
   return best;
 }, [x, y]);
 
@@ -7370,7 +7380,7 @@ const livePixel = (page, x, y) => page.locator('[data-testid=drawing-canvas]').e
   return best;
 }, [x, y]);
 
-test('rysunek 1.24.1: spirala na lewym grzbiecie – dziurki w kartce i zwoje za krawędzią, nad kreską przy grzbiecie; strona z miejscem na spiralę; obraz rysunku w notatce bez spirali (komputer)', async ({ open }) => {
+test('rysunek 1.24.1 (od 1.58 pierścienie): grzbiet – dziurki w kartce i druty za krawędzią, nad kreską przy grzbiecie; strona z miejscem na pierścienie; obraz rysunku w notatce bez nich (komputer)', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
   const ids = await sampleLessons(page);
@@ -7382,15 +7392,21 @@ test('rysunek 1.24.1: spirala na lewym grzbiecie – dziurki w kartce i zwoje za
   // Kreska przy grzbiecie – pod dziurką i zwojem.
   await drawStroke(page, segment(at(4, holes[5]), at(500, holes[5]), 16));
   await nextFrames(page);
+  // Od 1.58 dziurka prostokątna i ciemna (x 13–33, wysokość 18).
   const hole = await pixelAt(page, ...at(28, holes[3] + 4));
-  assert.ok(Math.max(...hole) < 215 && Math.min(...hole) > 90, `dziurka – szara (${hole})`);
+  assert.ok(Math.max(...hole) < 90, `dziurka – ciemna (${hole})`);
   const paper = await pixelAt(page, ...at(28, holes[3] + 22));
   assert.ok(paper.every((value) => value > 240), `między dziurkami – papier (${paper})`);
-  // Zwój za krawędzią strony (x < 0) na warstwie bieżącej; między zwojami pusto.
-  const coil = await livePixel(page, ...at(-36, holes[3] + 22));
-  assert.ok(coil[3] > 200 && Math.max(...coil.slice(0, 3)) < 200, `zwój za krawędzią (${coil})`);
-  // Miejsce na spiralę: z lewej co najmniej tyle, ile wystaje (40 jednostek) i margines.
-  assert.ok(frame.left >= 40 * frame.scale + 13, `strona odsunięta od lewej krawędzi (${frame.left})`);
+  // Pierścień za krawędzią strony (x < 0) na warstwie bieżącej; między pierścieniami pusto.
+  const coil = await livePixel(page, ...at(-38, holes[3]));
+  assert.ok(coil[3] > 200 && Math.max(...coil.slice(0, 3)) < 200, `pierścień za krawędzią (${coil})`);
+  // Drut kończy się w dziurce (na kartce dalej – nic), a za pierścieniem (dalej w lewo) pusto.
+  const inside = await livePixel(page, ...at(44, holes[3]));
+  assert.ok(inside[3] < 60, `za dziurką na kartce – bez drutu (${inside})`);
+  const beyond = await livePixel(page, ...at(-58, holes[3]));
+  assert.ok(beyond[3] < 60, `za pierścieniem pusto (${beyond})`);
+  // Miejsce na pierścienie: z lewej co najmniej tyle, ile wystają (48 jednostek) i margines.
+  assert.ok(frame.left >= 48 * frame.scale + 13, `strona odsunięta od lewej krawędzi (${frame.left})`);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-spirala-grzbiet.png') });
 
   await editor.locator('[data-testid=drawing-done]').click();
@@ -7410,14 +7426,14 @@ test('rysunek 1.24.1: spirala na lewym grzbiecie – dziurki w kartce i zwoje za
   assert.ok(Math.max(...exported[1].slice(0, 3)) < 110, `kreska przy grzbiecie cała (${exported[1]})`);
 }, { device: DESKTOP });
 
-/** Środek ciemnych pikseli płótna zapisanych kresek (ekran, px) albo null. */
+/** Środek czerwonych pikseli płótna zapisanych kresek (ekran, px) albo null – od 1.58 znacznik czerwony (dziurki są ciemne). */
 const inkCenter = (page) => page.locator('.drawing__canvas:not(.drawing__canvas--live)').evaluate((canvas) => {
   const { data, width, height } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
   let [sx, sy, count] = [0, 0, 0];
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const index = (y * width + x) * 4;
-      if (data[index + 3] === 255 && data[index] < 90 && data[index + 1] < 90 && data[index + 2] < 90) {
+      if (data[index + 3] === 255 && data[index] > 150 && data[index + 1] < 90 && data[index + 2] < 90) {
         sx += x;
         sy += y;
         count += 1;
@@ -7458,6 +7474,7 @@ test('rysunek 1.24.2 na telefonie: dwa palce – powiększenie w miejscu rozsuwa
   // Znacznik (krzyżyk) w punkcie (1000, 600) strony – poza środkiem strony i ekranu (przy krawędzi strona
   // i tak nie wychodzi poza brzeg, więc tam punkt pod palcami nie mógłby zostać).
   const touch = (points) => drawStroke(page, points, { type: 'touch', id: 31 });
+  await press(editor, 'drawing-color-red');
   await touch(segment(frame.at(980, 600), frame.at(1020, 600), 6));
   await touch(segment(frame.at(1000, 580), frame.at(1000, 620), 6));
   const mark = await inkCenter(page);
@@ -7689,30 +7706,30 @@ test('rysunek 1.25.1: przewracana kartka przechodzi nad spiralę i poza stronę,
     await nextFrames(page);
   };
   await page.keyboard.press('PageDown');
-  // Zwój spirali przy wysokości 550 (dziurka w 528) – najdalej za krawędzią w x = −36.
+  // Pierścień w dziurce na wysokości 528 (od 1.58) – za krawędzią w x = −38.
   await moment(80);
-  const early = await flipCoil(page, ...at(-36, 550));
-  assert.ok(early[3] > 200 && Math.max(...early.slice(0, 3)) < 200, `na początku – zwój (${early})`);
-  // W ok. 60% kartka leży nad spiralą, za lewą krawędzią strony.
+  const early = await flipCoil(page, ...at(-38, 528));
+  assert.ok(early[3] > 200 && Math.max(...early.slice(0, 3)) < 200, `na początku – pierścień (${early})`);
+  // W ok. 60% kartka leży nad pierścieniami, za lewą krawędzią strony.
   await moment(560);
-  const covered = await flipPixel(page, ...at(-36, 550));
+  const covered = await flipPixel(page, ...at(-38, 528));
   assert.ok(covered[3] === 255 && Math.min(...covered.slice(0, 3)) > 200, `płat nad spiralą (${covered})`);
   const outside = await flipPixel(page, ...at(-120, 500));
   assert.ok(outside[3] === 255 && Math.min(...outside.slice(0, 3)) > 200, `płat poza stroną (${outside})`);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-kartka-nad-spirala.png') });
   // Od 1.26 płat znika później: w 700 ms (płaska część kartki ok. 5% strony) jeszcze przykrywa spiralę.
   await moment(700);
-  const late = await flipPixel(page, ...at(-36, 550));
+  const late = await flipPixel(page, ...at(-38, 528));
   assert.ok(late[3] === 255 && Math.min(...late.slice(0, 3)) > 200, `płat nad spiralą jeszcze w 700 ms (${late})`);
   // Zgięcie przy grzbiecie – płat znika, spirala znów widoczna.
   await moment(840);
-  const revealed = await flipCoil(page, ...at(-36, 550));
+  const revealed = await flipCoil(page, ...at(-38, 528));
   assert.ok(revealed[3] > 200 && Math.max(...revealed.slice(0, 3)) < 200, `spirala wyszła spod kartki (${revealed})`);
   await page.evaluate(() => { window.__freeze = null; });
   await waitUntil(() => page.locator('.drawing__flip').evaluate((element) => element.hidden), 'Animacja skończona');
   // Po animacji zwoje znów na warstwie bieżącej.
-  const live = await livePixel(page, ...at(-36, 550));
-  assert.ok(live[3] > 200, `zwój na warstwie bieżącej (${live})`);
+  const live = await livePixel(page, ...at(-38, 528));
+  assert.ok(live[3] > 200, `pierścień na warstwie bieżącej (${live})`);
 }, { device: DESKTOP });
 
 // ---------------------------------------------------------------- 1.26: okna, wstawianie obiektów, tabele
@@ -9557,11 +9574,11 @@ test('rysunek 1.35: spirala kończy się w ostatniej dziurce (bez zwoju w powiet
   const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Spirala</p>');
   const frame = await pageFrame(page);
   const { at } = frame;
-  // 24 dziurki co 44 jednostki: zwój między przedostatnią a ostatnią jest, za ostatnią – nie (drut kończy się w dziurce).
+  // 24 dziurki co 44 jednostki: pierścień (od 1.58) w ostatniej dziurce jest, pod nią – nic.
   const holes = Array.from({ length: 24 }, (_, index) => 44 + index * 44);
-  const wire = async (y) => (await livePixel(page, ...at(-36, y)))[3] > 200;
-  assert.ok(await wire(holes[22] + 22), 'zwój do ostatniej dziurki');
-  assert.ok(!(await wire(holes[23] + 22)), 'za ostatnią dziurką bez zwoju');
+  const wire = async (y) => (await livePixel(page, ...at(-38, y)))[3] > 200;
+  assert.ok(await wire(holes[23]), 'pierścień w ostatniej dziurce');
+  assert.ok(!(await wire(holes[23] + 22)), 'pod ostatnią dziurką bez drutu');
   const bottom = frame.screen(0, holes[23] + 44);
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-135-spirala-koniec.png'), clip: { x: bottom[0] - 70, y: bottom[1] - 200, width: 160, height: 220 } });
 
@@ -10157,7 +10174,7 @@ test('rysunek 1.38 na telefonie: okno tolerancji wymiaru z nowymi wyborami mieś
 
 // ---------------------------------------------------------------- 1.39: kółko przesuwane, menu, elementy na kartce
 
-test('rysunek 1.39: kółko przesuwane przytrzymaniem dużego kółka – w środku ekranu cały okrąg, przy brzegu część; zapamiętane; schowanie przywraca stałe miejsce (komputer)', async ({ open }) => {
+test('rysunek 1.39: kółko przesuwane przytrzymaniem dużego kółka – w środku ekranu cały okrąg (od 1.58: tyle kółek, ile mieści się z odstępem), przy brzegu część; zapamiętane; schowanie przywraca stałe miejsce (komputer)', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
   const ids = await sampleLessons(page);
@@ -10180,7 +10197,9 @@ test('rysunek 1.39: kółko przesuwane przytrzymaniem dużego kółka – w śro
   await waitUntil(() => ring.evaluate((element) => element.classList.contains('drawing-ring--placed')), 'Kółko przesunięte');
   const moved = await ringMain(editor, 'right').boundingBox();
   assert.ok(Math.abs(moved.x + moved.width / 2 - 640) < 4 && Math.abs(moved.y + moved.height / 2 - 440) < 4, `środek kółka w miejscu puszczenia (${Math.round(moved.x + moved.width / 2)}, ${Math.round(moved.y + moved.height / 2)})`);
-  await waitUntil(async () => (await visible()) === total, 'W środku ekranu – cały okrąg');
+  // Od 1.58 (stały promień) 12 kółek nie mieści się na okręgu z odstępem – w pełni widać 5 (co 45°), dalsze zanikają,
+  // reszta czeka ściśnięta (przy krawędzi w pełni – 3).
+  await waitUntil(async () => (await visible()) === Math.min(total, 5), 'W środku ekranu – cały okrąg (ile się mieści)');
   assert.equal(await editor.locator('[data-testid=drawing-shape-panel]').isHidden(), true, 'przesuwanie to nie dotknięcie');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-139-kolko-na-srodku.png') });
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('lexicards-drawing-tools')).ringPositions.right);
@@ -13671,23 +13690,36 @@ test('rysunek 1.55 na telefonie: „Połącz z…” i „Wytnij…” w panelu 
 
 // ---------------------------------------------------------------- 1.57
 
-test('rysunek 1.57: kółko narzędzi – odstęp między małymi kółkami (ponad 8 kółek – większy okrąg); kliknięcie myszą w kółko poza środkiem wycinka od razu wybiera grupę (wciśnięcie, chwila, puszczenie); klawiatura – fokus obraca grupę na środek', async ({ open }) => {
+test('rysunek 1.57 (od 1.58 stały promień): kółko narzędzi – odstęp między widocznymi małymi kółkami, reszta ściśnięta za wycinkiem; kliknięcie myszą w kółko poza środkiem wycinka od razu wybiera grupę (wciśnięcie, chwila, puszczenie); klawiatura – fokus obraca grupę na środek', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
   const ids = await sampleLessons(page);
   const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Kółka</p>');
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Pisanie');
-  // Odstęp między sąsiednimi małymi kółkami (środki na okręgu) – co najmniej 18 px.
-  const centers = await editor.locator('[data-testid=drawing-ring-right] .drawing-ring__group').evaluateAll((buttons) => buttons.map((button) => {
-    const box = button.getBoundingClientRect();
-    return { x: box.left + box.width / 2, y: box.top + box.height / 2, size: box.width };
-  }));
-  assert.ok(centers.length > 8, `${centers.length} kółek – cały okrąg`);
-  const gaps = centers.map((center, index) => {
-    const next = centers[(index + 1) % centers.length];
-    return Math.hypot(next.x - center.x, next.y - center.y) - center.size;
+  // Od 1.58: małe kółka na okręgu o promieniu 84 px (jak przed 1.57); widoczne – co najmniej 18 px od siebie,
+  // niewidoczne (za wycinkiem) – bliżej siebie.
+  const ring = async () => {
+    const main = await editor.locator('[data-testid=drawing-ring-right] .drawing-ring__main').boundingBox();
+    const items = await editor.locator('[data-testid=drawing-ring-right] .drawing-ring__group').evaluateAll((buttons) => buttons.map((button) => {
+      const box = button.getBoundingClientRect();
+      return { x: box.left + box.width / 2, y: box.top + box.height / 2, size: box.width, opacity: Number(button.style.opacity) };
+    }));
+    return { center: { x: main.x + main.width / 2, y: main.y + main.height / 2 }, items };
+  };
+  await page.waitForTimeout(400);
+  const { center, items } = await ring();
+  assert.ok(items.length > 8, `${items.length} kółek – cały okrąg`);
+  for (const item of items) {
+    const distance = Math.hypot(item.x - center.x, item.y - center.y);
+    assert.ok(Math.abs(distance - 84) < 1.5, `promień ${distance.toFixed(1)} px`);
+  }
+  const gaps = items.map((item, index) => {
+    const next = items[(index + 1) % items.length];
+    return { gap: Math.hypot(next.x - item.x, next.y - item.y) - item.size, shown: item.opacity > 0.3 && next.opacity > 0.3 };
   });
-  assert.ok(Math.min(...gaps) >= 17.5, `odstęp między kółkami ${Math.min(...gaps).toFixed(1)} px`);
+  const shownGaps = gaps.filter((item) => item.shown).map((item) => item.gap);
+  assert.ok(shownGaps.length >= 1 && Math.min(...shownGaps) >= 17.5, `odstęp między widocznymi kółkami ${Math.min(...shownGaps).toFixed(1)} px`);
+  assert.ok(Math.min(...gaps.filter((item) => !item.shown).map((item) => item.gap)) < 17.5, 'za wycinkiem kółka ściśnięte');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-157-kolko.png') });
 
   // „Kształty” – obok środka wycinka; wciśnięcie myszy, 300 ms, puszczenie – grupa wybrana za pierwszym razem.
@@ -13814,6 +13846,133 @@ test('rysunek 1.57 na telefonie: gumka – „Zaznaczenie” z wyborem prostoką
   assert.ok(shapes && shapes.x >= 0 && shapes.x + shapes.width <= 390, '„Także kształty” na ekranie');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-157-telefon-gumka-ksztalty.png') });
 }, { device: PHONE });
+
+// ---------------------------------------------------------------- rysunek 1.58
+
+/** Ile osobnych drutów przecina pionowy odcinek warstwy bieżącej w x (jednostki strony) od y0 do y1. */
+const wiresAcross = (page, frame, x, y0, y1) => page.locator('[data-testid=drawing-canvas]').evaluate((canvas, [sx, sy0, sy1]) => {
+  const ratio = canvas.width / canvas.getBoundingClientRect().width;
+  const data = canvas.getContext('2d').getImageData(Math.round(sx * ratio), Math.round(sy0 * ratio), 1, Math.round((sy1 - sy0) * ratio)).data;
+  let [runs, inside] = [0, false];
+  for (let index = 3; index < data.length; index += 4) {
+    // Cienki drut (ok. 2 px) bywa rozmyty na dwa piksele – próg niższy niż połowa.
+    const on = data[index] > 90;
+    if (on && !inside) runs += 1;
+    inside = on;
+  }
+  return runs;
+}, [frame.left + x * frame.scale, frame.top + y0 * frame.scale, frame.top + y1 * frame.scale]);
+
+/** Pierwszy i ostatni nieprzezroczysty wiersz strony w kolumnie x (ułamek płótna) – px płótna w CSS. */
+const pageRows = (page, fx = 0.5) => page.locator('.drawing__canvas:not(.drawing__canvas--live)').evaluate((canvas, column) => {
+  const ratio = canvas.getBoundingClientRect().width / canvas.width;
+  const data = canvas.getContext('2d').getImageData(Math.round(canvas.width * column), 0, 1, canvas.height).data;
+  let [first, last] = [-1, -1];
+  for (let index = 0; index < canvas.height; index += 1) {
+    if (data[index * 4 + 3] !== 255) continue;
+    if (first < 0) first = index;
+    last = index;
+  }
+  return { top: first * ratio, bottom: (last + 1) * ratio, height: canvas.height * ratio };
+}, fx);
+
+test('rysunek 1.58: pierścienie na grzbiecie – w każdej prostokątnej dziurce dwa druty, pętla za krawędzią kartki (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await openDrawingEditorFromNote(page, ids.statements, '<p>Pierścienie</p>');
+  const frame = await pageFrame(page);
+  const { at } = frame;
+  const holes = Array.from({ length: 24 }, (_, index) => 44 + index * 44);
+  for (const y of [holes[0], holes[11], holes[23]]) {
+    // Dziurka: prostokąt x 12–34, wysokość 20 – ciemna w środku i przy rogach; obok niej papier.
+    for (const [x, dy] of [[23, 0], [15, -7], [31, 7]]) {
+      const pixel = await pixelAt(page, ...at(x, y + dy));
+      assert.ok(Math.max(...pixel) < 90, `dziurka ${y}: (${x}, ${dy}) ciemna (${pixel})`);
+    }
+    for (const [x, dy] of [[23, 16], [42, 0]]) {
+      const pixel = await pixelAt(page, ...at(x, y + dy));
+      assert.ok(Math.min(...pixel.slice(0, 3)) > 230, `obok dziurki ${y}: (${x}, ${dy}) papier (${pixel})`);
+    }
+  }
+  // W każdej dziurce dwa druty: przednie połowy pętli nad krawędzią i tylne pod nią – pionowa linia przy osi przecina
+  // każdy pierścień cztery razy.
+  const counts = [];
+  for (const y of holes) counts.push(await wiresAcross(page, frame, -10, y - 21, y + 21));
+  assert.deepEqual(counts, holes.map(() => 4), 'dwa druty w każdym pierścieniu');
+  const [x0, y0] = frame.screen(-70, 10);
+  const [x1, y1] = frame.screen(330, 420);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-158-pierscienie.png'), clip: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } });
+  // Z bliska (powiększenie przy grzbiecie).
+  const [sx, sy] = frame.screen(10, 300);
+  await page.mouse.move(sx, sy);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -500);
+  await page.keyboard.up('Control');
+  await nextFrames(page);
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-158-pierscienie-z-bliska.png') });
+}, { device: DESKTOP });
+
+test('rysunek 1.58: zeszyt odsuwany w górę – dolna krawędź kartki najwyżej do środka ekranu (środkowy przycisk, kółko myszy); rysowanie przy dolnym brzegu; „100%” i nowa kartka – znów na środku (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Zeszyt</p>');
+  const frame = await pageFrame(page);
+  const start = await pageRows(page);
+  assert.ok(start.bottom > start.height * 0.9, `na początku dolna krawędź przy dole ekranu (${start.bottom} z ${start.height})`);
+  // Środkowy przycisk: przeciągnięcie daleko w górę – strona idzie w górę, aż dolna krawędź dojdzie do środka ekranu.
+  const [sx, sy] = frame.screen(800, 900);
+  await page.mouse.move(sx, sy);
+  await page.mouse.down({ button: 'middle' });
+  await page.mouse.move(sx, sy - 1500, { steps: 10 });
+  await page.mouse.up({ button: 'middle' });
+  await nextFrames(page);
+  const up = await pageRows(page);
+  const middle = up.height / 2;
+  assert.ok(Math.abs(up.bottom - middle) < 2, `dolna krawędź na środku ekranu (${up.bottom}, środek ${middle})`);
+  // Rysowanie przy dolnym brzegu kartki – teraz w połowie wysokości ekranu (górna część strony – nad ekranem).
+  const top = up.bottom - 1100 * frame.scale;
+  assert.ok(top < 0, 'górna część kartki nad ekranem');
+  const at = (x, y) => [(frame.left + x * frame.scale) / frame.width, (top + y * frame.scale) / frame.height];
+  await drawStroke(page, segment(at(300, 1060), at(900, 1060), 12));
+  await nextFrames(page);
+  assert.ok(Math.max(...(await pixelAt(page, ...at(600, 1060))).slice(0, 3)) < 110, 'kreska przy dolnym brzegu');
+  // Dalej się nie da – dolna krawędź zostaje przy środku.
+  await page.mouse.move(sx, sy - 200);
+  await page.mouse.down({ button: 'middle' });
+  await page.mouse.move(sx, sy - 600, { steps: 6 });
+  await page.mouse.up({ button: 'middle' });
+  await nextFrames(page);
+  assert.ok(Math.abs((await pageRows(page)).bottom - up.bottom) < 1.5, 'najwyżej do środka ekranu');
+  // Kółko myszy (jedna kartka) przesuwa stronę z powrotem w dół.
+  await page.mouse.move(sx, sy - 300);
+  await page.mouse.wheel(0, -200);
+  await waitUntil(async () => (await pageRows(page)).bottom > up.bottom + 150, 'Kółko myszy przesuwa stronę');
+  // „100%” – znów na swoim miejscu.
+  await editor.locator('[data-testid=drawing-zoom]').click();
+  await nextFrames(page);
+  const reset = await pageRows(page);
+  assert.ok(Math.abs(reset.top - start.top) < 1.5 && Math.abs(reset.bottom - start.bottom) < 1.5, `„100%” – na środku (${reset.top})`);
+  // Odsunięta strona i nowa kartka: przewraca się z widoku całej strony, nowa – na środku.
+  await page.mouse.move(sx, sy);
+  await page.mouse.down({ button: 'middle' });
+  await page.mouse.move(sx, sy - 300, { steps: 6 });
+  await page.mouse.up({ button: 'middle' });
+  await editor.locator('[data-testid=drawing-pages]').click();
+  await page.locator('[data-testid=drawing-page-new]').click();
+  await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 2 z 2');
+  await waitUntil(() => page.locator('.drawing__flip').evaluate((element) => element.hidden), 'Animacja skończona');
+  const next = await pageRows(page);
+  assert.ok(Math.abs(next.top - start.top) < 1.5, `nowa kartka na środku (${next.top})`);
+  await page.mouse.move(sx, sy);
+  await page.mouse.down({ button: 'middle' });
+  await page.mouse.move(sx, sy - 1500, { steps: 10 });
+  await page.mouse.up({ button: 'middle' });
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-158-zeszyt-w-gore.png') });
+}, { device: DESKTOP });
 
 // ---------------------------------------------------------------- fiszki 1.56
 

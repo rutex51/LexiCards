@@ -9,13 +9,14 @@
 // i przeciągnięcie przesuwa całe kółko w dowolne miejsce (wycinek małych kółek obraca się w stronę
 // środka ekranu, z dala od brzegów – cały okrąg); schowanie przywraca stałe miejsce przy krawędzi.
 
-import { clampRotation, ringFacing, ringItems, ringRadius, ringStep, rotationFor, snapRotation } from '../core/tool-ring.js';
+import { clampRotation, ringDragRatio, ringFacing, ringItems, ringPitch, ringStep, rotationFor, snapRotation } from '../core/tool-ring.js';
 import { h } from './dom.js';
 import { icon } from './icons.js';
 
 /**
- * Wymiary (px): duże kółko, małe kółko, najmniejszy promień okręgu, odległość środka dużego kółka od krawędzi ekranu
- * i (od 1.57) najmniejszy odstęp między małymi kółkami – przy wielu kółkach okrąg jest większy (ringRadius).
+ * Wymiary (px): duże kółko, małe kółko, promień okręgu małych kółek, odległość środka dużego kółka od krawędzi ekranu
+ * i (od 1.57) najmniejszy odstęp między widocznymi małymi kółkami. Od 1.58 promień jest stały: odstęp daje kąt między
+ * kółkami (ringPitch), a przy wielu kółkach te za wycinkiem są ściśnięte (slotAngle).
  */
 const SIZES = Object.freeze({
   wide: { main: 84, small: 46, radius: 84, edge: 78, gap: 18 },
@@ -110,8 +111,9 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
       y: Math.min(space.height - margin, Math.max(margin, position.y * space.height))
     };
   }
-  /** Promień okręgu przy obecnej liczbie małych kółek. */
-  const radius = () => ringRadius(buttons.length, sizes.radius, sizes.small, sizes.gap);
+  const radius = () => sizes.radius;
+  /** Kąt między widocznymi małymi kółkami (od 1.58). */
+  const pitch = () => ringPitch(sizes.radius, sizes.small, sizes.gap);
   function layout() {
     const box = 2 * (radius() + sizes.small / 2 + 4);
     element.style.width = `${box}px`;
@@ -134,7 +136,7 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
       element.style.top = `calc(var(--drawing-ring-top, 10px) + ${sizes.main / 2 - box / 2}px)`;
     }
     element.classList.toggle('drawing-ring--placed', Boolean(free));
-    const items = ringItems({ count: buttons.length, rotation, side, radius: radius(), edge: sizes.edge, size: sizes.small, free });
+    const items = ringItems({ count: buttons.length, rotation, side, radius: radius(), edge: sizes.edge, size: sizes.small, free, pitch: pitch() });
     for (const item of items) {
       const button = buttons[item.index];
       button.style.left = `${box / 2 + item.x - sizes.small / 2}px`;
@@ -204,7 +206,9 @@ export function createRing({ side, groups: initial, label, onPick, onMain, onHid
       }
     }
     event.preventDefault();
-    rotation = clampRotation(right ? drag.rotation - delta : drag.rotation + delta, buttons.length);
+    // Od 1.58 widoczne kółka leżą co pitch() – kółko pod palcem idzie za palcem.
+    const turned = delta * ringDragRatio(buttons.length, pitch());
+    rotation = clampRotation(right ? drag.rotation - turned : drag.rotation + turned, buttons.length);
     layout();
   });
   const endDrag = (event) => {
