@@ -253,3 +253,12 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
 - **Patenty:** szczególnego ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – bazy zablokowane,
   AUDIT_LIMITATIONS.md).
 - Nowych pozycji rejestru algorytmów brak (bez algorytmów geometrii). Ryzyko wstępnie NISKIE.
+
+## Uzupełnienie: wersja 1.56.1 (30.10.2026) – poprawki stron fiszki (bez zmian w modułach CAD)
+
+- **Zakres:** kierunki obrotów fiszki (pierwszy od prawej do lewej, następne z dołu do góry, powrót od lewej do prawej),
+  część strony „Obraz” (wszystkie obrazy i tabele z notatki przypięte do pojęcia), wybór obrazów na kafelkach
+  z miniaturami w oknie pojęcia (`js/core/card-faces.js`, `js/ui/actions.js`, `js/ui/screens/study-session.js`,
+  `study-setup.js`). Miniatury z obrazów i tabel notatek użytkownika, bez zewnętrznych usług.
+- **Funkcje:** ogólne elementy interfejsu (kafelki z miniaturą i znacznikiem wyboru, przełącznik części); nazwy opisowe.
+- Nowych pozycji rejestru algorytmów brak. Ryzyko wstępnie NISKIE.
