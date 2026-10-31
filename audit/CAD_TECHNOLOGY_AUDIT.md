@@ -337,3 +337,13 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
 - **Zakres:** ustawienie koloru teczki magicznych fiszek (żółta, czarna, szara, biała; przy złotej fiszce domyślnie szara) –
   `js/core/model.js`, `js/main.js`, `js/theme-boot.js`, `js/ui/screens/settings.js`, tokeny w `css/app.css`.
 - **Funkcje i patenty:** same kolory interfejsu, bez nowych technik. Ryzyko wstępnie NISKIE.
+
+## Uzupełnienie: wersja 1.62.2 (31.10.2026) – szybkie fiszki
+
+- **Zakres:** nowa nazwa funkcji w interfejsie i dokumentacji – „szybkie fiszki” zamiast „magicznych fiszek” (nazwy w kodzie
+  `magic*` bez zmian); naprawa błędu: kolor fiszki na `<html>` w osobnym atrybucie `data-magic-color` (wcześniej
+  `data-magic`, ten sam co oznaczenie fragmentów – przy złocie i turkusie blokował dodawanie) – `js/ui/magic.js`,
+  `js/main.js`, `js/theme-boot.js`, `css/app.css`.
+- **Nazwa:** „Szybka fiszka” to opisowe, potoczne określenie funkcji (nie nazwa produktu). Przy komercjalizacji – jak przy
+  każdej nazwie – zalecane sprawdzenie w bazach znaków towarowych (AUDIT_LIMITATIONS.md); wyszukiwania nie robiono.
+- **Funkcje i patenty:** bez nowych technik. Ryzyko wstępnie NISKIE.
