@@ -12,7 +12,8 @@
 //     'done' – dodana do lekcji jako pojęcie: { no, state: 'done', termID, doneAt } (bez fragmentów –
 //     fragmenty w treści zostają oznaczone, z sygnaturą).
 //   slot: pole fiszki (MAGIC_SLOTS) albo null – fragment jeszcze w „worku”; lessonID – lekcja docelowa
-//   (bez – lekcja notatki); next – numer następnego fragmentu.
+//   (bez – lekcja notatki); next – numer następnego fragmentu; od 1.63 texts – tekst wpisany ręcznie w polach
+//   tekstowych ({ termPL: '…', … }, tylko niepuste) – dopisany za fragmentami pola.
 //
 // settleMagic() przy każdym zapisie notatki porządkuje oba końce: fiszka traci fragmenty, których nie ma
 // już w treści (usunięty tekst), a treść traci oznaczenia, których nie ma na żadnej fiszce.
@@ -25,6 +26,22 @@ import { collapseWhitespace } from './text.js';
 export const MAGIC_SLOTS = Object.freeze(['termPL', 'termEN', 'defPL', 'defEN', 'exPL', 'exEN', 'media']);
 /** Najwyższy numer fiszki i fragmentu (sygnatura ma najwyżej trzy cyfry po obu stronach kropki). */
 export const MAGIC_MAX = 999;
+/** Pola, w których można też wpisać tekst ręcznie (od 1.63) – wszystkie poza obrazem. */
+export const MAGIC_TEXT_SLOTS = Object.freeze(MAGIC_SLOTS.filter((slot) => slot !== 'media'));
+/** Najwięcej znaków tekstu wpisanego w polu. */
+export const MAGIC_TEXT_MAX = 500;
+
+/** Sprawdzony tekst wpisany ręcznie w polach fiszki ({ pole: tekst }, bez pustych) albo null. */
+export function cleanMagicTexts(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const texts = {};
+  for (const slot of MAGIC_TEXT_SLOTS) {
+    if (typeof raw[slot] !== 'string') continue;
+    const text = collapseWhitespace(raw[slot]).slice(0, MAGIC_TEXT_MAX).trim();
+    if (text) texts[slot] = text;
+  }
+  return Object.keys(texts).length > 0 ? texts : null;
+}
 
 const STATES = ['active', 'folder', 'done'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}T/;
@@ -109,7 +126,9 @@ export function cleanMagic(raw, fragments = null) {
       frags.push({ sig, slot: MAGIC_SLOTS.includes(frag.slot) ? frag.slot : null });
       next = Math.max(next, sigPart(sig) + 1);
     }
-    if (frags.length === 0) continue;
+    // Od 1.63 fiszka z samym tekstem wpisanym ręcznie też zostaje.
+    const texts = cleanMagicTexts(item.texts);
+    if (frags.length === 0 && !texts) continue;
     let state = item.state;
     if (state === 'active') {
       if (active) state = 'folder';
@@ -118,6 +137,7 @@ export function cleanMagic(raw, fragments = null) {
     numbers.add(no);
     cards.push({
       no, state, frags, next: Math.min(MAGIC_MAX + 1, next),
+      ...(texts ? { texts } : {}),
       ...(typeof item.lessonID === 'string' && item.lessonID ? { lessonID: item.lessonID } : {}),
       ...(state === 'folder' && validDate(item.sentAt) ? { sentAt: item.sentAt } : {})
     });
@@ -199,16 +219,18 @@ export function nextMagicNumber(magic, fragments = null) {
 }
 
 /**
- * Stan fiszki: { count – fragmenty w treści, loose – w worku, term – jest pojęcie (PL albo EN), complete –
- * pojęcie po polsku i po angielsku oraz definicja, przykład albo obraz }.
+ * Stan fiszki: { count – fragmenty w treści, loose – w worku, typed – pola z tekstem wpisanym ręcznie (od 1.63),
+ * term – jest pojęcie (PL albo EN), complete – pojęcie po polsku i po angielsku oraz definicja, przykład albo obraz }.
+ * Pole wypełnia fragment albo tekst wpisany ręcznie.
  */
 export function magicCardStatus(card, fragments) {
   const live = (card.frags ?? []).filter((frag) => fragments.has(frag.sig));
-  const filled = (slots) => live.some((frag) => slots.includes(frag.slot));
+  const filled = (slots) => live.some((frag) => slots.includes(frag.slot)) || slots.some((slot) => Boolean(card.texts?.[slot]));
   const term = filled(['termPL', 'termEN']);
   return {
     count: live.length,
     loose: live.filter((frag) => !frag.slot).length,
+    typed: Object.keys(card.texts ?? {}).length,
     term,
     complete: filled(['termPL']) && filled(['termEN']) && filled(['defPL', 'defEN', 'exPL', 'exEN', 'media'])
   };
@@ -216,13 +238,14 @@ export function magicCardStatus(card, fragments) {
 
 /**
  * Szkic pojęcia z fiszki (pola formularza pojęcia): teksty fragmentów w polu – w kolejności dodania, rozdzielone
- * spacją; obrazy i tabele z pola „Obraz” – przypięte do fiszki (media: false – bez nich, np. pojęcie w innej
- * lekcji niż notatka). tableLabels – sygnatury tabel notatki (pozostałe obiekty to obrazy).
+ * spacją, na końcu (od 1.63) tekst wpisany w polu ręcznie; obrazy i tabele z pola „Obraz” – przypięte do fiszki
+ * (media: false – bez nich, np. pojęcie w innej lekcji niż notatka). tableLabels – sygnatury tabel notatki
+ * (pozostałe obiekty to obrazy).
  */
 export function magicTermDraft(card, fragments, { tableLabels = [], media = true } = {}) {
   const live = (card.frags ?? []).filter((frag) => fragments.has(frag.sig));
-  const join = (slot) => collapseWhitespace(live.filter((frag) => frag.slot === slot && !fragments.get(frag.sig).object)
-    .map((frag) => fragments.get(frag.sig).text).join(' '));
+  const join = (slot) => collapseWhitespace([...live.filter((frag) => frag.slot === slot && !fragments.get(frag.sig).object)
+    .map((frag) => fragments.get(frag.sig).text), card.texts?.[slot] ?? ''].join(' '));
   const tables = new Set(tableLabels.map(labelKey));
   const cardMedia = media
     ? live.filter((frag) => frag.slot === 'media' && fragments.get(frag.sig).object)

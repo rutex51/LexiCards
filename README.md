@@ -1,4 +1,4 @@
-# LexiCards 1.62.2
+# LexiCards 1.63
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -72,8 +72,9 @@ Rysunek – tablica A0: kartka rysunku jako duży arkusz bez wyglądu zeszytu (w
 Notatki – edycja tekstu w dwóch widokach: „Ciągły” (jak dotąd) i „Książka” – tekst w stronach na wysokość okna, kartki przewracane przyciskami, PageUp / PageDown i same, gdy kursor przechodzi na inną stronę, z tym samym zagięciem kartki co w podglądzie (wersja 1.60): [docs/RELEASE-1.60.md](docs/RELEASE-1.60.md).
 Rysunek – tablica A0 w skali zeszytu: kartka zeszytu na środku tablicy, po przejściu rysunek w tym samym miejscu ekranu, pomniejszenie do całej tablicy, rulon przez cały ekran; notatki – edycja w dwóch stronach obok siebie (ustawienie wspólne z podglądem) (wersja 1.61): [docs/RELEASE-1.61.md](docs/RELEASE-1.61.md).
 Szybkie fiszki – zaznaczony tekst i odwołania [[…]] z notatki lecą jako błyszczące piksele na fiszkę obok edytora, fragmenty przeciągasz do pól (pojęcie, definicja, przykład, obraz), fiszka wpada do teczki 3D, a z teczki – po sprawdzeniu – do lekcji; kolor fiszki: fiolet, złoto albo turkus (wersja 1.62); kolor teczki – żółta, czarna, szara, biała (1.62.1); nowa nazwa „szybkie fiszki” (dawniej magiczne) i naprawa dodawania fragmentów przy złotym i turkusowym kolorze (1.62.2): [docs/RELEASE-1.62.md](docs/RELEASE-1.62.md).
+Szybkie fiszki – tekst wpisany ręcznie w polach przy „Uporządkuj” (oprócz przeciągania); rysunek – wiaderko (wypełnienie zamkniętego obszaru kolorem pod liniami), kolor kartki (jasne tony i pełna paleta), arkusze A3, A2, A1, A0, 2A0 i 4A0 zamiast „tablicy A0” z jasnoszarą ramką obszaru kartki bez podpisu, nowe kształty od linii ciągłej bez wypełnienia; iPhone – okno tekstu notatki nad klawiaturą z widocznym paskiem formatowania (wersja 1.63): [docs/RELEASE-1.63.md](docs/RELEASE-1.63.md).
 
-## Co potrafi wersja 1.62.2
+## Co potrafi wersja 1.63
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -202,7 +203,9 @@ Szybkie fiszki – zaznaczony tekst i odwołania [[…]] z notatki lecą jako b�
   Od 1.24.1 kartka w edytorze wygląda
   jak w zeszycie na spirali (dziurki i zwoje przy lewym grzbiecie; obraz w notatce – bez nich), od 1.58 – na pierścieniach
   (prostokątne dziurki, w każdej dwa druty); zeszyt można odsunąć w górę, aż dolna krawędź kartki dojdzie do środka ekranu.
-  Od 1.59 kartka może być **tablicą A0** – dużym arkuszem bez wyglądu zeszytu (przy przejściu zwija się w rulon). Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
+  Od 1.59 kartka może być dużym **arkuszem** bez wyglądu zeszytu (przy przejściu zwija się w rulon; do 1.62 „tablica A0”, od
+  1.63 w formatach A3, A2, A1, A0, 2A0 i 4A0). Od 1.63 **wiaderko** wypełnia kolorem zamknięty obszar (pod liniami), a **kolor
+  kartki** wybierasz w „Tło strony”. Na zdjęciu – **Rysuj na zdjęciu**. Rysunek jest obrazem notatki
   (sygnatura, `[[Rysunek 1]]` w tekście), a jego kreski, pola tekstowe i wzory zostają do poprawy.
 - Import pojęć z pliku XLSX lub CSV w kreatorze: wybór arkusza, przypisanie kolumn, miejsce w bibliotece,
   sprawdzenie danych, podgląd i zatwierdzenie. Duplikaty można pominąć, zaktualizować albo dodać.
@@ -376,7 +379,8 @@ fiszek (ikona u góry). Okno pokazuje tekst i obrazy; dotknięcie obrazu powięk
 dwukrotne dotknięcie). Od 1.56 w nagłówku podglądu **Edytuj** jest po lewej, a **Zamknij** po prawej.
 Od 1.29 edycja ma dwa osobne okna nad podglądem:
 - **Edytuj** – okno tekstu na cały ekran (jak edytor rysunku): pasek formatowania i duże pole tekstu
-  (na komputerze kolumna na środku). Obok nazwy lekcji: **mikrofon** (notatka głosowa nagrywa się
+  (na komputerze kolumna na środku). Od 1.63 na telefonie z klawiaturą okno zajmuje widoczną część ekranu nad nią – pasek
+  formatowania zostaje u góry (wcześniej na iPhonie bywał przesunięty poza ekran). Obok nazwy lekcji: **mikrofon** (notatka głosowa nagrywa się
   w trakcie pisania) i **spinacz z liczbą** obrazów, tabel i załączników – otwiera nad tekstem okno
   **Obrazy i załączniki** („Gotowe” wraca do tekstu; zapisuje się wszystko razem). Obraz wklejony do
   tekstu (albo upuszczony na tekst) trafia do obrazów, a w tekście – jego odwołanie.
@@ -1105,7 +1109,12 @@ wycinek i „Osadź” są bez spirali, a kreska narysowana pod dziurką zostaje
 podwójnym): co kratkę prostokątna, ciemna dziurka, a w niej dwa druty – każdy to zamknięta pętla, która wychodzi z dziurki,
 wygina się nad lewą krawędzią kartki (z połyskiem i cieniem na kartce) i wraca pod kartką. Przewracanie kartki, obraz w notatce
 i miejsce przy lewym brzegu ekranu działają jak przy spirali.
-**Tablica A0** (od 1.59): w menu **Kartki** (pigułka „Kartka 1 z 2”) – **Zamień na tablicę A0** i **Nowa tablica A0**. Tablica
+**Arkusz** (od 1.63; w 1.59–1.62 „tablica A0”): w menu **Kartki** – **Nowy arkusz…** i **Zamień na arkusz…** z wyborem formatu
+**A3, A2, A1, A0, 2A0 albo 4A0** (poziomo, proporcje √2; A3 ma wysokość kartki zeszytu, A0 – cztery razy kartka, 4A0 – osiem
+razy); na arkuszu – **Format arkusza: A2…** zmienia format w miejscu (obszar kartki zostaje na środku, rysunek – w tym samym
+miejscu ekranu; mniejszy format – tylko gdy rysunek się mieści, inaczej przy formacie dopisek „rysunek się nie mieści”).
+Obszar kartki zeszytu to od 1.63 jasnoszara przerywana ramka bez podpisu. Na liście kartek – „(arkusz A2)”. Opis z 1.59–1.61
+(tam „tablica” – dziś arkusz A0): **Tablica A0** (od 1.59): w menu **Kartki** (pigułka „Kartka 1 z 2”) – **Zamień na tablicę A0** i **Nowa tablica A0**. Tablica
 to duży arkusz bez wyglądu zeszytu (bez pierścieni, z szarą ramą), cztery razy szerszy i wyższy od kartki (gdy kartka to A4 –
 wymiary A0, proporcje √2). Od 1.61 tablica jest w **skali zeszytu**: „100%” to ta sama skala co kartka, a obszar kartki
 zeszytu (niebieska przerywana ramka „Obszar kartki zeszytu”) leży **na środku tablicy** – dokładnie tam, gdzie na ekranie
@@ -1119,6 +1128,16 @@ obrazu kartki – rysunek do poprawy zostaje tablicą. **Przejście między kart
 w rulon od prawego dolnego rogu (walec z odwrotu papieru, z cieniem) i odsłania następną kartkę pod spodem; przejście na tablicę
 – tablica rozwija się z rulonu nad zeszytem. Od 1.61 tablica zakrywa cały ekran, więc rulon przechodzi przez cały ekran, a pod
 spodem zostaje zwykły zeszyt. Między kartkami zeszytu – przewracanie jak dotąd.
+**Wiaderko** (od 1.63, grupa **Pisanie** obok gumki): dotknięcie wnętrza zamkniętego obszaru wypełnia go kolorem – jak w programach
+do malowania, także obszar zamknięty kilkoma kreskami albo odręczną pętlą (szczeliny do ok. 6 px ekranu są domykane).
+Wypełnienie leży **pod liniami** (linie zostają na wierzchu), a mniejsze zamknięte obszary w środku zostają puste (otwory).
+Kolory – siedem jasnych tonów i „+” (siatka, suwaki, pipetka); to samo miejsce drugi raz – nowy kolor zamiast poprzedniego.
+Obszar otwarty (wypełnienie doszłoby do brzegu kartki) albo wychodzący poza widoczną część ekranu – komunikat. Wypełnienie
+zaznaczasz, przesuwasz, obracasz, kolor zmieniasz paletą jak kreskę; gumka całych kresek je usuwa, gumka fragmentów go nie tnie;
+w pliku DXF – bez wypełnień (same linie). **Kolor kartki** (od 1.63): **Tło strony → Kolor kartki** – biała, kremowa, żółta,
+zielona, błękitna, różowa, lawendowa, szara i „+” (pełna paleta); zapisany z rysunkiem (też w obrazie w notatce), nowa kartka
+dostaje kolor poprzedniej. **Nowe kształty** (od 1.63) zaczynają od **linii ciągłej bez wypełnienia** – zapamiętane wcześniej
+rodzaje linii i wypełnienia (osobno dla kształtów) są raz wyczyszczone; późniejsze wybory są pamiętane jak dotąd.
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno
 **Nowe pole tekstowe** – tekst (Enter zaczyna nowy wiersz, długi wiersz łamie się sam), wielkość
 (Mała, Średnia, Duża, od 1.18 Bardzo duża) i kolor; przycisk **Σ** – okno **Nowy wzór**: zapis jak we wzorze w notatce,
@@ -1197,7 +1216,10 @@ przycisk **szybkiej fiszki** (karta z gwiazdką, **Ctrl+M**):
   fiszka jest obok tekstu (zapamiętane, czy schowana), na telefonie – wysuwa się z prawej nad tekst.
 - **Uporządkuj** – worek i pola: **Pojęcie**, **Definicja**, **Przykład** (każde po polsku i po angielsku) i **Obraz**
   (tylko obrazy i tabele z notatki). Fragment przeciągasz palcem, rysikiem albo myszą, albo dotykasz fragmentu, a potem
-  pola (z klawiatury: Tab, Enter). Z pola do worka – tak samo. **Gotowe** wraca do skrótu fiszki.
+  pola (z klawiatury: Tab, Enter). Z pola do worka – tak samo. Od 1.63 w pola tekstowe (wszystkie poza „Obraz”) możesz też
+  **wpisać tekst** – w pustym polu od razu, w polu z fragmentami ołówkiem w rogu („Dopisz…”); Enter kończy wpisywanie. Wpisany tekst jest w skrócie fiszki,
+  w teczce i w formularzu „Dodaj do lekcji…” (za fragmentami pola); fiszka z samym wpisanym tekstem też jest fiszką.
+  **Gotowe** wraca do skrótu fiszki.
 - **Do teczki** – uporządkowana albo nie, fiszka maleje i leci do **teczki 3D** w prawym dolnym rogu (klapa się
   uchyla, karta wpada do środka, licznik rośnie), a obok tekstu czeka pusta fiszka ✦2.
 

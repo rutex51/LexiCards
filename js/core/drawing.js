@@ -72,6 +72,7 @@ import { resolveMeasures } from './measure3d.js';
 import { cleanLayout } from './page-layouts.js';
 import { cleanRingPositions, cleanToolGroups, cleanUiHidden, defaultToolGroups } from './tool-ring.js';
 import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './layers.js';
+import { cleanRings, fillContains, fillRings } from './bucket.js';
 
 /**
  * 1 – kreski (1.12), 2 – także pola tekstowe i wzory (1.13), 3 – kształty, jasność tła, szablon (1.15),
@@ -92,12 +93,26 @@ export const DRAWING_VERSION = 28;
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
 /**
- * Tablica A0 (od 1.59, core/board.js): 4 × kartka, proporcje √2; od 1.61 obszar kartki zeszytu na jej środku
- * (BOARD_SHEET – lewy górny róg obszaru).
+ * Arkusz A0 (od 1.59 „tablica A0”, core/board.js): 4 × kartka, proporcje √2; od 1.61 obszar kartki zeszytu na jego
+ * środku (BOARD_SHEET – lewy górny róg obszaru na arkuszu A0).
  */
 export const BOARD_WIDTH = PAGE_WIDTH * 4;
 export const BOARD_HEIGHT = Math.round(BOARD_WIDTH / Math.SQRT2);
 export const BOARD_SHEET = Object.freeze({ x: (BOARD_WIDTH - PAGE_WIDTH) / 2, y: Math.round((BOARD_HEIGHT - PAGE_HEIGHT) / 2) });
+/**
+ * Formaty arkusza (od 1.63; wcześniej tylko A0): poziomo, proporcje √2 – długi bok A4 (297 mm) to szerokość kartki
+ * zeszytu (1600 jednostek), więc A3 ma 2263 × 1600, a 4A0 – 12800 × 9051 jednostek.
+ */
+export const BOARD_FORMAT_IDS = Object.freeze(['A3', 'A2', 'A1', 'A0', '2A0', '4A0']);
+export const DEFAULT_BOARD_FORMAT = 'A0';
+export const BOARD_FORMATS = Object.freeze(Object.fromEntries(BOARD_FORMAT_IDS.map((id, index) => {
+  // Krok względem A0: A3 – trzy razy mniejszy (bok ÷ √2 na każdy krok), 4A0 – dwa razy większy.
+  const step = index - BOARD_FORMAT_IDS.indexOf(DEFAULT_BOARD_FORMAT);
+  const long = Math.round(BOARD_WIDTH * Math.SQRT2 ** step);
+  return [id, Object.freeze({ width: long, height: Math.round(long / Math.SQRT2) })];
+})));
+/** Największy bok rysunku (arkusz 4A0). */
+export const MAX_PAGE_SIZE = BOARD_FORMATS['4A0'].width;
 /** Strona ze zdjęciem: najdłuższy bok (jak obrazy notatki) – większe zdjęcie jest pomniejszane na stronie. */
 export const PHOTO_PAGE_MAX = 2048;
 /** Odstęp linii i kratki tła (jednostki rysunku). */
@@ -122,6 +137,32 @@ export const HIGHLIGHTER_COLORS = Object.freeze([
   { id: 'blue', hex: '#64c8ff', label: 'Niebieski' }
 ]);
 export const HIGHLIGHTER_ALPHA = 0.45;
+/** Kolory wiaderka (od 1.63, core/bucket.js): jasne, kryjące tony do wypełnień; inny kolor – „+” (siatka, suwaki, pipetka). */
+export const FILL_COLORS = Object.freeze([
+  { id: 'yellow', hex: '#ffe680', label: 'Żółty' },
+  { id: 'orange', hex: '#ffd2a6', label: 'Pomarańczowy' },
+  { id: 'pink', hex: '#ffc2d4', label: 'Różowy' },
+  { id: 'violet', hex: '#ddd0ff', label: 'Fioletowy' },
+  { id: 'blue', hex: '#b9e0ff', label: 'Niebieski' },
+  { id: 'green', hex: '#c4f0b0', label: 'Zielony' },
+  { id: 'gray', hex: '#d9d9de', label: 'Szary' }
+]);
+/** Kolor wypełnienia: z palety wiaderka (id) albo własny (#rrggbb). */
+export const fillHex = (value) => FILL_COLORS.find((color) => color.id === value)?.hex ?? (isHexColor(value) ? value.toLowerCase() : FILL_COLORS[0].hex);
+/** Kolor kartki (od 1.63): biały (bez zapisu) i jasne tony; inny – „+” (pełna paleta). */
+export const PAPER_TONES = Object.freeze([
+  { id: 'white', hex: '#ffffff', label: 'Biała' },
+  { id: 'cream', hex: '#fbf5e6', label: 'Kremowa' },
+  { id: 'yellow', hex: '#fff7d1', label: 'Żółta' },
+  { id: 'green', hex: '#ecf7ea', label: 'Zielona' },
+  { id: 'blue', hex: '#eaf3fc', label: 'Błękitna' },
+  { id: 'pink', hex: '#fcedf1', label: 'Różowa' },
+  { id: 'violet', hex: '#f2eefb', label: 'Lawendowa' },
+  { id: 'gray', hex: '#f0f0f2', label: 'Szara' }
+]);
+export const DEFAULT_PAPER_COLOR = '#ffffff';
+/** Kolor kartki rysunku (#rrggbb; bez zapisanego – biały). */
+export const paperColor = (drawing) => (!drawing?.photo && isHexColor(drawing?.paperColor) ? drawing.paperColor.toLowerCase() : DEFAULT_PAPER_COLOR);
 
 /** Grubości pióra (od – do, w jednostkach rysunku): cienka, średnia, gruba. */
 export const PEN_WIDTHS = Object.freeze([
@@ -418,9 +459,17 @@ export const ERASER_AREAS = Object.freeze(['rect', 'lasso']);
 export const ERASER_SIZES = Object.freeze([8, 16, 28, 48]);
 export const ERASER_SIZE_LABELS = Object.freeze(['Mała', 'Średnia', 'Duża', 'Bardzo duża']);
 
+/**
+ * Od 1.63 nowe kształty zaczynają od linii ciągłej bez wypełnienia: ustawienia zapisane wcześniej (bez znacznika
+ * styleDefaults) tracą raz zapamiętane rodzaje linii i wypełnienia (wspólne sprzed 1.35.1 i osobne kształtów);
+ * późniejsze wybory są zapamiętywane jak dotąd. Kreskowanie (kąt, odstęp) zostaje.
+ */
+export const STYLE_DEFAULTS = 163;
+
 /** Ustawienia narzędzi na tym urządzeniu (pióro: czułość, wygładzanie i grubości; zakreślacz: grubość). */
 export function defaultToolSettings() {
   return {
+    styleDefaults: STYLE_DEFAULTS,
     sensitivity: 'medium',
     smoothing: 0.5,
     penWidths: PEN_WIDTHS.map((width) => ({ ...width })),
@@ -430,6 +479,8 @@ export function defaultToolSettings() {
     // Od 1.21: grubość każdej z trzech kropek zakreślacza (okno ustawień zakreślacza).
     highlighterWidths: [...HIGHLIGHTER_WIDTHS],
     highlighterColor: 'yellow',
+    // Od 1.63: kolor wiaderka (FILL_COLORS albo własny #rrggbb).
+    fillColor: 'yellow',
     eraserMode: 'stroke',
     eraserSize: 1,
     eraserArea: 'rect',
@@ -507,15 +558,15 @@ export function withShapeToolStyle(tools, kind, key, value) {
 }
 
 /** Sprawdzone style kształtów: znane kształty, znane rodzaje linii i wypełnienia. */
-function cleanShapeStyles(raw) {
+function cleanShapeStyles(raw, reset = false) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const styles = {};
   for (const kind of SHAPES) {
     const own = raw[kind];
     if (!own || typeof own !== 'object') continue;
     const style = {};
-    if (SHAPE_DASHES.includes(own.dash)) style.dash = own.dash;
-    if (SHAPE_FILLS.includes(own.fill)) style.fill = own.fill;
+    if (!reset && SHAPE_DASHES.includes(own.dash)) style.dash = own.dash;
+    if (!reset && SHAPE_FILLS.includes(own.fill)) style.fill = own.fill;
     if (own.hatch && typeof own.hatch === 'object') style.hatch = cleanHatch(own.hatch);
     if (Object.keys(style).length > 0) styles[kind] = style;
   }
@@ -586,7 +637,10 @@ export function cleanToolSettings(raw) {
       return { min: Math.min(min, max), max: Math.max(min, max) };
     })
     : base.penWidths;
+  // Ustawienia sprzed 1.63 – rodzaje linii i wypełnienia od nowa (linia ciągła, bez wypełnienia).
+  const reset = raw.styleDefaults !== STYLE_DEFAULTS;
   return {
+    styleDefaults: STYLE_DEFAULTS,
     sensitivity: raw.sensitivity in SENSITIVITY ? raw.sensitivity : base.sensitivity,
     smoothing: finite(raw.smoothing) ? clamp(raw.smoothing, 0, 1) : base.smoothing,
     penWidths: widths,
@@ -600,6 +654,7 @@ export function cleanToolSettings(raw) {
       : base.highlighterWidths,
     highlighterColor: HIGHLIGHTER_COLORS.some((color) => color.id === raw.highlighterColor) || isHexColor(raw.highlighterColor)
       ? raw.highlighterColor : base.highlighterColor,
+    fillColor: FILL_COLORS.some((color) => color.id === raw.fillColor) || isHexColor(raw.fillColor) ? raw.fillColor : base.fillColor,
     eraserMode: ERASER_MODES.includes(raw.eraserMode) ? raw.eraserMode : base.eraserMode,
     eraserSize: Number.isInteger(raw.eraserSize) && raw.eraserSize >= 0 && raw.eraserSize < ERASER_SIZES.length ? raw.eraserSize : base.eraserSize,
     eraserArea: ERASER_AREAS.includes(raw.eraserArea) ? raw.eraserArea : base.eraserArea,
@@ -611,12 +666,12 @@ export function cleanToolSettings(raw) {
     selectMode: SELECT_MODES.includes(raw.selectMode) ? raw.selectMode : base.selectMode,
     rulerSnap: typeof raw.rulerSnap === 'boolean' ? raw.rulerSnap : base.rulerSnap,
     shape: SHAPES.includes(raw.shape) ? raw.shape : base.shape,
-    shapeFill: SHAPE_FILLS.includes(raw.shapeFill) ? raw.shapeFill : base.shapeFill,
+    shapeFill: !reset && SHAPE_FILLS.includes(raw.shapeFill) ? raw.shapeFill : base.shapeFill,
     guide: cleanGuide(raw.guide),
     shapeLock: typeof raw.shapeLock === 'boolean' ? raw.shapeLock : base.shapeLock,
     lineCaps: cleanCaps(raw.lineCaps, base.lineCaps),
     arrowCaps: cleanCaps(raw.arrowCaps, base.arrowCaps),
-    shapeDash: SHAPE_DASHES.includes(raw.shapeDash) ? raw.shapeDash : base.shapeDash,
+    shapeDash: !reset && SHAPE_DASHES.includes(raw.shapeDash) ? raw.shapeDash : base.shapeDash,
     curveCaps: cleanCaps(raw.curveCaps, base.curveCaps),
     connectorCaps: cleanCaps(raw.connectorCaps, base.connectorCaps),
     pointMark: POINT_MARKS.includes(raw.pointMark) ? raw.pointMark : base.pointMark,
@@ -639,7 +694,7 @@ export function cleanToolSettings(raw) {
     toolGroup: typeof raw.toolGroup === 'string' && raw.toolGroup.length <= 40 ? raw.toolGroup : base.toolGroup,
     uiHidden: cleanUiHidden(raw.uiHidden),
     toolGroups: cleanToolGroups(raw.toolGroups),
-    shapeStyles: cleanShapeStyles(raw.shapeStyles),
+    shapeStyles: cleanShapeStyles(raw.shapeStyles, reset),
     ringPositions: cleanRingPositions(raw.ringPositions),
     ngonSides: NGON_SIDES.includes(raw.ngonSides) ? raw.ngonSides : base.ngonSides,
     rectCorner: cleanToolCorner(raw.rectCorner),
@@ -712,6 +767,8 @@ export function touchesStroke(stroke, x, y, radius) {
     }
     return false;
   }
+  // Wypełnienie (od 1.63) – wnętrze albo brzeg obrysu.
+  if (stroke.tool === 'fill') return touchesFill(stroke, x, y, radius);
   const { points } = stroke;
   if (points.length < 3) return false;
   if (points.length === 3) return Math.hypot(x - points[0], y - points[1]) <= radius + points[2] / 2;
@@ -720,6 +777,19 @@ export function touchesStroke(stroke, x, y, radius) {
     if (segmentDistance(x, y, points[index - 3], points[index - 2], points[index], points[index + 1]) <= reach) return true;
   }
   return false;
+}
+
+/** Czy koło (x, y, radius) dotyka wypełnienia: punkt w nim albo obrys w zasięgu. */
+function touchesFill(stroke, x, y, radius) {
+  const bounds = strokeBounds(stroke);
+  if (x < bounds.minX - radius || x > bounds.maxX + radius || y < bounds.minY - radius || y > bounds.maxY + radius) return false;
+  if (fillContains(stroke, x, y)) return true;
+  return fillRings(stroke).some((ring) => {
+    for (let index = 0, prev = ring.length - 2; index < ring.length; prev = index, index += 2) {
+      if (segmentDistance(x, y, ring[prev], ring[prev + 1], ring[index], ring[index + 1]) <= radius) return true;
+    }
+    return false;
+  });
 }
 
 /** Numery kresek, których dotyka gumka (od góry – ostatnio narysowanych). */
@@ -790,8 +860,9 @@ function strokeFrom(source, points) {
  * dotyka kreski, albo listę kawałków (pustą, gdy znika cała kreska).
  */
 export function eraseFromStroke(stroke, x, y, radius) {
-  // Pola tekstowego i wzoru nie da się przeciąć – usuwa je gumka całych kresek albo zaznaczenie.
-  if (isElement(stroke)) return null;
+  // Pola tekstowego i wzoru nie da się przeciąć – usuwa je gumka całych kresek albo zaznaczenie; od 1.63 tak samo
+  // wypełnienia wiaderkiem (gumka fragmentów ich nie tnie).
+  if (isElement(stroke) || stroke.tool === 'fill') return null;
   const bounds = strokeBounds(stroke);
   if (x + radius < bounds.minX || x - radius > bounds.maxX || y + radius < bounds.minY || y - radius > bounds.maxY) return null;
   const { points } = stroke;
@@ -1083,7 +1154,8 @@ export function snapToStrokes(strokes, x, y, radius) {
     .flatMap((stroke) => (isArray(stroke) ? expandArray(stroke) : [stroke]))
     .map((stroke) => (isShape(stroke) ? shapeAsStroke(stroke) : stroke))
     .filter((stroke) => {
-      if (isElement(stroke) || stroke.points.length < 6) return false;
+      // Wypełnienie (od 1.63) leży pod liniami – linijka się do niego nie przyciąga.
+      if (isElement(stroke) || stroke.tool === 'fill' || stroke.points.length < 6) return false;
       const bounds = strokeBounds(stroke);
       return x >= bounds.minX - radius && x <= bounds.maxX + radius && y >= bounds.minY - radius && y <= bounds.maxY + radius;
     })
@@ -1194,6 +1266,11 @@ export function strokesInPolygon(strokes, polygon) {
  */
 export function splitByPolygon(stroke, polygon) {
   if (isElement(stroke)) return elementInPolygon(stroke, polygon) ? { inside: [stroke], outside: [] } : null;
+  // Wypełnienie (od 1.63) – tylko w całości.
+  if (stroke.tool === 'fill') {
+    for (let index = 0; index < stroke.points.length; index += 3) if (!pointInPolygon(stroke.points[index], stroke.points[index + 1], polygon)) return null;
+    return { inside: [stroke], outside: [] };
+  }
   const { points } = stroke;
   const count = points.length / 3;
   if (count === 0) return null;
@@ -1356,9 +1433,14 @@ export function emptyDrawing({ photo = null, paper = 'grid' } = {}) {
 export function cleanDrawing(raw) {
   if (!raw || typeof raw !== 'object') return null;
   // Brak albo zerowy rozmiar – rysunek uszkodzony; bardzo mały albo bardzo duży – przycięty do granic.
-  const width = finite(raw.width) && raw.width >= 1 ? clamp(Math.round(raw.width), 16, 8192) : null;
-  const height = finite(raw.height) && raw.height >= 1 ? clamp(Math.round(raw.height), 16, 8192) : null;
-  if (!width || !height) return null;
+  // Arkusz (od 1.59, od 1.63 w kilku formatach) – zawsze w wymiarach swojego formatu (bez formatu – A0).
+  const rawPhoto = raw.photo && typeof raw.photo === 'object' && /^image\//.test(raw.photo.type ?? '');
+  const boardFormat = raw.board === true && !rawPhoto ? (BOARD_FORMAT_IDS.includes(raw.boardFormat) ? raw.boardFormat : DEFAULT_BOARD_FORMAT) : null;
+  const width = boardFormat ? BOARD_FORMATS[boardFormat].width
+    : finite(raw.width) && raw.width >= 1 ? clamp(Math.round(raw.width), 16, MAX_PAGE_SIZE) : null;
+  const height = boardFormat ? BOARD_FORMATS[boardFormat].height
+    : finite(raw.height) && raw.height >= 1 ? clamp(Math.round(raw.height), 16, MAX_PAGE_SIZE) : null;
+  if (!width || !height || (boardFormat && !(finite(raw.width) && raw.width >= 1 && finite(raw.height) && raw.height >= 1))) return null;
   const strokes = [];
   // Od 1.25 (format 10) tolerancje długości są w milimetrach; starsze – w jednostce liczby wymiaru
   // (styl „50” – mm, przy skali imperialnej cale; styl „5 cm” – jednostka skali).
@@ -1416,8 +1498,10 @@ export function cleanDrawing(raw) {
     ...(!photo && cleanLayout(raw.layout) ? { layout: cleanLayout(raw.layout) } : {}),
     ...(layers ? { layers } : {}),
     ...(Number.isInteger(raw.activeLayer) && raw.activeLayer !== 1 && known.has(raw.activeLayer) ? { activeLayer: raw.activeLayer } : {}),
-    // Tablica A0 (od 1.59, core/board.js) – kartka bez zdjęcia jako duży arkusz.
-    ...(raw.board === true && !photo ? { board: true } : {}),
+    // Kolor kartki (od 1.63) – inny niż biały, tylko bez zdjęcia.
+    ...(!photo && isHexColor(raw.paperColor) && raw.paperColor.toLowerCase() !== DEFAULT_PAPER_COLOR ? { paperColor: raw.paperColor.toLowerCase() } : {}),
+    // Arkusz (od 1.59 „tablica A0”, core/board.js) – kartka bez zdjęcia jako duży arkusz; od 1.63 format (bez – A0).
+    ...(boardFormat && !photo ? { board: true, ...(boardFormat !== DEFAULT_BOARD_FORMAT ? { boardFormat } : {}) } : {}),
     // Początek układu współrzędnych arkusza (od 1.50) – punkt na kartce.
     ...(cleanOrigin(moved(raw.origin), width, height) ? { origin: cleanOrigin(moved(raw.origin), width, height) } : {})
   };
@@ -1457,6 +1541,7 @@ function cleanStrokeData(stroke, width, height, arrays, known) {
     return makeArray(items, stroke, Math.max(width, height) * 4);
   }
   if (isElement(stroke)) return cleanElement(stroke, width, height);
+  if (stroke?.tool === 'fill') return cleanFill(stroke, width, height);
   if (!stroke || (stroke.tool !== 'pen' && stroke.tool !== 'highlighter') || !HEX.test(stroke.color ?? '')) return null;
   if (!Array.isArray(stroke.points)) return null;
   const points = [];
@@ -1469,6 +1554,23 @@ function cleanStrokeData(stroke, width, height, arrays, known) {
     points.push(clamp(x, -width, width * 2), clamp(y, -height, height * 2), clamp(w, WIDTH_LIMITS.min, widest));
   }
   return points.length >= 3 ? { tool: stroke.tool, color: stroke.color.toLowerCase(), points } : null;
+}
+
+/** Sprawdzone wypełnienie wiaderkiem (od 1.63, core/bucket.js): punkty obrysów (w = 1) i liczby punktów obrysów – albo null. */
+function cleanFill(raw, width, height) {
+  if (!HEX.test(raw.color ?? '') || !Array.isArray(raw.points)) return null;
+  const points = [];
+  const source = raw.points.slice(0, MAX_POINTS * 3);
+  for (let index = 0; index + 2 < source.length; index += 3) {
+    const [x, y] = [source[index], source[index + 1]];
+    // Punkt uszkodzony – całe wypełnienie odpada (obrysy straciłyby swoje liczby punktów).
+    if (!finite(x) || !finite(y)) return null;
+    points.push(clamp(x, -width, width * 2), clamp(y, -height, height * 2), 1);
+  }
+  if (points.length < 9) return null;
+  const rings = cleanRings(raw.rings, points.length / 3);
+  if (raw.rings !== undefined && !rings) return null;
+  return { tool: 'fill', color: raw.color.toLowerCase(), points, ...(rings ? { rings } : {}) };
 }
 
 /** Sprawdzone pole tekstowe, wzór, kształt, tabela albo karteczka – od 1.22 z identyfikatorem i przyklejonymi końcami. */

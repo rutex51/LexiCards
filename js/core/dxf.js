@@ -914,6 +914,8 @@ export function drawingToDxf(drawing) {
       writeSolid(stroke);
       return;
     }
+    // Wypełnienie wiaderkiem (od 1.63) – plik DXF ma same linie (jak kształty z wypełnieniem – bez wypełnienia).
+    if (stroke.tool === 'fill') return;
     if (stroke.tool !== 'shape') {
       skipped += 1;
       return;

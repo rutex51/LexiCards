@@ -2,6 +2,7 @@
 // Pełne opisy – docs/RELEASE-<wersja>.md. Pierwsza pozycja to bieżąca wersja aplikacji (sprawdza to test).
 
 export const CHANGELOG = Object.freeze([
+  ['1.63', 'Szybkie fiszki – wpisywanie tekstu w polach; rysunek – wiaderko, kolor kartki, arkusze A3–4A0, kształty od linii ciągłej bez wypełnienia; iPhone – pasek notatki nad klawiaturą.'],
   ['1.62.2', 'Magiczne fiszki nazywają się teraz szybkimi fiszkami; naprawione dodawanie fragmentów na fiszkę przy złotym i turkusowym kolorze (błąd od 1.62).'],
   ['1.62.1', 'Kolor teczki magicznych fiszek do wyboru: żółta, czarna, szara albo biała (przy złotej fiszce domyślnie szara).'],
   ['1.62', 'Magiczne fiszki: fragmenty notatki i odwołania [[…]] na fiszkę obok edytora (iskry), pola przeciąganiem, teczka 3D i dodanie do lekcji; kolor: fiolet, złoto, turkus.'],

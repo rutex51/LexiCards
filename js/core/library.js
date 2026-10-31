@@ -16,7 +16,7 @@ import { cleanCardFaces, cleanCardMedia } from './card-faces.js';
 import { createdRange, createdWithin } from './created.js';
 import { cleanFileName, fileTypeOf } from './note-files.js';
 import { NOTE_HTML_LIMIT, normalizeNoteHtml } from './note-format.js';
-import { magicFragments, settleMagic } from './magic.js';
+import { cleanMagicTexts, magicFragments, settleMagic } from './magic.js';
 import { cleanImageCaption, labelKey, withImageLabels } from './note-refs.js';
 import { NOTE_TABLE_LIMIT, cleanNoteTables, withTableLabels } from './tables.js';
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
@@ -1235,6 +1235,12 @@ export class Library {
   updateMagicCard(noteLessonID, no, patch) {
     return this.#patchMagic(noteLessonID, no, (card) => {
       if (Array.isArray(patch.frags)) card.frags = patch.frags.map((frag) => ({ sig: frag.sig, slot: frag.slot ?? null }));
+      // Od 1.63: tekst wpisany ręcznie w polach (pusty – pole bez tekstu).
+      if (patch.texts !== undefined) {
+        const texts = cleanMagicTexts(patch.texts);
+        if (texts) card.texts = texts;
+        else delete card.texts;
+      }
       if (patch.lessonID !== undefined) {
         if (patch.lessonID) {
           this.#require('lesson', patch.lessonID);

@@ -252,8 +252,8 @@ export function scaleStroke(stroke, cx, cy, factor) {
 }
 
 const HEX = /^#[0-9a-f]{6}$/i;
-/** Elementy z kolorem do przeniesienia: kreski, kształty, pola tekstowe, wzory i symbole. */
-const STYLED = ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness', 'diagram', 'solid'];
+/** Elementy z kolorem do przeniesienia: kreski, kształty, pola tekstowe, wzory, symbole i (od 1.63) wypełnienia. */
+const STYLED = ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness', 'diagram', 'solid', 'fill'];
 /** Grubość linii: kształtu i (od 1.47) bryły – size, kreski – średnia szerokość punktów; inne – null. */
 export function lineWidthOf(stroke) {
   if (isShape(stroke) || isSolid(stroke)) return stroke.size;

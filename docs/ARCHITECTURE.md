@@ -2515,3 +2515,39 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
   ONNX Runtime Web w przeglądarce i pobieranie głosów (ok. 60 MB na język) do pamięci urządzenia.
 - **Wersja na Windows w jednym pliku:** 47 modułów bez zależności cyklicznych można złożyć
   w jeden `LexiCards.html`, otwierany z dysku bez serwera.
+
+## Wydanie 1.63: wiaderko, kolor kartki, arkusze A3–4A0, wpisywanie w szybkiej fiszce, klawiatura iPhone’a
+
+- **Wiaderko** (`core/bucket.js`, bez przeglądarki): `bucketFill(ink, width, height, sx, sy, { color, map, gap })` – maska
+  linii (Uint8Array) pogrubiona o `gap` (`dilateMask`, kwadrat, dwa przebiegi) domyka szczeliny, `floodRegion` (wypełnianie
+  wierszami, 4 sąsiadów) zwraca obszar i dotknięte brzegi okna (dotknięty brzeg – obszar otwarty), obszar poszerzony
+  o `gap + 1` sięga pod linie, `traceRings` – obrysy po krawędziach pikseli (brzeg zgodnie z ruchem wskazówek zegara, otwory
+  przeciwnie; przy pikselach stykających się narożnikiem – skręt w prawo), `simplifyRing` – Douglas–Peucker, `map` – piksel →
+  jednostki rysunku. Wynik – element `{ tool: 'fill', color, points: [x, y, 1, …], rings?: [n1, n2, …] }`: punkty jak kreska
+  pióra, więc przesuwanie, obrót, odbicie, skala, zaznaczanie prostokątem i lassem, warstwy i schowek działają bez zmian;
+  `cleanFill` w `core/drawing.js` (`cleanRings` – liczby punktów obrysów), `touchesFill` (wnętrze regułą parzystości albo brzeg),
+  gumka fragmentów i `splitByPolygon` – tylko w całości, linijka się nie przyciąga, DXF – pomijane. Edytor (`fillAt` w
+  `ui/drawing.js`): linie (`paintDrawing(…, { ink: true })` – bez tła, zdjęcia, kalki, zakreślacza i wypełnień) na płótnie poza
+  ekranem w widocznej części kartki, w rozdzielczości ekranu (najwyżej ok. 4 mln pikseli), szczeliny do ok. 6 px ekranu; nowe
+  wypełnienie – nad wcześniejszymi wypełnieniami, pod liniami; wypełnienie o tych samych granicach z dotkniętym punktem –
+  zastąpione (jeden krok cofania). Narzędzie `'fill'` w grupie „Pisanie” (`core/tool-ring.js`), kolor `tools.fillColor`
+  (`FILL_COLORS` albo #rrggbb), ikona `bucket` (własny rysunek).
+- **Kolor kartki**: `drawing.paperColor` (#rrggbb, biały – bez pola, bez zdjęcia), `paperColor(drawing)`, `PAPER_TONES`;
+  `paintPaper` i cień kartki w edytorze; panel „Tło strony” – tony i „+” (okno „Inny kolor” z `colorTarget = 'paper'`); nowa
+  kartka dziedziczy kolor.
+- **Arkusz** (dawniej „tablica A0”): `BOARD_FORMATS` (A3 … 4A0, `core/drawing.js`, długi bok × √2 na krok względem A0),
+  `drawing.boardFormat` (A0 – bez pola, jak do 1.62), `cleanDrawing` ustawia wymiary z formatu (`MAX_PAGE_SIZE` = 12800).
+  `core/board.js`: `boardFormat`, `sheetAreaOrigin` (obszar kartki na środku arkusza), `fitsFormat`, `setBoard(drawing, board,
+  format)` – zamiana kartka ↔ arkusz i zmiana formatu (przesunięcie o różnicę położeń obszaru kartki). Edytor: menu „Kartki” –
+  „Nowy arkusz…”, „Zamień na arkusz…”, „Format arkusza: …” (`openFormatMenu`), `minZoom` z wymiarów rysunku, ramka obszaru
+  kartki `SHEET_AREA_COLOR` bez podpisu.
+- **Style kształtów**: `STYLE_DEFAULTS` w ustawieniach narzędzi – zapis bez znacznika (sprzed 1.63) traci raz rodzaje linii
+  i wypełnienia (wspólne i `shapeStyles`; kreskowanie zostaje).
+- **Szybkie fiszki – tekst wpisany**: `card.texts` (`MAGIC_TEXT_SLOTS`, `cleanMagicTexts`, do `MAGIC_TEXT_MAX` znaków);
+  `cleanMagic` zostawia fiszkę z samym tekstem, `magicCardStatus` (`typed`, pole wypełnia też tekst), `magicTermDraft` (tekst
+  za fragmentami pola), `library.updateMagicCard(…, { texts })`. Plansza (`boardContent` z `onType`): `textarea`
+  `magic-slot__input` w pustych polach tekstowych i w polach z wpisanym tekstem, w polu z fragmentami – przycisk `magic-slot__add` (ołówek), `enableBoard` pomija zdarzenia z pól tekstu (z wybranym fragmentem – dotknięcie przenosi go do pola); w edytorze – od razu w kopii fiszek
+  (zapis z notatką), w teczce – na kopii fiszki, zapis po Enter albo wyjściu z pola.
+- **Klawiatura iPhone’a**: okno tekstu notatki (`.note-edit-dialog`) – `top: var(--vv-top)` i `height: var(--vv-height)`
+  (z `trackVisualViewport` w `main.js`, jak inne arkusze), więc z klawiaturą kończy się nad nią, a przyklejony pasek
+  formatowania nie ucieka w górę z przesuniętym obrazem.

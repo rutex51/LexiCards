@@ -25,7 +25,8 @@ test('kółka 1.32: grupy – każdy kształt i polecenie w grupie standardowej,
   for (const kind of panelShapes) assert.ok(items.includes(`shape:${kind}`), `kształt ${kind} w grupie`);
   for (const mode of DIM_MODES) assert.ok(items.includes(`dim:${mode}`), `wymiar ${mode} w grupie`);
   for (const item of [...items, ...USER_GROUPS.flatMap((group) => group.items)]) {
-    const known = item.startsWith('dim:') ? DIM_MODES.includes(item.slice(4)) : ['pen', 'highlighter', 'eraser'].includes(item) || SHAPES.includes(item.slice(6));
+    // Od 1.63 także wiaderko ('fill').
+    const known = item.startsWith('dim:') ? DIM_MODES.includes(item.slice(4)) : ['pen', 'highlighter', 'eraser', 'fill'].includes(item) || SHAPES.includes(item.slice(6));
     assert.ok(isModeItem(item) ? known : COMMANDS.includes(item), item);
   }
   const metrology = findGroup('left', 'metrology');

@@ -7,7 +7,7 @@
 // dalsze kółka i kółka przy krawędzi ekranu płynnie znikają. Przesunięcie palcem albo kółko myszy
 // obraca kółka – zatrzymują się na najbliższej grupie.
 //
-// Pozycje narzędzi w grupach: 'pen', 'highlighter', 'eraser' (narzędzia), 'shape:<rodzaj>' (kształt
+// Pozycje narzędzi w grupach: 'pen', 'highlighter', 'eraser', od 1.63 'fill' – wiaderko (narzędzia), 'shape:<rodzaj>' (kształt
 // – narzędzie „Kształty” z wybranym rodzajem), od 1.36 'dim:<rodzaj>' (wymiar: długość, kąt, promień,
 // średnica – kształt 'dim' z rodzajem) oraz polecenia otwierające okno: 'text', 'math', 'table',
 // 'sticky', 'gdt', 'datum', 'roughness' (narzędzie się nie zmienia); od 1.43 polecenia edycji geometrii
@@ -35,7 +35,8 @@ export const PROCESS_ITEMS = Object.freeze([
 export const SOLID_ITEMS = Object.freeze(['solid:box', 'solid:cylinder', 'solid:cone', 'solid:pyramid', 'solid:prism', 'solid:sphere']);
 
 export const TOOL_GROUPS = Object.freeze([
-  { id: 'write', label: 'Pisanie', icon: 'pen', items: ['pen', 'highlighter', 'eraser'] },
+  // Od 1.63 także wiaderko – wypełnienie zamkniętego obszaru.
+  { id: 'write', label: 'Pisanie', icon: 'pen', items: ['pen', 'highlighter', 'eraser', 'fill'] },
   {
     // Od 1.34 także łuk przez trzy punkty, od 1.40 wielokąt foremny, od 1.43 łamana.
     id: 'shapes', label: 'Kształty', icon: 'shapeRect',
@@ -79,7 +80,7 @@ export const USER_GROUPS = Object.freeze(PRESETS.filter((group) => group.id === 
 /** Wszystkie pozycje, które mogą być w grupie (narzędzia i polecenia grup standardowych). */
 export const ALL_ITEMS = Object.freeze(TOOL_GROUPS.flatMap((group) => group.items));
 const COMMAND_LABELS = {
-  pen: 'Pióro', highlighter: 'Zakreślacz', eraser: 'Gumka', text: 'Tekst', math: 'Wzór', table: 'Tabela', sticky: 'Karteczka',
+  pen: 'Pióro', highlighter: 'Zakreślacz', eraser: 'Gumka', fill: 'Wiaderko', text: 'Tekst', math: 'Wzór', table: 'Tabela', sticky: 'Karteczka',
   gdt: 'Ramka tolerancji', datum: 'Baza', roughness: 'Chropowatość',
   'dim:linear': 'Wymiar – długość', 'dim:angle': 'Wymiar – kąt', 'dim:radius': 'Wymiar – promień', 'dim:diameter': 'Wymiar – średnica',
   'dim:arc': 'Wymiar – długość łuku',
@@ -163,7 +164,7 @@ export const findGroup = (side, id, config) => groupsOf(side, config).find((grou
 export const toolItem = (tool, shape, dimMode = 'linear') => (tool !== 'shape' ? tool
   : shape === 'dim' ? `dim:${DIM_MODES.includes(dimMode) ? dimMode : 'linear'}` : `shape:${shape}`);
 /** Pozycja, która jest narzędziem (a nie poleceniem z oknem). */
-export const isModeItem = (item) => item === 'pen' || item === 'highlighter' || item === 'eraser' || item.startsWith('shape:') || item.startsWith('dim:');
+export const isModeItem = (item) => item === 'pen' || item === 'highlighter' || item === 'eraser' || item === 'fill' || item.startsWith('shape:') || item.startsWith('dim:');
 
 /**
  * Grupa pokazywana na starcie: zapamiętana ('right:shapes'), gdy jest na kółku; inaczej grupa

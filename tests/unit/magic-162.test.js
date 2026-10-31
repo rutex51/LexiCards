@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { docFromHtml, normalizeNoteHtml, noteText } from '../../js/core/note-format.js';
 import { renameReferences } from '../../js/core/note-refs.js';
 import {
-  activeMagicCard, cleanMagic, keptSigs, magicCardStatus, magicFragments, magicTermDraft, nextMagicNumber, settleMagic, stripMagic, unmarkMagic
+  MAGIC_TEXT_MAX, activeMagicCard, cleanMagic, cleanMagicTexts, keptSigs, magicCardStatus, magicFragments, magicTermDraft, nextMagicNumber, settleMagic, stripMagic, unmarkMagic
 } from '../../js/core/magic.js';
 import { DEFAULT_MAGIC_COLOR, MAGIC_COLORS, MAGIC_FOLDER_COLORS, defaultSettings, magicColor, magicFolderColor } from '../../js/core/model.js';
 import { createBackup, parseBackupText, restoreBackup } from '../../js/core/backup.js';
@@ -75,7 +75,7 @@ test('szybkie fiszki 1.62 – sprawdzanie fiszek: fragmenty spoza treści znikaj
 test('szybkie fiszki 1.62 – stan fiszki i szkic pojęcia: teksty pól w kolejności, obraz z pola „Obraz” (tabela albo obraz), bez obrazów w innej lekcji', () => {
   const fragments = magicFragments(NOTE);
   const card = { no: 1, state: 'folder', frags: [{ sig: '1.1', slot: 'termPL' }, { sig: '1.2', slot: 'termEN' }, { sig: '1.3', slot: 'defPL' }, { sig: '1.4', slot: 'media' }] };
-  assert.deepEqual(magicCardStatus(card, fragments), { count: 4, loose: 0, term: true, complete: true });
+  assert.deepEqual(magicCardStatus(card, fragments), { count: 4, loose: 0, typed: 0, term: true, complete: true });
   assert.deepEqual(magicTermDraft(card, fragments, { tableLabels: ['Bilans'] }), {
     termPL: 'Zobowiązania', termEN: 'liabilities', descriptionPL: 'obecny obowiązek jednostki', descriptionEN: '', examplePL: '', exampleEN: '',
     cardMedia: [{ kind: 'table', label: 'Bilans' }]
@@ -83,7 +83,7 @@ test('szybkie fiszki 1.62 – stan fiszki i szkic pojęcia: teksty pól w kolejn
   assert.deepEqual(magicTermDraft(card, fragments).cardMedia, [{ kind: 'image', label: 'Bilans' }]);
   assert.deepEqual(magicTermDraft(card, fragments, { media: false }).cardMedia, []);
   const loose = { ...card, frags: [{ sig: '1.1', slot: null }, { sig: '1.3', slot: 'defPL' }] };
-  assert.deepEqual(magicCardStatus(loose, fragments), { count: 2, loose: 1, term: false, complete: false });
+  assert.deepEqual(magicCardStatus(loose, fragments), { count: 2, loose: 1, typed: 0, term: false, complete: false });
 });
 
 test('szybkie fiszki 1.62 – kolor w ustawieniach: fiolet (domyślny), złoto, turkus; nieznany – domyślny', () => {
@@ -160,4 +160,26 @@ test('szybkie fiszki 1.62 – biblioteka: zapis notatki z fiszkami (porządek z 
   await restoreBackup(fresh, parseBackupText(JSON.stringify(backup)));
   assert.deepEqual(fresh.getNote(lesson.id).magic.cards.map((item) => [item.no, item.state, item.termID]), [[1, 'done', term.id]]);
   assert.ok(fresh.getNote(lesson.id).html.includes('data-magic="1.4"'));
+});
+
+test('szybkie fiszki 1.63 – tekst wpisany ręcznie w polach: sprawdzanie (pola tekstowe, bez pustych, najwyżej 500 znaków), dopisany za fragmentami w szkicu pojęcia, liczy się do stanu; fiszka z samym tekstem zostaje; zapis w bibliotece', async () => {
+  assert.equal(cleanMagicTexts(null), null);
+  assert.deepEqual(cleanMagicTexts({ termPL: '  dług  ', termEN: '', media: 'obraz', defPL: 5, exEN: 'x'.repeat(600) }), { termPL: 'dług', exEN: 'x'.repeat(MAGIC_TEXT_MAX) });
+  const html = '<p><span data-magic="1.1">Zobowiązania</span> to obowiązki firmy.</p>';
+  const fragments = magicFragments(html);
+  const card = { no: 1, state: 'folder', next: 2, frags: [{ sig: '1.1', slot: 'termPL' }], texts: { termPL: 'finansowe', termEN: 'liabilities', defPL: 'Obecny obowiązek jednostki.' } };
+  const draft = magicTermDraft(card, fragments);
+  assert.deepEqual([draft.termPL, draft.termEN, draft.descriptionPL], ['Zobowiązania finansowe', 'liabilities', 'Obecny obowiązek jednostki.']);
+  assert.deepEqual(magicCardStatus(card, fragments), { count: 1, loose: 0, typed: 3, term: true, complete: true });
+  // Fiszka bez fragmentów, ale z tekstem – zostaje (z tekstem); bez obu – znika.
+  const cleaned = cleanMagic({ next: 3, cards: [{ no: 1, state: 'active', next: 1, frags: [], texts: { termEN: 'equity' } }, { no: 2, state: 'folder', next: 1, frags: [] }] }, fragments);
+  assert.deepEqual(cleaned.cards, [{ no: 1, state: 'active', frags: [], next: 1, texts: { termEN: 'equity' } }]);
+  // Biblioteka: zapis tekstu w fiszce z teczki i usunięcie (pusty).
+  const { library } = await makeLibrary();
+  const { lesson } = await makeBranch(library);
+  await library.saveNote(lesson.id, { html, magic: { next: 2, cards: [{ no: 1, state: 'folder', next: 2, frags: [{ sig: '1.1', slot: null }] }] } });
+  await library.updateMagicCard(lesson.id, 1, { texts: { termEN: ' liabilities ', defEN: '' } });
+  assert.deepEqual(library.getNote(lesson.id).magic.cards[0].texts, { termEN: 'liabilities' });
+  await library.updateMagicCard(lesson.id, 1, { texts: {} });
+  assert.equal('texts' in library.getNote(lesson.id).magic.cards[0], false);
 });

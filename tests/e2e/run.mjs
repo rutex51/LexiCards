@@ -8762,7 +8762,8 @@ test('rysunek 1.32: kółka narzędzi – grupy w górnym menu, obrót kółkiem
   const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Kółka</p>');
   // Na starcie: „Pisanie”, pióro; duże kółko – czarne (kolor pióra), białe obwódki; po lewej zestaw Metrologia.
   await expectText(editor.locator('[data-testid=drawing-group-name]'), 'Pisanie');
-  assert.deepEqual(await rowLabels(editor), ['Pióro', 'Zakreślacz', 'Gumka – całe kreski']);
+  // Od 1.63 także wiaderko.
+  assert.deepEqual(await rowLabels(editor), ['Pióro', 'Zakreślacz', 'Gumka – całe kreski', 'Wiaderko – wypełnij zamknięty obszar kolorem']);
   assert.equal(await editor.locator('[data-testid=drawing-tool-pen]').getAttribute('aria-pressed'), 'true');
   assert.equal(await ringMain(editor, 'right').evaluate((element) => getComputedStyle(element).backgroundColor), 'rgb(29, 29, 31)');
   assert.match(await ringMain(editor, 'right').getAttribute('aria-label'), /^Pióro/);
@@ -14049,7 +14050,8 @@ test('rysunek 1.59 (od 1.61 skala zeszytu, kartka na środku): tablica A0 – po
   // Kartka → tablica A0: ta sama skala, obszar kartki tam, gdzie była kartka – kreska w tym samym miejscu ekranu.
   await editor.locator('[data-testid=drawing-pages]').click();
   await page.locator('[data-testid=drawing-to-board]').click();
-  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Tablica A0');
+  await page.locator('[data-testid=drawing-board-format-A0]').click();
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Arkusz A0');
   await nextFrames(page);
   await expectText(editor.locator('[data-testid=drawing-zoom]'), '100%');
   assert.ok((await livePixel(page, ...sheet.at(-38, 528)))[3] < 60, 'bez pierścieni');
@@ -14097,6 +14099,7 @@ test('rysunek 1.59 (od 1.61 skala zeszytu, kartka na środku): tablica A0 – po
   // Znów tablica, rysunek także poza kartką – obraz w notatce: obszar z rysunkiem w wielkości obrazu kartki.
   await editor.locator('[data-testid=drawing-pages]').click();
   await page.locator('[data-testid=drawing-to-board]').click();
+  await page.locator('[data-testid=drawing-board-format-A0]').click();
   await nextFrames(page);
   await drawStroke(page, segment(sheet.at(-350, 500), sheet.at(-150, 500), 12));
   await editor.locator('[data-testid=drawing-done]').click();
@@ -14144,6 +14147,7 @@ test('rysunek 1.59 (od 1.61 przez cały ekran): z tablicy A0 na kartkę – tabl
   // Kartka 2 – tablica A0.
   await editor.locator('[data-testid=drawing-pages]').click();
   await page.locator('[data-testid=drawing-page-new-board]').click();
+  await page.locator('[data-testid=drawing-board-format-A0]').click();
   await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 2 z 2');
   await nextFrames(page);
   const white = (pixel) => pixel[3] === 255 && Math.min(...pixel.slice(0, 3)) > 225;
@@ -19080,6 +19084,234 @@ test('szybkie fiszki 1.62.2: złoto na telefonie – zaznaczenie i dotknięcie p
   await expectText(edit.locator('[data-testid=magic-tab]'), '1');
   await page.screenshot({ path: path.join(OUTPUT, 'szybkie-1622-telefon-zloto.png') });
 });
+
+test('szybkie fiszki 1.63: „Uporządkuj” – oprócz przeciągania tekst wpisany w polach (obok edytora i w teczce), Enter kończy, pole obrazu bez wpisywania; skrót fiszki pokazuje wpisany tekst, „Dodaj do lekcji…” – fragmenty i wpisany tekst w formularzu (komputer)', async ({ open }) => {
+  const page = await open();
+  const { ids, edit } = await openMagicNote(page);
+  await sendToMagic(page, 'Zobowiązania');
+  await edit.locator('[data-testid=magic-edit]').click();
+  await edit.locator('[data-testid=magic-slot-termPL]').waitFor();
+  assert.equal(await edit.locator('[data-testid=magic-input-media]').count(), 0, 'pole „Obraz” – bez wpisywania');
+  // Fragment do pojęcia (dotknięciem), potem dopisany tekst i pojęcie po angielsku wpisane ręcznie.
+  await edit.locator('.magic-chip[data-sig="1.1"]').click();
+  await edit.locator('[data-testid=magic-slot-termPL]').click({ position: { x: 20, y: 8 } });
+  assert.equal((await magicSlots(page))['1.1'], 'termPL');
+  const typed = edit.locator('[data-testid=magic-input-termEN]');
+  assert.equal(await typed.getAttribute('placeholder'), 'Wpisz albo upuść fragment');
+  await typed.click();
+  await page.keyboard.type('liabilities');
+  // Spacja i Enter w polu – zwykłe pisanie, bez przenoszenia fragmentów; Enter kończy wpisywanie.
+  await page.keyboard.press('Enter');
+  assert.equal(await typed.evaluate((input) => input === document.activeElement), false, 'Enter kończy wpisywanie');
+  await edit.locator('[data-testid=magic-input-defPL]').fill('Obecny obowiązek jednostki wynikający z przeszłych zdarzeń.');
+  // Pole z fragmentem – „Dopisz” (ołówek w rogu) pokazuje pole tekstu z kursorem.
+  assert.equal(await edit.locator('[data-testid=magic-input-termPL]').count(), 0, 'pole z fragmentem – bez pola tekstu');
+  await edit.locator('[data-testid=magic-add-termPL]').click();
+  assert.equal(await edit.locator('[data-testid=magic-input-termPL]').evaluate((input) => input === document.activeElement), true, 'kursor w polu');
+  await page.keyboard.type('finansowe');
+  await page.screenshot({ path: path.join(OUTPUT, 'szybkie-163-wpisywanie.png') });
+  await edit.locator('[data-testid=magic-edit]').click();
+  await expectText(edit.locator('.magic-summary'), 'liabilities');
+  await expectText(edit.locator('.magic-summary'), 'Zobowiązania finansowe');
+  // Do teczki i zapis notatki – tekst w zapisanej fiszce.
+  await edit.locator('[data-testid=magic-send]').click();
+  await expectText(edit.locator('[data-testid=magic-folder-count]'), '1');
+  await edit.locator('[data-testid=note-right]').click();
+  await page.locator('dialog[data-testid=note-edit-dialog]').waitFor({ state: 'detached' });
+  const stored = await storedNote(page, ids.statements);
+  assert.deepEqual(stored.magic.cards[0].texts, { termPL: 'finansowe', termEN: 'liabilities', defPL: 'Obecny obowiązek jednostki wynikający z przeszłych zdarzeń.' });
+  await noteDialog(page).locator('[data-testid=note-left]').click();
+
+  // Teczka na ekranie Biblioteki: przykład wpisany w teczce (zapis od razu), potem „Dodaj do lekcji…”.
+  await page.goto(`${page.url().split('#')[0]}#/library/lesson/${ids.statements}`);
+  await page.locator('[data-testid=magic-folder-fab]').click();
+  const folder = magicFolderDialog(page);
+  const item = folder.locator('[data-testid=magic-folder-item]').first();
+  await expectText(item, 'tekst wpisany');
+  await expectText(item.locator('[data-testid=magic-folder-status]'), 'Gotowa');
+  await item.locator('[data-testid=magic-folder-toggle]').click();
+  const example = item.locator('[data-testid=magic-input-exEN]');
+  await example.fill('A bank loan is a liability.');
+  await example.press('Enter');
+  await waitUntil(async () => (await storedNote(page, ids.statements)).magic.cards[0].texts?.exEN === 'A bank loan is a liability.', 'przykład zapisany');
+  await item.locator('[data-testid=magic-folder-add]').click();
+  const form = sheet(page);
+  await expectValue(form.locator('[data-testid=term-pl]'), 'Zobowiązania finansowe');
+  await expectValue(form.locator('[data-testid=term-en]'), 'liabilities');
+  await saveSheet(page);
+  await folder.locator('[data-testid=magic-folder-empty]').waitFor();
+  const term = await page.evaluate((lessonID) => window.lexicards.library.listTerms(lessonID).find((entry) => entry.termEN === 'liabilities'), ids.statements);
+  assert.equal(term.termPL, 'Zobowiązania finansowe');
+  assert.equal(term.descriptionPL, 'Obecny obowiązek jednostki wynikający z przeszłych zdarzeń.');
+  assert.equal(term.exampleEN, 'A bank loan is a liability.');
+}, { device: DESKTOP });
+
+test('notatki 1.63: telefon, widok „Ciągły” – klawiatura iPhone’a (widoczna część ekranu mniejsza i przesunięta, jak podaje Safari): okno tekstu w widocznej części, pasek formatowania przyklejony u góry także po przewinięciu tekstu na dół', async ({ open }) => {
+  const page = await open();
+  const long = [MAGIC_NOTE, ...Array.from({ length: 12 }, (_, index) => `<p>Akapit ${index + 1}: zobowiązania i aktywa w bilansie firmy na koniec okresu.</p>`)].join('');
+  const { edit } = await openMagicNote(page, { html: long });
+  const toolbar = edit.locator('.note-editor__toolbar');
+  // Klawiatura: widoczna część ekranu – 420 px od 160 px (Safari przesunął obraz, żeby kursor był widoczny).
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty('--vv-top', '160px');
+    document.documentElement.style.setProperty('--vv-height', '420px');
+  });
+  await nextFrames(page);
+  const box = await edit.boundingBox();
+  assert.ok(Math.abs(box.y - 160) < 1 && Math.abs(box.height - 420) < 1, `okno w widocznej części (${box.y}, ${box.height})`);
+  // Kursor na końcu tekstu – pole przewinięte na dół; pasek dalej u góry widocznej części.
+  await selectInNote(page, 'Akapit 12', { caret: true });
+  await edit.locator('.note-edit__body').evaluate((body) => { body.scrollTop = body.scrollHeight; });
+  await nextFrames(page);
+  const bar = await toolbar.boundingBox();
+  assert.ok(bar.y >= 160 - 1 && bar.y + bar.height <= 160 + 420, `pasek widoczny (${bar.y}–${bar.y + bar.height})`);
+  const magicButton = await edit.locator('[data-testid=note-format-magic]').boundingBox();
+  assert.ok(magicButton.y >= 160 - 1 && magicButton.y + magicButton.height <= 580, 'przycisk szybkiej fiszki widoczny');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-163-klawiatura-telefon.png') });
+  await page.evaluate(() => {
+    document.documentElement.style.removeProperty('--vv-top');
+    document.documentElement.style.removeProperty('--vv-height');
+  });
+});
+
+// ---------------------------------------------------------------- rysunek 1.63: wiaderko, kolor kartki, formaty arkusza
+
+/** Kolor [r, g, b] warstwy zapisanych kresek dokładnie w punkcie płótna (ułamki). */
+const baseColorAt = (page, x, y) => page.locator('.drawing__canvas:not(.drawing__canvas--live)').evaluate((canvas, [fx, fy]) => {
+  const data = canvas.getContext('2d').getImageData(Math.round(canvas.width * fx), Math.round(canvas.height * fy), 1, 1).data;
+  return [data[0], data[1], data[2]];
+}, [x, y]);
+const nearHex = (rgb, hex, slack = 6) => [1, 3, 5].every((at, index) => Math.abs(rgb[index] - parseInt(hex.slice(at, at + 2), 16)) <= slack);
+/** Dotknięcie płótna (ułamki) – pióro, bez ruchu. */
+const tapCanvas = (page, point, options = {}) => drawStroke(page, [[...point, 0.5], [...point, 0.5]], options);
+
+test('rysunek 1.63: wiaderko – odręczna pętla i prostokąt wypełnione pod liniami (otwór w środku zostaje), obszar otwarty – komunikat, drugi kolor zastępuje pierwszy, cofnij; kolor kartki – ton i własny; zapis (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate(() => { localStorage.removeItem('lexicards-drawing-tools'); });
+  const { dialog, editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Wiaderko</p>');
+  // Gładka kartka (bez kratki) – łatwiej sprawdzać kolory.
+  await editor.locator('[data-testid=drawing-paper]').click();
+  await editor.locator('[data-testid=drawing-paper-plain]').click();
+  await editor.locator('[data-testid=drawing-paper]').click();
+  const sheet = await pageFrame(page);
+  // Kwadrat odręczny (zamknięty) i w środku mniejszy kwadrat (otwór), obok – otwarta litera „U”.
+  // Kwadrat z zakładką na początku (wygładzanie pióra skraca koniec kreski – jak przy rysowaniu ręką).
+  const square = (x0, y0, x1, y1) => [...segment(sheet.at(x0, y0), sheet.at(x1, y0), 8), ...segment(sheet.at(x1, y0), sheet.at(x1, y1), 8).slice(1),
+    ...segment(sheet.at(x1, y1), sheet.at(x0, y1), 8).slice(1), ...segment(sheet.at(x0, y1), sheet.at(x0, y0), 8).slice(1),
+    ...segment(sheet.at(x0, y0), sheet.at(x0 + (x1 - x0) / 3, y0), 4).slice(1)];
+  await drawStroke(page, square(200, 200, 600, 600));
+  await drawStroke(page, square(350, 350, 450, 450));
+  await drawStroke(page, [...segment(sheet.at(800, 200), sheet.at(800, 600), 8), ...segment(sheet.at(800, 600), sheet.at(1100, 600), 8).slice(1), ...segment(sheet.at(1100, 600), sheet.at(1100, 200), 8).slice(1)]);
+  await nextFrames(page);
+  // Wiaderko – w grupie „Pisanie” obok gumki.
+  const fillTool = editor.locator('[data-testid=drawing-tool-fill]');
+  await fillTool.click();
+  assert.equal(await fillTool.getAttribute('aria-pressed'), 'true');
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Wiaderko');
+  assert.equal(await editor.locator('[data-testid=drawing-color-yellow]').getAttribute('aria-pressed'), 'true', 'domyślnie żółty');
+  await tapCanvas(page, sheet.at(260, 260));
+  await nextFrames(page);
+  assert.ok(nearHex(await baseColorAt(page, ...sheet.at(260, 260)), '#ffe680'), 'wnętrze pętli żółte');
+  assert.ok(nearHex(await baseColorAt(page, ...sheet.at(400, 400)), '#ffffff'), 'otwór w środku biały');
+  assert.ok(nearHex(await baseColorAt(page, ...sheet.at(700, 400)), '#ffffff'), 'poza pętlą biało');
+  // Linia nad wypełnieniem (ciemna).
+  assert.ok((await baseColorAt(page, ...sheet.at(200, 400))).every((value) => value < 120), 'linia na wierzchu');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-163-wiaderko.png') });
+  // Obszar otwarty („U”) – komunikat, nic się nie wypełnia.
+  await tapCanvas(page, sheet.at(950, 400));
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'nie jest zamknięty');
+  assert.ok(nearHex(await baseColorAt(page, ...sheet.at(950, 400)), '#ffffff'));
+  // Drugi kolor w tym samym miejscu – zastępuje pierwszy (jedno wypełnienie).
+  await editor.locator('[data-testid=drawing-color-blue]').click();
+  await tapCanvas(page, sheet.at(500, 260));
+  await nextFrames(page);
+  assert.ok(nearHex(await baseColorAt(page, ...sheet.at(260, 260)), '#b9e0ff'), 'niebieskie');
+  // Cofnij – znów żółte.
+  await editor.locator('[data-testid=drawing-undo]').click();
+  await nextFrames(page);
+  assert.ok(nearHex(await baseColorAt(page, ...sheet.at(260, 260)), '#ffe680'), 'po cofnięciu żółte');
+  await editor.locator('[data-testid=drawing-redo]').click();
+  // Kolor kartki – ton „Kremowa”, potem własny z „+” (suwaki: kod HEX).
+  await editor.locator('[data-testid=drawing-paper]').click();
+  await editor.locator('[data-testid=drawing-paper-color-cream]').click();
+  await expectText(editor.locator('[data-testid=drawing-paper-color-name]'), 'kremowa');
+  await nextFrames(page);
+  assert.ok(nearHex(await baseColorAt(page, ...sheet.at(950, 400)), '#fbf5e6'), 'kartka kremowa');
+  assert.ok(nearHex(await baseColorAt(page, ...sheet.at(400, 400)), '#fbf5e6'), 'otwór w kolorze kartki');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-163-kolor-kartki.png') });
+  await editor.locator('[data-testid=drawing-paper-color-custom]').click();
+  await expectText(editor.locator('[data-testid=drawing-color-panel] .sheet__title, [data-testid=drawing-color-panel] h3, [data-testid=drawing-color-panel]'), 'Kolor kartki');
+  await editor.locator('[data-testid=drawing-color-tab-sliders]').click();
+  const hexInput = editor.locator('[data-testid=drawing-color-panel] input[type=text]').first();
+  await hexInput.fill('#E8F4FF');
+  await hexInput.press('Enter');
+  await editor.locator('[data-testid=drawing-color-use]').click();
+  await expectText(editor.locator('[data-testid=drawing-paper-color-name]'), '#E8F4FF');
+  await nextFrames(page);
+  assert.ok(nearHex(await baseColorAt(page, ...sheet.at(950, 400)), '#e8f4ff'), 'własny kolor kartki');
+  await editor.locator('[data-testid=drawing-paper]').click();
+  // Zapis: wypełnienie (z otworem) i kolor kartki w rysunku notatki.
+  await editor.locator('[data-testid=drawing-done]').click();
+  await editor.waitFor({ state: 'detached' });
+  await dialog.locator('[data-testid=note-right]').click();
+  await waitUntil(async () => (await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id)).length, ids.statements)) === 1, 'rysunek zapisany');
+  const saved = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
+  const fills = saved.strokes.filter((stroke) => stroke.tool === 'fill');
+  assert.equal(fills.length, 1, 'jedno wypełnienie');
+  assert.equal(fills[0].color, '#b9e0ff');
+  assert.equal(fills[0].rings.length, 2, 'brzeg i otwór');
+  assert.equal(saved.strokes[0].tool, 'fill', 'wypełnienie pod kreskami');
+  assert.equal(saved.paperColor, '#e8f4ff');
+}, { device: DESKTOP });
+
+test('rysunek 1.63: arkusz zamiast tablicy – nowy arkusz A3, zmiana formatu na 4A0 (rysunek w tym samym miejscu, cały arkusz po pomniejszeniu), z 4A0 na A2 tylko gdy rysunek się mieści; obszar kartki – jasnoszara przerywana ramka bez podpisu (komputer)', async ({ open }) => {
+  const page = await open();
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  const { editor } = await openDrawingEditorFromNote(page, ids.statements, '<p>Arkusz</p>');
+  await editor.locator('[data-testid=drawing-pages]').click();
+  await expectText(page.locator('[data-testid=drawing-page-new-board]'), 'Nowy arkusz…');
+  await page.locator('[data-testid=drawing-page-new-board]').click();
+  assert.deepEqual(await page.locator('[data-testid^=drawing-board-format-]').allTextContents(), ['A3', 'A2', 'A1', 'A0', '2A0', '4A0']);
+  await page.locator('[data-testid=drawing-board-format-A3]').click();
+  await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 2 z 2');
+  await waitUntil(async () => !(await page.locator('.drawing__flip').isVisible()), 'koniec animacji');
+  await editor.locator('[data-testid=drawing-pages]').click();
+  await expectText(page.locator('[data-testid=drawing-board-format]'), 'Format arkusza: A3…');
+  await expectText(page.locator('[data-testid=drawing-page-2]'), '(arkusz A3)');
+  await page.locator('[data-testid=drawing-board-format]').click();
+  assert.equal(await page.locator('[data-testid=drawing-board-format-A3]').getAttribute('aria-checked'), 'true');
+  // Kreska na A3, potem 4A0 – w tym samym miejscu ekranu.
+  await page.keyboard.press('Escape');
+  await nextFrames(page);
+  const before = await page.locator('[data-testid=drawing-canvas]').boundingBox();
+  const at = [0.45, 0.5];
+  await drawStroke(page, segment([0.4, 0.5], [0.5, 0.5], 10));
+  await nextFrames(page);
+  await editor.locator('[data-testid=drawing-pages]').click();
+  await page.locator('[data-testid=drawing-board-format]').click();
+  await page.locator('[data-testid=drawing-board-format-4A0]').click();
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Arkusz 4A0');
+  await nextFrames(page);
+  assert.ok((await pixelAt(page, ...at)).every((value) => value < 150), 'kreska w tym samym miejscu ekranu');
+  assert.deepEqual(await page.locator('[data-testid=drawing-canvas]').boundingBox(), before);
+  // Pomniejszenie do całego arkusza 4A0 (proporcje √2), ramka obszaru kartki – jasnoszara.
+  await page.mouse.move(640, 430);
+  await page.keyboard.down('Control');
+  for (let step = 0; step < 12; step += 1) await page.mouse.wheel(0, 400);
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(200);
+  await nextFrames(page);
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-163-arkusz-4A0.png') });
+  // Z 4A0 na A2: kreska blisko obszaru kartki – mieści się.
+  await editor.locator('[data-testid=drawing-pages]').click();
+  await page.locator('[data-testid=drawing-board-format]').click();
+  await expectText(page.locator('[data-testid=drawing-board-format-A2]'), 'A2');
+  await page.locator('[data-testid=drawing-board-format-A2]').click();
+  await expectText(editor.locator('[data-testid=drawing-notice]'), 'Arkusz A2');
+}, { device: DESKTOP });
 
 // ---------------------------------------------------------------- uruchomienie
 

@@ -6247,10 +6247,13 @@ svg.icon--note { color: var(--note-icon); }
  * z przycisku przy nazwie lekcji (spinacz z liczbą obiektów).
  */
 .dialog.sheet.note-dialog.note-edit-dialog {
-  inset: 0;
+  /* Od 1.63 – widoczna część ekranu (jak inne arkusze): na iPhonie z klawiaturą okno kończy się nad nią i nie ucieka
+     w górę razem z przesuniętym obrazem, więc pasek formatowania (przyklejony u góry) zostaje widoczny. */
+  inset: auto 0;
+  top: var(--vv-top, 0px);
   width: 100%;
   max-width: none;
-  height: 100%;
+  height: var(--vv-height, 100%);
   margin: 0;
 }
 .note-dialog.note-edit-dialog .sheet__panel {
@@ -8894,6 +8897,40 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
 .magic-slot--media { flex-direction: row; flex-wrap: wrap; }
 .magic-slot__language { position: absolute; top: 4px; left: 8px; color: var(--text-3); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em; }
 .magic-slot__hint { padding: 0 2px; color: var(--text-3); font-size: 0.74rem; }
+/* Od 1.63: tekst wpisany ręcznie w polu – bez ramki, rośnie z tekstem (Enter kończy wpisywanie). */
+.magic-slot__input {
+  display: block;
+  width: 100%;
+  min-height: 26px;
+  margin: 0;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--size-foot);
+  line-height: 1.35;
+  resize: none;
+  overflow: hidden;
+}
+.magic-slot__input::placeholder { color: var(--text-3); }
+/* „Dopisz” w polu z fragmentami (od 1.63) – mały przycisk w prawym górnym rogu, obok znacznika języka. */
+.magic-slot__add {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 20px;
+  border-radius: 6px;
+  color: var(--magic);
+}
+.magic-slot__add:hover { background: var(--magic-soft); }
+/* Na ekranie dotykowym 16 px – Safari na iPhonie nie powiększa wtedy strony przy wpisywaniu. */
+@media (pointer: coarse) { .magic-slot__input { font-size: 16px; } }
+.magic-slot__input:focus { outline: 2px solid var(--magic-line); outline-offset: 0; background: var(--magic-soft); }
 .magic-slot.magic-drop--over, .magic-bag.magic-drop--over {
   border-color: var(--magic-fill);
   border-style: solid;
@@ -9151,6 +9188,7 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   white-space: nowrap;
 }
 .magic-tag strong { color: var(--magic); font-weight: 800; }
+.magic-tag--typed strong { font-weight: 700; }
 .magic-folder-item__board { display: flex; flex-direction: column; gap: 12px; }
 .magic-folder-item__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .magic-folder-item__note { margin: -4px 0 0; color: var(--warning); font-size: var(--size-foot); text-align: right; }
@@ -9159,3 +9197,12 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   .note-text [data-magic].magic-born, .magic-card--enter, .magic-chip--new, .magic-pulse, .magic-folder__badge--pop { animation: none; }
   .magic-panel, .magic-tab { transition: none; }
 }
+
+/* Kolor kartki w panelu „Tło strony” (od 1.63): jasne tony i „+” – zawijane w wiersze. */
+.drawing__paper-tones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+.drawing__paper-tones .drawing__swatch { width: 33px; }

@@ -276,6 +276,9 @@ const ICONS = {
   ruler: [p('M3.5 15.8L15.8 3.5l4.7 4.7L8.2 20.5z'), p('M7.3 12l1.9 1.9'), p('M10 9.3l1.3 1.3'), p('M12.7 6.6l1.9 1.9')],
   // Sygnatura obrazu (etykieta) – od 1.12, odróżnia się od ołówka „Edytuj rysunek”.
   tag: [p('M3.5 12.5V4h8.5l8.5 8.5-8.5 8.5z'), { tag: 'circle', cx: 8, cy: 8.5, r: 1.4 }],
+  // Od 1.63: wiaderko (wypełnienie kolorem) – przechylone wiadro z uchwytem i kropla.
+  bucket: [p('M10.6 5.4l7 7-5.7 5.7a1.6 1.6 0 0 1-2.2 0l-4.8-4.8a1.6 1.6 0 0 1 0-2.2z'), p('M5.2 11.8h12.2'), p('M10.6 5.4L8.4 3.2'),
+    p('M19.6 15.2c.9 1.2 1.7 2.4 1.7 3.2a1.7 1.7 0 0 1-3.4 0c0-.8.8-2 1.7-3.2z')],
   eraser: [p('M8.5 19.5h11'), p('M5.2 14.3l8.6-8.6a2 2 0 0 1 2.8 0l2.7 2.7a2 2 0 0 1 0 2.8L12 18.5H9.4l-4.2-4.2z'), p('M9.3 10.2l5.5 5.5')],
   // Rysunek od 1.19: wymiar widoczny na stałe (oko), szyk i jego rozdzielenie, zakończenia odcinka.
   eye: [p('M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z'), { tag: 'circle', cx: 12, cy: 12, r: 2.8 }],

@@ -16,7 +16,7 @@ import {
   DEFAULT_TEMPLATE_LEVEL, PITCH, centerTemplate, cleanTemplate, fitTemplate, pitchScale, scaleTemplate
 } from '../../js/core/templates.js';
 import {
-  DRAWING_VERSION, SELECT_MODES, SELECT_MODE_LABELS, addPoint, cleanDrawing, cleanToolSettings, emptyDrawing, eraseAt, fromScaleLength,
+  DRAWING_VERSION, SELECT_MODES, STYLE_DEFAULTS, SELECT_MODE_LABELS, addPoint, cleanDrawing, cleanToolSettings, emptyDrawing, eraseAt, fromScaleLength,
   isElement, parseDecimal, scaleUnitLabel, selectionBounds, snapToStrokes, splitByPolygon, strokesAt, strokesInPolygon, strokesInRect,
   toScaleLength, translateStroke
 } from '../../js/core/drawing.js';
@@ -260,7 +260,7 @@ test('kształty 1.17: wypełnienie – nowy kształt z wypełnieniem (odcinek be
   assert.deepEqual(strokesAt([rect({ fill: 'light' })], 200, 100, 3), [0]);
   const cleaned = cleanDrawing({ ...emptyDrawing(), strokes: [rect({ fill: 'solid' }), rect({ fill: 'kratka' }), rect({ shape: 'arrow', h: 0, fill: 'solid' })] });
   assert.deepEqual(cleaned.strokes.map((shape) => shape.fill ?? null), ['solid', null, null]);
-  assert.equal(cleanToolSettings({ shapeFill: 'solid' }).shapeFill, 'solid');
+  assert.equal(cleanToolSettings({ styleDefaults: STYLE_DEFAULTS, shapeFill: 'solid' }).shapeFill, 'solid');
   assert.equal(cleanToolSettings({ shapeFill: 'kropki' }).shapeFill, 'none');
   assert.equal(cleanToolSettings(null).shapeFill, 'none');
 });

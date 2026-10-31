@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  PAPER_STEP, cleanToolSettings, defaultToolSettings, emptyDrawing, reorderStrokes, shapeMeasureText, shapeToolStyle, withShapeToolStyle
+  PAPER_STEP, STYLE_DEFAULTS, cleanToolSettings, defaultToolSettings, emptyDrawing, reorderStrokes, shapeMeasureText, shapeToolStyle, withShapeToolStyle
 } from '../../js/core/drawing.js';
 import { drawingToDxf, dxfPrimitives, parseDxf, primitivesToElements } from '../../js/core/dxf.js';
 import {
@@ -199,7 +199,7 @@ test('ustawienia 1.40: boki wielokąta, narożniki prostokąta i kreskowanie nar
   assert.equal(saved.ngonSides, 8);
   assert.deepEqual(saved.rectCorner, { kind: 'round', size: 11 });
   assert.deepEqual(shapeToolStyle(saved, 'rect').hatch, { angle: 135, gap: 6, cross: true });
-  const wrong = cleanToolSettings({ ngonSides: 40, rectCorner: { kind: 'round', size: 0 }, shapeFill: 'hatch' });
+  const wrong = cleanToolSettings({ styleDefaults: STYLE_DEFAULTS, ngonSides: 40, rectCorner: { kind: 'round', size: 0 }, shapeFill: 'hatch' });
   assert.equal(wrong.ngonSides, 6);
   assert.equal(wrong.rectCorner, null);
   assert.equal(wrong.shapeFill, 'hatch');

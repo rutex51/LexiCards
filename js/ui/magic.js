@@ -11,7 +11,7 @@
 // Kolor (fiolet, złoto, turkus) – Ustawienia → Wygląd; w arkuszu stylów atrybut data-magic-color na <html> (od 1.62.2; data-magic oznacza tylko fragmenty w treści).
 
 import {
-  MAGIC_MAX, activeMagicCard, cleanMagic, magicCardStatus, magicFragments, magicTermDraft, nextMagicNumber
+  MAGIC_MAX, MAGIC_TEXT_MAX, activeMagicCard, cleanMagic, cleanMagicTexts, magicCardStatus, magicFragments, magicTermDraft, nextMagicNumber
 } from '../core/magic.js';
 import { labelKey, referenceLabel } from '../core/note-refs.js';
 import { nowISO } from '../core/model.js';
@@ -399,9 +399,11 @@ function chip(frag, fragment, { thumb = null, picked = false, arriving = false, 
 
 /**
  * Fragmenty fiszki: tryb porządkowania (edit) – worek i pola; zwykły – wypełnione pola (skrót) i worek.
- * options: thumb(label), picked (sygnatura), arriving / fresh (sygnatura lecącego i świeżo przybyłego fragmentu).
+ * options: thumb(label), picked (sygnatura), arriving / fresh (sygnatura lecącego i świeżo przybyłego fragmentu);
+ * od 1.63 onType(slot, text, done) – tekst wpisany ręcznie w polu tekstowym (done – koniec wpisywania: Enter albo
+ * wyjście z pola).
  */
-function boardContent(card, fragments, { edit = false, thumb = null, picked = null, arriving = null, fresh = null } = {}) {
+function boardContent(card, fragments, { edit = false, thumb = null, picked = null, arriving = null, fresh = null, onType = null } = {}) {
   const live = card.frags.filter((frag) => fragments.has(frag.sig));
   const chipOf = (frag) => chip(frag, fragments.get(frag.sig), { thumb, picked: frag.sig === picked, arriving: frag.sig === arriving, fresh: frag.sig === fresh, focusable: edit });
   const loose = live.filter((frag) => !frag.slot);
@@ -410,24 +412,67 @@ function boardContent(card, fragments, { edit = false, thumb = null, picked = nu
     loose.length > 0 ? loose.map(chipOf) : h('p', { class: 'magic-bag__empty' }, 'Wszystkie fragmenty są w polach.'));
   if (!edit) {
     const rows = ROWS.map(([label, slots]) => {
-      const values = slots.map((slot) => live.filter((frag) => frag.slot === slot)
-        .map((frag) => fragments.get(frag.sig).object ?? fragments.get(frag.sig).text).join(' ')).filter(Boolean);
+      // Od 1.63 z tekstem wpisanym ręcznie (za fragmentami pola).
+      const values = slots.map((slot) => [...live.filter((frag) => frag.slot === slot)
+        .map((frag) => fragments.get(frag.sig).object ?? fragments.get(frag.sig).text), card.texts?.[slot] ?? ''].filter(Boolean).join(' ')).filter(Boolean);
       return values.length > 0 ? [h('dt', null, label), h('dd', null, values.join(' · '))] : null;
     }).filter(Boolean);
     return [rows.length > 0 ? h('dl', { class: 'magic-summary' }, rows) : null, bag];
   }
+  /** Od 1.63: pole do wpisania tekstu ręcznie (oprócz przeciągania) – rośnie z tekstem, Enter kończy wpisywanie. */
+  const typing = (slot, after) => {
+    const input = h('textarea', {
+      class: 'magic-slot__input', rows: 1, maxlength: MAGIC_TEXT_MAX, spellcheck: 'true',
+      placeholder: after ? 'Dopisz…' : 'Wpisz albo upuść fragment', 'aria-label': `${SLOT_LABELS[slot]} – wpisz tekst`, dataset: { testid: `magic-input-${slot}` }
+    });
+    input.value = card.texts?.[slot] ?? '';
+    const fit = () => {
+      input.style.height = 'auto';
+      input.style.height = `${input.scrollHeight}px`;
+    };
+    input.addEventListener('input', () => {
+      fit();
+      onType(slot, input.value, false);
+    });
+    input.addEventListener('change', () => onType(slot, input.value, true));
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        input.blur();
+      }
+    });
+    window.requestAnimationFrame(fit);
+    return input;
+  };
+  /**
+   * Pole z fragmentami bez wpisanego tekstu – mały przycisk „Dopisz” w rogu (fiszka nie rośnie); dotknięcie – pole tekstu
+   * z kursorem. Puste pole i pole z wpisanym tekstem – pole tekstu od razu.
+   */
+  const addButton = (slot) => h('button', {
+    type: 'button', class: 'magic-slot__add', 'aria-label': `Dopisz tekst – ${SLOT_LABELS[slot]}`, title: 'Dopisz tekst', dataset: { testid: `magic-add-${slot}` },
+    onClick: (event) => {
+      const input = typing(slot, true);
+      event.currentTarget.replaceWith(input);
+      input.focus();
+    }
+  }, icon('edit', { size: 15 }));
   const slotBox = (slot, language) => {
     const items = live.filter((frag) => frag.slot === slot);
+    const text = slot !== 'media' && onType;
+    const typed = Boolean(card.texts?.[slot]);
     return h('div', {
       class: `magic-slot${slot === 'media' ? ' magic-slot--media' : ''}`, dataset: { slot, testid: `magic-slot-${slot}` }, 'aria-label': SLOT_LABELS[slot], tabindex: '0'
     },
       language ? h('span', { class: 'magic-slot__language' }, language) : null,
-      items.length > 0 ? items.map(chipOf) : h('span', { class: 'magic-slot__hint' }, slot === 'media' ? 'Upuść obraz albo tabelę' : 'Upuść fragment'));
+      items.length > 0 ? items.map(chipOf) : text ? null : h('span', { class: 'magic-slot__hint' }, slot === 'media' ? 'Upuść obraz albo tabelę' : 'Upuść fragment'),
+      !text ? null : items.length === 0 || typed ? typing(slot, items.length > 0) : addButton(slot));
   };
   const fields = h('div', { class: 'magic-fields' }, ROWS.map(([label, slots]) => h('div', { class: `magic-row${slots.length === 1 ? ' magic-row--wide' : ''}` },
     h('div', { class: 'magic-row__label' }, label),
     slots.length === 1 ? slotBox(slots[0]) : [slotBox(slots[0], 'PL'), slotBox(slots[1], 'EN')])));
-  return [bag, fields, h('p', { class: 'magic-tip' }, 'Przeciągnij fragment z worka do pola albo dotknij fragmentu, a potem pola. Z pola do worka – tak samo.')];
+  return [bag, fields, h('p', { class: 'magic-tip' }, onType
+    ? 'Przeciągnij fragment z worka do pola albo dotknij fragmentu, a potem pola. Z pola do worka – tak samo. W pola tekstowe możesz też wpisać tekst.'
+    : 'Przeciągnij fragment z worka do pola albo dotknij fragmentu, a potem pola. Z pola do worka – tak samo.')];
 }
 
 const accepts = (target, fragment) => {
@@ -447,8 +492,12 @@ const refuseMessage = (fragment) => (fragment?.object
 function enableBoard(root, { host, fragmentOf, picked, onPick, onMove }) {
   root.addEventListener('pointerdown', (event) => {
     if (event.button > 0) return;
-    const item = event.target.closest('.magic-chip');
+    // Pole tekstu wpisywanego ręcznie i „Dopisz” (od 1.63) – zwykłe pisanie; z wybranym fragmentem – dotknięcie pola go tam przenosi.
+    const typing = event.target.closest('.magic-slot__input, .magic-slot__add');
+    if (typing && !picked()) return;
+    const item = typing ? null : event.target.closest('.magic-chip');
     if (!item || !root.contains(item)) {
+      if (typing) event.preventDefault();
       placePicked(event);
       return;
     }
@@ -525,7 +574,7 @@ function enableBoard(root, { host, fragmentOf, picked, onPick, onMove }) {
   });
   // Klawiatura: Enter albo spacja na fragmencie – wybór, na polu albo worku – przeniesienie wybranego; fokus zostaje na fragmencie.
   root.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if ((event.key !== 'Enter' && event.key !== ' ') || event.target.closest('.magic-slot__input')) return;
     const item = event.target.closest('.magic-chip');
     const target = item ? null : event.target.closest('.magic-slot, .magic-bag');
     const sig = item ? item.dataset.sig : picked();
@@ -560,6 +609,8 @@ function enableBoard(root, { host, fragmentOf, picked, onPick, onMove }) {
     const release = (upEvent) => {
       done();
       if (Math.hypot(upEvent.clientX - start.x, upEvent.clientY - start.y) > 10) return;
+      // Dotknięte pole tekstu (od 1.63) – bez klawiatury: fragment trafia do pola, wpisywanie się nie zaczyna.
+      if (document.activeElement?.classList.contains('magic-slot__input') && root.contains(document.activeElement)) document.activeElement.blur();
       const fragment = fragmentOf(sig);
       if (!accepts(target, fragment)) {
         toast(refuseMessage(fragment));
@@ -650,6 +701,9 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
     const edit = state.mode === 'edit' && Boolean(current);
     const live = current ? current.frags.filter((frag) => fragments.has(frag.sig)) : [];
     const placed = live.filter((frag) => frag.slot).length;
+    // Od 1.63 pola z tekstem wpisanym ręcznie – fiszka bez fragmentów, ale z tekstem, też jest fiszką.
+    const typed = Object.keys(current?.texts ?? {}).length;
+    const filled = live.length > 0 || typed > 0;
     const number = current?.no ?? nextMagicNumber(state.magic, fragments);
     layer.classList.toggle('magic-layer--hidden', state.hidden);
     layer.classList.toggle('magic-layer--edit', edit);
@@ -668,12 +722,22 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
       panel.classList.remove('magic-panel--hidden');
     }
     const body = h('div', { class: `magic-card__body${edit ? ' magic-card__body--edit' : ''}`, dataset: { testid: 'magic-card-body' } },
-      live.length === 0
+      !filled
         ? h('div', { class: 'magic-empty' },
           icon('magicCard', { size: 30 }),
           h('p', null, 'Zaznacz fragment notatki albo ustaw kursor w akapicie z odwołaniem [[…]] i dotknij ', icon('magicCard', { size: 17 }), ' na pasku.'),
           h('p', { class: 'magic-empty__sub' }, number ? `Pierwszy fragment dostanie sygnaturę ✦${number}.1, następny ✦${number}.2…` : 'Ta notatka ma już najwięcej szybkich fiszek.'))
-        : boardContent(current, fragments, { edit, thumb, picked: state.picked, arriving: state.arriving, fresh: state.fresh }));
+        : boardContent(current, fragments, {
+          edit, thumb, picked: state.picked, arriving: state.arriving, fresh: state.fresh,
+          // Tekst wpisany ręcznie – od razu w fiszce (zapis z notatką, „Anuluj” go cofa); bez przerysowania (kursor zostaje).
+          onType: (slot, text) => {
+            const target = active();
+            if (!target) return;
+            const next = cleanMagicTexts({ ...target.texts, [slot]: text });
+            if (next) target.texts = next;
+            else delete target.texts;
+          }
+        }));
     state.fresh = null;
     if (edit) {
       enableBoard(body, {
@@ -702,11 +766,11 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
       h('div', { class: 'magic-card__title' },
         h('span', { class: 'magic-card__no', dataset: { testid: 'magic-card-no' } }, number ? `✦${number}` : '✦'),
         h('span', { class: 'magic-card__lesson' }, lessonName(),
-          h('small', null, live.length > 0 ? `${fragmentWord(live.length)} · w polach ${placed}` : 'pusta – czeka na fragmenty'))),
+          h('small', null, live.length > 0 ? `${fragmentWord(live.length)} · w polach ${placed}` : typed > 0 ? 'tekst wpisany w polach' : 'pusta – czeka na fragmenty'))),
       body,
       h('div', { class: 'magic-card__foot' },
         h('button', {
-          type: 'button', class: 'button magic-card__button magic-card__order', disabled: live.length === 0, dataset: { testid: 'magic-edit' },
+          type: 'button', class: 'button magic-card__button magic-card__order', disabled: !filled, dataset: { testid: 'magic-edit' },
           onClick: () => {
             state.mode = edit ? 'compact' : 'edit';
             state.picked = null;
@@ -714,7 +778,7 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
           }
         }, edit ? [icon('check', { size: 18 }), h('span', null, 'Gotowe')] : 'Uporządkuj'),
         h('button', {
-          type: 'button', class: 'button magic-card__button magic-card__send', disabled: live.length === 0 || state.busy, dataset: { testid: 'magic-send' },
+          type: 'button', class: 'button magic-card__button magic-card__send', disabled: !filled || state.busy, dataset: { testid: 'magic-send' },
           onClick: () => send()
         }, 'Do teczki')));
     tab.querySelector('.magic-tab__no').textContent = number ? `✦${number}` : '✦';
@@ -831,7 +895,7 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
     const current = active();
     if (!current || state.busy) return;
     const fragments = fragmentsNow();
-    if (!current.frags.some((frag) => fragments.has(frag.sig))) return;
+    if (!current.frags.some((frag) => fragments.has(frag.sig)) && !current.texts) return;
     state.busy = true;
     state.picked = null;
     state.arriving = null;
@@ -905,7 +969,7 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
     for (const item of state.magic.cards) {
       if (item.frags) item.frags = item.frags.filter((frag) => frag.sig !== sig);
     }
-    state.magic.cards = state.magic.cards.filter((item) => item.state === 'done' || item.state === 'active' || item.frags.length > 0);
+    state.magic.cards = state.magic.cards.filter((item) => item.state === 'done' || item.state === 'active' || item.frags.length > 0 || item.texts);
     selectionChanged();
     render();
     toast(`Fragment ✦${sig} usunięty z fiszki – tekst wrócił do zwykłego.`);
@@ -998,7 +1062,9 @@ export function openMagicFolder(ctx, { editor = null, focus = null, onClose = nu
 
   /** Fiszki: [{ key, lessonID, card, fragments, live }] – live: fiszka notatki z edytora. */
   const items = () => {
-    const list = library.magicFolder().filter((item) => !editor || item.lessonID !== editor.lessonID).map((item) => ({ ...item, live: false }));
+    // Kopie fiszek z biblioteki – tekst wpisywany w polu (od 1.63) zmienia kopię, zapis – dopiero biblioteka.
+    const list = library.magicFolder().filter((item) => !editor || item.lessonID !== editor.lessonID)
+      .map((item) => ({ ...item, card: structuredClone(item.card), live: false }));
     if (editor) {
       const fragments = editor.fragments();
       for (const card of editor.cards()) list.push({ lessonID: editor.lessonID, card, fragments, live: true });
@@ -1040,7 +1106,20 @@ export function openMagicFolder(ctx, { editor = null, focus = null, onClose = nu
     let board = null;
     if (open) {
       board = h('div', { class: 'magic-folder-item__board', dataset: { testid: 'magic-folder-board' } },
-        boardContent(card, fragments, { edit: true, thumb, picked: picked?.key === item.key ? picked.sig : null }));
+        boardContent(card, fragments, {
+          edit: true, thumb, picked: picked?.key === item.key ? picked.sig : null,
+          // Od 1.63 tekst wpisany ręcznie: w trakcie – w widoku (przyciski widzą nowy tekst), po Enter albo wyjściu z pola – zapis.
+          onType: (slot, text, done) => {
+            const texts = cleanMagicTexts({ ...card.texts, [slot]: text });
+            if (texts) card.texts = texts;
+            else delete card.texts;
+            if (!done) return;
+            change(item, (entry) => {
+              if (texts) entry.texts = texts;
+              else delete entry.texts;
+            }, () => library.updateMagicCard(item.lessonID, card.no, { texts: texts ?? {} }));
+          }
+        }));
       enableBoard(board, {
         host: dialog,
         fragmentOf: (sig) => fragments.get(sig),
@@ -1061,7 +1140,7 @@ export function openMagicFolder(ctx, { editor = null, focus = null, onClose = nu
         h('span', { class: 'magic-mini', 'aria-hidden': 'true' }, `✦${card.no}`),
         h('div', { class: 'magic-folder-item__main' },
           h('p', { class: 'magic-folder-item__title' }, title || h('span', { class: 'magic-folder-item__untitled' }, 'Bez pojęcia')),
-          h('p', { class: 'magic-folder-item__sub' }, `Z notatki „${library.getLesson(item.lessonID)?.name ?? ''}” · ${fragmentWord(status.count)}`)),
+          h('p', { class: 'magic-folder-item__sub' }, `Z notatki „${library.getLesson(item.lessonID)?.name ?? ''}” · ${fragmentWord(status.count)}${status.typed > 0 ? ' · tekst wpisany' : ''}`)),
         h('span', { class: `magic-pill magic-pill--${pill.tone}`, dataset: { testid: 'magic-folder-status' } }, pill.text)),
       h('div', { class: 'magic-folder-item__lesson' },
         h('span', { class: 'magic-folder-item__label' }, 'Lekcja'),
@@ -1078,7 +1157,9 @@ export function openMagicFolder(ctx, { editor = null, focus = null, onClose = nu
           }
         }, h('span', null, library.lessonPath(target), target === item.lessonID ? h('small', null, ' – lekcja notatki') : null), icon('chevronRight', { size: 18 }))),
       open ? board : h('div', { class: 'magic-folder-item__chips' }, card.frags.filter((frag) => fragments.has(frag.sig)).map((frag) => h('span', { class: 'magic-tag' },
-        h('strong', null, `✦${frag.sig}`), ` ${fragments.get(frag.sig).object ?? fragments.get(frag.sig).text}`))),
+        h('strong', null, `✦${frag.sig}`), ` ${fragments.get(frag.sig).object ?? fragments.get(frag.sig).text}`)),
+        // Od 1.63 tekst wpisany ręcznie – z nazwą pola.
+        Object.entries(card.texts ?? {}).map(([slot, text]) => h('span', { class: 'magic-tag magic-tag--typed' }, h('strong', null, `${SLOT_LABELS[slot]}:`), ` ${text}`))),
       h('div', { class: 'magic-folder-item__actions' },
         h('button', {
           type: 'button', class: 'button button--danger-plain', dataset: { testid: 'magic-folder-delete' },

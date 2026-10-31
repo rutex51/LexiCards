@@ -52,7 +52,7 @@ import {
   HIGHLIGHTER_COLORS, HIGHLIGHTER_RANGE, INK_COLORS, RAY_STEPS, WIDTH_LIMITS, STICKY_COLORS, STICKY_MIN, STICKY_TEXT_MAX, STICKY_TEXT_SIZES, TABLE_TEXT_SIZES, isBox, PAGE_HEIGHT, PAGE_WIDTH, PAPERS, PAPER_LABELS, PAPER_STEP, SCALE_UNITS, SELECT_MODES, SELECT_MODE_LABELS,
   SELECT_SHAPES, SENSITIVITY_LABELS, TEXT_SIZES, TEXT_SIZE_LABELS, addPoint, cleanDrawing, cleanScale, cleanToolSettings, shapeToolStyle, stickyColor, withShapeToolStyle,
   DIM_UNITS, DRAWING_VERSION, defaultDimUnit, defaultToolSettings, dimFactor, dimFormat, dimMillimeters, dimUnitLabel, dimUnitNote, dimensionParts, formatTolerance, hasMeasuredContent, elementBox, emptyDrawing, eraseAt, formatLength, formatNumber, formatRatio, fromScaleLength, isClockwise,
-  MAX_STROKES, isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
+  FILL_COLORS, PAPER_TONES, fillHex, paperColor, MAX_PAGE_SIZE, MAX_STROKES, isElement, isHexColor, lineAngleDifference, parseDecimal, penWidth, perpendicularAngle, rectPolygon, rememberColor, rgbToHex,
   hasContent, rulerDegrees, rulerOffset, rulerPoint, scaleUnitLabel, screenScale, screenScaleValue, selectionBounds, smoothPoint, snapRulerAngle,
   snapToStrokes, splitByPolygon, strokeBounds, strokesAt, strokesInPolygon, strokesInRect, toScaleLength, touchesStroke, translateStroke,
   ORDER_LABELS, ORDER_MOVES, lengthText, pathLengthText, reorderStrokes, shapeMeasureText
@@ -94,7 +94,8 @@ import { openFitTable } from './fit-table.js';
 import { RING_SIDES, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPartHidden } from '../core/tool-ring.js';
 import { openToolGroups } from './drawing-groups.js';
 import { createRing } from './drawing-ring.js';
-import { BOARD_HEIGHT, BOARD_WIDTH, SHEET_X, SHEET_Y, boardViewport, fitsSheet, isBoard, setBoard } from '../core/board.js';
+import { bucketFill, fillContains, fillRings } from '../core/bucket.js';
+import { BOARD_FORMAT_IDS, boardFormat, boardViewport, fitsFormat, fitsSheet, isBoard, setBoard, sheetAreaOrigin } from '../core/board.js';
 import {
   DIM_FONT, DIM_PREFIXES, FIT_RE, LABEL_TEXT_MAX, POINT_MARKS, POINT_MARK_LABELS, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_DASHES, SHAPE_DASH_LABELS,
   SHAPE_FILLS, SHAPE_FILL_LABELS, SHAPE_LABELS, SKEW_DEGREES_LIMIT, canDash, hasCaps, isPointShape, pointMark, shapeDash, withDash,
@@ -147,6 +148,8 @@ const MAX_ZOOM = 6;
 const ERASER_RADIUS = 14;
 /** Margines wokół strony na ekranie (px). */
 const STAGE_MARGIN = 14;
+/** Przerywana ramka obszaru kartki zeszytu na arkuszu (od 1.63 jasnoszara – wcześniej niebieska z podpisem). */
+const SHEET_AREA_COLOR = 'rgba(142, 142, 147, 0.5)';
 /** Linijka (px ekranu): szerokość, jak blisko krawędzi kreska przyskakuje, uchwyty obrotu. */
 const RULER_WIDTH = 64;
 const RULER_SNAP = 26;
@@ -303,9 +306,9 @@ async function loadPicture(photo) {
 
 // ---------------------------------------------------------------- rysowanie na płótnie
 
-/** Tło strony: białe, w linie albo w kratkę (w jednostkach rysunku); jasność linii – od 1.15. */
+/** Tło strony: białe (od 1.63 w kolorze kartki), w linie albo w kratkę (w jednostkach rysunku); jasność linii – od 1.15. */
 export function paintPaper(ctx, drawing, effect = null) {
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = paperColor(drawing);
   ctx.fillRect(0, 0, drawing.width, drawing.height);
   // Od 1.36 poziom „Tło”: ukryty – sama biała strona, przezroczystość i nasycenie – linii papieru.
   if (drawing.paper === 'plain' || drawing.photo || effect?.hidden) return;
@@ -490,6 +493,20 @@ export function paintStroke(ctx, stroke, options = {}) {
     paintElement(ctx, stroke);
     return;
   }
+  // Wypełnienie wiaderkiem (od 1.63): obrysy regułą parzystości – otwory zostają puste.
+  if (stroke.tool === 'fill') {
+    ctx.save();
+    ctx.fillStyle = stroke.color;
+    ctx.beginPath();
+    for (const ring of fillRings(stroke)) {
+      ctx.moveTo(ring[0], ring[1]);
+      for (let index = 2; index < ring.length; index += 2) ctx.lineTo(ring[index], ring[index + 1]);
+      ctx.closePath();
+    }
+    ctx.fill('evenodd');
+    ctx.restore();
+    return;
+  }
   const points = stroke.points;
   const count = points.length / 3;
   if (count === 0) return;
@@ -546,15 +563,16 @@ export function paintStroke(ctx, stroke, options = {}) {
  * bez stałych wymiarów (zaznaczony – w jego miejscu są pola wymiarów); mode (od 1.21): editor –
  * strona edytora, image – obraz do notatki (bez karteczek ukrytych na obrazie).
  */
-export function paintDrawing(ctx, drawing, media = {}, skip = null, plain = null, { editor = false, image = false } = {}) {
+export function paintDrawing(ctx, drawing, media = {}, skip = null, plain = null, { editor = false, image = false, ink = false } = {}) {
   const format = dimFormat(drawing);
   // Warstwy (od 1.36): tło, obraz i elementy – ukryte, przezroczyste, mniej nasycone.
   const layers = drawingLayers(drawing);
   const active = layersActive(layers);
   const background = active ? levelEffect(layers, BACKGROUND_LAYER) : null;
-  paintPaper(ctx, drawing, background);
-  if (media.photo) paintPhoto(ctx, drawing, media.photo, active ? levelEffect(layers, PHOTO_LAYER) : null);
-  if (drawing.template && !background?.hidden) {
+  // Od 1.63 ink – same linie dla wiaderka (bez tła kartki, zdjęcia, kalki, zakreślacza i wypełnień).
+  if (!ink) paintPaper(ctx, drawing, background);
+  if (media.photo && !ink) paintPhoto(ctx, drawing, media.photo, active ? levelEffect(layers, PHOTO_LAYER) : null);
+  if (drawing.template && !background?.hidden && !ink) {
     ctx.save();
     if (background) ctx.globalAlpha = background.opacity;
     paintTemplate(ctx, drawing.template, media.template);
@@ -581,6 +599,7 @@ export function paintDrawing(ctx, drawing, media = {}, skip = null, plain = null
     // Karteczki mają numery w kolejności na rysunku (od 1.21).
     if (stroke.tool === 'sticky') number += 1;
     if (skip?.has(stroke)) continue;
+    if (ink && (stroke.tool === 'fill' || stroke.tool === 'highlighter')) continue;
     const effect = active ? strokeEffect(layers, stroke) : null;
     if (effect?.hidden) continue;
     const painted = effect && effect.saturation < 1 ? toneStroke(stroke, effect.saturation, stickyColor) : stroke;
@@ -706,7 +725,7 @@ function readClipboard() {
     const raw = JSON.parse(localStorage.getItem(CLIPBOARD_KEY) ?? 'null');
     // Sprawdzone jak rysunek (zapis mógł pochodzić ze starszej wersji albo być uszkodzony).
     // Od 1.25 schowek ma tolerancje w mm (jak rysunek w formacie 10) – bez przeliczania.
-    const clean = raw && cleanDrawing({ width: 8192, height: 8192, strokes: raw.strokes, version: DRAWING_VERSION });
+    const clean = raw && cleanDrawing({ width: MAX_PAGE_SIZE, height: MAX_PAGE_SIZE, strokes: raw.strokes, version: DRAWING_VERSION });
     if (clean?.strokes.length > 0) clipboard = { strokes: clean.strokes };
   } catch {
     // Pamięć urządzenia niedostępna – schowek tylko w tym oknie.
@@ -1026,9 +1045,9 @@ export function openDrawingEditor({
       ? Math.min((view.width - STAGE_MARGIN * 2) / (PAGE_WIDTH + SPIRAL_OUT * 2), (view.height - view.top - view.bottom) / PAGE_HEIGHT)
       : Math.min((view.width - STAGE_MARGIN * 2) / (drawing.width + spiralRoom() * 2), (view.height - view.top - view.bottom) / drawing.height));
     const maxZoom = () => MAX_ZOOM;
-    /** Najmniejsze powiększenie – tablica A0 (od 1.61): cała tablica na ekranie. */
+    /** Najmniejsze powiększenie – arkusz (od 1.61): cały arkusz na ekranie (od 1.63 każdego formatu). */
     const minZoom = () => (isBoard(drawing)
-      ? Math.min(MIN_ZOOM, Math.min((view.width - STAGE_MARGIN * 2) / BOARD_WIDTH, (view.height - view.top - view.bottom) / BOARD_HEIGHT) / fitScale())
+      ? Math.min(MIN_ZOOM, Math.min((view.width - STAGE_MARGIN * 2) / drawing.width, (view.height - view.top - view.bottom) / drawing.height) / fitScale())
       : MIN_ZOOM);
     /**
      * Położenie strony: mniejsza niż ekran – na środku (pod paskiem narzędzi); większa – nie ucieka poza krawędź (grzbiet
@@ -1108,7 +1127,7 @@ export function openDrawingEditor({
       ctx.save();
       ctx.shadowColor = 'rgba(0, 0, 0, 0.18)';
       ctx.shadowBlur = 12 / view.scale;
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = paperColor(drawing);
       ctx.fillRect(0, 0, drawing.width, drawing.height);
       ctx.restore();
       ctx.save();
@@ -1125,22 +1144,17 @@ export function openDrawingEditor({
       paintBoardEdge(ctx);
     };
     /**
-     * Tablica A0 (od 1.59): przerywana ramka obszaru kartki zeszytu (od 1.61 na środku tablicy) – rysunek w niej da się
-     * zamienić z powrotem na kartkę zeszytu.
+     * Arkusz (od 1.59): przerywana ramka obszaru kartki zeszytu (od 1.61 na środku arkusza) – rysunek w niej da się
+     * zamienić z powrotem na kartkę zeszytu. Od 1.63 jasnoszara, bez podpisu.
      */
     function paintSheetArea(ctx) {
       if (!isBoard(drawing)) return;
+      const origin = sheetAreaOrigin(drawing);
       ctx.save();
       ctx.setLineDash([12 / view.scale, 8 / view.scale]);
-      ctx.lineWidth = 1.5 / view.scale;
-      ctx.strokeStyle = 'rgba(0, 113, 227, 0.55)';
-      ctx.strokeRect(SHEET_X, SHEET_Y, PAGE_WIDTH, PAGE_HEIGHT);
-      ctx.setLineDash([]);
-      ctx.font = textFont(12 / view.scale, '500');
-      ctx.fillStyle = 'rgba(0, 113, 227, 0.75)';
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'top';
-      ctx.fillText('Obszar kartki zeszytu', SHEET_X + PAGE_WIDTH - 6 / view.scale, SHEET_Y + PAGE_HEIGHT + 5 / view.scale);
+      ctx.lineWidth = 1.25 / view.scale;
+      ctx.strokeStyle = SHEET_AREA_COLOR;
+      ctx.strokeRect(origin.x, origin.y, PAGE_WIDTH, PAGE_HEIGHT);
       ctx.restore();
     }
     /** Brzeg tablicy A0 (od 1.59): szara rama stałej szerokości na ekranie zamiast kartki zeszytu. */
@@ -2705,10 +2719,11 @@ export function openDrawingEditor({
         view.y = 0;
         fitView();
         if (isBoard(drawing)) {
-          // Tablica A0 (od 1.61): obszar kartki dokładnie tam, gdzie leży kartka zeszytu.
+          // Arkusz (od 1.61): obszar kartki dokładnie tam, gdzie leży kartka zeszytu.
           const room = view.height - view.top - view.bottom;
-          view.x = (view.width - PAGE_WIDTH * view.scale) / 2 - SHEET_X * view.scale;
-          view.y = view.top + (room - PAGE_HEIGHT * view.scale) / 2 - SHEET_Y * view.scale;
+          const origin = sheetAreaOrigin(drawing);
+          view.x = (view.width - PAGE_WIDTH * view.scale) / 2 - origin.x * view.scale;
+          view.y = view.top + (room - PAGE_HEIGHT * view.scale) / 2 - origin.y * view.scale;
         }
       } else {
         view.scale = fitScale() * view.zoom;
@@ -2742,10 +2757,15 @@ export function openDrawingEditor({
       closeSettings();
       updateToolbar();
       requestLive();
+      if (id === 'fill') flash('Wiaderko: dotknij wnętrza zamkniętego obszaru – wypełni się kolorem pod liniami.');
     }
     const penButton = toolButton('pen', 'Pióro', 'pen');
     const highlighterButton = toolButton('highlighter', 'Zakreślacz', 'highlighter');
     const eraserButton = toolButton('eraser', 'Gumka', 'eraser');
+    // Od 1.63: wiaderko – dotknięcie zamkniętego obszaru wypełnia go kolorem (pod liniami).
+    const fillButton = menuButton('fill', 'Wiaderko – wypełnij zamknięty obszar kolorem', 'bucket', 'drawing-tool-fill', 'Wiaderko');
+    fillButton.dataset.tool = 'fill';
+    fillButton.setAttribute('aria-pressed', 'false');
     // Zaznaczanie – na dolnym pasku (narzędzie ogólne); ikona – wybrany kształt obszaru.
     const selectButton = h('button', {
       type: 'button', class: 'drawing__tool', 'aria-label': 'Zaznaczanie – prostokąt', title: 'Zaznaczanie – prostokąt (lewy Alt, prawy przycisk myszy)',
@@ -2809,7 +2829,7 @@ export function openDrawingEditor({
       menuButton(`solid:${kind}`, `${SOLID_LABELS[kind]} – bryła do obracania`, SOLID_ICONS[kind], `drawing-insert-solid-${kind}`, SOLID_SHORT[kind])]));
     /** Pozycja grupy → przycisk (ten sam przycisk w kilku grupach – pokazywana jest jedna grupa naraz). */
     const itemButtons = new Map([
-      ['pen', penButton], ['highlighter', highlighterButton], ['eraser', eraserButton],
+      ['pen', penButton], ['highlighter', highlighterButton], ['eraser', eraserButton], ['fill', fillButton],
       ...[...kindButtons].map(([kind, button]) => [`shape:${kind}`, button]),
       ...[...dimButtons].map(([mode, button]) => [`dim:${mode}`, button]),
       ...[...editButtons].map(([kind, button]) => [`edit:${kind}`, button]),
@@ -3048,7 +3068,7 @@ export function openDrawingEditor({
     });
     // ---- edycja zaznaczonego (od 1.35): kolor, grubość i styl z menu zmieniają zaznaczone elementy
     /** Element z kolorem do zmiany: kreska pióra i zakreślacza, kształt, pole tekstowe, wzór, symbol. */
-    const hasPaint = (stroke) => ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness', 'diagram', 'solid'].includes(stroke.tool);
+    const hasPaint = (stroke) => ['pen', 'highlighter', 'shape', 'text', 'math', 'gdt', 'datum', 'roughness', 'diagram', 'solid', 'fill'].includes(stroke.tool);
     /** Element z grubością linii: kreska pióra i zakreślacza, kształt (bez wymiaru). */
     const hasLineWidth = (stroke) => stroke.tool === 'pen' || stroke.tool === 'highlighter' || (isShape(stroke) && !isMeasure(stroke));
     /**
@@ -3060,8 +3080,7 @@ export function openDrawingEditor({
     /** Zaznaczone elementy z kolorem do zmiany. */
     const paintedSelection = () => editedSelection().filter(hasPaint);
     /** Wspólny kolor zaznaczonych jako wybór palety (id albo własny kolor) – null, gdy różne. */
-    function commonColor(strokes, highlighter) {
-      const palette = highlighter ? HIGHLIGHTER_COLORS : INK_COLORS;
+    function commonColor(strokes, palette) {
       const ids = new Set(strokes.map((stroke) => palette.find((color) => color.hex.toLowerCase() === stroke.color.toLowerCase())?.id ?? stroke.color.toLowerCase()));
       return ids.size === 1 ? [...ids][0] : null;
     }
@@ -3110,7 +3129,7 @@ export function openDrawingEditor({
       requestRender();
     }
     function updateToolbar() {
-      for (const button of [penButton, highlighterButton, eraserButton, selectButton]) {
+      for (const button of [penButton, highlighterButton, eraserButton, fillButton, selectButton]) {
         button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
       }
       for (const [kind, button] of kindButtons) button.setAttribute('aria-pressed', String(tool === 'shape' && tools.shape === kind));
@@ -3120,20 +3139,24 @@ export function openDrawingEditor({
       toolInMenu = Boolean(findGroup(shownGroup.side, shownGroup.id, tools.toolGroups)?.items.includes(toolItem(tool, tools.shape, tools.dimMode)));
       // Kształty (od 1.15) mają kolor i grubość pióra. Od 1.35 zaznaczone elementy: kolor i grubość w menu
       // zmieniają je; od 1.35.1 tylko je (tryb edycji) – kolor i grubość narzędzia zmienia wybór bez zaznaczenia.
-      const inking = tool === 'pen' || tool === 'highlighter' || tool === 'shape';
+      // Od 1.63 także wiaderko (paleta jasnych tonów wypełnień).
+      const inking = tool === 'pen' || tool === 'highlighter' || tool === 'shape' || tool === 'fill';
       const painted = paintedSelection();
       const sized = painted.filter(hasLineWidth);
       const highlighter = painted.length > 0 ? painted.every((stroke) => stroke.tool === 'highlighter') : tool === 'highlighter';
-      const palette = highlighter ? HIGHLIGHTER_COLORS : INK_COLORS;
-      const chosen = painted.length > 0 ? commonColor(painted, highlighter) : highlighter ? tools.highlighterColor : tools.penColor;
+      const filling = painted.length > 0 ? painted.every((stroke) => stroke.tool === 'fill') : tool === 'fill';
+      const palette = highlighter ? HIGHLIGHTER_COLORS : filling ? FILL_COLORS : INK_COLORS;
+      const toHex = (value) => (highlighter ? highlighterHex(value) : filling ? fillHex(value) : inkHex(value));
+      const chosen = painted.length > 0 ? commonColor(painted, palette) : highlighter ? tools.highlighterColor : filling ? tools.fillColor : tools.penColor;
       const choose = (value) => {
         if (inking && painted.length === 0) {
           if (tool === 'highlighter') tools.highlighterColor = value;
+          else if (tool === 'fill') tools.fillColor = value;
           else tools.penColor = value;
           saveTools(tools);
         }
         if (painted.length > 0) {
-          const hex = highlighter ? highlighterHex(value) : inkHex(value);
+          const hex = toHex(value);
           changeSelection(hasPaint, (stroke) => ({ ...stroke, color: hex }));
         }
         closeSettings();
@@ -3149,7 +3172,7 @@ export function openDrawingEditor({
           'aria-expanded': String(!colorPanel.hidden), dataset: { testid: 'drawing-color-custom' }, onClick: () => toggleColorPanel()
         }, icon('plus', { size: 16 })));
       swatches.hidden = !inking && painted.length === 0;
-      const dotColor = chosen ? (highlighter ? highlighterHex(chosen) : inkHex(chosen)) : 'transparent';
+      const dotColor = chosen ? toHex(chosen) : 'transparent';
       optionsDot.style.setProperty('--swatch', inking || painted.length > 0 ? dotColor : 'transparent');
       // Pasek pod ikoną zakreślacza w kolorze wybranego zakreślacza.
       highlighterButton.style.setProperty('--highlighter-ink', highlighterHex(tools.highlighterColor));
@@ -3169,7 +3192,7 @@ export function openDrawingEditor({
           refreshSettings?.();
         }
       }, h('span', { style: { width: `${Math.max(3, Math.min(14, size))}px`, height: `${Math.max(3, Math.min(14, size))}px` } }))));
-      widths.hidden = !inking && sized.length === 0;
+      widths.hidden = (!inking || tool === 'fill') && sized.length === 0;
       eraserModes.hidden = tool !== 'eraser' || !toolInMenu;
       for (const button of eraserModes.children) button.setAttribute('aria-checked', String(button.dataset.mode === tools.eraserMode));
       eraserSizes.hidden = tool !== 'eraser' || tools.eraserMode !== 'pixel';
@@ -3347,10 +3370,11 @@ export function openDrawingEditor({
       const shape = tool === 'shape' ? tools.shape : null;
       const measure = shape === 'dim' ? DIM_TOOLS[tools.dimMode] ?? DIM_TOOLS.linear : null;
       const iconName = tool === 'select' ? (tools.selectShape === 'lasso' ? 'lasso' : 'marquee')
-        : measure ? measure[1] : shape ? SHAPE_ICONS[shape] : tool === 'highlighter' ? 'highlighter' : tool === 'eraser' ? 'eraser' : 'pen';
+        : measure ? measure[1] : shape ? SHAPE_ICONS[shape] : tool === 'highlighter' ? 'highlighter' : tool === 'eraser' ? 'eraser' : tool === 'fill' ? 'bucket' : 'pen';
       const name = tool === 'select' ? 'Zaznaczanie' : measure ? `Wymiar – ${measure[0].toLowerCase()}` : shape ? SHAPE_LABELS[shape]
-        : { pen: 'Pióro', highlighter: 'Zakreślacz', eraser: 'Gumka' }[tool] ?? 'Pióro';
-      const hex = tool === 'highlighter' ? highlighterHex(tools.highlighterColor) : tool === 'pen' || tool === 'shape' ? inkHex(tools.penColor) : null;
+        : { pen: 'Pióro', highlighter: 'Zakreślacz', eraser: 'Gumka', fill: 'Wiaderko' }[tool] ?? 'Pióro';
+      const hex = tool === 'highlighter' ? highlighterHex(tools.highlighterColor) : tool === 'pen' || tool === 'shape' ? inkHex(tools.penColor)
+        : tool === 'fill' ? fillHex(tools.fillColor) : null;
       return {
         icon: iconName,
         fill: hex ?? 'var(--accent-fill)',
@@ -3715,15 +3739,19 @@ export function openDrawingEditor({
     let colorDraft = '#000000';
     let colorTab = 'grid';
     let syncColor = null;
+    /** Do czego jest wybierany kolor (od 1.63): null – narzędzie (pióro, zakreślacz, wiaderko), 'paper' – kolor kartki. */
+    let colorTarget = null;
     const setDraft = (hex, source = null) => {
       colorDraft = hex;
       syncColor?.(source);
     };
-    function toggleColorPanel() {
+    function toggleColorPanel(target = null) {
       const open = colorPanel.hidden;
       closeSettings();
       if (open) {
-        colorDraft = tool === 'highlighter' ? highlighterHex(tools.highlighterColor) : inkHex(tools.penColor);
+        colorTarget = target;
+        colorDraft = target === 'paper' ? paperColor(drawing) : tool === 'highlighter' ? highlighterHex(tools.highlighterColor)
+          : tool === 'fill' ? fillHex(tools.fillColor) : inkHex(tools.penColor);
         colorPanel.hidden = false;
         renderColorPanel();
       }
@@ -3755,7 +3783,7 @@ export function openDrawingEditor({
         sync(source);
       };
       replaceChildren(colorPanel,
-        panelTitle(tool === 'highlighter' ? 'Kolor zakreślacza' : 'Kolor pióra'),
+        panelTitle(colorTarget === 'paper' ? 'Kolor kartki' : tool === 'highlighter' ? 'Kolor zakreślacza' : tool === 'fill' ? 'Kolor wiaderka' : 'Kolor pióra'),
         h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Sposób wyboru koloru' }, tabs),
         h('div', { class: 'drawing__color-body' }, body),
         h('div', { class: 'drawing__color-footer' }, preview, code,
@@ -3767,11 +3795,20 @@ export function openDrawingEditor({
       syncColor();
     }
     function useColor() {
+      // Kolor kartki (od 1.63) – zapisany z rysunkiem; panel tła wraca.
+      if (colorTarget === 'paper') {
+        setPaperColor(colorDraft);
+        closeSettings();
+        togglePaperPanel();
+        return;
+      }
       const highlighter = tool === 'highlighter';
+      const filling = tool === 'fill';
       // Kolor z palety – zwykłe kółko palety; inny – wśród własnych (najnowszy pierwszy, najwyżej trzy).
-      const known = (highlighter ? HIGHLIGHTER_COLORS : INK_COLORS).find((color) => color.hex === colorDraft);
+      const known = (highlighter ? HIGHLIGHTER_COLORS : filling ? FILL_COLORS : INK_COLORS).find((color) => color.hex === colorDraft);
       if (!known) tools.customColors = rememberColor(tools.customColors, colorDraft);
       if (highlighter) tools.highlighterColor = known ? known.id : colorDraft;
+      else if (filling) tools.fillColor = known ? known.id : colorDraft;
       else tools.penColor = known ? known.id : colorDraft;
       saveTools(tools);
       closeSettings();
@@ -3985,6 +4022,13 @@ export function openDrawingEditor({
       requestRender();
       renderPaperPanel();
     }
+    /** Kolor kartki (od 1.63): biały – bez zapisu. */
+    function setPaperColor(hex) {
+      if (hex.toLowerCase() === '#ffffff') delete drawing.paperColor;
+      else drawing.paperColor = hex.toLowerCase();
+      changed = true;
+      requestRender();
+    }
     function renderPaperPanel() {
       if (paperPanel.hidden) return;
       if (placing) {
@@ -3993,6 +4037,22 @@ export function openDrawingEditor({
       }
       const parts = [panelTitle('Tło strony')];
       if (!drawing.photo) {
+        // Od 1.63: kolor kartki – jasne tony i „+” (siatka, suwaki, pipetka).
+        const current = paperColor(drawing);
+        const tone = PAPER_TONES.find((item) => item.hex === current);
+        parts.push(
+          h('p', { class: 'drawing__settings-label' }, h('span', null, 'Kolor kartki'),
+            h('span', { dataset: { testid: 'drawing-paper-color-name' } }, tone ? tone.label.toLowerCase() : current.toUpperCase())),
+          h('div', { class: 'drawing__swatches drawing__paper-tones', role: 'group', 'aria-label': 'Kolor kartki' },
+            PAPER_TONES.map((item) => swatchButton(item.hex, `Kartka ${item.label.toLowerCase()}`, `drawing-paper-color-${item.id}`, item.hex === current, () => {
+              setPaperColor(item.hex);
+              afterBackground();
+            })),
+            tone ? null : swatchButton(current, `Własny kolor kartki ${current.toUpperCase()}`, 'drawing-paper-color-own', true, () => {}, true),
+            h('button', {
+              type: 'button', class: 'drawing__swatch drawing__swatch--add', 'aria-label': 'Inny kolor kartki – siatka, suwaki albo pipetka', title: 'Inny kolor kartki',
+              dataset: { testid: 'drawing-paper-color-custom' }, onClick: () => toggleColorPanel('paper')
+            }, icon('plus', { size: 16 }))));
         parts.push(h('div', { class: 'drawing__segmented', role: 'radiogroup', 'aria-label': 'Rodzaj tła' }, PAPERS.map((paper) => h('button', {
           type: 'button', role: 'radio', 'aria-checked': String(drawing.paper === paper), dataset: { testid: `drawing-paper-${paper}` },
           onClick: () => {
@@ -5253,7 +5313,7 @@ export function openDrawingEditor({
      * Nowa kartka za ostatnią: to samo tło (zdjęcie – kratka), jasność linii i skala, bez szablonu. Od 1.30
      * tylko przy rysunkach (przy zdjęciach kartki to zdjęcia notatki) i dopóki notatka ma miejsce na obraz.
      */
-    function addPage({ board = false } = {}) {
+    function addPage({ board = null } = {}) {
       if (!newPages) return;
       const added = pages.filter((page) => page.added).length;
       if (added >= pageRoom) {
@@ -5263,10 +5323,12 @@ export function openDrawingEditor({
       const next = {
         ...emptyDrawing({ paper: drawing.photo ? 'grid' : drawing.paper }), paperLevel: drawing.paperLevel ?? DEFAULT_PAPER_LEVEL, scale: { ...drawing.scale },
         ...(drawing.dimStyle ? { dimStyle: drawing.dimStyle } : {}),
-        ...(drawing.dimUnit ? { dimUnit: drawing.dimUnit } : {})
+        ...(drawing.dimUnit ? { dimUnit: drawing.dimUnit } : {}),
+        // Od 1.63 także kolor kartki.
+        ...(!drawing.photo && drawing.paperColor ? { paperColor: drawing.paperColor } : {})
       };
-      // Od 1.59 nowa kartka może być od razu tablicą A0.
-      if (board) setBoard(next, true);
+      // Od 1.59 nowa kartka może być od razu arkuszem (od 1.63 – w wybranym formacie).
+      if (board) setBoard(next, true, board);
       pages.push(makePage(next, { title: addedTitle?.(added + 1) ?? `Kartka ${pages.length + 1}`, added: true }));
       showPage(pages.length - 1);
       flash(`${pageTitle()} – po „Gotowe” trafi do notatki jako osobny rysunek.`);
@@ -5286,14 +5348,18 @@ export function openDrawingEditor({
       updatePagePill();
     }
     /**
-     * Tablica A0 albo kartka zeszytu (od 1.59): ta sama kartka w innym trybie, rysunek na swoim miejscu. Z tablicy na
-     * kartkę – tylko gdy cały rysunek mieści się w obszarze kartki (przerywana ramka na tablicy).
+     * Arkusz albo kartka zeszytu (od 1.59): ta sama kartka w innym trybie, rysunek na swoim miejscu; od 1.63 także inny
+     * format arkusza (format – 'A3' … '4A0', null – kartka zeszytu). Z arkusza na kartkę albo mniejszy format – tylko gdy
+     * cały rysunek się mieści (obszar kartki – przerywana ramka na arkuszu).
      */
-    function convertPage(board) {
-      if (active || flipping || drawing.photo || isBoard(drawing) === board) return;
+    function convertPage(format) {
+      if (active || flipping || drawing.photo || boardFormat(drawing) === format) return;
       clearSelection();
-      if (!setBoard(drawing, board)) {
-        flash('Rysunek wychodzi poza obszar kartki zeszytu (przerywana ramka) – tej tablicy nie da się zamienić na kartkę. Przesuń rysunek do ramki albo zostaw tablicę.');
+      const wasBoard = isBoard(drawing);
+      if (!setBoard(drawing, Boolean(format), format ?? undefined)) {
+        flash(format
+          ? `Rysunek nie mieści się na arkuszu ${format} – przesuń go bliżej obszaru kartki (przerywana ramka) albo wybierz większy format.`
+          : 'Rysunek wychodzi poza obszar kartki zeszytu (przerywana ramka) – tego arkusza nie da się zamienić na kartkę. Przesuń rysunek do ramki albo zostaw arkusz.');
         return;
       }
       // Od 1.61 rysunek przesuwa się razem z obszarem kartki – cofanie zaczyna się od zamiany.
@@ -5307,25 +5373,52 @@ export function openDrawingEditor({
       updatePagePill();
       updateToolbar();
       requestRender();
-      flash(board ? 'Tablica A0 – kartka zeszytu to przerywana ramka na środku. Pomniejsz albo przesuń, żeby zobaczyć resztę tablicy.' : 'Znów kartka zeszytu.');
+      flash(!format ? 'Znów kartka zeszytu.' : wasBoard ? `Arkusz ${format}.`
+        : `Arkusz ${format} – kartka zeszytu to przerywana ramka na środku. Pomniejsz albo przesuń, żeby zobaczyć resztę arkusza.`);
+    }
+    /**
+     * Wybór formatu arkusza (od 1.63): nowa kartka (`onPick` – addPage) albo zamiana tej kartki; format, w którym rysunek
+     * się nie mieści – z dopiskiem (wybór pokazuje komunikat).
+     */
+    function openFormatMenu({ title, onPick, current = null, check = false }) {
+      openMenu({
+        title,
+        items: BOARD_FORMAT_IDS.map((format) => ({
+          label: `${format}${check && !fitsFormat(drawing, format) ? ' – rysunek się nie mieści' : ''}`,
+          checked: format === current,
+          testID: `drawing-board-format-${format}`,
+          onSelect: () => onPick(format)
+        }))
+      });
     }
     function openPageMenu() {
       const added = pages[pageIndex].added;
+      const format = boardFormat(drawing);
       openMenu({
         title: 'Kartki',
         items: [
           newPages ? { label: 'Nowa kartka', icon: 'plus', testID: 'drawing-page-new', onSelect: () => addPage() } : null,
-          newPages ? { label: 'Nowa tablica A0', icon: 'plus', testID: 'drawing-page-new-board', onSelect: () => addPage({ board: true }) } : null,
+          newPages ? {
+            label: 'Nowy arkusz…', icon: 'plus', testID: 'drawing-page-new-board',
+            onSelect: () => openFormatMenu({ title: 'Nowy arkusz – format', onPick: (choice) => addPage({ board: choice }) })
+          } : null,
           newPages && pages.length > 1 ? 'separator' : null,
           ...(pages.length > 1 ? pages.map((page, index) => ({
-            label: `Kartka ${index + 1} – ${page.title}${isBoard(page.drawing) ? ' (tablica A0)' : ''}`, checked: index === pageIndex, testID: `drawing-page-${index + 1}`,
+            label: `Kartka ${index + 1} – ${page.title}${isBoard(page.drawing) ? ` (arkusz ${boardFormat(page.drawing)})` : ''}`, checked: index === pageIndex, testID: `drawing-page-${index + 1}`,
             onSelect: () => flipTo(index)
           })) : []),
-          // Od 1.59: tryb kartki – zeszyt albo tablica A0.
+          // Od 1.59: tryb kartki – zeszyt albo arkusz (od 1.63 w formatach A3–4A0).
           drawing.photo ? null : 'separator',
-          drawing.photo ? null : isBoard(drawing)
-            ? { label: fitsSheet(drawing) ? 'Zamień na kartkę zeszytu' : 'Zamień na kartkę zeszytu – rysunek wychodzi poza ramkę', icon: 'pageLayout', testID: 'drawing-to-sheet', onSelect: () => convertPage(false) }
-            : { label: 'Zamień na tablicę A0', icon: 'pageLayout', testID: 'drawing-to-board', onSelect: () => convertPage(true) },
+          drawing.photo || !format ? null : {
+            label: `Format arkusza: ${format}…`, icon: 'pageLayout', testID: 'drawing-board-format',
+            onSelect: () => openFormatMenu({ title: 'Format arkusza', current: format, check: true, onPick: (choice) => convertPage(choice) })
+          },
+          drawing.photo ? null : format
+            ? { label: fitsSheet(drawing) ? 'Zamień na kartkę zeszytu' : 'Zamień na kartkę zeszytu – rysunek wychodzi poza ramkę', icon: 'pageLayout', testID: 'drawing-to-sheet', onSelect: () => convertPage(null) }
+            : {
+              label: 'Zamień na arkusz…', icon: 'pageLayout', testID: 'drawing-to-board',
+              onSelect: () => openFormatMenu({ title: 'Zamień na arkusz – format', onPick: (choice) => convertPage(choice) })
+            },
           // Od 1.37: rysunek z pliku DXF i kartka jako DXF.
           'separator',
           { label: 'Wczytaj DXF…', icon: 'upload', testID: 'drawing-dxf-import', onSelect: () => importDxf() },
@@ -9718,6 +9811,10 @@ export function openDrawingEditor({
         case 'stroke':
           extendStroke(event);
           break;
+        case 'fill':
+          // Wiaderko (od 1.63) – przesunięcie palca albo kursora to nie dotknięcie (bez wypełnienia).
+          if (Math.hypot(point.x - active.start.x, point.y - active.start.y) * view.scale > TAP_SLOP * 2) active.moved = true;
+          break;
         case 'erase':
           eraseTo(point);
           break;
@@ -9959,6 +10056,70 @@ export function openDrawingEditor({
       selection = new Set([...(done.add ? selection : []), ...found.map((index) => drawing.strokes[index])]);
       selectionKind = 'whole';
     }
+    /**
+     * Wiaderko (od 1.63, core/bucket.js): obszar wokół punktu `point`, ograniczony liniami rysunku, wypełniony kolorem
+     * wiaderka – pod kreskami. Linie są rysowane poza ekranem w widocznej części kartki (w rozdzielczości ekranu, najwyżej
+     * ok. 4 mln pikseli); obszar, który dochodzi do brzegu kartki albo widocznej części, nie jest zamknięty – komunikat.
+     * To samo miejsce wypełnione drugi raz – nowy kolor zamiast poprzedniego.
+     */
+    function fillAt(point) {
+      if (offPage(point)) return;
+      const left = Math.max(0, -view.x / view.scale);
+      const top = Math.max(0, -view.y / view.scale);
+      const right = Math.min(drawing.width, (view.width - view.x) / view.scale);
+      const bottom = Math.min(drawing.height, (view.height - view.y) / view.scale);
+      if (right - left < 1 || bottom - top < 1) return;
+      const budget = 4e6;
+      const r = Math.min(Math.max(view.scale, 1), Math.sqrt(budget / ((right - left) * (bottom - top))));
+      const width = Math.max(1, Math.ceil((right - left) * r));
+      const height = Math.max(1, Math.ceil((bottom - top) * r));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.setTransform(r, 0, 0, r, -left * r, -top * r);
+      paintDrawing(ctx, drawing, media, null, null, { ink: true });
+      const pixels = ctx.getImageData(0, 0, width, height).data;
+      const ink = new Uint8Array(width * height);
+      for (let index = 0; index < ink.length; index += 1) ink[index] = pixels[index * 4 + 3] > 24 ? 1 : 0;
+      const color = fillHex(tools.fillColor);
+      // Szczeliny do ok. 6 px ekranu (po 3 z każdej strony) są domykane – odręczne pętle rzadko schodzą się co do piksela.
+      const gap = Math.max(1, Math.min(8, Math.round((3 * r) / view.scale)));
+      const result = bucketFill(ink, width, height, (point.x - left) * r, (point.y - top) * r, {
+        color, gap, map: (x, y) => ({ x: left + x / r, y: top + y / r })
+      });
+      if (result.error === 'line') {
+        flash('Dotknij wnętrza zamkniętego obszaru – nie linii.');
+        return;
+      }
+      if (result.error) {
+        const { edges } = result;
+        // Brzeg okna, który nie jest brzegiem kartki – obszar może się zamykać poza widoczną częścią.
+        const clipped = (edges.left && left > 0.5) || (edges.top && top > 0.5) || (edges.right && right < drawing.width - 0.5) || (edges.bottom && bottom < drawing.height - 0.5);
+        flash(clipped ? 'Ten obszar wychodzi poza widoczną część rysunku – pomniejsz rysunek i dotknij jeszcze raz.'
+          : 'Ten obszar nie jest zamknięty – wypełnienie doszłoby do brzegu kartki. Domknij linie i dotknij jeszcze raz.');
+        return;
+      }
+      const fill = onActiveLayer(result.stroke);
+      const bounds = strokeBounds(fill);
+      const slack = 2 / r + 2;
+      // Poprzednie wypełnienie tego samego obszaru (te same granice, dotknięty punkt w środku) – zastąpione.
+      const same = drawing.strokes.filter((stroke) => {
+        if (stroke.tool !== 'fill' || !fillContains(stroke, point.x, point.y)) return false;
+        const other = strokeBounds(stroke);
+        return Math.abs(other.minX - bounds.minX) <= slack && Math.abs(other.minY - bounds.minY) <= slack
+          && Math.abs(other.maxX - bounds.maxX) <= slack && Math.abs(other.maxY - bounds.maxY) <= slack;
+      });
+      history.begin();
+      for (const stroke of same) drawing.strokes.splice(drawing.strokes.indexOf(stroke), 1);
+      // Wypełnienia leżą na spodzie – nowe nad wcześniejszymi wypełnieniami, pod wszystkimi liniami.
+      let at = 0;
+      while (at < drawing.strokes.length && drawing.strokes[at].tool === 'fill') at += 1;
+      drawing.strokes.splice(at, 0, fill);
+      commitStep();
+      changed = true;
+      requestRender();
+    }
     function finishActive(cancelled = false) {
       if (!active) return;
       const done = active;
@@ -9980,6 +10141,8 @@ export function openDrawingEditor({
         } else if (done.edge) {
           measured = null;
         }
+      } else if (done.kind === 'fill' && !cancelled && !done.moved) {
+        fillAt(done.start);
       } else if (done.kind === 'erase') {
         commitStep();
         // Rysikiem z gumką przy zaznaczaniu: starte kreski wypadają z zaznaczenia.
@@ -10248,6 +10411,7 @@ export function openDrawingEditor({
       else if (usesEraser(event)) startErase(event);
       else if (tool === 'select') startSelect(event);
       else if (tool === 'shape') startShape(event);
+      else if (tool === 'fill') active = { kind: 'fill', id: event.pointerId, touch: event.pointerType === 'touch', start: point, client: local(event), moved: false };
       else startStroke(event);
       if (active?.touch) active.client = local(event);
       if (tools.coords) showCoords(activeCoordPoint() ?? point);

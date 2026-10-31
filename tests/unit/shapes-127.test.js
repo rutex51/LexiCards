@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { cleanToolSettings, defaultToolSettings } from '../../js/core/drawing.js';
+import { STYLE_DEFAULTS, cleanToolSettings, defaultToolSettings } from '../../js/core/drawing.js';
 import {
   POINT_MARKS, SHAPES, SHAPE_DASHES, XLINE_REACH, bezierPoint, canDash, canFill, cleanShape, curveControls, dashPattern, dimKeys, dimPlaces, hasCaps, isSegment,
   moveShapeHandle, pointMark, pointMarkGeometry, polyPoints, segmentCapList, segmentCaps, shapeBounds, shapeContains, shapeFromDrag, shapeHandles,
@@ -136,7 +136,7 @@ test('rysunek 1.27: strzałka po łuku – krzywa przez cztery punkty, łuk z pr
 test('rysunek 1.27: ustawienia narzędzi – rodzaj linii, zakończenia łuku i znacznik punktu zapamiętane, złe – domyślne', () => {
   const base = defaultToolSettings();
   assert.deepEqual([base.shapeDash, base.curveCaps, base.pointMark], ['solid', { start: 'none', end: 'arrow' }, 'center']);
-  const saved = cleanToolSettings({ shapeDash: 'center', curveCaps: { start: 'circle', end: 'triangle' }, pointMark: 'dot', shape: 'curve' });
+  const saved = cleanToolSettings({ styleDefaults: STYLE_DEFAULTS, shapeDash: 'center', curveCaps: { start: 'circle', end: 'triangle' }, pointMark: 'dot', shape: 'curve' });
   assert.deepEqual([saved.shapeDash, saved.curveCaps, saved.pointMark, saved.shape], ['center', { start: 'circle', end: 'triangle' }, 'dot', 'curve']);
   const bad = cleanToolSettings({ shapeDash: 'wavy', pointMark: 'star', curveCaps: 'x' });
   assert.deepEqual([bad.shapeDash, bad.pointMark, bad.curveCaps], ['solid', 'center', { start: 'none', end: 'arrow' }]);
