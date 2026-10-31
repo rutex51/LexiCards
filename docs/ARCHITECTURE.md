@@ -2235,7 +2235,10 @@ porównuje `cardFaces` / `cardMedia` po sprawdzeniu (zapis z 1.56 z numerami str
   po lewej, `closeButton` (`note-left`, „Zamknij”) po prawej; identyfikatory testów bez zmian. Okna edycji (Anuluj /
   Zapisz, Gotowe) – bez zmian.
 
-## Magiczne fiszki (od 1.62)
+## Szybkie fiszki (od 1.62)
+
+Do 1.62.1 nazywały się „magicznymi fiszkami”; nazwy w kodzie (`magic*`, `data-magic`, pole `magic` notatki) zostały,
+żeby nie zmieniać zapisanych danych.
 
 - **Treść notatki** (`core/note-format.js`): fragment fiszki to `<span data-magic="N.M">` (`MAGIC_SIG_RE`: numer fiszki
   w notatce i numer fragmentu, 1–999) – w dokumencie znacznik `magic` fragmentu tekstu. `inlineHtml` łączy kolejne fragmenty
@@ -2253,7 +2256,7 @@ porównuje `cardFaces` / `cardMedia` po sprawdzeniu (zapis z 1.56 z numerami str
 - **Biblioteka** (`core/library.js`): `magicFolder()` / `magicFolderCount()` – fiszki w teczce ze wszystkich notatek;
   `updateMagicCard` (pola, lekcja docelowa), `removeMagicCard` (fragmenty wracają do zwykłego tekstu) – bez zmiany treści
   poza oznaczeniami; `createTermFromMagic` – pojęcie i oznaczenie fiszki jako dodanej w jednym zapisie.
-- **Edytor** (`js/ui/magic.js`, `magicEditor`; `js/ui/notes.js`): grupa „Magiczna fiszka” pierwsza na pasku (Ctrl+M, na
+- **Edytor** (`js/ui/magic.js`, `magicEditor`; `js/ui/notes.js`): grupa „Szybka fiszka” pierwsza na pasku (Ctrl+M, na
   telefonie przyklejona na początku przewijanego paska). Wysłanie – `rewrite` z `wrapMarked` (`note-editing.js`: span wokół
   zaznaczenia między znacznikami, bez spacji na brzegach; odwołanie – cała treść akapitu), więc z cofaniem (Ctrl+Z).
   Fiszki w edytorze to kopia `magic` zapisywana z notatką (`draft().magic`, `dirty()`), więc Anuluj cofa także je;
@@ -2264,7 +2267,7 @@ porównuje `cardFaces` / `cardMedia` po sprawdzeniu (zapis z 1.56 z numerami str
   Schowana fiszka po animacji ma `hidden`; na szerokim ekranie stan zapamiętany (`magicPanelHidden`).
 - **Iskry i lot do teczki**: `sparkles(host)` – płótno w oknie modalnym (warstwa najwyższa – płótno w `body` byłoby pod
   oknem), piksele z prostokątów fragmentu (`getClientRects`) lecą po krzywych Béziera do fragmentu na fiszce albo do
-  języczka, najpierw iskrzą na tekście od lewej do prawej; kolory według `data-magic` na `<html>`. `flyToFolder` – kopia
+  języczka, najpierw iskrzą na tekście od lewej do prawej; kolory według `data-magic-color` na `<html>`. `flyToFolder` – kopia
   fiszki (treść gaśnie, zostaje „lico” ✦N) zmienia rozmiar i leci łukiem nad teczkę, przednia klapa (`rotateX`) się uchyla,
   karta (`magic-folder__paper--in`) wpada między ścianki. Czas – `performance.now()` w `requestAnimationFrame` (zatrzymanie
   czasu w testach); `prefers-reduced-motion` – bez animacji.
@@ -2274,7 +2277,7 @@ porównuje `cardFaces` / `cardMedia` po sprawdzeniu (zapis z 1.56 z numerami str
 - **Teczka** (`openMagicFolder`): fiszki z biblioteki i – dla notatki w edytorze – z edytora (zmiany w kopii edytora);
   lekcja docelowa – `pickDestination`; „Dodaj do lekcji…” – `openTermForm` z `preset`, `title` i `create`
   (`createTermFromMagic`). Na ekranach Biblioteki – `magicFolderFab` (tylko gdy coś czeka). Kolor fiszki – `magicColor`
-  w ustawieniach (`core/model.js`), `data-magic` na `<html>` (`main.js`, wcześniej `theme-boot.js`), tokeny `--magic-*`
+  w ustawieniach (`core/model.js`), `data-magic-color` na `<html>` (`main.js`, wcześniej `theme-boot.js`; do 1.62.1 `data-magic`, które zderzało się z oznaczeniem fragmentów), tokeny `--magic-*`
   dla fioletu, złota i turkusu w jasnym i ciemnym motywie. Od 1.62.1 kolor teczki – `magicFolderColor` (null – domyślny:
   `defaultMagicFolderColor`, przy złotej fiszce szara; wybór równy domyślnemu nie jest zapisywany), `data-magic-folder`
   na `<html>` (żółta – bez atrybutu) i tokeny `--magic-folder-*` dla czarnej, szarej i białej (w ciemnym motywie jaśniejsze).

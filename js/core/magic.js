@@ -1,7 +1,7 @@
-// Magiczne fiszki (od 1.62) – bez przeglądarki.
+// Szybkie fiszki (od 1.62) – bez przeglądarki.
 //
 // W edytorze notatki zaznaczony tekst (albo akapit z odwołaniem [[sygnatura]] do obrazu lub tabeli)
-// trafia na magiczną fiszkę: w treści dostaje <span data-magic="N.M"> (note-format.js) – N to numer
+// trafia na szybką fiszkę: w treści dostaje <span data-magic="N.M"> (note-format.js) – N to numer
 // fiszki w tej notatce, M – numer fragmentu. Tekst fragmentu na fiszce jest zawsze tekstem z notatki
 // (zmiana w notatce zmienia fiszkę), więc fiszki przechowują tylko sygnatury i pola, do których trafiły
 // fragmenty. Fiszki są w rekordzie notatki (pole magic):
@@ -21,7 +21,7 @@ import { MAGIC_SIG_RE, docFromHtml, htmlFromDoc } from './note-format.js';
 import { labelKey, referenceLabel } from './note-refs.js';
 import { collapseWhitespace } from './text.js';
 
-/** Pola magicznej fiszki: pojęcie, definicja (w formularzu pojęcia – „Opis”) i przykład po polsku i angielsku oraz obraz. */
+/** Pola szybkiej fiszki: pojęcie, definicja (w formularzu pojęcia – „Opis”) i przykład po polsku i angielsku oraz obraz. */
 export const MAGIC_SLOTS = Object.freeze(['termPL', 'termEN', 'defPL', 'defEN', 'exPL', 'exEN', 'media']);
 /** Najwyższy numer fiszki i fragmentu (sygnatura ma najwyżej trzy cyfry po obu stronach kropki). */
 export const MAGIC_MAX = 999;
@@ -36,7 +36,7 @@ export const sigCard = (sig) => Number(String(sig).split('.')[0]);
 export const sigPart = (sig) => Number(String(sig).split('.')[1]);
 
 /**
- * Fragmenty magicznych fiszek w treści notatki: Map sygnatura → { text, language: 'pl' | 'en', object }.
+ * Fragmenty szybkich fiszek w treści notatki: Map sygnatura → { text, language: 'pl' | 'en', object }.
  * object – sygnatura obrazu albo tabeli, gdy fragment to całe odwołanie [[…]] (inaczej null). Fragment
  * rozdzielony na kilka akapitów (np. Enter w środku) to jeden tekst; ta sama sygnatura w obu wersjach
  * językowych (nie powinna się zdarzyć) – liczy się wersja polska.
@@ -144,7 +144,7 @@ export function keptSigs(magic, fragments) {
   return keep;
 }
 
-/** Treść bez oznaczeń magicznej fiszki poza `keep` (Set sygnatur; null – bez żadnych). */
+/** Treść bez oznaczeń szybkiej fiszki poza `keep` (Set sygnatur; null – bez żadnych). */
 export function stripMagic(html, keep = null) {
   const doc = docFromHtml(html ?? '');
   let changed = false;

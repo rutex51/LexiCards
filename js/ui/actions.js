@@ -425,7 +425,7 @@ function termCardGroups(library, state, thumbs) {
 }
 
 /**
- * Formularz pojęcia: termID – edycja, bez – nowe pojęcie (lessonID – lekcja). Od 1.62 (magiczne fiszki): preset –
+ * Formularz pojęcia: termID – edycja, bez – nowe pojęcie (lessonID – lekcja). Od 1.62 (szybkie fiszki): preset –
  * pola nowego pojęcia wypełnione z góry, title – tytuł okna, create(draft, lessonID) – własny zapis nowego pojęcia
  * (bez „Zapisz i dodaj kolejne”).
  */

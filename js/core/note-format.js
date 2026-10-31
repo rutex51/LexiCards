@@ -8,7 +8,7 @@
 //   wewnątrz: <strong>, <em>, <u>, <s>, <sup>, <sub>, <span data-color="…">, <a href>, <br>,
 //           od 1.18 <span data-size="s | l | xl"> – wielkość tekstu, a w data-color także własny
 //           kolor #rrggbb (wtedy z style="--note-color: …", z którego kolor bierze arkusz stylów),
-//           od 1.62 <span data-magic="N.M"> – fragment wysłany na magiczną fiszkę (N – numer fiszki
+//           od 1.62 <span data-magic="N.M"> – fragment wysłany na szybką fiszkę (N – numer fiszki
 //           w notatce, M – numer fragmentu; zob. core/magic.js).
 // Każdy HTML – wklejony z Worda, strony WWW, Notatek, zapisany w edytorze albo z kopii
 // zapasowej – przechodzi przez normalizeNoteHtml(), która zostawia wyłącznie te znaczniki.
@@ -25,7 +25,7 @@
 //   indent – wcięcie akapitu i nagłówka, od 1.18; align i line – wyrównanie i interlinia, od 1.20)
 //   Fragment: { text, b?, i?, u?, s?, sup?, sub?, color?, size?, href?, magic? } – '\n' w tekście to nowy
 //   wiersz; color – nazwa z palety albo (od 1.18) własny '#rrggbb', size – 's' | 'l' | 'xl', magic – sygnatura
-//   fragmentu magicznej fiszki 'N.M' (od 1.62).
+//   fragmentu szybkiej fiszki 'N.M' (od 1.62).
 //
 // W edytorze (contenteditable) wcięcie to zagnieżdżone <blockquote> (tak robi polecenie „indent”
 // przeglądarki – z cofaniem), a kolor i wielkość nadane poleceniami – <font color> i <font size>;
@@ -49,7 +49,7 @@ const MAX_DEPTH = 2;
 /** Kolor „bez koloru” nadawany w edytorze – zdejmuje kolor (nie jest kolorem tekstu). */
 export const NOTE_NO_COLOR = '#010101';
 const HEX_RE = /^#[0-9a-f]{6}$/;
-/** Sygnatura fragmentu magicznej fiszki (od 1.62): „numer fiszki.numer fragmentu”. */
+/** Sygnatura fragmentu szybkiej fiszki (od 1.62): „numer fiszki.numer fragmentu”. */
 export const MAGIC_SIG_RE = /^[1-9]\d{0,2}\.[1-9]\d{0,2}$/;
 /** Kolor fragmentu: nazwa z palety albo (od 1.18) własny kolor #rrggbb. */
 const validColor = (value) => COLOR_IDS.has(value) || (HEX_RE.test(value ?? '') && value !== NOTE_NO_COLOR);
@@ -384,7 +384,7 @@ const LINE_BULLET_RE = /^[•·▪◦‣⁃●○■\-–—*+]\s+/u;
  * Zamienia HTML na dokument notatki. Rozumie dowolny HTML (także nie do końca poprawny),
  * ale zostawia tylko treść i formatowanie, które notatka obsługuje. options.editor – treść
  * pola edytora (od 1.18: kolory spoza palety i wielkość tekstu z <font>, zob. elementMarks);
- * options.magic: false – bez oznaczeń magicznej fiszki (wklejany tekst nie powiela fragmentów, od 1.62).
+ * options.magic: false – bez oznaczeń szybkiej fiszki (wklejany tekst nie powiela fragmentów, od 1.62).
  */
 export function docFromHtml(html, { editor = false, magic = true } = {}) {
   const source = String(html ?? '');
@@ -667,7 +667,7 @@ function escapeHtml(text) {
   return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** Fragmenty jednej magicznej fiszki (od 1.62) w jednym <span data-magic> – także z innym formatowaniem w środku. */
+/** Fragmenty jednej szybkiej fiszki (od 1.62) w jednym <span data-magic> – także z innym formatowaniem w środku. */
 function inlineHtml(runs) {
   let html = '';
   for (let index = 0; index < runs.length;) {

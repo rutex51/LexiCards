@@ -158,9 +158,9 @@ export class SettingsScreen {
       h('p', { class: 'group__footer', dataset: { testid: 'accent-name' } },
         `${ACCENT_COLORS.find((item) => item.id === accent).label}. Kolor przycisków, zaznaczeń i linków `
         + 'w jasnym i ciemnym motywie; wykresy w Statystykach zostają w swoich kolorach.'),
-      // Od 1.62: kolor magicznej fiszki – fiolet, złoto albo turkus.
+      // Od 1.62: kolor szybkiej fiszki – fiolet, złoto albo turkus.
       h('div', { class: 'accent-picker' },
-        h('span', { class: 'accent-picker__label', id: 'magic-color-label' }, 'Magiczna fiszka'),
+        h('span', { class: 'accent-picker__label', id: 'magic-color-label' }, 'Szybka fiszka'),
         h('div', { class: 'accent-picker__options', role: 'radiogroup', 'aria-labelledby': 'magic-color-label' },
           MAGIC_COLORS.map((item) => h('label', {
             class: 'choice choice--color accent-picker__option',
@@ -175,7 +175,7 @@ export class SettingsScreen {
           h('span', { class: 'choice__check', 'aria-hidden': 'true' }, icon('check', { size: 18 })),
           h('span', { class: 'visually-hidden' }, item.label))))),
       h('p', { class: 'group__footer', dataset: { testid: 'magic-color-name' } },
-        `${MAGIC_COLORS.find((item) => item.id === magic).label}. Kolor fragmentów notatki wysłanych na magiczną fiszkę, `
+        `${MAGIC_COLORS.find((item) => item.id === magic).label}. Kolor fragmentów notatki wysłanych na szybką fiszkę, `
         + 'samej fiszki i iskier.'),
       // Od 1.62.1: kolor teczki – bez własnego wyboru zależny od koloru fiszki (przy złocie szara).
       h('div', { class: 'accent-picker' },
@@ -197,7 +197,7 @@ export class SettingsScreen {
       h('p', { class: 'group__footer', dataset: { testid: 'magic-folder-color-name' } },
         `${MAGIC_FOLDER_COLORS.find((item) => item.id === folder).label}`
         + `${folderDefault ? (magic === 'gold' ? ' (domyślna przy złotej fiszce)' : ' (domyślna)') : ''}. `
-        + 'Teczka magicznych fiszek w oknie notatki i na ekranach Biblioteki.')
+        + 'Teczka szybkich fiszek w oknie notatki i na ekranach Biblioteki.')
     );
   }
 

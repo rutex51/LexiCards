@@ -80,10 +80,10 @@ function applyAppearance(settings) {
   const accent = accentColor(settings);
   if (accent === DEFAULT_ACCENT) delete root.dataset.accent;
   else root.dataset.accent = accent;
-  // Kolor magicznej fiszki (od 1.62).
+  // Kolor szybkiej fiszki (od 1.62).
   const magic = magicColor(settings);
-  if (magic === DEFAULT_MAGIC_COLOR) delete root.dataset.magic;
-  else root.dataset.magic = magic;
+  if (magic === DEFAULT_MAGIC_COLOR) delete root.dataset.magicColor;
+  else root.dataset.magicColor = magic;
   // Kolor teczki (od 1.62.1; żółta – bez atrybutu).
   const folder = magicFolderColor(settings);
   if (folder === 'yellow') delete root.dataset.magicFolder;

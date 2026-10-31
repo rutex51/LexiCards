@@ -1,14 +1,14 @@
-// Magiczne fiszki (od 1.62) – interfejs.
+// Szybkie fiszki (od 1.62) – interfejs.
 //
 // W edytorze notatki: przycisk na pasku formatowania wysyła zaznaczony tekst (albo akapit z odwołaniem [[…]]
-// do obrazu lub tabeli) na magiczną fiszkę – tekst dostaje kolor fiszki, pogrubienie i sygnaturę ✦N.M,
+// do obrazu lub tabeli) na szybką fiszkę – tekst dostaje kolor fiszki, pogrubienie i sygnaturę ✦N.M,
 // a błyszczące piksele lecą z tekstu na fiszkę obok edytora. Fiszka zbiera fragmenty w „worku”;
 // „Uporządkuj” – fragmenty trafiają do pól (pojęcie, definicja, przykład, obraz) przeciągnięciem albo
 // dotknięciem fragmentu, a potem pola. „Do teczki” – fiszka wpada do teczki 3D w prawym dolnym rogu
 // i zwalnia miejsce na następną. Fiszkę można schować za prawą krawędź ekranu (zostaje języczek).
 // Okno teczki – fiszki ze wszystkich notatek: porządkowanie, lekcja docelowa (domyślnie – lekcja notatki)
 // i „Dodaj do lekcji…” (formularz pojęcia wypełniony fragmentami). Logika fiszek – core/magic.js.
-// Kolor (fiolet, złoto, turkus) – Ustawienia → Wygląd; w arkuszu stylów atrybut data-magic na <html>.
+// Kolor (fiolet, złoto, turkus) – Ustawienia → Wygląd; w arkuszu stylów atrybut data-magic-color na <html> (od 1.62.2; data-magic oznacza tylko fragmenty w treści).
 
 import {
   MAGIC_MAX, activeMagicCard, cleanMagic, magicCardStatus, magicFragments, magicTermDraft, nextMagicNumber
@@ -62,7 +62,7 @@ const SPARKS = {
   gold: { colors: ['#f5c542', '#ffd76a', '#ffe9a8', '#e0a526', '#c8901a', '#fff3c4', '#ffffff'], glow: 'rgba(214, 150, 20, 0.9)', trail: '#e0a526' },
   teal: { colors: ['#14b8a6', '#2dd4bf', '#5eead4', '#99f6e4', '#38bdf8', '#ccfbf1', '#ffffff'], glow: 'rgba(13, 148, 136, 0.85)', trail: '#14b8a6' }
 };
-const sparkPalette = () => SPARKS[document.documentElement.dataset.magic] ?? SPARKS.violet;
+const sparkPalette = () => SPARKS[document.documentElement.dataset.magicColor] ?? SPARKS.violet;
 
 /**
  * Błyszczące piksele na płótnie nad oknem `host` (okno modalne – płótno musi być w nim): stream() – piksele
@@ -267,7 +267,7 @@ export function magicFolderButton({ count = 0, onOpen, className = '', testID = 
     const shown = Math.min(3, value);
     badge.textContent = value > 0 ? String(value) : '';
     button.setAttribute('aria-label', value > 0 ? `Teczka – fiszki do sprawdzenia: ${value}` : 'Teczka – nie ma fiszek do sprawdzenia');
-    button.title = 'Teczka magicznych fiszek';
+    button.title = 'Teczka szybkich fiszek';
     replaceChildren(papers,
       Array.from({ length: shown }, (_, index) => h('span', {
         class: 'magic-folder__paper', style: { transform: `translateY(${-(shown - 1 - index) * 6}px) rotate(${index % 2 ? 2.5 : -2}deg)` }
@@ -575,7 +575,7 @@ function enableBoard(root, { host, fragmentOf, picked, onPick, onMove }) {
 // ---------------------------------------------------------------- fiszka w edytorze notatki
 
 /**
- * Magiczna fiszka w edytorze notatki. options:
+ * Szybka fiszka w edytorze notatki. options:
  *   ctx, lessonID – lekcja notatki; area – pole tekstu; magic – fiszki notatki (rekord, kopiowane);
  *   texts() – treść obu wersji ({ pl, en }, znormalizowana); rewrite(change) – zmiana treści pola z cofaniem;
  *   liveRange() – zaznaczenie w polu; unwrap(sigs) – fragmenty wracają do zwykłego tekstu w obu wersjach;
@@ -621,7 +621,7 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
   // ---- elementy
   const lockbar = h('div', { class: 'magic-lock', hidden: true, role: 'status', dataset: { testid: 'magic-lock' } });
   const card = h('div', { class: 'magic-card', dataset: { testid: 'magic-card' } });
-  const panel = h('aside', { class: 'magic-panel', 'aria-label': 'Magiczna fiszka', hidden: state.hidden, dataset: { testid: 'magic-panel' } }, card);
+  const panel = h('aside', { class: 'magic-panel', 'aria-label': 'Szybka fiszka', hidden: state.hidden, dataset: { testid: 'magic-panel' } }, card);
   /** Schowanie albo pokazanie przez użytkownika – na szerokim ekranie zapamiętane. */
   const setHidden = (hidden) => {
     state.hidden = hidden;
@@ -633,7 +633,7 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
     render();
   };
   const tab = h('button', {
-    type: 'button', class: 'magic-tab', dataset: { testid: 'magic-tab' }, 'aria-label': 'Pokaż magiczną fiszkę',
+    type: 'button', class: 'magic-tab', dataset: { testid: 'magic-tab' }, 'aria-label': 'Pokaż szybką fiszkę',
     onClick: () => setHidden(false)
   }, icon('chevronLeft', { size: 18 }), h('span', { class: 'magic-tab__no' }), h('span', { class: 'magic-tab__count' }));
   const backdrop = h('div', { class: 'magic-backdrop', onClick: () => setHidden(true) });
@@ -672,7 +672,7 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
         ? h('div', { class: 'magic-empty' },
           icon('magicCard', { size: 30 }),
           h('p', null, 'Zaznacz fragment notatki albo ustaw kursor w akapicie z odwołaniem [[…]] i dotknij ', icon('magicCard', { size: 17 }), ' na pasku.'),
-          h('p', { class: 'magic-empty__sub' }, number ? `Pierwszy fragment dostanie sygnaturę ✦${number}.1, następny ✦${number}.2…` : 'Ta notatka ma już najwięcej magicznych fiszek.'))
+          h('p', { class: 'magic-empty__sub' }, number ? `Pierwszy fragment dostanie sygnaturę ✦${number}.1, następny ✦${number}.2…` : 'Ta notatka ma już najwięcej szybkich fiszek.'))
         : boardContent(current, fragments, { edit, thumb, picked: state.picked, arriving: state.arriving, fresh: state.fresh }));
     state.fresh = null;
     if (edit) {
@@ -694,7 +694,7 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
     }
     replaceChildren(card,
       h('div', { class: 'magic-card__head' },
-        h('span', { class: 'magic-card__kicker' }, icon('sparkles', { size: 15 }), 'Magiczna fiszka'),
+        h('span', { class: 'magic-card__kicker' }, icon('sparkles', { size: 15 }), 'Szybka fiszka'),
         h('button', {
           type: 'button', class: 'magic-card__hide', 'aria-label': 'Schowaj fiszkę za krawędź ekranu', title: 'Schowaj fiszkę', dataset: { testid: 'magic-hide' },
           onClick: () => setHidden(true)
@@ -731,6 +731,15 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
     element.classList.add('magic-pulse');
   };
 
+  /**
+   * Oznaczony fragment (<span data-magic>) z węzłem `node` – tylko w polu notatki. Poza polem atrybut data-magic
+   * nie oznacza fragmentu (do 1.62.1 miał go <html> z kolorem fiszki – złoto i turkus blokowały dodawanie).
+   */
+  const markedSpan = (node) => {
+    const found = (node?.nodeType === 1 ? node : node?.parentElement)?.closest('[data-magic]') ?? null;
+    return found && area.contains(found) ? found : null;
+  };
+
   // ---- wysłanie fragmentu na fiszkę
   function capture() {
     if (state.busy) return;
@@ -744,25 +753,24 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
       toast('Zaznacz fragment notatki.');
       return;
     }
-    const marked = (node) => (node?.nodeType === 1 ? node : node?.parentElement)?.closest('[data-magic]') ?? null;
     const label = leaf.tagName === 'P' ? referenceLabel(leaf.textContent) : null;
     if (label) {
-      if (leaf.querySelector('[data-magic]') || marked(leaf)) {
-        toast('To odwołanie jest już na magicznej fiszce.');
+      if (leaf.querySelector('[data-magic]') || markedSpan(leaf)) {
+        toast('To odwołanie jest już na szybkiej fiszce.');
         return;
       }
     } else {
       if (range.collapsed || range.toString().trim() === '') {
-        toast('Zaznacz tekst, który ma trafić na magiczną fiszkę – albo ustaw kursor w akapicie z odwołaniem [[…]].');
+        toast('Zaznacz tekst, który ma trafić na szybką fiszkę – albo ustaw kursor w akapicie z odwołaniem [[…]].');
         return;
       }
       if (leafOf(area, range.endContainer) !== leaf) {
         toast('Zaznacz tekst w jednym akapicie – dłuższy tekst wyślij w kilku fragmentach.');
         return;
       }
-      const hit = marked(range.startContainer) ?? marked(range.endContainer) ?? range.cloneContents().querySelector('[data-magic]');
+      const hit = markedSpan(range.startContainer) ?? markedSpan(range.endContainer) ?? range.cloneContents().querySelector('[data-magic]');
       if (hit) {
-        toast(`Ten tekst jest już na magicznej fiszce (✦${hit.dataset.magic}).`);
+        toast(`Ten tekst jest już na szybkiej fiszce (✦${hit.dataset.magic}).`);
         return;
       }
     }
@@ -771,7 +779,7 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
     if (!current) {
       const no = nextMagicNumber(state.magic, fragmentsNow());
       if (!no) {
-        toast('Ta notatka ma już najwięcej magicznych fiszek.');
+        toast('Ta notatka ma już najwięcej szybkich fiszek.');
         return;
       }
       current = { no, state: 'active', frags: [], next: 1 };
@@ -792,7 +800,7 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
     const span = area.querySelector(`[data-magic="${sig}"]`);
     if (!wrapped || !span) {
       if (created) state.magic.cards = state.magic.cards.filter((item) => item !== current);
-      toast('Zaznacz tekst, który ma trafić na magiczną fiszkę.');
+      toast('Zaznacz tekst, który ma trafić na szybką fiszkę.');
       return;
     }
     current.next += 1;
@@ -847,9 +855,8 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
     const selection = window.getSelection();
     let sig = null;
     if (selection?.rangeCount && area.contains(selection.anchorNode)) {
-      const marked = (node) => (node?.nodeType === 1 ? node : node?.parentElement)?.closest('[data-magic]') ?? null;
-      const found = marked(selection.anchorNode) ?? marked(selection.focusNode);
-      if (found && area.contains(found)) sig = found.dataset.magic;
+      const found = markedSpan(selection.anchorNode) ?? markedSpan(selection.focusNode);
+      if (found) sig = found.dataset.magic;
     }
     onLock(Boolean(sig));
     if (sig === state.lock) return;
@@ -869,7 +876,7 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
       text = term ? ` – fragment fiszki dodanej do lekcji jako „${term.termPL}”.` : ' – fragment fiszki dodanej do lekcji.';
       actions = [button('Usuń oznaczenie', 'magic-lock-remove', () => unmark(sig))];
     } else {
-      text = owner?.state === 'folder' ? ' – fragment fiszki w teczce. Kolor i pogrubienie są stałe.' : ' – fragment magicznej fiszki. Kolor i pogrubienie są stałe.';
+      text = owner?.state === 'folder' ? ' – fragment fiszki w teczce. Kolor i pogrubienie są stałe.' : ' – fragment szybkiej fiszki. Kolor i pogrubienie są stałe.';
       actions = [
         button(owner?.state === 'folder' ? 'Pokaż w teczce' : 'Pokaż na fiszce', 'magic-lock-show', () => show(sig)),
         button('Usuń z fiszki', 'magic-lock-remove', () => unmark(sig))
@@ -985,7 +992,7 @@ export function openMagicFolder(ctx, { editor = null, focus = null, onClose = nu
   const body = h('div', { class: 'sheet__body magic-folder-sheet__body', dataset: { testid: 'magic-folder-body' } });
   const count = h('span', { class: 'magic-folder-sheet__count', dataset: { testid: 'magic-folder-sheet-count' } });
   const closeButton = h('button', { type: 'button', class: 'button button--plain', dataset: { testid: 'magic-folder-close' } }, 'Zamknij');
-  const panel = h('div', { class: 'sheet__panel magic-folder-sheet', 'aria-label': 'Teczka magicznych fiszek' },
+  const panel = h('div', { class: 'sheet__panel magic-folder-sheet', 'aria-label': 'Teczka szybkich fiszek' },
     h('header', { class: 'sheet__header' }, closeButton, h('h2', { class: 'sheet__title magic-folder-sheet__title' }, 'Teczka', count), h('span', { 'aria-hidden': 'true' })),
     body);
 

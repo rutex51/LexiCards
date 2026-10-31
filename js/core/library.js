@@ -74,7 +74,7 @@ const errors = {
   nothingSelected: () => new LibraryError('nothingSelected', 'Nie wybrano żadnych pojęć.'),
   emptyStudyQueue: () => new LibraryError('emptyStudyQueue', 'Brak fiszek pasujących do wybranych ustawień.'),
   noStudySession: () => new LibraryError('noStudySession', 'Nie ma trwającej sesji nauki.'),
-  magicCardMissing: () => new LibraryError('magicCardMissing', 'Tej magicznej fiszki już nie ma – mogła zostać dodana do lekcji albo usunięta.'),
+  magicCardMissing: () => new LibraryError('magicCardMissing', 'Tej szybkiej fiszki już nie ma – mogła zostać dodana do lekcji albo usunięta.'),
   noLastStudy: () => new LibraryError('noLastStudy', 'Nie ma zakończonej sesji do powtórzenia albo jej pojęcia zostały usunięte.'),
   emptyQuiz: () => new LibraryError('emptyQuiz', 'Z tego materiału nie da się ułożyć quizu – potrzebne są co najmniej dwa pojęcia o różnym brzmieniu.'),
   noQuiz: () => new LibraryError('noQuiz', 'Nie ma trwającego quizu.'),
@@ -1134,7 +1134,7 @@ export class Library {
    * nowa nazwa), { bytes, name, type } dodaje. htmlEN – treść po angielsku, imagesFirst – obrazy
    * w podglądzie przed tekstem, numberFigures – numeracja podpisów „Rys. N.” (od 1.18; od 1.21 też
    * „Tab. N.”), tables – tabele notatki (od 1.21, core/tables.js); bez pól htmlEN, imagesFirst,
-   * numberFigures, files i tables zostaje to, co jest w notatce. magic – magiczne fiszki notatki (od 1.62,
+   * numberFigures, files i tables zostaje to, co jest w notatce. magic – szybkie fiszki notatki (od 1.62,
    * core/magic.js; bez pola – dotychczasowe), uporządkowane z treścią przez settleMagic(). Notatka bez tekstu,
    * obrazów, tabel i załączników jest usuwana.
    * Zwraca zapisaną notatkę albo null.
@@ -1151,7 +1151,7 @@ export class Library {
   }
 
   #writeNote(unit, lessonID, { html, htmlEN, images = [], imagesFirst, numberFigures, files, tables, magic }, existing) {
-    // Magiczne fiszki (od 1.62): fiszki bez usuniętych fragmentów, treść bez oznaczeń spoza fiszek.
+    // Szybkie fiszki (od 1.62): fiszki bez usuniętych fragmentów, treść bez oznaczeń spoza fiszek.
     const settled = settleMagic(magic === undefined ? existing?.magic : magic,
       normalizeNoteHtml(html ?? ''), typeof htmlEN === 'string' ? normalizeNoteHtml(htmlEN) : (existing?.htmlEN ?? ''));
     const clean = settled.html;
@@ -1204,7 +1204,7 @@ export class Library {
     return note;
   }
 
-  // ---------------------------------------------------------------- magiczne fiszki (od 1.62)
+  // ---------------------------------------------------------------- szybkie fiszki (od 1.62)
 
   /**
    * Teczka: fiszki czekające na sprawdzenie ze wszystkich notatek, od ostatnio wysłanej –
@@ -1254,7 +1254,7 @@ export class Library {
   }
 
   /**
-   * Pojęcie z magicznej fiszki (od 1.62): tworzy je w lekcji `lessonID` i – w jednym zapisie – oznacza fiszkę `no`
+   * Pojęcie z szybkiej fiszki (od 1.62): tworzy je w lekcji `lessonID` i – w jednym zapisie – oznacza fiszkę `no`
    * notatki lekcji `noteLessonID` jako dodaną (jeśli jest zapisana; fiszka zmieniana w edytorze notatki zostaje
    * oznaczona w edytorze).
    */

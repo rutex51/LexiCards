@@ -108,12 +108,12 @@ const FORMAT_GROUPS = [
     ]
   }
 ];
-/** Magiczna fiszka (od 1.62) – pierwsza grupa paska w oknie tekstu notatki (core/magic.js, ui/magic.js). */
+/** Szybka fiszka (od 1.62) – pierwsza grupa paska w oknie tekstu notatki (core/magic.js, ui/magic.js). */
 const MAGIC_GROUP = {
-  label: 'Magiczna fiszka',
-  buttons: [{ command: 'magic', icon: 'magicCard', label: 'Magiczna fiszka – wyślij zaznaczony tekst albo odwołanie [[…]]', keys: 'Ctrl+M' }]
+  label: 'Szybka fiszka',
+  buttons: [{ command: 'magic', icon: 'magicCard', label: 'Szybka fiszka – wyślij zaznaczony tekst albo odwołanie [[…]]', keys: 'Ctrl+M' }]
 };
-/** Polecenia grupy „Tekst” – zablokowane, gdy kursor jest we fragmencie magicznej fiszki. */
+/** Polecenia grupy „Tekst” – zablokowane, gdy kursor jest we fragmencie szybkiej fiszki. */
 const TEXT_COMMANDS = FORMAT_GROUPS[0].buttons.map((button) => button.command);
 /** Polecenia bez stanu włączenia (przycisk nie jest przełącznikiem). */
 const ACTION_COMMANDS = ['color', 'size', 'removeFormat', 'pageBreak', 'equation', 'object', 'indent', 'outdent', 'paragraph', 'symbol', 'date', 'magic'];
@@ -699,7 +699,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
           book?.setSpread(on);
           library.updateSettings({ noteSpread: on }).catch((error) => console.error(error));
         },
-        // Od 1.62: magiczne fiszki notatki (tylko w oknie tekstu).
+        // Od 1.62: szybkie fiszki notatki (tylko w oknie tekstu).
         magic: note?.magic ?? null,
         magicHost: kind === 'text' ? { ctx, lessonID } : null
       });
@@ -731,7 +731,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       if (kind === 'text') {
         countButton = objectsButton(sessionEditor.objectCount(), () => openNested());
         replaceChildren(sessionBody, heading(h('div', { class: 'note-sheet__tools' }, sessionEditor.recordButton, countButton)), sessionEditor.element);
-        // Magiczna fiszka obok tekstu i teczka w prawym dolnym rogu – warstwa nad przewijaną treścią.
+        // Szybka fiszka obok tekstu i teczka w prawym dolnym rogu – warstwa nad przewijaną treścią.
         if (sessionEditor.magicLayer) {
           const main = h('div', { class: 'note-edit__main' });
           sessionBody.replaceWith(main);
@@ -987,7 +987,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
  * tabele i załączniki. textView – okno tekstu jest (bez niego – samo okno obiektów: bez „Wstaw do
  * tekstu”); onObjectsChange() – zmiana liczby obiektów; beforeInsert() – przed wstawieniem odwołania
  * z okna obiektów (zamyka je, żeby było widać tekst).
- * Od 1.62 magic – magiczne fiszki notatki, magicHost – { ctx, lessonID } (okno tekstu: przycisk fiszki na pasku,
+ * Od 1.62 magic – szybkie fiszki notatki, magicHost – { ctx, lessonID } (okno tekstu: przycisk fiszki na pasku,
  * fiszka obok tekstu i teczka – ui/magic.js).
  * Zwraca { element, objects, recordingBar, recordButton, magicLayer, objectCount(), draft(), dirty(), busy(), focus(),
  * refreshMagic(), destroy() }.
@@ -1027,7 +1027,7 @@ function noteEditor({
   const initialFiles = filesKey();
   const tablesKey = () => JSON.stringify(state.tables);
   const initialTables = tablesKey();
-  /** Magiczne fiszki (od 1.62) – ui/magic.js; tworzone na końcu, gdy jest już treść pola. */
+  /** Szybkie fiszki (od 1.62) – ui/magic.js; tworzone na końcu, gdy jest już treść pola. */
   let magicCards = null;
 
   const area = h('div', {
@@ -1226,10 +1226,10 @@ function noteEditor({
       class: `note-toolbar__group${group === MAGIC_GROUP ? ' note-toolbar__group--magic' : ''}`, role: 'group', 'aria-label': group.label
     }, group.buttons.map(toolbarButton))));
 
-  /** Kursor we fragmencie magicznej fiszki – formatowania tekstu nie można zmienić (komunikat zamiast zmiany). */
+  /** Kursor we fragmencie szybkiej fiszki – formatowania tekstu nie można zmienić (komunikat zamiast zmiany). */
   const lockedText = (name) => {
     if (!magicCards?.locked() || !TEXT_COMMANDS.includes(name)) return false;
-    toast('Formatowania fragmentu magicznej fiszki nie można zmienić. Usuń go z fiszki, jeśli ma być zwykłym tekstem.');
+    toast('Formatowania fragmentu szybkiej fiszki nie można zmienić. Usuń go z fiszki, jeśli ma być zwykłym tekstem.');
     return true;
   };
 
@@ -1498,7 +1498,7 @@ function noteEditor({
       editLink();
       return;
     }
-    // Ctrl+M (od 1.62) – zaznaczenie na magiczną fiszkę.
+    // Ctrl+M (od 1.62) – zaznaczenie na szybką fiszkę.
     if (key === 'm' && magicCards) {
       event.preventDefault();
       captureSelection();
@@ -1532,7 +1532,7 @@ function noteEditor({
     if (html) {
       // Przeglądarka najpierw porządkuje HTML (np. z Worda), potem zostaje tylko to, co notatka obsługuje.
       const parsed = new window.DOMParser().parseFromString(html, 'text/html');
-      // Wklejony tekst nie powiela fragmentów magicznej fiszki (od 1.62).
+      // Wklejony tekst nie powiela fragmentów szybkiej fiszki (od 1.62).
       const clean = normalizeNoteHtml(parsed.body.innerHTML, { magic: false });
       if (clean) document.execCommand('insertHTML', false, editorNoteHtml(clean));
     } else if (text) {
@@ -2673,7 +2673,7 @@ function noteEditor({
         files: state.files.map((file) => (file.stored
           ? { id: file.id, name: file.name }
           : { bytes: file.bytes, name: file.name, type: file.type, duration: file.duration })),
-        // Od 1.62: magiczne fiszki (bez okna tekstu – zostają te, które są w notatce).
+        // Od 1.62: szybkie fiszki (bez okna tekstu – zostają te, które są w notatce).
         ...(magicCards ? { magic: magicCards.draft() } : {})
       };
     },
@@ -2697,7 +2697,7 @@ function noteEditor({
     },
     /** Język treści w polu ('pl' | 'en'). */
     language: () => state.language,
-    /** Warstwa magicznej fiszki (fiszka, języczek, teczka) – null bez okna tekstu. */
+    /** Warstwa szybkiej fiszki (fiszka, języczek, teczka) – null bez okna tekstu. */
     magicLayer: magicCards?.layer ?? null,
     /** Po wstawieniu warstwy do okna – układ fiszki obok tekstu. */
     refreshMagic: () => magicCards?.refresh(),

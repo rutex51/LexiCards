@@ -1,4 +1,4 @@
-# LexiCards 1.62 – magiczne fiszki
+# LexiCards 1.62 – magiczne fiszki (od 1.62.2: szybkie fiszki)
 
 Wersja 1.62.0, 31 października 2026. Opis budowy: [ARCHITECTURE.md](ARCHITECTURE.md) (sekcja „Magiczne fiszki”).
 Według zaakceptowanej makiety, we wszystkich trzech wersjach kolorystycznych (fiolet, złoto, turkus) z wyborem w Ustawieniach.
@@ -92,3 +92,32 @@ robiono).
 
 - Safari na iPhonie i iPadzie – jak w 1.62.
 
+## Uzupełnienie w wersji 1.62.2 – szybkie fiszki, naprawa złota i turkusu
+
+| Zmiana | Jak działa |
+| --- | --- |
+| **Nazwa** | „Magiczne fiszki” nazywają się teraz **szybkimi fiszkami** – przycisk na pasku, fiszka, teczka, komunikaty, Ustawienia → Wygląd → „Szybka fiszka”. Wygląd, sygnatury ✦N.M i zapisane fiszki – bez zmian. |
+| **Błąd: złoto i turkus** | Przy złotym albo turkusowym kolorze zaznaczonego tekstu nie dało się wysłać na fiszkę – pojawiał się komunikat „Ten tekst jest już na fiszce (✦gold)”. Przyczyna: kolor fiszki był zapisany na całej stronie w tym samym atrybucie (`data-magic`), którym w notatce oznaczone są fragmenty, a sprawdzenie „czy tekst jest już na fiszce” szło w górę aż do początku strony. Przy fiolecie (domyślnym) atrybutu nie było, więc działało. Teraz kolor ma własny atrybut (`data-magic-color`), a sprawdzenie patrzy tylko na pole notatki. Dotyczyło to wszystkich urządzeń. |
+
+### Testy, które wykonano (1.62.2)
+
+- **Odtworzenie błędu przed poprawką** (tymczasowy test, poza repozytorium): dodanie fragmentu w trzech kolorach na komputerze,
+  telefonie i iPadzie (Chromium) – złoto i turkus: 6 z 6 nieudanych (komunikat „już na fiszce (✦gold)” / „(✦teal)”),
+  fiolet: 3 z 3 udanych.
+- **Testy logiki (Node.js): 548 – wszystkie zaliczone.**
+- **Testy w przeglądarce (Chromium): 267 – wszystkie zaliczone w dwóch pełnych przebiegach** na tym samym kodzie, w tym 2 nowe:
+  - komputer: złoto, potem turkus (kolor wybrany w Ustawieniach) – na `<html>` nie ma `data-magic`, fragment dodany
+    przyciskiem i drugi Ctrl+M, oba na fiszce, bez komunikatu „już na fiszce”, fragment w kolorze fiszki, kursor we
+    fragmencie – pasek z sygnaturą;
+  - telefon: złoto – zaznaczenie i dotknięcie przycisku, fragment oznaczony, języczek z liczbą 1.
+  - Zmienione: nowa nazwa w testach (grupa paska „Szybka fiszka”, komunikaty), kolor w atrybucie `data-magic-color`.
+  - Wcześniejsza para pełnych przebiegów: 267 i 266 – w drugim test „fiszki 1.56.1 na telefonie” (zwykła fiszka w Nauce,
+    obszar bez zmian) kliknął w końcówkę obrotu fiszki, a kliknięcie w trakcie obrotu fiszka pomija (zamierzenie). Osobno
+    6 z 6 udanych. Poprawiony test (czekanie na koniec obrotu między kliknięciami – też w teście „fiszki 1.39”), potem dwa
+    nowe pełne przebiegi – oba 267/267.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium): złota fiszka z dodanymi fragmentami (komputer), złoto na telefonie.
+
+### Czego nie sprawdzono (1.62.2)
+
+- Safari na iPhonie i iPadzie – jak w 1.62.

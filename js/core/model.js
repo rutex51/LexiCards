@@ -60,7 +60,7 @@ export function accentColor(settings) {
   return ACCENT_COLORS.some((item) => item.id === settings?.accentColor) ? settings.accentColor : DEFAULT_ACCENT;
 }
 
-/** Kolory magicznej fiszki (od 1.62): fragmenty notatki, fiszka obok edytora, iskry i teczka. */
+/** Kolory szybkiej fiszki (od 1.62): fragmenty notatki, fiszka obok edytora, iskry i teczka. */
 export const MAGIC_COLORS = Object.freeze([
   { id: 'violet', label: 'Fiolet' },
   { id: 'gold', label: 'Złoto' },
@@ -68,12 +68,12 @@ export const MAGIC_COLORS = Object.freeze([
 ]);
 export const DEFAULT_MAGIC_COLOR = 'violet';
 
-/** Kolor magicznej fiszki z ustawień; nieznana wartość – domyślny. */
+/** Kolor szybkiej fiszki z ustawień; nieznana wartość – domyślny. */
 export function magicColor(settings) {
   return MAGIC_COLORS.some((item) => item.id === settings?.magicColor) ? settings.magicColor : DEFAULT_MAGIC_COLOR;
 }
 
-/** Kolory teczki magicznych fiszek (od 1.62.1). */
+/** Kolory teczki szybkich fiszek (od 1.62.1). */
 export const MAGIC_FOLDER_COLORS = Object.freeze([
   { id: 'yellow', label: 'Żółta' },
   { id: 'black', label: 'Czarna' },
@@ -125,8 +125,8 @@ export function defaultSettings() {
     id: SETTINGS_ID,
     appearance: 'system',          // system | light | dark
     accentColor: 'blue',           // kolor aplikacji: blue | graphite | orange | green | red
-    magicColor: 'violet',          // kolor magicznej fiszki (od 1.62): violet | gold | teal
-    magicPanelHidden: false,       // magiczna fiszka schowana za krawędzią okna notatki (szeroki ekran)
+    magicColor: 'violet',          // kolor szybkiej fiszki (od 1.62): violet | gold | teal
+    magicPanelHidden: false,       // szybka fiszka schowana za krawędzią okna notatki (szeroki ekran)
     magicFolderColor: null,        // kolor teczki (od 1.62.1): yellow | black | gray | white; null – domyślny dla koloru fiszki
     preferredDirection: 'pl_en',   // pl_en | en_pl | mixed
     preferredFlashcardFront: 'term',

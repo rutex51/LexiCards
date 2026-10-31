@@ -142,7 +142,7 @@ export function renameReferences(html, from, to) {
     if (block.type !== 'p') continue;
     const label = referenceLabel(block.runs.map((run) => run.text).join(''));
     if (label && labelKey(label) === key) {
-      // Odwołanie wysłane na magiczną fiszkę (od 1.62) zostaje na niej.
+      // Odwołanie wysłane na szybką fiszkę (od 1.62) zostaje na niej.
       const magic = block.runs.find((run) => run.magic)?.magic;
       block.runs = [{ text: referenceToken(to), ...(magic ? { magic } : {}) }];
       changed = true;

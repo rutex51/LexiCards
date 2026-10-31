@@ -5222,8 +5222,8 @@ test('notatka 1.20: wyrównanie i interlinia (zaznaczone akapity, bez zaznaczeni
   const editor = dialog.locator('[data-testid=note-editor]');
   await editor.waitFor();
   const button = (command) => dialog.locator(`[data-testid=note-format-${command}]`);
-  // Od 1.62 pierwsza grupa – magiczna fiszka.
-  assert.deepEqual(await dialog.locator('.note-toolbar__group').evaluateAll((groups) => groups.map((group) => group.getAttribute('aria-label'))), ['Magiczna fiszka', 'Tekst', 'Akapit', 'Wstaw']);
+  // Od 1.62 pierwsza grupa – szybka fiszka.
+  assert.deepEqual(await dialog.locator('.note-toolbar__group').evaluateAll((groups) => groups.map((group) => group.getAttribute('aria-label'))), ['Szybka fiszka', 'Tekst', 'Akapit', 'Wstaw']);
   await editor.click();
   await page.keyboard.type('Pierwszy akapit');
   await page.keyboard.press('Enter');
@@ -8318,7 +8318,7 @@ test('notatka 1.29: okno tekstu na komputerze (kolumna na środku); obrazy i za�
   await edit.waitFor();
   const box = await edit.boundingBox();
   assert.deepEqual([box.width, box.height], [1280, 800], 'cały ekran');
-  // Od 1.62 obok tekstu jest magiczna fiszka (tekst przesunięty w lewo) – schowana: kolumna na środku, wybór zapamiętany.
+  // Od 1.62 obok tekstu jest szybka fiszka (tekst przesunięty w lewo) – schowana: kolumna na środku, wybór zapamiętany.
   const area0 = await edit.locator('[data-testid=note-editor]').boundingBox();
   const card0 = await edit.locator('[data-testid=magic-panel]').boundingBox();
   assert.ok(area0.x + area0.width <= card0.x, 'tekst obok fiszki');
@@ -14731,9 +14731,12 @@ test('fiszki 1.56.1 na telefonie: okno pojęcia – cztery części strony i kaf
   await startStudy(page);
   const card = flashcard(page);
   assert.equal(await card.getAttribute('data-faces'), '4');
-  // Bez „Obrazu” na stronach – tabela na ostatniej stronie.
+  // Bez „Obrazu” na stronach – tabela na ostatniej stronie. Między kliknięciami – koniec obrotu (kliknięcie w trakcie
+  // obrotu fiszka pomija; pod obciążeniem test potrafił kliknąć w końcówkę animacji).
   await page.locator('[data-testid=card-flip]').click();
+  await cardSettled(page);
   await page.locator('[data-testid=card-next-1]').click();
+  await cardSettled(page);
   await page.locator('[data-testid=card-next-2]').click();
   await waitUntil(async () => (await card.getAttribute('data-face')) === '3', 'Strona 4');
   const last = page.locator('[data-testid=card-face-3]');
@@ -15216,6 +15219,7 @@ test('fiszki 1.39 (kierunek od 1.56.2): trzy obroty – wybór treści stron, ko
   await waitUntil(async () => (await side(page)) === 'front', 'Powrót do pytania');
   assert.equal(await card.getAttribute('data-turn'), 'right');
   await page.locator('[data-testid=card-flip]').click();
+  await cardSettled(page);
   await page.locator('[data-testid=card-next-1]').click();
   await waitUntil(async () => (await card.getAttribute('data-face')) === '2', 'Strona 3 znowu');
   await page.locator('[data-testid=card-unflip-2]').click();
@@ -18545,7 +18549,7 @@ test('aktualizacja: po zmianie plików przeglądarka pobiera nowe wydanie', asyn
   }
 });
 
-// ---------------------------------------------------------------- magiczne fiszki (od 1.62)
+// ---------------------------------------------------------------- szybkie fiszki (od 1.62)
 
 const MAGIC_NOTE = [
   '<h3>Bilans</h3>',
@@ -18649,7 +18653,7 @@ const magicMarkedNote = () => {
 };
 const magicFolderDialog = (page) => page.locator('dialog[data-testid=magic-folder-dialog][open]');
 
-test('magiczne fiszki 1.62: zaznaczenie albo odwołanie [[…]] → przycisk na pasku – fragment w kolorze fiszki, pogrubiony, z sygnaturą ✦N.M, piksele lecą na fiszkę obok tekstu; formatowanie fragmentu zablokowane, „Usuń z fiszki”; fiszka chowa się za krawędź (języczek); „Uporządkuj” – przeciąganie i dotknięcie do pól, obraz tylko w polu „Obraz”; zapis z notatką, podgląd z sygnaturami (komputer)', async ({ open }) => {
+test('szybkie fiszki 1.62: zaznaczenie albo odwołanie [[…]] → przycisk na pasku – fragment w kolorze fiszki, pogrubiony, z sygnaturą ✦N.M, piksele lecą na fiszkę obok tekstu; formatowanie fragmentu zablokowane, „Usuń z fiszki”; fiszka chowa się za krawędź (języczek); „Uporządkuj” – przeciąganie i dotknięcie do pól, obraz tylko w polu „Obraz”; zapis z notatką, podgląd z sygnaturami (komputer)', async ({ open }) => {
   const page = await open();
   const { ids, edit } = await openMagicNote(page);
   const panel = edit.locator('[data-testid=magic-panel]');
@@ -18691,7 +18695,7 @@ test('magiczne fiszki 1.62: zaznaczenie albo odwołanie [[…]] → przycisk na 
   // Ten sam tekst drugi raz – komunikat, bez nowego fragmentu.
   await selectInNote(page, 'liabilities');
   await edit.locator('[data-testid=note-format-magic]').click();
-  await expectText(page.locator('.toast').last(), 'już na magicznej fiszce');
+  await expectText(page.locator('.toast').last(), 'już na szybkiej fiszce');
   assert.equal(await edit.locator('[data-magic]').count(), 5);
 
   // Kursor we fragmencie: pasek z sygnaturą, przyciski tekstu zablokowane – pogrubienie i Ctrl+I nic nie zmieniają.
@@ -18700,7 +18704,7 @@ test('magiczne fiszki 1.62: zaznaczenie albo odwołanie [[…]] → przycisk na 
   assert.equal(await edit.locator('[data-testid=note-format-bold]').evaluate((button) => button.classList.contains('note-toolbar__button--locked')), true);
   const inside = await edit.locator('[data-magic="1.3"]').innerHTML();
   await edit.locator('[data-testid=note-format-bold]').click();
-  await expectText(page.locator('.toast').last(), 'Formatowania fragmentu magicznej fiszki nie można zmienić');
+  await expectText(page.locator('.toast').last(), 'Formatowania fragmentu szybkiej fiszki nie można zmienić');
   await selectInNote(page, 'obowiązek');
   await page.keyboard.press('Control+i');
   assert.equal(await edit.locator('[data-magic="1.3"]').innerHTML(), inside, 'fragment bez zmian');
@@ -18766,7 +18770,7 @@ test('magiczne fiszki 1.62: zaznaczenie albo odwołanie [[…]] → przycisk na 
   assert.ok((await shown.evaluate((span) => getComputedStyle(span, '::after').content)).includes('✦'), 'sygnatura w podglądzie');
 }, { device: DESKTOP });
 
-test('magiczne fiszki 1.62: „Do teczki” – fiszka leci do teczki 3D (klapa się uchyla) i zwalnia miejsce na ✦2; teczka – lekcja notatki, porządkowanie, „Dodaj do lekcji…” – formularz pojęcia z polami i tabelą, pojęcie w lekcji, fiszka znika z teczki; „Anuluj” cofa nową fiszkę; teczka w Bibliotece – zmiana lekcji i usunięcie fiszki (tekst bez oznaczeń) (komputer)', async ({ open }) => {
+test('szybkie fiszki 1.62: „Do teczki” – fiszka leci do teczki 3D (klapa się uchyla) i zwalnia miejsce na ✦2; teczka – lekcja notatki, porządkowanie, „Dodaj do lekcji…” – formularz pojęcia z polami i tabelą, pojęcie w lekcji, fiszka znika z teczki; „Anuluj” cofa nową fiszkę; teczka w Bibliotece – zmiana lekcji i usunięcie fiszki (tekst bez oznaczeń) (komputer)', async ({ open }) => {
   const page = await open();
   const marked = magicMarkedNote();
   const { ids, edit } = await openMagicNote(page, { ...marked, htmlEN: '<p>Liabilities are a present obligation of the entity.</p>' });
@@ -18891,7 +18895,7 @@ test('magiczne fiszki 1.62: „Do teczki” – fiszka leci do teczki 3D (klapa 
   await waitUntil(async () => (await fab.count()) === 0, 'teczka znika z Biblioteki');
 }, { device: DESKTOP });
 
-test('magiczne fiszki 1.62: telefon – przycisk zawsze na początku paska, fiszka schowana (języczek), piksele lecą do języczka; fiszka wysuwa się z prawej, porządkowanie na całą szerokość, teczka nad tekstem; nic nie wystaje poza ekran', async ({ open }) => {
+test('szybkie fiszki 1.62: telefon – przycisk zawsze na początku paska, fiszka schowana (języczek), piksele lecą do języczka; fiszka wysuwa się z prawej, porządkowanie na całą szerokość, teczka nad tekstem; nic nie wystaje poza ekran', async ({ open }) => {
   const page = await open();
   const { edit } = await openMagicNote(page);
   const panel = edit.locator('[data-testid=magic-panel]');
@@ -18931,7 +18935,7 @@ test('magiczne fiszki 1.62: telefon – przycisk zawsze na początku paska, fisz
   await waitUntil(() => panel.evaluate((element) => element.classList.contains('magic-panel--hidden')), 'po wysłaniu fiszka znowu schowana');
 });
 
-test('magiczne fiszki 1.62: Ustawienia → Wygląd → „Magiczna fiszka” – fiolet, złoto, turkus: kolor fragmentów i fiszki; od 1.62.1 „Teczka” – żółta, czarna, szara, biała (przy złotej fiszce domyślnie szara); wybór zostaje po ponownym uruchomieniu (komputer)', async ({ open }) => {
+test('szybkie fiszki 1.62: Ustawienia → Wygląd → „Szybka fiszka” – fiolet, złoto, turkus: kolor fragmentów i fiszki; od 1.62.1 „Teczka” – żółta, czarna, szara, biała (przy złotej fiszce domyślnie szara); wybór zostaje po ponownym uruchomieniu (komputer)', async ({ open }) => {
   const page = await open();
   const marked = magicMarkedNote();
   const { ids, edit } = await openMagicNote(page, marked);
@@ -18947,7 +18951,7 @@ test('magiczne fiszki 1.62: Ustawienia → Wygląd → „Magiczna fiszka” –
   await expectText(folderFooter, 'Żółta (domyślna).');
   await page.locator('[data-testid=magic-color-gold]').check({ force: true });
   await expectText(footer, 'Złoto.');
-  assert.equal(await page.evaluate(() => document.documentElement.dataset.magic), 'gold');
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.magicColor), 'gold');
   // Przy złotej fiszce teczka bez własnego wyboru – szara.
   await expectText(folderFooter, 'Szara (domyślna przy złotej fiszce).');
   assert.equal(await page.evaluate(() => document.documentElement.dataset.magicFolder), 'gray');
@@ -19001,7 +19005,7 @@ test('magiczne fiszki 1.62: Ustawienia → Wygląd → „Magiczna fiszka” –
 
   // Po ponownym uruchomieniu kolor fiszki i teczki są ustawione, zanim wczyta się baza (bez mignięcia).
   await page.reload();
-  assert.deepEqual(await page.evaluate(() => [document.documentElement.dataset.magic, document.documentElement.dataset.magicFolder]), ['teal', 'white']);
+  assert.deepEqual(await page.evaluate(() => [document.documentElement.dataset.magicColor, document.documentElement.dataset.magicFolder]), ['teal', 'white']);
   await page.waitForSelector('#app[data-ready="true"]');
   assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().magicColor), 'teal');
   assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().magicFolderColor), 'white');
@@ -19016,6 +19020,66 @@ test('magiczne fiszki 1.62: Ustawienia → Wygląd → „Magiczna fiszka” –
   assert.equal(await colorOf(), 'rgb(196, 165, 255)', 'jaśniejszy fiolet w ciemnym motywie');
   await page.screenshot({ path: path.join(OUTPUT, 'magia-162-ciemny.png') });
 }, { device: DESKTOP });
+
+test('szybkie fiszki 1.62.2: złoto i turkus – fragment dodaje się przyciskiem i Ctrl+M (do 1.62.1 kolor na <html> blokował dodawanie: „już na fiszce (✦gold)”); kursor we fragmencie – pasek z sygnaturą (komputer)', async ({ open }) => {
+  const page = await open();
+  const base = page.url().split('#')[0];
+  const TEXTS = { gold: ['liabilities', 'Kapitał własny'], teal: ['equity', 'kredyt bankowy'] };
+  for (const color of ['gold', 'teal']) {
+    const [first, second] = TEXTS[color];
+    // Kolor jak użytkownik – w Ustawieniach (pierwszy raz na pustej bibliotece, potem notatka z przykładów).
+    await page.goto(`${base}#/settings`);
+    await page.locator(`[data-testid=magic-color-${color}]`).check({ force: true });
+    await waitUntil(async () => (await page.evaluate(() => document.documentElement.dataset.magicColor)) === color, `kolor ${color}`);
+    assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-magic')), false, 'bez data-magic na <html>');
+    let edit;
+    if (color === 'gold') {
+      await page.goto(`${base}#/start`);
+      ({ edit } = await openMagicNote(page));
+    } else {
+      const ids = await sampleLessons(page);
+      await openNotePreview(page, ids.statements);
+      await noteDialog(page).locator('[data-testid=note-right]').click();
+      edit = magicEdit(page);
+      await edit.locator('[data-testid=note-editor]').waitFor();
+      await waitUntil(() => edit.locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'okno tekstu otwarte');
+    }
+    const start = await edit.locator('[data-magic]').count();
+    await sendToMagic(page, first);
+    await selectInNote(page, second);
+    await page.keyboard.press('Control+m');
+    await waitUntil(async () => (await edit.locator('[data-magic]').count()) === start + 2, `Ctrl+M (${color})`);
+    await waitUntil(async () => (await edit.locator('.magic-chip--arriving').count()) === 0, 'fragment na fiszce', 6000);
+    const texts = (await magicChips(page)).map((chip) => chip.text);
+    assert.ok(texts.includes(first) && texts.includes(second), `fragmenty na fiszce (${color}): ${texts.join(' | ')}`);
+    const messages = await page.locator('.toast').allTextContents();
+    assert.ok(!messages.some((text) => text.includes('już na szybkiej fiszce')), `bez komunikatu „już na fiszce” (${color}): ${messages.join(' | ')}`);
+    // Fragment w kolorze fiszki; kursor we fragmencie – pasek z sygnaturą.
+    const sig = await edit.locator('[data-magic]', { hasText: first }).getAttribute('data-magic');
+    assert.equal(await edit.locator(`[data-magic="${sig}"]`).evaluate((span) => getComputedStyle(span).color), color === 'gold' ? 'rgb(143, 100, 0)' : 'rgb(15, 118, 110)');
+    await selectInNote(page, first.slice(2), { caret: true });
+    await expectText(edit.locator('.magic-lock'), `✦${sig}`);
+    if (color === 'gold') await page.screenshot({ path: path.join(OUTPUT, 'szybkie-1622-zloto.png') });
+    // Zapis – następny kolor na tej samej notatce (fragmenty zostają).
+    await edit.locator('[data-testid=note-right]').click();
+    await page.locator('dialog[data-testid=note-edit-dialog]').waitFor({ state: 'detached' });
+    await noteDialog(page).locator('[data-testid=note-left]').click();
+  }
+}, { device: DESKTOP });
+
+test('szybkie fiszki 1.62.2: złoto na telefonie – zaznaczenie i dotknięcie przycisku dodaje fragment (iskry do języczka)', async ({ open }) => {
+  const page = await open();
+  await page.goto(`${page.url().split('#')[0]}#/settings`);
+  await page.locator('[data-testid=magic-color-gold]').check({ force: true });
+  await waitUntil(async () => (await page.evaluate(() => document.documentElement.dataset.magicColor)) === 'gold', 'złoto');
+  await page.goto(`${page.url().split('#')[0]}#/start`);
+  const { edit } = await openMagicNote(page);
+  await selectInNote(page, 'Zobowiązania');
+  await edit.locator('[data-testid=note-format-magic]').tap();
+  await waitUntil(async () => (await edit.locator('[data-magic]').count()) === 1, 'fragment oznaczony');
+  await expectText(edit.locator('[data-testid=magic-tab]'), '1');
+  await page.screenshot({ path: path.join(OUTPUT, 'szybkie-1622-telefon-zloto.png') });
+});
 
 // ---------------------------------------------------------------- uruchomienie
 

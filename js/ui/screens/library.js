@@ -170,7 +170,7 @@ export function missingView(title, backHref, backLabel) {
   };
 }
 
-/** Treść ekranu Biblioteki z teczką magicznych fiszek w prawym dolnym rogu (od 1.62 – gdy coś w niej czeka). */
+/** Treść ekranu Biblioteki z teczką szybkich fiszek w prawym dolnym rogu (od 1.62 – gdy coś w niej czeka). */
 export function withMagicFolder(ctx, body) {
   const folder = magicFolderFab(ctx);
   if (!folder) return body;

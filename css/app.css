@@ -8525,10 +8525,10 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   color: var(--on-accent);
 }
 
-/* ------------------------------------------------------------------ 15. magiczne fiszki (od 1.62)
- * Fragment notatki wysłany na magiczną fiszkę: kolor fiszki, pogrubienie i sygnatura ✦N.M (z atrybutu – nie jest
+/* ------------------------------------------------------------------ 15. szybkie fiszki (od 1.62)
+ * Fragment notatki wysłany na szybką fiszkę: kolor fiszki, pogrubienie i sygnatura ✦N.M (z atrybutu – nie jest
  * tekstem notatki). Fiszka obok tekstu w oknie edycji (worek fragmentów, pola), języczek schowanej fiszki, teczka 3D
- * w prawym dolnym rogu i okno teczki. Trzy kolory (Ustawienia → Wygląd): fiolet, złoto, turkus – data-magic na <html>;
+ * w prawym dolnym rogu i okno teczki. Trzy kolory (Ustawienia → Wygląd): fiolet, złoto, turkus – data-magic-color na <html> (od 1.62.2);
  * tekst fragmentów i przycisków z kontrastem co najmniej 4,5:1, złote przyciski – z ciemnym napisem.
  */
 :root {
@@ -8552,12 +8552,12 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   --magic-folder-front-2: #e6a93a;
   --magic-paper: #ffffff;
 }
-:root[data-magic="gold"] {
+:root[data-magic-color="gold"] {
   --magic: #8f6400; --magic-fill: #e3b23c; --on-magic: #3b2a00;
   --magic-soft: rgba(227, 178, 60, 0.16); --magic-line: rgba(176, 128, 10, 0.45); --magic-glow: rgba(214, 160, 30, 0.36);
   --magic-grad-a: #f6d775; --magic-grad-b: #c99419; --on-grad: #3b2a00; --magic-dot: rgba(201, 148, 25, 0.7);
 }
-:root[data-magic="teal"] {
+:root[data-magic-color="teal"] {
   --magic: #0f766e; --magic-fill: #0f766e; --on-magic: #ffffff;
   --magic-soft: rgba(20, 184, 166, 0.12); --magic-line: rgba(13, 148, 136, 0.42); --magic-glow: rgba(20, 184, 166, 0.34);
   --magic-grad-a: #149e94; --magic-grad-b: #0b5f59; --on-grad: #ffffff; --magic-dot: rgba(245, 197, 66, 0.6);
@@ -8568,11 +8568,11 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
     --magic-glow: rgba(139, 92, 246, 0.42); --magic-paper: #2c2c2e;
     --magic-folder-back: #b37a1f; --magic-folder-edge: #8d5c10; --magic-folder-front: #dcaa45; --magic-folder-front-2: #c88f2c;
   }
-  :root[data-magic="gold"]:not([data-theme="light"]) {
+  :root[data-magic-color="gold"]:not([data-theme="light"]) {
     --magic: #f2c94c; --magic-fill: #e3b23c; --on-magic: #3b2a00; --magic-soft: rgba(242, 201, 76, 0.14); --magic-line: rgba(242, 201, 76, 0.42);
     --magic-glow: rgba(227, 178, 60, 0.36);
   }
-  :root[data-magic="teal"]:not([data-theme="light"]) {
+  :root[data-magic-color="teal"]:not([data-theme="light"]) {
     --magic: #5eead4; --magic-fill: #2dd4bf; --on-magic: #042f2e; --magic-soft: rgba(45, 212, 191, 0.14); --magic-line: rgba(45, 212, 191, 0.42);
     --magic-glow: rgba(45, 212, 191, 0.34);
   }
@@ -8582,11 +8582,11 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   --magic-glow: rgba(139, 92, 246, 0.42); --magic-paper: #2c2c2e;
   --magic-folder-back: #b37a1f; --magic-folder-edge: #8d5c10; --magic-folder-front: #dcaa45; --magic-folder-front-2: #c88f2c;
 }
-:root[data-theme="dark"][data-magic="gold"] {
+:root[data-theme="dark"][data-magic-color="gold"] {
   --magic: #f2c94c; --magic-fill: #e3b23c; --on-magic: #3b2a00; --magic-soft: rgba(242, 201, 76, 0.14); --magic-line: rgba(242, 201, 76, 0.42);
   --magic-glow: rgba(227, 178, 60, 0.36);
 }
-:root[data-theme="dark"][data-magic="teal"] {
+:root[data-theme="dark"][data-magic-color="teal"] {
   --magic: #5eead4; --magic-fill: #2dd4bf; --on-magic: #042f2e; --magic-soft: rgba(45, 212, 191, 0.14); --magic-line: rgba(45, 212, 191, 0.42);
   --magic-glow: rgba(45, 212, 191, 0.34);
 }

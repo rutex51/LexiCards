@@ -85,7 +85,7 @@ const ICONS = {
   bookOpen: [p('M12 6.5C10 5 7.2 4.6 3.5 5v13c3.7-.4 6.5 0 8.5 1.5'), p('M12 6.5c2-1.5 4.8-1.9 8.5-1.5v13c-3.7-.4-6.5 0-8.5 1.5'), p('M12 6.5v13')],
   reorder: [p('M7 19V5'), p('M4 8l3-3 3 3'), p('M17 5v14'), p('M14 16l3 3 3-3')],
   select: [{ tag: 'circle', cx: 12, cy: 12, r: 8.5 }, p('M8.2 12.3l2.6 2.6 5-5.3')],
-  // Magiczna fiszka (od 1.62): karta z gwiazdką.
+  // Szybka fiszka (od 1.62): karta z gwiazdką.
   magicCard: [
     p('M4.5 8h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-10a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z'), p('M6 12.8h5'), p('M6 16.2h7.5'),
     { d: 'M19 2.6l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z', fill: 'currentColor', 'stroke-width': 1 }

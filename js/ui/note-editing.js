@@ -207,7 +207,7 @@ function findMark(root, mark) {
 
 /**
  * Otacza zaznaczenie w kopii treści (tekst między znacznikami, bez białych znaków na brzegach) elementem
- * `wrapper` – od 1.62 fragment magicznej fiszki; whole – całą treść bloku z początkiem zaznaczenia (akapit
+ * `wrapper` – od 1.62 fragment szybkiej fiszki; whole – całą treść bloku z początkiem zaznaczenia (akapit
  * z odwołaniem [[…]]). Znaczniki zostają (zaznaczenie po zmianie). Zwraca false, gdy nie ma czego otoczyć.
  */
 export function wrapMarked(root, wrapper, { whole = false } = {}) {
@@ -376,7 +376,7 @@ export function clearFormatting(root) {
   };
 }
 
-/** Fragmenty bez formatowania (poza linkiem i fragmentem magicznej fiszki) w zakresie znaków [start, end). */
+/** Fragmenty bez formatowania (poza linkiem i fragmentem szybkiej fiszki) w zakresie znaków [start, end). */
 function clearRuns(runs, start, end) {
   const result = [];
   let position = 0;
@@ -388,7 +388,7 @@ function clearRuns(runs, start, end) {
       result.push(run);
     } else {
       if (from > position) result.push({ ...run, text: run.text.slice(0, from - position) });
-      // Link i (od 1.62) fragment magicznej fiszki zostają – to nie jest formatowanie.
+      // Link i (od 1.62) fragment szybkiej fiszki zostają – to nie jest formatowanie.
       result.push({ text: run.text.slice(from - position, to - position), ...(run.href ? { href: run.href } : {}), ...(run.magic ? { magic: run.magic } : {}) });
       if (to < position + length) result.push({ ...run, text: run.text.slice(to - position) });
     }

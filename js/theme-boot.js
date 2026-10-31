@@ -10,10 +10,10 @@
     if (accent === 'graphite' || accent === 'orange' || accent === 'green' || accent === 'red') {
       document.documentElement.dataset.accent = accent;
     }
-    // Od 1.62: kolor magicznej fiszki.
+    // Od 1.62: kolor szybkiej fiszki.
     var magic = localStorage.getItem('lexicards-magic');
     if (magic === 'gold' || magic === 'teal') {
-      document.documentElement.dataset.magic = magic;
+      document.documentElement.dataset.magicColor = magic;
     }
     // Od 1.62.1: kolor teczki.
     var folder = localStorage.getItem('lexicards-magic-folder');

@@ -213,7 +213,7 @@ export function validateBackup(raw) {
       dropped += 1;
       continue;
     }
-    // Magiczne fiszki (od 1.62) – sprawdzone razem z treścią, jak przy zapisie notatki.
+    // Szybkie fiszki (od 1.62) – sprawdzone razem z treścią, jak przy zapisie notatki.
     const settled = settleMagic(record.magic, normalizeNoteHtml(typeof record.html === 'string' ? record.html : ''),
       normalizeNoteHtml(typeof record.htmlEN === 'string' ? record.htmlEN : ''));
     const { html, htmlEN } = settled;

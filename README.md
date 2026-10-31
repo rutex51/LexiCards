@@ -1,4 +1,4 @@
-# LexiCards 1.62.1
+# LexiCards 1.62.2
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -71,9 +71,9 @@ Rysunek – pierścienie na grzbiecie zeszytu zamiast spirali (w każdej prostok
 Rysunek – tablica A0: kartka rysunku jako duży arkusz bez wyglądu zeszytu (w menu „Kartki” zamiana w obie strony – z powrotem tylko, gdy rysunek mieści się w obszarze kartki), obraz tablicy w notatce – obszar z rysunkiem w wielkości kartki; przy przejściu tablica zwija się w rulon albo rozwija nad zeszytem (wersja 1.59): [docs/RELEASE-1.59.md](docs/RELEASE-1.59.md).
 Notatki – edycja tekstu w dwóch widokach: „Ciągły” (jak dotąd) i „Książka” – tekst w stronach na wysokość okna, kartki przewracane przyciskami, PageUp / PageDown i same, gdy kursor przechodzi na inną stronę, z tym samym zagięciem kartki co w podglądzie (wersja 1.60): [docs/RELEASE-1.60.md](docs/RELEASE-1.60.md).
 Rysunek – tablica A0 w skali zeszytu: kartka zeszytu na środku tablicy, po przejściu rysunek w tym samym miejscu ekranu, pomniejszenie do całej tablicy, rulon przez cały ekran; notatki – edycja w dwóch stronach obok siebie (ustawienie wspólne z podglądem) (wersja 1.61): [docs/RELEASE-1.61.md](docs/RELEASE-1.61.md).
-Magiczne fiszki – zaznaczony tekst i odwołania [[…]] z notatki lecą jako błyszczące piksele na fiszkę obok edytora, fragmenty przeciągasz do pól (pojęcie, definicja, przykład, obraz), fiszka wpada do teczki 3D, a z teczki – po sprawdzeniu – do lekcji; kolor fiszki: fiolet, złoto albo turkus (wersja 1.62); kolor teczki – żółta, czarna, szara, biała (1.62.1): [docs/RELEASE-1.62.md](docs/RELEASE-1.62.md).
+Szybkie fiszki – zaznaczony tekst i odwołania [[…]] z notatki lecą jako błyszczące piksele na fiszkę obok edytora, fragmenty przeciągasz do pól (pojęcie, definicja, przykład, obraz), fiszka wpada do teczki 3D, a z teczki – po sprawdzeniu – do lekcji; kolor fiszki: fiolet, złoto albo turkus (wersja 1.62); kolor teczki – żółta, czarna, szara, biała (1.62.1); nowa nazwa „szybkie fiszki” (dawniej magiczne) i naprawa dodawania fragmentów przy złotym i turkusowym kolorze (1.62.2): [docs/RELEASE-1.62.md](docs/RELEASE-1.62.md).
 
-## Co potrafi wersja 1.62.1
+## Co potrafi wersja 1.62.2
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -133,11 +133,11 @@ Magiczne fiszki – zaznaczony tekst i odwołania [[…]] z notatki lecą jako b
   `$\frac{a}{b}$`, `$\sqrt{x}$`…), a podgląd notatki pokazuje go jak w podręczniku; `$$…$$` – wzór
   w osobnym wierszu. Przycisk **Σ** (od 1.26 jedyny – bez osobnej ikony ⓘ) otwiera okno **Równania**:
   zapis z podglądem, ściągawka i **Wstaw**. Czytanie na głos i słuchanie czytają wzór słowami („x do kwadratu”).
-- Magiczne fiszki (od 1.62): w edytorze notatki zaznaczony tekst (albo akapit z odwołaniem `[[…]]` do obrazu lub tabeli)
+- Szybkie fiszki (od 1.62): w edytorze notatki zaznaczony tekst (albo akapit z odwołaniem `[[…]]` do obrazu lub tabeli)
   przycisk z gwiazdką wysyła na fiszkę obok tekstu – fragment dostaje kolor fiszki, pogrubienie i sygnaturę ✦1.2,
   a błyszczące piksele lecą z tekstu na fiszkę. Fragmenty przeciągasz (albo dotykasz) do pól: pojęcie, definicja,
   przykład (po polsku i po angielsku) i obraz; fiszka wpada do **teczki** 3D w prawym dolnym rogu, a z teczki – po
-  sprawdzeniu – trafia jako pojęcie do lekcji notatki albo innej. Zobacz [Magiczne fiszki](#magiczne-fiszki).
+  sprawdzeniu – trafia jako pojęcie do lekcji notatki albo innej. Zobacz [Szybkie fiszki](#szybkie-fiszki).
 - Rysunki odręczne w notatce: **Narysuj** przy obrazach otwiera edytor na cały ekran – pióro
   z naciskiem rysika (Apple Pencil, rysik w laptopie), zakreślacz, gumka całych kresek albo
   fragmentów (cztery wielkości), zaznaczanie prostokątem (przesuń, powiel, usuń), linijka z kątem,
@@ -234,7 +234,7 @@ Magiczne fiszki – zaznaczony tekst i odwołania [[…]] z notatki lecą jako b
   ustawienia – mały plik) oraz jeden plik ze wszystkimi obrazami i załącznikami notatek. Przywracasz
   je po kolei albo oba naraz; obrazy i załączniki, które już są na urządzeniu, zostają.
 - Motyw jasny, ciemny albo zgodny z systemem i kolor aplikacji do wyboru (niebieski, antracytowy,
-  pomarańczowy, zielony, czerwony), od 1.62 także kolor magicznej fiszki (fiolet, złoto, turkus), od 1.62.1 kolor teczki
+  pomarańczowy, zielony, czerwony), od 1.62 także kolor szybkiej fiszki (fiolet, złoto, turkus), od 1.62.1 kolor teczki
   (żółta, czarna, szara, biała); układ na telefon i na szeroki ekran (od 1.45.1 panel boczny od 700 px, więc także
   iPad w pionie; glosariusz jako tabela od 1024 px). Ikony dziedzin mają
   szare tło, a inny kolor można wybrać w edycji dziedziny. Od 1.26 wszystkie okna (formularze, okna
@@ -1181,10 +1181,10 @@ w edytorze (z przerywaną obwódką) – obraz rysunku w notatce jej nie ma, ale
 z cienką strzałką i mniejszym grotem, bez kartki i cienia (wybranie go włącza strzałkę). Pole odnośnika
 dopasowuje się do tekstu, więc strzałka zaczyna się przy nim; w pliku DXF – tekst i strzałka.
 
-### Magiczne fiszki
+### Szybkie fiszki
 
-Od 1.62 pojęcia do lekcji zbierasz prosto z notatki. W oknie tekstu notatki pierwszy na pasku formatowania jest
-przycisk **magicznej fiszki** (karta z gwiazdką, **Ctrl+M**):
+Od 1.62 pojęcia do lekcji zbierasz prosto z notatki (do 1.62.1 funkcja nazywała się „magiczne fiszki”). W oknie tekstu notatki pierwszy na pasku formatowania jest
+przycisk **szybkiej fiszki** (karta z gwiazdką, **Ctrl+M**):
 - **Zaznacz tekst** i dotknij przycisku – fragment zmienia się na kolor fiszki, pogrubiony, z sygnaturą **✦1.2**
   (fiszka 1, fragment 2), a błyszczące piksele lecą z tekstu na **fiszkę obok edytora** i fragment ląduje w jej
   **worku**. Kursor w akapicie z odwołaniem `[[Bilans]]` – na fiszkę trafia obraz albo tabela (z miniaturą). Fragment
@@ -1211,7 +1211,7 @@ z teczki, a fragmenty w notatce zostają w kolorze fiszki z sygnaturą. Fiszka w
 
 Fiszki zapisują się razem z notatką: **Anuluj** w oknie tekstu cofa też zmiany fiszek z tej edycji (pojęcie dodane
 z teczki zostaje). W podglądzie notatki fragmenty są w kolorze fiszki z sygnaturą, w PDF, druku, „Kopiuj” i przy
-czytaniu na głos – zwykłym tekstem. Kolor (fiolet, złoto, turkus) – **Ustawienia → Wygląd → Magiczna fiszka**, od 1.62.1
+czytaniu na głos – zwykłym tekstem. Kolor (fiolet, złoto, turkus) – **Ustawienia → Wygląd → Szybka fiszka**, od 1.62.1
 kolor teczki – **Teczka** (żółta, czarna, szara, biała; bez własnego wyboru żółta, a przy złotej fiszce szara).
 Numeracja fiszek jest osobna w każdej lekcji: notatka każdej lekcji zaczyna od ✦1.
 

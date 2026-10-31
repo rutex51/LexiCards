@@ -14,7 +14,7 @@ const NOTE = '<p><span data-magic="1.1">Zobowiązania</span> (<span data-magic="
   + '<p><span data-magic="1.4">[[Bilans]]</span></p><p>Przykład: <span data-magic="2.1">kredyt bankowy</span>.</p>';
 const TABLE = { label: 'Bilans', rows: [['Aktywa', 'Pasywa'], ['Maszyny', 'Kredyt']], align: ['left', 'left'], header: true };
 
-test('magiczne fiszki 1.62 – format notatki: <span data-magic="N.M"> zostaje (jeden na fragment, także z formatowaniem w środku), błędne sygnatury znikają, wklejanie bez oznaczeń, zwykły tekst bez sygnatur', () => {
+test('szybkie fiszki 1.62 – format notatki: <span data-magic="N.M"> zostaje (jeden na fragment, także z formatowaniem w środku), błędne sygnatury znikają, wklejanie bez oznaczeń, zwykły tekst bez sygnatur', () => {
   const html = normalizeNoteHtml(NOTE);
   assert.equal(normalizeNoteHtml(html), html, 'postać stała');
   assert.ok(html.includes('<span data-magic="1.3">obecny <em>obowiązek</em> jednostki</span>'), 'jeden span z kursywą w środku');
@@ -30,7 +30,7 @@ test('magiczne fiszki 1.62 – format notatki: <span data-magic="N.M"> zostaje (
   assert.ok(renameReferences(html, 'Bilans', 'Bilans 2024').includes('<span data-magic="1.4">[[Bilans 2024]]</span>'));
 });
 
-test('magiczne fiszki 1.62 – fragmenty z treści: tekst (bez sygnatur), odwołanie [[…]] jako obiekt, druga wersja językowa, fragment w kilku akapitach', () => {
+test('szybkie fiszki 1.62 – fragmenty z treści: tekst (bez sygnatur), odwołanie [[…]] jako obiekt, druga wersja językowa, fragment w kilku akapitach', () => {
   const fragments = magicFragments(NOTE, '<p>The <span data-magic="2.2">bank loan</span>.</p>');
   assert.deepEqual(fragments.get('1.1'), { text: 'Zobowiązania', language: 'pl', object: null });
   assert.deepEqual(fragments.get('1.3'), { text: 'obecny obowiązek jednostki', language: 'pl', object: null });
@@ -40,7 +40,7 @@ test('magiczne fiszki 1.62 – fragmenty z treści: tekst (bez sygnatur), odwoł
   assert.equal(split.get('3.1').text, 'pierwsza część druga część');
 });
 
-test('magiczne fiszki 1.62 – sprawdzanie fiszek: fragmenty spoza treści znikają, pusta fiszka znika, jedna fiszka w budowie, dodane do lekcji zostają; porządek treści (settleMagic)', () => {
+test('szybkie fiszki 1.62 – sprawdzanie fiszek: fragmenty spoza treści znikają, pusta fiszka znika, jedna fiszka w budowie, dodane do lekcji zostają; porządek treści (settleMagic)', () => {
   const fragments = magicFragments(NOTE);
   const raw = {
     next: 1,
@@ -72,7 +72,7 @@ test('magiczne fiszki 1.62 – sprawdzanie fiszek: fragmenty spoza treści znika
   assert.equal(unmarkMagic(normalizeNoteHtml(NOTE), new Set(['1.1', '1.2'])).includes('data-magic="1.1"'), false);
 });
 
-test('magiczne fiszki 1.62 – stan fiszki i szkic pojęcia: teksty pól w kolejności, obraz z pola „Obraz” (tabela albo obraz), bez obrazów w innej lekcji', () => {
+test('szybkie fiszki 1.62 – stan fiszki i szkic pojęcia: teksty pól w kolejności, obraz z pola „Obraz” (tabela albo obraz), bez obrazów w innej lekcji', () => {
   const fragments = magicFragments(NOTE);
   const card = { no: 1, state: 'folder', frags: [{ sig: '1.1', slot: 'termPL' }, { sig: '1.2', slot: 'termEN' }, { sig: '1.3', slot: 'defPL' }, { sig: '1.4', slot: 'media' }] };
   assert.deepEqual(magicCardStatus(card, fragments), { count: 4, loose: 0, term: true, complete: true });
@@ -86,14 +86,14 @@ test('magiczne fiszki 1.62 – stan fiszki i szkic pojęcia: teksty pól w kolej
   assert.deepEqual(magicCardStatus(loose, fragments), { count: 2, loose: 1, term: false, complete: false });
 });
 
-test('magiczne fiszki 1.62 – kolor w ustawieniach: fiolet (domyślny), złoto, turkus; nieznany – domyślny', () => {
+test('szybkie fiszki 1.62 – kolor w ustawieniach: fiolet (domyślny), złoto, turkus; nieznany – domyślny', () => {
   assert.deepEqual(MAGIC_COLORS.map((item) => item.id), ['violet', 'gold', 'teal']);
   assert.equal(defaultSettings().magicColor, DEFAULT_MAGIC_COLOR);
   assert.equal(magicColor({ magicColor: 'gold' }), 'gold');
   assert.equal(magicColor({ magicColor: 'pink' }), 'violet');
 });
 
-test('magiczne fiszki 1.62.1 – kolor teczki: żółta, czarna, szara, biała; bez wyboru – żółta, przy złotej fiszce szara; własny wybór zostaje przy każdym kolorze fiszki', () => {
+test('szybkie fiszki 1.62.1 – kolor teczki: żółta, czarna, szara, biała; bez wyboru – żółta, przy złotej fiszce szara; własny wybór zostaje przy każdym kolorze fiszki', () => {
   assert.deepEqual(MAGIC_FOLDER_COLORS.map((item) => item.id), ['yellow', 'black', 'gray', 'white']);
   assert.equal(defaultSettings().magicFolderColor, null);
   assert.equal(magicFolderColor(defaultSettings()), 'yellow');
@@ -104,7 +104,7 @@ test('magiczne fiszki 1.62.1 – kolor teczki: żółta, czarna, szara, biała; 
   assert.equal(magicFolderColor({ magicColor: 'gold', magicFolderColor: 'navy' }), 'gray', 'nieznany – domyślny');
 });
 
-test('magiczne fiszki 1.62 – biblioteka: zapis notatki z fiszkami (porządek z treścią), teczka, zmiana pól i lekcji, usunięcie (tekst bez oznaczeń), pojęcie z fiszki w jednym zapisie; kopia zapasowa', async () => {
+test('szybkie fiszki 1.62 – biblioteka: zapis notatki z fiszkami (porządek z treścią), teczka, zmiana pól i lekcji, usunięcie (tekst bez oznaczeń), pojęcie z fiszki w jednym zapisie; kopia zapasowa', async () => {
   const { library } = await makeLibrary();
   const { lesson } = await makeBranch(library, { lesson: 'Financial Statements' });
   const other = await library.createLesson({ name: 'Investments' }, { existing: lesson.moduleID });
@@ -141,7 +141,7 @@ test('magiczne fiszki 1.62 – biblioteka: zapis notatki z fiszkami (porządek z
   assert.deepEqual([card.state, card.termID], ['done', term.id]);
   assert.equal(library.magicFolderCount(), 0);
   assert.ok(library.getNote(lesson.id).html.includes('data-magic="1.1"'), 'fragmenty fiszki dodanej do lekcji zostają oznaczone');
-  await assert.rejects(library.updateMagicCard(lesson.id, 1, { lessonID: null }), /Tej magicznej fiszki już nie ma/);
+  await assert.rejects(library.updateMagicCard(lesson.id, 1, { lessonID: null }), /Tej szybkiej fiszki już nie ma/);
   await assert.rejects(library.createTermFromMagic({ termPL: 'x', termEN: '' }, lesson.id, { noteLessonID: lesson.id, no: 1 }), /po angielsku/);
 
   // Usunięcie fiszki z teczki – fragmenty wracają do zwykłego tekstu.
