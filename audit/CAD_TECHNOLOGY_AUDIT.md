@@ -331,3 +331,9 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
   i bez cudzych grafik. Nazwy opisowe („Magiczna fiszka”, „Teczka”). Wyszukiwania patentowego nie robiono
   (AUDIT_LIMITATIONS.md) – przy komercjalizacji zalecane sprawdzenie obszaru „fiszki z zaznaczeń tekstu”. Nowej pozycji
   rejestru algorytmów geometrii nie dodano. Ryzyko wstępnie NISKIE.
+
+## Uzupełnienie: wersja 1.62.1 (31.10.2026) – kolor teczki
+
+- **Zakres:** ustawienie koloru teczki magicznych fiszek (żółta, czarna, szara, biała; przy złotej fiszce domyślnie szara) –
+  `js/core/model.js`, `js/main.js`, `js/theme-boot.js`, `js/ui/screens/settings.js`, tokeny w `css/app.css`.
+- **Funkcje i patenty:** same kolory interfejsu, bez nowych technik. Ryzyko wstępnie NISKIE.
