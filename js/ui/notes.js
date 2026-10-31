@@ -46,6 +46,7 @@ import { speakThen, speechAvailable, stopSpeaking } from './speech.js';
 import { magicEditor } from './magic.js';
 import { symbolPanel } from './symbols.js';
 import { openTableEditor } from './table-editor.js';
+import { keyboardInset } from './viewport.js';
 
 let titleCounter = 0;
 
@@ -1229,7 +1230,7 @@ function noteEditor({
   /** Kursor we fragmencie szybkiej fiszki – formatowania tekstu nie można zmienić (komunikat zamiast zmiany). */
   const lockedText = (name) => {
     if (!magicCards?.locked() || !TEXT_COMMANDS.includes(name)) return false;
-    toast('Formatowania fragmentu szybkiej fiszki nie można zmienić. Usuń go z fiszki, jeśli ma być zwykłym tekstem.');
+    toast('Formatowania fragmentu szybkiej fiszki nie można zmienić. Żeby był zwykłym tekstem, dotknij podświetlonego przycisku fiszki.');
     return true;
   };
 
@@ -1441,7 +1442,8 @@ function noteEditor({
 
   function updateToolbar() {
     for (const [command, button] of buttons) {
-      if (!button.hasAttribute('aria-pressed')) continue;
+      // Przycisk szybkiej fiszki (od 1.63.1 podświetlony z kursorem we fragmencie) – stan ustawia fiszka (onLock).
+      if (command === 'magic' || !button.hasAttribute('aria-pressed')) continue;
       let active = false;
       try {
         if (command === 'heading') active = String(document.queryCommandValue('formatBlock') ?? '').toLowerCase() === 'h3';
@@ -2366,15 +2368,17 @@ function noteEditor({
   /**
    * Wielkość strony: szerokość pola, wysokość – do dołu okna (pod spodem przyciski stron); kolumna = szerokość treści,
    * odstęp kolumn = poziome marginesy pola, więc następna strona zaczyna się dokładnie o szerokość pola dalej.
+   * Od 1.63.1 wysokość jak bez klawiatury ekranowej (kartka nie maleje, gdy pojawia się klawiatura – okno przewija się
+   * do dolnej krawędzi kartki nad klawiaturą) i niezależna od przewinięcia okna (pisanie nie przewija go do góry).
    */
   function layoutPages(index = page.index) {
     if (!page.on || !area.isConnected) return;
     const scroller = area.closest('.sheet__body');
-    if (scroller) scroller.scrollTop = 0;
     const style = getComputedStyle(area);
     const sides = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-    const bottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
-    const height = Math.max(240, Math.floor(bottom - area.getBoundingClientRect().top - pager.offsetHeight - 28));
+    const bottom = scroller ? scroller.getBoundingClientRect().bottom + keyboardInset() : window.innerHeight;
+    const top = area.getBoundingClientRect().top + (scroller?.scrollTop ?? 0);
+    const height = Math.max(240, Math.floor(bottom - top - pager.offsetHeight - 28));
     // Dwie strony (od 1.61): wybrane i okno dość duże – jak w podglądzie notatki.
     page.spread = page.chosen && spreadAvailable();
     spreadButton.hidden = !spreadAvailable();
@@ -2403,8 +2407,10 @@ function noteEditor({
       area.scrollLeft = 0;
       return;
     }
-    // Od strony z kursorem (albo pierwszej).
+    // Od strony z kursorem (albo pierwszej); okno – od góry.
     requestAnimationFrame(() => {
+      const scroller = area.closest('.sheet__body');
+      if (scroller) scroller.scrollTop = 0;
       layoutPages(0);
       const at = caretPage();
       if (at !== null) showPageAt(at);
@@ -2524,7 +2530,32 @@ function noteEditor({
   });
   area.addEventListener('input', () => {
     if (page.on) relayout();
+    window.requestAnimationFrame(() => window.requestAnimationFrame(revealCaret));
   });
+  /**
+   * Kursor zawsze widoczny (od 1.63.1): pod przyklejonym paskiem formatowania i nad dolną krawędzią okna – na iPhonie
+   * z klawiaturą okno kończy się nad nią, a kartka (widok „Książka”) jest wyższa, więc okno przewija się do kursora.
+   */
+  function revealCaret() {
+    const scroller = area.closest('.sheet__body');
+    const selection = window.getSelection();
+    if (!scroller || document.activeElement !== area || !selection?.rangeCount || !area.contains(selection.focusNode)) return;
+    const range = document.createRange();
+    range.setStart(selection.focusNode, selection.focusOffset);
+    let rect = range.getClientRects()[0] ?? null;
+    if (!rect) {
+      const node = selection.focusNode.nodeType === window.Node.ELEMENT_NODE ? selection.focusNode : selection.focusNode.parentElement;
+      rect = node?.getBoundingClientRect() ?? null;
+    }
+    if (!rect || (rect.width === 0 && rect.height === 0 && rect.top === 0)) return;
+    const box = scroller.getBoundingClientRect();
+    const roof = Math.max(box.top, toolbarBox.getBoundingClientRect().bottom) + 8;
+    if (rect.bottom > box.bottom - 16) scroller.scrollTop += rect.bottom - (box.bottom - 16);
+    else if (rect.top < roof) scroller.scrollTop -= roof - rect.top;
+  }
+  // Klawiatura się pojawiła (okno zmalało) – kursor nad nią.
+  const onViewport = () => window.requestAnimationFrame(revealCaret);
+  window.visualViewport?.addEventListener('resize', onViewport);
   const pageObserver = new ResizeObserver(() => {
     if (page.on) relayout();
   });
@@ -2637,11 +2668,17 @@ function noteEditor({
         return icon(findTableByLabel(state.tables, label) >= 0 ? 'table' : 'image', { size: 18 });
       },
       tableLabels: () => state.tables.map((table) => table.label),
-      onLock: (locked) => {
+      // Kursor we fragmencie: przyciski tekstu zablokowane, przycisk fiszki podświetlony (od 1.63.1 – bez paska nad tekstem).
+      onLock: (locked, sig, title) => {
         for (const name of TEXT_COMMANDS) buttons.get(name)?.classList.toggle('note-toolbar__button--locked', locked);
+        const magicButton = buttons.get('magic');
+        if (!magicButton) return;
+        magicButton.setAttribute('aria-pressed', String(locked));
+        const label = locked ? title : MAGIC_GROUP.buttons[0].label;
+        magicButton.setAttribute('aria-label', label);
+        magicButton.title = locked ? title : `${MAGIC_GROUP.buttons[0].label} (${MAGIC_GROUP.buttons[0].keys})`;
       }
     });
-    toolbarBox.append(magicCards.lockbar);
   }
 
   return {
@@ -2711,6 +2748,7 @@ function noteEditor({
       document.removeEventListener('selectionchange', onSelectionChange);
       gridObserver.disconnect();
       pageObserver.disconnect();
+      window.visualViewport?.removeEventListener('resize', onViewport);
       window.cancelAnimationFrame(page.frame);
       magicCards?.destroy();
       // Zamknięte bez zapisu – nagranie przepada, mikrofon zostaje zwolniony.

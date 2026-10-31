@@ -1,4 +1,4 @@
-# LexiCards 1.63
+# LexiCards 1.63.1
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -72,9 +72,9 @@ Rysunek – tablica A0: kartka rysunku jako duży arkusz bez wyglądu zeszytu (w
 Notatki – edycja tekstu w dwóch widokach: „Ciągły” (jak dotąd) i „Książka” – tekst w stronach na wysokość okna, kartki przewracane przyciskami, PageUp / PageDown i same, gdy kursor przechodzi na inną stronę, z tym samym zagięciem kartki co w podglądzie (wersja 1.60): [docs/RELEASE-1.60.md](docs/RELEASE-1.60.md).
 Rysunek – tablica A0 w skali zeszytu: kartka zeszytu na środku tablicy, po przejściu rysunek w tym samym miejscu ekranu, pomniejszenie do całej tablicy, rulon przez cały ekran; notatki – edycja w dwóch stronach obok siebie (ustawienie wspólne z podglądem) (wersja 1.61): [docs/RELEASE-1.61.md](docs/RELEASE-1.61.md).
 Szybkie fiszki – zaznaczony tekst i odwołania [[…]] z notatki lecą jako błyszczące piksele na fiszkę obok edytora, fragmenty przeciągasz do pól (pojęcie, definicja, przykład, obraz), fiszka wpada do teczki 3D, a z teczki – po sprawdzeniu – do lekcji; kolor fiszki: fiolet, złoto albo turkus (wersja 1.62); kolor teczki – żółta, czarna, szara, biała (1.62.1); nowa nazwa „szybkie fiszki” (dawniej magiczne) i naprawa dodawania fragmentów przy złotym i turkusowym kolorze (1.62.2): [docs/RELEASE-1.62.md](docs/RELEASE-1.62.md).
-Szybkie fiszki – tekst wpisany ręcznie w polach przy „Uporządkuj” (oprócz przeciągania); rysunek – wiaderko (wypełnienie zamkniętego obszaru kolorem pod liniami), kolor kartki (jasne tony i pełna paleta), arkusze A3, A2, A1, A0, 2A0 i 4A0 zamiast „tablicy A0” z jasnoszarą ramką obszaru kartki bez podpisu, nowe kształty od linii ciągłej bez wypełnienia; iPhone – okno tekstu notatki nad klawiaturą z widocznym paskiem formatowania (wersja 1.63): [docs/RELEASE-1.63.md](docs/RELEASE-1.63.md).
+Szybkie fiszki – tekst wpisany ręcznie w polach przy „Uporządkuj” (oprócz przeciągania); rysunek – wiaderko (wypełnienie zamkniętego obszaru kolorem pod liniami), kolor kartki (jasne tony i pełna paleta), arkusze A3, A2, A1, A0, 2A0 i 4A0 zamiast „tablicy A0” z jasnoszarą ramką obszaru kartki bez podpisu, nowe kształty od linii ciągłej bez wypełnienia; iPhone – okno tekstu notatki nad klawiaturą z widocznym paskiem formatowania (wersja 1.63); bez paska fragmentu fiszki nad tekstem – „Cofnij” w komunikacie po dodaniu, przycisk fiszki z kursorem we fragmencie usuwa go z fiszki; kartka „Książki” tej samej wielkości z klawiaturą, okno przewija się do jej dolnej krawędzi i do kursora (1.63.1): [docs/RELEASE-1.63.md](docs/RELEASE-1.63.md).
 
-## Co potrafi wersja 1.63
+## Co potrafi wersja 1.63.1
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -380,7 +380,9 @@ dwukrotne dotknięcie). Od 1.56 w nagłówku podglądu **Edytuj** jest po lewej,
 Od 1.29 edycja ma dwa osobne okna nad podglądem:
 - **Edytuj** – okno tekstu na cały ekran (jak edytor rysunku): pasek formatowania i duże pole tekstu
   (na komputerze kolumna na środku). Od 1.63 na telefonie z klawiaturą okno zajmuje widoczną część ekranu nad nią – pasek
-  formatowania zostaje u góry (wcześniej na iPhonie bywał przesunięty poza ekran). Obok nazwy lekcji: **mikrofon** (notatka głosowa nagrywa się
+  formatowania zostaje u góry (wcześniej na iPhonie bywał przesunięty poza ekran); od 1.63.1 kartka widoku „Książka” ma
+  wielkość jak bez klawiatury – okno przewija się do jej dolnej krawędzi (nad klawiaturę) i samo do kursora przy pisaniu,
+  a teczka szybkich fiszek chowa się na czas pisania. Obok nazwy lekcji: **mikrofon** (notatka głosowa nagrywa się
   w trakcie pisania) i **spinacz z liczbą** obrazów, tabel i załączników – otwiera nad tekstem okno
   **Obrazy i załączniki** („Gotowe” wraca do tekstu; zapisuje się wszystko razem). Obraz wklejony do
   tekstu (albo upuszczony na tekst) trafia do obrazów, a w tekście – jego odwołanie.
@@ -1209,8 +1211,9 @@ przycisk **szybkiej fiszki** (karta z gwiazdką, **Ctrl+M**):
   **worku**. Kursor w akapicie z odwołaniem `[[Bilans]]` – na fiszkę trafia obraz albo tabela (z miniaturą). Fragment
   jest w jednym akapicie; dłuższy tekst wysyłasz w kilku fragmentach. Fragmenty mogą być z polskiej i angielskiej
   wersji notatki. Tekst na fiszce to zawsze tekst z notatki – poprawka w notatce poprawia fiszkę.
-- **Kolor i pogrubienia fragmentu nie zmienisz** – gdy kursor jest we fragmencie, przyciski tekstu są wyszarzone, a pod
-  paskiem jest pasek z sygnaturą: **Pokaż na fiszce** i **Usuń z fiszki** (fragment wraca do zwykłego tekstu).
+- **Kolor i pogrubienia fragmentu nie zmienisz** – gdy kursor jest we fragmencie, przyciski tekstu są wyszarzone, a przycisk
+  szybkiej fiszki jest podświetlony: jego dotknięcie **usuwa fragment z fiszki** (tekst wraca do zwykłego). Od 1.63.1 bez paska
+  nad tekstem (zmniejszał kartkę); po dodaniu fragmentu przez kilka sekund na dole jest komunikat z **Cofnij**.
 - **Schowanie**: strzałka › na fiszce chowa ją za prawą krawędź – zostaje języczek z numerem fiszki i liczbą
   fragmentów (piksele lecą wtedy do języczka); dotknięcie języczka wysuwa fiszkę. Na komputerze i iPadzie w poziomie
   fiszka jest obok tekstu (zapamiętane, czy schowana), na telefonie – wysuwa się z prawej nad tekst.

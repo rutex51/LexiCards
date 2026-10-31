@@ -2261,7 +2261,8 @@ Do 1.62.1 nazywały się „magicznymi fiszkami”; nazwy w kodzie (`magic*`, `d
   zaznaczenia między znacznikami, bez spacji na brzegach; odwołanie – cała treść akapitu), więc z cofaniem (Ctrl+Z).
   Fiszki w edytorze to kopia `magic` zapisywana z notatką (`draft().magic`, `dirty()`), więc Anuluj cofa także je;
   `unwrap` – w polu z cofaniem, w drugiej wersji językowej `unmarkMagic`. Kursor we fragmencie (`selectionChanged`) –
-  pasek `magic-lock`, przyciski grupy „Tekst” zablokowane (`TEXT_COMMANDS`; także skróty). Warstwa (`magic-layer`,
+  (do 1.63 pasek `magic-lock`; od 1.63.1 przycisk fiszki podświetlony – `onLock(locked, sig, title)` – i działa jak przełącznik:
+  `capture` z kursorem we fragmencie go usuwa), przyciski grupy „Tekst” zablokowane (`TEXT_COMMANDS`; także skróty). Warstwa (`magic-layer`,
   `overflow: clip` – schowana fiszka nie daje się przewinąć w bok) w `note-edit__main` nad przewijaną treścią: fiszka
   (`magic-panel`; od 1000 px obok tekstu – treść z `padding-right`, węziej – wysuwana z prawej nad tekst), języczek, teczka 3D.
   Schowana fiszka po animacji ma `hidden`; na szerokim ekranie stan zapamiętany (`magicPanelHidden`).
@@ -2551,3 +2552,19 @@ puszczona po przeciągnięciu (tylko przewrócona) – `remaining: duration`: na
 - **Klawiatura iPhone’a**: okno tekstu notatki (`.note-edit-dialog`) – `top: var(--vv-top)` i `height: var(--vv-height)`
   (z `trackVisualViewport` w `main.js`, jak inne arkusze), więc z klawiaturą kończy się nad nią, a przyklejony pasek
   formatowania nie ucieka w górę z przesuniętym obrazem.
+
+## Wydanie 1.63.1: notatka na telefonie z klawiaturą, bez paska fragmentu
+
+- **Bez paska fragmentu**: `magicEditor` nie ma już `lockbar` (pasek nad polem zmniejszał kartkę „Książki”); kursor we fragmencie
+  – `onLock(true, sig, title)`: przyciski tekstu zablokowane, przycisk fiszki `aria-pressed` z opisem („Usuń fragment ✦N.M…”);
+  `updateToolbar` w `notes.js` go pomija. `capture` z kursorem albo zaznaczeniem we fragmencie (albo w akapicie odwołania już
+  na fiszce) – `unmark`. Po dodaniu – `toast` z „Cofnij” (5 s, `data-testid="magic-added"`): `unmark(sig, { quiet: true })`.
+- **Komunikaty nad oknami** (`dialogs.js`): `placeToasts` przenosi obszar komunikatów do najwyżej położonego otwartego `<dialog>`
+  (okno modalne leży nad stroną; komunikat ze strony był pod nim niewidoczny), w oknie – `toasts--dialog` przy dolnej krawędzi okna
+  (z klawiaturą – nad nią); przy zamknięciu okna komunikaty wracają do okna pod spodem albo na stronę.
+- **Klawiatura** (`ui/viewport.js`): `keyboardInset()` – `documentElement.clientHeight` (na iPhonie stała) minus
+  `visualViewport.height`, gdy > 120 px i bez powiększenia; `main.js` ustawia `data-keyboard` na `<html>` (teczka szybkich fiszek
+  w oknie notatki się chowa). `layoutPages` (widok „Książka”): wysokość strony do dołu okna powiększonego o klawiaturę
+  i niezależna od przewinięcia okna (`top + scrollTop`) – bez `scrollTop = 0` przy każdym przeliczeniu (tylko przy włączeniu
+  widoku). `revealCaret` (po `input` i zmianie `visualViewport`) przewija okno tak, by kursor był pod przyklejonym paskiem
+  i nad dolną krawędzią okna.

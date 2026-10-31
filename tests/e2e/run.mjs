@@ -18696,15 +18696,13 @@ test('szybkie fiszki 1.62: zaznaczenie albo odwołanie [[…]] → przycisk na p
   await expectText(edit.locator('[data-testid=magic-card]'), '5 fragmentów · w polach 0');
   await page.screenshot({ path: path.join(OUTPUT, 'magia-162-worek.png') });
 
-  // Ten sam tekst drugi raz – komunikat, bez nowego fragmentu.
-  await selectInNote(page, 'liabilities');
-  await edit.locator('[data-testid=note-format-magic]').click();
-  await expectText(page.locator('.toast').last(), 'już na szybkiej fiszce');
-  assert.equal(await edit.locator('[data-magic]').count(), 5);
-
-  // Kursor we fragmencie: pasek z sygnaturą, przyciski tekstu zablokowane – pogrubienie i Ctrl+I nic nie zmieniają.
+  // Kursor we fragmencie (od 1.63.1 bez paska nad tekstem): przycisk fiszki podświetlony, przyciski tekstu zablokowane –
+  // pogrubienie i Ctrl+I nic nie zmieniają.
   await selectInNote(page, 'obowiązek', { caret: true });
-  await expectText(edit.locator('[data-testid=magic-lock]'), '✦1.3');
+  const magicButton = edit.locator('[data-testid=note-format-magic]');
+  await waitUntil(async () => (await magicButton.getAttribute('aria-pressed')) === 'true', 'przycisk fiszki podświetlony');
+  assert.ok((await magicButton.getAttribute('aria-label')).includes('Usuń fragment ✦1.3'));
+  assert.equal(await edit.locator('[data-testid=magic-lock]').count(), 0, 'bez paska nad tekstem');
   assert.equal(await edit.locator('[data-testid=note-format-bold]').evaluate((button) => button.classList.contains('note-toolbar__button--locked')), true);
   const inside = await edit.locator('[data-magic="1.3"]').innerHTML();
   await edit.locator('[data-testid=note-format-bold]').click();
@@ -18713,15 +18711,24 @@ test('szybkie fiszki 1.62: zaznaczenie albo odwołanie [[…]] → przycisk na p
   await page.keyboard.press('Control+i');
   assert.equal(await edit.locator('[data-magic="1.3"]').innerHTML(), inside, 'fragment bez zmian');
 
-  // „Usuń z fiszki” – fragment wraca do zwykłego tekstu, znika z fiszki.
+  // Od 1.63.1: po dodaniu – komunikat w oknie z „Cofnij” (kilka sekund); „Cofnij” – fragment wraca do zwykłego tekstu.
   await sendToMagic(page, 'Kapitał własny');
   assert.equal((await magicChips(page)).length, 6);
-  await selectInNote(page, 'Kapitał', { caret: true });
-  await edit.locator('[data-testid=magic-lock-remove]').click();
+  const added = edit.locator('[data-testid=magic-added]');
+  await expectText(added, 'Dodano ✦1.6 do fiszki.');
+  assert.equal(await added.isVisible(), true, 'komunikat widoczny nad oknem notatki');
+  await added.locator('.toast__button').click();
   await waitUntil(async () => (await edit.locator('[data-magic="1.6"]').count()) === 0, 'fragment 1.6 bez oznaczenia');
   await waitUntil(async () => (await magicChips(page)).length === 5, 'fragment 1.6 zniknął z fiszki');
+  // Przycisk fiszki z kursorem we fragmencie – fragment wraca do zwykłego tekstu i znika z fiszki.
+  await sendToMagic(page, 'Kapitał własny');
+  await selectInNote(page, 'Kapitał', { caret: true });
+  await waitUntil(async () => (await magicButton.getAttribute('aria-pressed')) === 'true', 'przycisk podświetlony (kursor we fragmencie)');
+  await magicButton.click();
+  await waitUntil(async () => (await edit.locator('[data-magic="1.7"]').count()) === 0, 'fragment 1.7 bez oznaczenia');
+  await waitUntil(async () => (await magicChips(page)).length === 5, 'fragment 1.7 zniknął z fiszki');
   assert.ok((await edit.locator('[data-testid=note-editor]').textContent()).includes('Kapitał własny (equity)'));
-  await waitUntil(() => edit.locator('[data-testid=magic-lock]').isHidden(), 'pasek fragmentu znika');
+  await waitUntil(async () => (await magicButton.getAttribute('aria-pressed')) === 'false', 'przycisk już nie podświetlony');
 
   // Schowanie za krawędź: języczek z numerem fiszki i liczbą fragmentów, tekst na całą szerokość; dotknięcie – fiszka wraca.
   await edit.locator('[data-testid=magic-hide]').click();
@@ -18766,7 +18773,8 @@ test('szybkie fiszki 1.62: zaznaczenie albo odwołanie [[…]] → przycisk na p
   await edit.locator('[data-testid=note-right]').click();
   await page.locator('dialog[data-testid=note-edit-dialog]').waitFor({ state: 'detached' });
   const stored = await storedNote(page, ids.statements);
-  assert.deepEqual(stored.magic.cards, [{ no: 1, state: 'active', next: 7, frags: MAGIC_FRAGMENTS.map(([, sig, slot]) => ({ sig, slot })) }]);
+  // next 8 – po fragmentach 1.6 (cofnięty) i 1.7 (usunięty przyciskiem) numery nie wracają.
+  assert.deepEqual(stored.magic.cards, [{ no: 1, state: 'active', next: 8, frags: MAGIC_FRAGMENTS.map(([, sig, slot]) => ({ sig, slot })) }]);
   assert.equal((stored.html.match(/data-magic=/g) ?? []).length, 5);
   assert.equal(stored.html.includes('<strong>'), false, 'bez pogrubienia w treści – wygląd z arkusza stylów');
   const shown = noteDialog(page).locator('.note-text [data-magic="1.1"]');
@@ -18836,7 +18844,7 @@ test('szybkie fiszki 1.62: „Do teczki” – fiszka leci do teczki 3D (klapa s
 
   // Fragment fiszki dodanej do lekcji – nadal oznaczony, pasek z nazwą pojęcia.
   await selectInNote(page, 'Zobowiązania', { caret: true });
-  await expectText(edit.locator('[data-testid=magic-lock]'), 'dodanej do lekcji jako „Zobowiązania”');
+  await waitUntil(async () => (await edit.locator('[data-testid=note-format-magic]').getAttribute('aria-label')).includes('dodana do lekcji jako „Zobowiązania”'), 'przycisk – fiszka dodana do lekcji');
   await edit.locator('[data-testid=note-right]').click();
   await page.locator('dialog[data-testid=note-edit-dialog]').waitFor({ state: 'detached' });
   let stored = await storedNote(page, ids.statements);
@@ -19025,7 +19033,7 @@ test('szybkie fiszki 1.62: Ustawienia → Wygląd → „Szybka fiszka” – fi
   await page.screenshot({ path: path.join(OUTPUT, 'magia-162-ciemny.png') });
 }, { device: DESKTOP });
 
-test('szybkie fiszki 1.62.2: złoto i turkus – fragment dodaje się przyciskiem i Ctrl+M (do 1.62.1 kolor na <html> blokował dodawanie: „już na fiszce (✦gold)”); kursor we fragmencie – pasek z sygnaturą (komputer)', async ({ open }) => {
+test('szybkie fiszki 1.62.2: złoto i turkus – fragment dodaje się przyciskiem i Ctrl+M (do 1.62.1 kolor na <html> blokował dodawanie: „już na fiszce (✦gold)”); kursor we fragmencie – przycisk fiszki z sygnaturą (od 1.63.1 bez paska) (komputer)', async ({ open }) => {
   const page = await open();
   const base = page.url().split('#')[0];
   const TEXTS = { gold: ['liabilities', 'Kapitał własny'], teal: ['equity', 'kredyt bankowy'] };
@@ -19058,11 +19066,11 @@ test('szybkie fiszki 1.62.2: złoto i turkus – fragment dodaje się przyciskie
     assert.ok(texts.includes(first) && texts.includes(second), `fragmenty na fiszce (${color}): ${texts.join(' | ')}`);
     const messages = await page.locator('.toast').allTextContents();
     assert.ok(!messages.some((text) => text.includes('już na szybkiej fiszce')), `bez komunikatu „już na fiszce” (${color}): ${messages.join(' | ')}`);
-    // Fragment w kolorze fiszki; kursor we fragmencie – pasek z sygnaturą.
+    // Fragment w kolorze fiszki; kursor we fragmencie – przycisk fiszki z sygnaturą.
     const sig = await edit.locator('[data-magic]', { hasText: first }).getAttribute('data-magic');
     assert.equal(await edit.locator(`[data-magic="${sig}"]`).evaluate((span) => getComputedStyle(span).color), color === 'gold' ? 'rgb(143, 100, 0)' : 'rgb(15, 118, 110)');
     await selectInNote(page, first.slice(2), { caret: true });
-    await expectText(edit.locator('.magic-lock'), `✦${sig}`);
+    await waitUntil(async () => (await edit.locator('[data-testid=note-format-magic]').getAttribute('aria-label')).includes(`✦${sig}`), 'przycisk fiszki z sygnaturą');
     if (color === 'gold') await page.screenshot({ path: path.join(OUTPUT, 'szybkie-1622-zloto.png') });
     // Zapis – następny kolor na tej samej notatce (fragmenty zostają).
     await edit.locator('[data-testid=note-right]').click();
@@ -19146,32 +19154,101 @@ test('szybkie fiszki 1.63: „Uporządkuj” – oprócz przeciągania tekst wpi
   assert.equal(term.exampleEN, 'A bank loan is a liability.');
 }, { device: DESKTOP });
 
-test('notatki 1.63: telefon, widok „Ciągły” – klawiatura iPhone’a (widoczna część ekranu mniejsza i przesunięta, jak podaje Safari): okno tekstu w widocznej części, pasek formatowania przyklejony u góry także po przewinięciu tekstu na dół', async ({ open }) => {
-  const page = await open();
-  const long = [MAGIC_NOTE, ...Array.from({ length: 12 }, (_, index) => `<p>Akapit ${index + 1}: zobowiązania i aktywa w bilansie firmy na koniec okresu.</p>`)].join('');
-  const { edit } = await openMagicNote(page, { html: long });
-  const toolbar = edit.locator('.note-editor__toolbar');
-  // Klawiatura: widoczna część ekranu – 420 px od 160 px (Safari przesunął obraz, żeby kursor był widoczny).
-  await page.evaluate(() => {
-    document.documentElement.style.setProperty('--vv-top', '160px');
-    document.documentElement.style.setProperty('--vv-height', '420px');
-  });
+/**
+ * Klawiatura iPhone’a w Chromium (od 1.63.1): widoczna część ekranu (visualViewport) mniejsza i przesunięta, jak podaje Safari
+ * – strona (documentElement) zostaje tej samej wysokości. null – klawiatura schowana.
+ */
+async function fakeKeyboard(page, keyboard) {
+  await page.evaluate((value) => {
+    const viewport = window.visualViewport;
+    if (value) {
+      Object.defineProperty(viewport, 'height', { configurable: true, get: () => value.height });
+      Object.defineProperty(viewport, 'offsetTop', { configurable: true, get: () => value.top });
+    } else {
+      delete viewport.height;
+      delete viewport.offsetTop;
+    }
+    viewport.dispatchEvent(new window.Event('resize'));
+  }, keyboard);
   await nextFrames(page);
+}
+
+test('notatki 1.63.1: telefon z klawiaturą iPhone’a (symulowana widoczna część ekranu) – okno nad klawiaturą z paskiem formatowania u góry; „Książka” – kartka tej samej wielkości co bez klawiatury, okno przewija się do dolnej krawędzi kartki, pisanie nie przewija do góry, kursor nad klawiaturą; komunikat „Dodano… Cofnij” nad klawiaturą, teczka schowana', async ({ open }) => {
+  const page = await open();
+  const long = [MAGIC_NOTE, ...Array.from({ length: 24 }, (_, index) => `<p>Akapit ${index + 1}: zobowiązania i aktywa w bilansie firmy na koniec okresu.</p>`)].join('');
+  const { edit } = await openMagicNote(page, { html: long });
+  const body = edit.locator('.note-edit__body');
+  const area = edit.locator('[data-testid=note-editor]');
+  // Widok „Ciągły”, klawiatura (420 px widocznej części, obraz przesunięty o 160 px): okno w widocznej części, pasek u góry.
+  await selectInNote(page, 'Akapit 24', { caret: true });
+  await fakeKeyboard(page, { height: 420, top: 160 });
   const box = await edit.boundingBox();
   assert.ok(Math.abs(box.y - 160) < 1 && Math.abs(box.height - 420) < 1, `okno w widocznej części (${box.y}, ${box.height})`);
-  // Kursor na końcu tekstu – pole przewinięte na dół; pasek dalej u góry widocznej części.
-  await selectInNote(page, 'Akapit 12', { caret: true });
-  await edit.locator('.note-edit__body').evaluate((body) => { body.scrollTop = body.scrollHeight; });
+  assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-keyboard')), true);
+  await body.evaluate((element) => { element.scrollTop = element.scrollHeight; });
   await nextFrames(page);
-  const bar = await toolbar.boundingBox();
-  assert.ok(bar.y >= 160 - 1 && bar.y + bar.height <= 160 + 420, `pasek widoczny (${bar.y}–${bar.y + bar.height})`);
-  const magicButton = await edit.locator('[data-testid=note-format-magic]').boundingBox();
-  assert.ok(magicButton.y >= 160 - 1 && magicButton.y + magicButton.height <= 580, 'przycisk szybkiej fiszki widoczny');
-  await page.screenshot({ path: path.join(OUTPUT, 'notatka-163-klawiatura-telefon.png') });
-  await page.evaluate(() => {
-    document.documentElement.style.removeProperty('--vv-top');
-    document.documentElement.style.removeProperty('--vv-height');
+  const bar = await edit.locator('.note-editor__toolbar').boundingBox();
+  assert.ok(bar.y >= 159 && bar.y + bar.height <= 580, `pasek widoczny (${bar.y}–${bar.y + bar.height})`);
+  assert.equal(await edit.locator('[data-testid=magic-folder]').evaluate((element) => getComputedStyle(element).opacity), '0', 'teczka schowana przy klawiaturze');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-1631-klawiatura-ciagly.png') });
+  await fakeKeyboard(page, null);
+
+  // „Książka” bez klawiatury (od strony z kursorem – pierwszej, pełnej): wysokość kartki i liczba stron.
+  await selectInNote(page, 'Akapit 2:', { caret: true });
+  await edit.locator('[data-testid=note-edit-view] label', { hasText: 'Książka' }).click();
+  await waitUntil(async () => /^Strona \d+ z \d+$/.test(await edit.locator('[data-testid=note-edit-page]').textContent()), 'strony policzone');
+  await waitUntil(async () => (await area.boundingBox()).height > 300, 'kartka rozłożona');
+  const full = await area.boundingBox();
+  const pages = await edit.locator('[data-testid=note-edit-page]').textContent();
+  await selectInNote(page, 'Akapit 2:', { caret: true });
+  // Klawiatura: 420 px od góry ekranu – kartka tej samej wysokości, ta sama liczba stron.
+  await fakeKeyboard(page, { height: 420, top: 0 });
+  await nextFrames(page);
+  await area.evaluate((element) => element.dispatchEvent(new window.InputEvent('input', { bubbles: true })));
+  await nextFrames(page);
+  const shown = await area.boundingBox();
+  assert.ok(Math.abs(shown.height - full.height) < 2, `kartka nie maleje (${full.height} → ${shown.height})`);
+  await expectText(edit.locator('[data-testid=note-edit-page]'), pages);
+  // Przewinięcie do dolnej krawędzi kartki – nad klawiaturą (w oknie).
+  await body.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await nextFrames(page);
+  const bottom = await area.boundingBox();
+  assert.ok(bottom.y + bottom.height <= 420, `dolna krawędź kartki nad klawiaturą (${bottom.y + bottom.height})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-1631-klawiatura-ksiazka.png') });
+  // Pisanie przy dolnej krawędzi – okno nie wraca do góry, kursor widoczny nad klawiaturą.
+  await area.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const point = document.caretRangeFromPoint(box.left + 40, box.bottom - 40);
+    element.focus({ preventScroll: true });
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(point);
   });
+  await nextFrames(page);
+  const before = await body.evaluate((element) => element.scrollTop);
+  await page.keyboard.type(' x');
+  await nextFrames(page);
+  const after = await body.evaluate((element) => element.scrollTop);
+  const info = await page.evaluate(() => {
+    const s = window.getSelection();
+    const r = s.getRangeAt(0).getClientRects()[0];
+    return { node: s.focusNode?.textContent?.slice(0, 40), top: r?.top, bottom: r?.bottom, page: document.querySelector('[data-testid=note-edit-page]')?.textContent };
+  });
+  assert.ok(after > before - 40, `pisanie nie przewija okna do góry (${before} → ${after}, ${JSON.stringify(info)})`);
+  const caret = await page.evaluate(() => {
+    const range = window.getSelection().getRangeAt(0).cloneRange();
+    range.collapse(false);
+    const rect = range.getClientRects()[0] ?? range.startContainer.parentElement.getBoundingClientRect();
+    return { top: rect.top, bottom: rect.bottom };
+  });
+  assert.ok(caret.bottom <= 420 && caret.top >= 0, `kursor nad klawiaturą (${caret.top}–${caret.bottom})`);
+  // Szybka fiszka z klawiaturą – komunikat „Dodano… Cofnij” nad klawiaturą.
+  await sendToMagic(page, 'Zobowiązania (liabilities)'.slice(0, 12));
+  const added = edit.locator('[data-testid=magic-added]');
+  await added.waitFor();
+  const toastBox = await added.boundingBox();
+  assert.ok(toastBox.y + toastBox.height <= 420, `komunikat nad klawiaturą (${toastBox.y + toastBox.height})`);
+  await fakeKeyboard(page, null);
 });
 
 // ---------------------------------------------------------------- rysunek 1.63: wiaderko, kolor kartki, formaty arkusza

@@ -1,4 +1,4 @@
-# LexiCards 1.63 – wiaderko, kolor kartki, arkusze A3–4A0, wpisywanie w szybkiej fiszce
+# LexiCards 1.63 – wiaderko, kolor kartki, arkusze A3–4A0, wpisywanie w szybkiej fiszce (1.63.1 – notatka z klawiaturą)
 
 Wersja 1.63.0, 31 października 2026. Opis budowy: [ARCHITECTURE.md](ARCHITECTURE.md) (sekcja „Wydanie 1.63”).
 
@@ -59,3 +59,41 @@ własny rysunek konturowy. Nazwy opisowe. Wyszukiwania patentowego nie robiono.
 - Wypełnienie jest osobnym elementem pod liniami – przesunięcie samego kształtu nie przesuwa wypełnienia (jak w programach do
   malowania); zaznacz oba.
 - Kalka (szablon) i linie tła kartki nie zamykają obszaru wiaderka; zakreślacz – też nie.
+
+## Uzupełnienie w wersji 1.63.1 – notatka na telefonie z klawiaturą
+
+Prośba (ze zrzutami z iPhone’a): pasek „Pokaż na fiszce / Usuń z fiszki” zmniejszał kartkę; zrezygnować z niego, ewentualnie
+krótka informacja „Cofnij dodanie”; utrzymywać jak największą kartkę także z klawiaturą i dać możliwość przesunięcia do jej
+krawędzi nad klawiaturę.
+
+| Zmiana | Jak działa |
+| --- | --- |
+| **Bez paska fragmentu** | Nad tekstem nie ma już paska z sygnaturą – kartka nie zmienia wielkości, gdy kursor wchodzi we fragment. Kursor we fragmencie: przycisk szybkiej fiszki jest podświetlony (opis „Usuń fragment ✦N.M z szybkiej fiszki”), przyciski tekstu wyszarzone jak dotąd. |
+| **Cofnij dodanie** | Po dodaniu fragmentu przez 5 sekund na dole okna komunikat „Dodano ✦N.M do fiszki.” z **Cofnij** – fragment wraca do zwykłego tekstu i znika z fiszki. |
+| **Usunięcie z fiszki** | Dotknięcie podświetlonego przycisku fiszki (kursor albo zaznaczenie we fragmencie) – fragment wraca do zwykłego tekstu; przy fiszce dodanej do lekcji – zdejmuje oznaczenie. |
+| **Komunikaty w oknach** | Komunikaty pokazywane przy otwartym oknie (np. notatki) są w tym oknie, przy jego dolnej krawędzi – z klawiaturą nad nią. Wcześniej leżały pod oknem i nie było ich widać. |
+| **Kartka z klawiaturą** | Widok „Książka”: kartka ma wielkość jak bez klawiatury (ta sama liczba stron); okno przewija się do jej dolnej krawędzi nad klawiaturę, a przy pisaniu – samo do kursora. Pisanie nie przewija już okna na górę (wcześniej przy każdej literze). Widok „Ciągły” – pole tej samej wysokości, okno przewija się do kursora. |
+| **Teczka przy klawiaturze** | Na czas pisania (klawiatura otwarta) teczka w prawym dolnym rogu okna się chowa – nie zasłania tekstu nad klawiaturą. |
+
+### Testy, które wykonano (1.63.1)
+
+- **Testy logiki (Node.js): 554 – wszystkie zaliczone.**
+- **Testy w przeglądarce (Chromium): 271 – wszystkie zaliczone w dwóch pełnych przebiegach** na tym samym kodzie, w tym nowy
+  (telefon, klawiatura symulowana – visualViewport 420 px, strona 844 px): widok „Ciągły” – okno w widocznej części, pasek
+  formatowania u góry po przewinięciu na dół, teczka schowana; widok „Książka” – kartka tej samej wysokości (483 px) i ta sama
+  liczba stron co bez klawiatury, przewinięcie do dolnej krawędzi kartki – nad klawiaturą, pisanie przy dolnej krawędzi nie
+  przewija okna na górę, kursor nad klawiaturą, komunikat „Dodano… Cofnij” nad klawiaturą. Ten sam test bez poprawki wysokości
+  – niezaliczony (kartka 483 → 240 px).
+  - Zmienione: szybkie fiszki 1.62 – zamiast paska: przycisk podświetlony z kursorem we fragmencie, „Cofnij” w komunikacie po
+    dodaniu (fragment wraca do zwykłego tekstu), usunięcie przyciskiem fiszki; złoto i turkus 1.62.2 – opis przycisku z sygnaturą;
+    teczka 1.62 – przycisk z „fiszka dodana do lekcji jako „Zobowiązania””.
+  - W trakcie: wspólne odświeżanie paska formatowania gasiło podświetlenie przycisku fiszki, a po usunięciu fragmentu
+    podświetlenie zostawało – oba błędy poprawione przed pełnymi przebiegami.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium, telefon): widok „Książka” i „Ciągły” z symulowaną klawiaturą.
+
+### Czego nie sprawdzono (1.63.1)
+
+- **Safari na iPhonie** – klawiatura symulowana w Chromium: widoczna część ekranu (visualViewport) ustawiona tak, jak podaje
+  ją Safari z klawiaturą (wysokość i przesunięcie), strona tej samej wysokości. Zachowanie Safari przy przewijaniu do kursora
+  (własne przewijanie przeglądarki) może się różnić – do sprawdzenia na telefonie.

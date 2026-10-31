@@ -22,6 +22,7 @@ import { StudySetupScreen } from './ui/screens/study-setup.js';
 import { LessonScreen } from './ui/screens/terms.js';
 import { Shell } from './ui/shell.js';
 import { configureSounds, soundLog } from './ui/sounds.js';
+import { keyboardInset } from './ui/viewport.js';
 import { APP_VERSION, BUILD_ID } from './version.js';
 
 const SCREENS = {
@@ -113,6 +114,9 @@ function trackVisualViewport() {
     }
     style.setProperty('--vv-height', `${viewport.height}px`);
     style.setProperty('--vv-top', `${viewport.offsetTop}px`);
+    // Od 1.63.1: klawiatura ekranowa otwarta (np. teczka szybkich fiszek chowa się, żeby nie zasłaniać tekstu).
+    if (keyboardInset() > 0) document.documentElement.dataset.keyboard = '';
+    else delete document.documentElement.dataset.keyboard;
   };
   viewport.addEventListener('resize', update);
   viewport.addEventListener('scroll', update);

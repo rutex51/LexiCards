@@ -16,6 +16,9 @@ export function mountDialog(className, content, { onClose, onDismiss } = {}) {
   const dialog = h('dialog', { class: `dialog ${className}` }, content);
   document.body.appendChild(dialog);
   dialog.addEventListener('close', () => {
+    // Komunikaty pokazane w tym oknie (od 1.63.1) zostają – w oknie pod spodem albo na stronie.
+    const region = document.getElementById('toasts');
+    if (region && dialog.contains(region)) placeToasts(region);
     dialog.remove();
     onClose?.(dialog.returnValue);
   });
@@ -183,8 +186,18 @@ export function openMenu({ title = null, items }) {
   return dialog;
 }
 
+/**
+ * Miejsce komunikatów (od 1.63.1): w najwyżej położonym otwartym oknie – okno modalne leży nad stroną, więc komunikat ze
+ * strony byłby pod nim niewidoczny; bez okna – na stronie.
+ */
+function placeToasts(region) {
+  const host = [...document.querySelectorAll('dialog[open]')].at(-1) ?? document.body;
+  if (region.parentElement !== host) host.appendChild(region);
+  region.classList.toggle('toasts--dialog', host !== document.body);
+}
+
 /** Usuwa komunikat z krótką animacją znikania. */
-function dismissToast(element) {
+export function dismissToast(element) {
   if (!element.isConnected || element.classList.contains('toast--leaving')) return;
   element.classList.add('toast--leaving');
   setTimeout(() => element.remove(), 300);
@@ -224,8 +237,8 @@ export function toast(message, { kind = 'info', duration = 4500, action = null, 
   let region = document.getElementById('toasts');
   if (!region) {
     region = h('div', { id: 'toasts', class: 'toasts', role: 'status', 'aria-live': 'polite' });
-    document.body.appendChild(region);
   }
+  placeToasts(region);
   // Komunikat z przyciskiem (action: { label, onSelect }) zostaje, dopóki użytkownik go nie użyje.
   const element = h('div', { class: `toast toast--${kind}${action ? ' toast--action' : ''}` },
     h('span', null, message),

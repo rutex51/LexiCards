@@ -4227,6 +4227,11 @@ dialog:not(:has(:is(.field__hint, .form-note, .note-paragraph__hint, .note-pdf-s
   padding: 0 var(--gutter);
   pointer-events: none;
 }
+/* Komunikat w otwartym oknie (od 1.63.1): przy dolnej krawędzi okna – z klawiaturą okno kończy się nad nią. */
+.toasts.toasts--dialog {
+  position: absolute;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+}
 
 .toast {
   max-width: 460px;
@@ -8655,29 +8660,11 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
 .note-toolbar__group--magic .note-toolbar__button { color: var(--magic); background: var(--magic-soft); }
 .note-toolbar__group--magic .note-toolbar__button:hover { background: var(--magic-soft); }
 .note-toolbar__button.note-toolbar__button--locked { opacity: 0.28; }
-.magic-lock {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 10px;
-  margin-top: 8px;
-  padding: 8px 10px 8px 12px;
-  border-radius: 10px;
-  background: var(--magic-soft);
-  color: var(--magic);
-  font-size: var(--size-sub);
-}
-.magic-lock__text { flex: 1; min-width: 200px; }
-.magic-lock__button {
-  border: 0;
-  border-radius: 8px;
-  padding: 6px 10px;
-  background: var(--surface);
-  color: var(--magic);
-  font: inherit;
-  font-size: var(--size-foot);
-  font-weight: 650;
-  cursor: pointer;
+/* Kursor we fragmencie (od 1.63.1 zamiast paska nad tekstem): przycisk fiszki podświetlony – jego dotknięcie usuwa fragment. */
+.note-toolbar__group--magic .note-toolbar__button[aria-pressed="true"] {
+  background: var(--magic-fill);
+  color: var(--on-magic);
+  box-shadow: 0 0 0 2px var(--magic-line);
 }
 
 /* Okno tekstu z warstwą fiszki: na szerokim ekranie tekst przesuwa się w lewo, robiąc miejsce fiszce. */
@@ -9206,3 +9193,6 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   margin-bottom: 4px;
 }
 .drawing__paper-tones .drawing__swatch { width: 33px; }
+
+/* Od 1.63.1: z klawiaturą ekranową teczka szybkich fiszek chowa się (nie zasłania tekstu nad klawiaturą). */
+:root[data-keyboard] .note-edit-dialog .magic-folder:not(.magic-folder--fab) { opacity: 0; pointer-events: none; }

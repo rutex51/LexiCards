@@ -16,7 +16,7 @@ import {
 import { labelKey, referenceLabel } from '../core/note-refs.js';
 import { nowISO } from '../core/model.js';
 import { openTermForm, pickDestination } from './actions.js';
-import { confirmDialog, mountDialog, showError, toast } from './dialogs.js';
+import { confirmDialog, dismissToast, mountDialog, showError, toast } from './dialogs.js';
 import { h, replaceChildren } from './dom.js';
 import { icon } from './icons.js';
 import { leafOf, wrapMarked } from './note-editing.js';
@@ -632,7 +632,9 @@ function enableBoard(root, { host, fragmentOf, picked, onPick, onMove }) {
  *   liveRange() – zaznaczenie w polu; unwrap(sigs) – fragmenty wracają do zwykłego tekstu w obu wersjach;
  *   thumb(label) – miniatura obrazu albo tabeli; tableLabels() – sygnatury tabel; onLock(locked) – blokada
  *   przycisków formatowania tekstu (kursor we fragmencie).
- * Zwraca { lockbar, layer, capture(), selectionChanged(), refresh(), locked(), draft(), key(), destroy() }.
+ * onLock(locked, sig, title) – od 1.63.1 także sygnatura fragmentu pod kursorem i opis przycisku fiszki (przycisk podświetlony
+ * – jego dotknięcie usuwa fragment z fiszki; pasek nad tekstem z 1.62 zmniejszał kartkę).
+ * Zwraca { layer, capture(), selectionChanged(), refresh(), locked(), draft(), key(), destroy() }.
  */
 export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRange, unwrap, thumb, tableLabels, onLock }) {
   const { library } = ctx;
@@ -670,7 +672,6 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
   const lessonName = () => library.getLesson(lessonID)?.name ?? '';
 
   // ---- elementy
-  const lockbar = h('div', { class: 'magic-lock', hidden: true, role: 'status', dataset: { testid: 'magic-lock' } });
   const card = h('div', { class: 'magic-card', dataset: { testid: 'magic-card' } });
   const panel = h('aside', { class: 'magic-panel', 'aria-label': 'Szybka fiszka', hidden: state.hidden, dataset: { testid: 'magic-panel' } }, card);
   /** Schowanie albo pokazanie przez użytkownika – na szerokim ekranie zapamiętane. */
@@ -818,23 +819,21 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
       return;
     }
     const label = leaf.tagName === 'P' ? referenceLabel(leaf.textContent) : null;
-    if (label) {
-      if (leaf.querySelector('[data-magic]') || markedSpan(leaf)) {
-        toast('To odwołanie jest już na szybkiej fiszce.');
-        return;
-      }
-    } else {
+    // Od 1.63.1 przycisk działa jak przełącznik: kursor albo zaznaczenie we fragmencie (odwołanie już na fiszce) – fragment
+    // wraca do zwykłego tekstu i znika z fiszki.
+    const hit = markedSpan(range.startContainer) ?? markedSpan(range.endContainer)
+      ?? (label ? leaf.querySelector('[data-magic]') : null) ?? (range.collapsed ? null : range.cloneContents().querySelector('[data-magic]'));
+    if (hit?.dataset.magic) {
+      unmark(hit.dataset.magic);
+      return;
+    }
+    if (!label) {
       if (range.collapsed || range.toString().trim() === '') {
         toast('Zaznacz tekst, który ma trafić na szybką fiszkę – albo ustaw kursor w akapicie z odwołaniem [[…]].');
         return;
       }
       if (leafOf(area, range.endContainer) !== leaf) {
         toast('Zaznacz tekst w jednym akapicie – dłuższy tekst wyślij w kilku fragmentach.');
-        return;
-      }
-      const hit = markedSpan(range.startContainer) ?? markedSpan(range.endContainer) ?? range.cloneContents().querySelector('[data-magic]');
-      if (hit) {
-        toast(`Ten tekst jest już na szybkiej fiszce (✦${hit.dataset.magic}).`);
         return;
       }
     }
@@ -888,6 +887,18 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
       if (state.hidden) pulse(tab);
     });
     selectionChanged();
+    // Od 1.63.1: krótki komunikat na dole z „Cofnij” (kilka sekund) – zamiast paska nad tekstem.
+    const note = toast(`Dodano ✦${sig} do fiszki.`, {
+      timeout: 5000,
+      action: {
+        label: 'Cofnij',
+        onSelect: () => {
+          dismissToast(note);
+          if (!state.destroyed && area.querySelector(`[data-magic="${sig}"]`)) unmark(sig, { quiet: true });
+        }
+      }
+    });
+    note.dataset.testid = 'magic-added';
   }
 
   // ---- do teczki
@@ -914,7 +925,7 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
     toast(`Fiszka ✦${current.no} jest w teczce.`);
   }
 
-  // ---- kursor we fragmencie: blokada formatowania i pasek z sygnaturą
+  // ---- kursor we fragmencie: blokada formatowania, przycisk fiszki podświetlony (jego dotknięcie usuwa fragment z fiszki)
   function selectionChanged() {
     const selection = window.getSelection();
     let sig = null;
@@ -922,57 +933,31 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
       const found = markedSpan(selection.anchorNode) ?? markedSpan(selection.focusNode);
       if (found) sig = found.dataset.magic;
     }
-    onLock(Boolean(sig));
     if (sig === state.lock) return;
     state.lock = sig;
-    lockbar.hidden = !sig;
-    if (!sig) {
-      replaceChildren(lockbar);
-      return;
+    let title = null;
+    if (sig) {
+      const owner = state.magic.cards.find((item) => item.no === Number(sig.split('.')[0]));
+      const term = owner?.state === 'done' && owner.termID ? library.getTerm(owner.termID) : null;
+      title = owner?.state === 'done'
+        ? `Usuń oznaczenie fragmentu ✦${sig} (fiszka dodana do lekcji${term ? ` jako „${term.termPL}”` : ''})`
+        : `Usuń fragment ✦${sig} z ${owner?.state === 'folder' ? 'fiszki w teczce' : 'szybkiej fiszki'}`;
     }
-    const owner = state.magic.cards.find((item) => item.no === Number(sig.split('.')[0]));
-    const keep = (event) => event.preventDefault();
-    const button = (label, testID, onClick) => h('button', { type: 'button', class: 'magic-lock__button', dataset: { testid: testID }, onMousedown: keep, onClick }, label);
-    let text;
-    let actions;
-    if (owner?.state === 'done') {
-      const term = owner.termID ? library.getTerm(owner.termID) : null;
-      text = term ? ` – fragment fiszki dodanej do lekcji jako „${term.termPL}”.` : ' – fragment fiszki dodanej do lekcji.';
-      actions = [button('Usuń oznaczenie', 'magic-lock-remove', () => unmark(sig))];
-    } else {
-      text = owner?.state === 'folder' ? ' – fragment fiszki w teczce. Kolor i pogrubienie są stałe.' : ' – fragment szybkiej fiszki. Kolor i pogrubienie są stałe.';
-      actions = [
-        button(owner?.state === 'folder' ? 'Pokaż w teczce' : 'Pokaż na fiszce', 'magic-lock-show', () => show(sig)),
-        button('Usuń z fiszki', 'magic-lock-remove', () => unmark(sig))
-      ];
-    }
-    replaceChildren(lockbar, icon('sparkles', { size: 18 }), h('span', { class: 'magic-lock__text' }, h('strong', null, `✦${sig}`), text), actions);
+    onLock(Boolean(sig), sig, title);
   }
 
-  function show(sig) {
-    const owner = state.magic.cards.find((item) => item.no === Number(sig.split('.')[0]));
-    if (owner?.state === 'folder') {
-      openFolder(owner.no);
-      return;
-    }
-    if (state.hidden) setHidden(false);
-    const item = card.querySelector(`.magic-chip[data-sig="${sig}"]`);
-    if (item) {
-      reveal(card.querySelector('.magic-card__body'), item);
-      pulse(item);
-    }
-  }
-
-  /** Fragment wraca do zwykłego tekstu i znika z fiszki. */
-  function unmark(sig) {
+  /** Fragment wraca do zwykłego tekstu i znika z fiszki (quiet – bez komunikatu, np. „Cofnij” po dodaniu). */
+  function unmark(sig, { quiet = false } = {}) {
     unwrap(new Set([sig]));
     for (const item of state.magic.cards) {
       if (item.frags) item.frags = item.frags.filter((frag) => frag.sig !== sig);
     }
     state.magic.cards = state.magic.cards.filter((item) => item.state === 'done' || item.state === 'active' || item.frags.length > 0 || item.texts);
+    // Stan przycisku fiszki od nowa (kursor mógł zostać w tym samym miejscu, już poza fragmentem).
+    state.lock = undefined;
     selectionChanged();
     render();
-    toast(`Fragment ✦${sig} usunięty z fiszki – tekst wrócił do zwykłego.`);
+    toast(quiet ? `Cofnięto dodanie ✦${sig}.` : `Fragment ✦${sig} usunięty z fiszki – tekst wrócił do zwykłego.`);
   }
 
   // ---- teczka (fiszki tej notatki – z edytora, pozostałe – z biblioteki)
@@ -1020,7 +1005,6 @@ export function magicEditor({ ctx, lessonID, area, magic, texts, rewrite, liveRa
   render(magicFragments(texts().pl, texts().en));
 
   return {
-    lockbar,
     layer,
     capture,
     selectionChanged,
