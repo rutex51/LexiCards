@@ -309,3 +309,12 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
   bibliotek. Nazwy opisowe („Ciągły”, „Książka”).
 - **Patenty:** szczególnego ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – bazy zablokowane,
   AUDIT_LIMITATIONS.md). Nowej pozycji rejestru algorytmów geometrii nie dodano. Ryzyko wstępnie NISKIE.
+
+## Uzupełnienie: wersja 1.61 (31.10.2026) – tablica A0 w skali zeszytu, dwie strony w edycji notatki
+
+- **Zakres:** `js/core/board.js`, `js/core/drawing.js` – obszar kartki na środku tablicy, przesunięcie rysunku przy zamianie
+  i jednorazowo dla tablic formatu 27; `js/ui/drawing.js` – skala widoku tablicy jak zeszytu, rulon na całym ekranie;
+  `js/ui/notes.js`, `js/ui/note-book.js` – dwie kolumny pola edycji, przewracanie przez grzbiet (geometria z podglądu, G-rejestr
+  bez zmian).
+- **Funkcje i patenty:** bez nowych technik (przesunięcie, skala, kolumny CSS); kod własny, bez bibliotek. Szczególnego
+  ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – AUDIT_LIMITATIONS.md). Ryzyko wstępnie NISKIE.
