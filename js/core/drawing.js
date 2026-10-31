@@ -84,12 +84,20 @@ import { cleanLayers, cleanSignatures, defaultLayers, elementLayers } from './la
  * arkusz A4 pionowo (1.42), 16 – diagramy Ishikawy i 5 × Dlaczego, układ kartki (1.44), 17 – kształty schematu blokowego,
  * łącznik, symbole i oś czasu VSM, legenda wad, tory (1.45), 18 – bryły (1.47), 19 – bryły ze szkicu: wyciągnięcie i obrót
  * profilu, szkic w bryle (1.48), 20 – szkic na płaszczyźnie XY, Z do góry (1.48.2), 21 – wycięcia i dodania na ścianach
- * brył (1.49), 22 – początek układu współrzędnych arkusza (1.50), 27 – tablica A0 (`board`, 1.59).
+ * brył (1.49), 22 – początek układu współrzędnych arkusza (1.50), 27 – tablica A0 (`board`, 1.59), 28 – kartka na środku
+ * tablicy (1.61; tablice z formatu 27 są przy odczycie przesuwane – core/board.js).
  */
-export const DRAWING_VERSION = 27;
+export const DRAWING_VERSION = 28;
 /** Strona bez zdjęcia – w poziomie, w proporcjach ekranu iPada i laptopa. */
 export const PAGE_WIDTH = 1600;
 export const PAGE_HEIGHT = 1100;
+/**
+ * Tablica A0 (od 1.59, core/board.js): 4 × kartka, proporcje √2; od 1.61 obszar kartki zeszytu na jej środku
+ * (BOARD_SHEET – lewy górny róg obszaru).
+ */
+export const BOARD_WIDTH = PAGE_WIDTH * 4;
+export const BOARD_HEIGHT = Math.round(BOARD_WIDTH / Math.SQRT2);
+export const BOARD_SHEET = Object.freeze({ x: (BOARD_WIDTH - PAGE_WIDTH) / 2, y: Math.round((BOARD_HEIGHT - PAGE_HEIGHT) / 2) });
 /** Strona ze zdjęciem: najdłuższy bok (jak obrazy notatki) – większe zdjęcie jest pomniejszane na stronie. */
 export const PHOTO_PAGE_MAX = 2048;
 /** Odstęp linii i kratki tła (jednostki rysunku). */
@@ -1364,11 +1372,23 @@ export function cleanDrawing(raw) {
     const clean = cleanStroke(stroke, width, height, true, known);
     if (clean) strokes.push(toMillimeters === 1 ? clean : tolerancesInMillimeters(clean, toMillimeters));
   }
+  // Tablica z 1.59–1.60 (format 27): kartka zeszytu była w lewym górnym rogu – od 1.61 jest na środku, rysunek przesuwa się
+  // razem z nią (raz, przy odczycie); rysunek przy prawym albo dolnym brzegu tablicy – najwyżej do tego brzegu.
+  let shift = null;
+  if (raw.board === true && !raw.photo && !(finite(raw.version) && raw.version >= 28)) {
+    const bounds = selectionBounds(strokes);
+    shift = {
+      x: bounds ? Math.max(0, Math.min(BOARD_SHEET.x, width - bounds.maxX)) : BOARD_SHEET.x,
+      y: bounds ? Math.max(0, Math.min(BOARD_SHEET.y, height - bounds.maxY)) : BOARD_SHEET.y
+    };
+    strokes.splice(0, strokes.length, ...strokes.map((stroke) => translateStroke(stroke, shift.x, shift.y)));
+  }
+  const moved = (point) => (shift && point && finite(point.x) && finite(point.y) ? { ...point, x: point.x + shift.x, y: point.y + shift.y } : point);
   // Bryły postawione na innych (od 1.52, format 23): odnośniki do brył, których nie ma – usunięte, obrazki stosów – wyliczone.
   resolveStacks(strokes);
   // Pomiary 3D (od 1.53, format 24) z bryłami albo cechami, których nie ma – usunięte.
   resolveMeasures(strokes);
-  const template = cleanTemplate(raw.template, width, height, photoBytes);
+  const template = cleanTemplate(moved(raw.template), width, height, photoBytes);
   let photo = null;
   if (raw.photo && typeof raw.photo === 'object' && /^image\//.test(raw.photo.type ?? '')) {
     const bytes = photoBytes(raw.photo.bytes);
@@ -1399,7 +1419,7 @@ export function cleanDrawing(raw) {
     // Tablica A0 (od 1.59, core/board.js) – kartka bez zdjęcia jako duży arkusz.
     ...(raw.board === true && !photo ? { board: true } : {}),
     // Początek układu współrzędnych arkusza (od 1.50) – punkt na kartce.
-    ...(cleanOrigin(raw.origin, width, height) ? { origin: cleanOrigin(raw.origin, width, height) } : {})
+    ...(cleanOrigin(moved(raw.origin), width, height) ? { origin: cleanOrigin(moved(raw.origin), width, height) } : {})
   };
 }
 

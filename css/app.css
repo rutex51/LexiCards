@@ -6294,12 +6294,41 @@ svg.icon--note { color: var(--note-icon); }
   pointer-events: none;
 }
 .note-editor__area.note-editor__area--copy:focus { box-shadow: none; }
+/* Kopia stoi przesunięta (zamiast przewinięta) w elemencie, który ją przycina. */
+.note-editor__area.note-editor__area--book.note-editor__area--copy { overflow: visible; }
 .note-editor__back { background: var(--page-back); overflow: hidden; }
 .note-editor__back > .note-editor__area--copy { opacity: 0.2; background: transparent; box-shadow: none; }
+/* Dwie strony (od 1.61): na odwrocie przewracanej kartki – strona rozkładówki, nie prześwit. */
+.note-editor__back--page { background: var(--surface); }
+.note-editor__back--page > .note-editor__area--copy { opacity: 1; background: var(--surface); }
+/* Połowa rozkładówki przy przewracaniu – kopia pola przycięta do jednej strony. */
+.note-editor__half {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.note-editor__half > .note-editor__area--copy { box-shadow: none; border-radius: 0; }
+/* Grzbiet między dwiema stronami. */
+.note-editor__stage--spread::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(50% - 28px);
+  width: 56px;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.04) 38%, rgba(0, 0, 0, 0.14) 50%, rgba(0, 0, 0, 0.04) 62%, rgba(0, 0, 0, 0) 100%);
+}
+/* Nieparzysta liczba stron w dwóch stronach – pusta kolumna na końcu (ostatnia rozkładówka w całości). */
+.note-editor__area--pad::after { content: ""; display: block; height: 1px; break-before: column; }
 .note-editor__stage .note-curl__layer,
 .note-editor__stage .note-curl__flap { z-index: 2; }
 /* Jak w podglądzie jednej strony: kartka znika za lewą krawędzią strony, w pionie może wyjść poza nią. */
-.note-editor__stage .note-curl__flap { clip-path: inset(-200vh 0); }
+.note-editor__stage:not(.note-editor__stage--spread) .note-curl__flap { clip-path: inset(-200vh 0); }
 .note-editor__pager { justify-content: center; margin: 10px auto 0; }
 .note-editor__view { flex: none; }
 .note-editor__view .segmented { min-width: 176px; }

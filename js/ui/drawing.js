@@ -94,7 +94,7 @@ import { openFitTable } from './fit-table.js';
 import { RING_SIDES, findGroup, groupsOf, isModeItem, startGroup, toolItem, uiPartHidden } from '../core/tool-ring.js';
 import { openToolGroups } from './drawing-groups.js';
 import { createRing } from './drawing-ring.js';
-import { BOARD_WIDTH, boardViewport, fitsSheet, isBoard, setBoard } from '../core/board.js';
+import { BOARD_HEIGHT, BOARD_WIDTH, SHEET_X, SHEET_Y, boardViewport, fitsSheet, isBoard, setBoard } from '../core/board.js';
 import {
   DIM_FONT, DIM_PREFIXES, FIT_RE, LABEL_TEXT_MAX, POINT_MARKS, POINT_MARK_LABELS, SEGMENT_CAPS, SEGMENT_CAP_LABELS, SHAPES, SHAPE_DASHES, SHAPE_DASH_LABELS,
   SHAPE_FILLS, SHAPE_FILL_LABELS, SHAPE_LABELS, SKEW_DEGREES_LIMIT, canDash, hasCaps, isPointShape, pointMark, shapeDash, withDash,
@@ -1017,10 +1017,19 @@ export function openDrawingEditor({
      * miejsce na niego po obu stronach (strona na środku).
      */
     const hasSpiral = () => !drawing.photo && !isBoard(drawing);
-    /** Największe powiększenie: tablica A0 (od 1.59) – tyle razy więcej, ile razy jest większa od kartki. */
-    const maxZoom = () => MAX_ZOOM * (isBoard(drawing) ? BOARD_WIDTH / PAGE_WIDTH : 1);
     const spiralRoom = () => (hasSpiral() ? SPIRAL_OUT : 0);
-    const fitScale = () => Math.min((view.width - STAGE_MARGIN * 2) / (drawing.width + spiralRoom() * 2), (view.height - view.top - view.bottom) / drawing.height);
+    /**
+     * Skala „100%”: strona dopasowana do ekranu; od 1.61 tablica A0 – w skali kartki zeszytu (jej obszar kartki leży tam,
+     * gdzie kartka), resztę tablicy widać po przesunięciu albo pomniejszeniu.
+     */
+    const fitScale = () => (isBoard(drawing)
+      ? Math.min((view.width - STAGE_MARGIN * 2) / (PAGE_WIDTH + SPIRAL_OUT * 2), (view.height - view.top - view.bottom) / PAGE_HEIGHT)
+      : Math.min((view.width - STAGE_MARGIN * 2) / (drawing.width + spiralRoom() * 2), (view.height - view.top - view.bottom) / drawing.height));
+    const maxZoom = () => MAX_ZOOM;
+    /** Najmniejsze powiększenie – tablica A0 (od 1.61): cała tablica na ekranie. */
+    const minZoom = () => (isBoard(drawing)
+      ? Math.min(MIN_ZOOM, Math.min((view.width - STAGE_MARGIN * 2) / BOARD_WIDTH, (view.height - view.top - view.bottom) / BOARD_HEIGHT) / fitScale())
+      : MIN_ZOOM);
     /**
      * Położenie strony: mniejsza niż ekran – na środku (pod paskiem narzędzi); większa – nie ucieka poza krawędź (grzbiet
      * – w zasięgu). Zwraca zakresy [od, do] dla view.x i view.y (strona na środku – od = do).
@@ -1059,7 +1068,7 @@ export function openDrawingEditor({
       return view.x < x[0] - 0.5 || view.x > x[1] + 0.5 || view.y < y[0] - 0.5 || view.y > y[1] + 0.5;
     };
     const setZoom = (zoom, anchorX = view.width / 2, anchorY = view.height / 2) => {
-      const next = Math.min(maxZoom(), Math.max(MIN_ZOOM, zoom));
+      const next = Math.min(maxZoom(), Math.max(minZoom(), zoom));
       const unitX = (anchorX - view.x) / view.scale;
       const unitY = (anchorY - view.y) / view.scale;
       view.zoom = next;
@@ -1116,8 +1125,8 @@ export function openDrawingEditor({
       paintBoardEdge(ctx);
     };
     /**
-     * Tablica A0 (od 1.59): przerywana ramka obszaru kartki zeszytu (lewy górny róg) – rysunek w niej da się zamienić
-     * z powrotem na kartkę zeszytu.
+     * Tablica A0 (od 1.59): przerywana ramka obszaru kartki zeszytu (od 1.61 na środku tablicy) – rysunek w niej da się
+     * zamienić z powrotem na kartkę zeszytu.
      */
     function paintSheetArea(ctx) {
       if (!isBoard(drawing)) return;
@@ -1125,13 +1134,13 @@ export function openDrawingEditor({
       ctx.setLineDash([12 / view.scale, 8 / view.scale]);
       ctx.lineWidth = 1.5 / view.scale;
       ctx.strokeStyle = 'rgba(0, 113, 227, 0.55)';
-      ctx.strokeRect(0, 0, PAGE_WIDTH, PAGE_HEIGHT);
+      ctx.strokeRect(SHEET_X, SHEET_Y, PAGE_WIDTH, PAGE_HEIGHT);
       ctx.setLineDash([]);
       ctx.font = textFont(12 / view.scale, '500');
       ctx.fillStyle = 'rgba(0, 113, 227, 0.75)';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'top';
-      ctx.fillText('Obszar kartki zeszytu', PAGE_WIDTH - 6 / view.scale, PAGE_HEIGHT + 5 / view.scale);
+      ctx.fillText('Obszar kartki zeszytu', SHEET_X + PAGE_WIDTH - 6 / view.scale, SHEET_Y + PAGE_HEIGHT + 5 / view.scale);
       ctx.restore();
     }
     /** Brzeg tablicy A0 (od 1.59): szara rama stałej szerokości na ekranie zamiast kartki zeszytu. */
@@ -2695,6 +2704,12 @@ export function openDrawingEditor({
         view.x = 0;
         view.y = 0;
         fitView();
+        if (isBoard(drawing)) {
+          // Tablica A0 (od 1.61): obszar kartki dokładnie tam, gdzie leży kartka zeszytu.
+          const room = view.height - view.top - view.bottom;
+          view.x = (view.width - PAGE_WIDTH * view.scale) / 2 - SHEET_X * view.scale;
+          view.y = view.top + (room - PAGE_HEIGHT * view.scale) / 2 - SHEET_Y * view.scale;
+        }
       } else {
         view.scale = fitScale() * view.zoom;
       }
@@ -5002,7 +5017,8 @@ export function openDrawingEditor({
      * board – tablica A0, rings – pierścienie zeszytu na osobnym płótnie wielkości ekranu (rulon je odsłania i zakrywa).
      */
     function snapshotPage() {
-      const rect = {
+      // Tablica A0 w skali zeszytu (od 1.61) zakrywa cały ekran – zdjęcie całego płótna, rulon idzie przez cały ekran.
+      const rect = isBoard(drawing) ? { x: 0, y: 0, w: base.width, h: base.height } : {
         x: Math.round(view.x * view.dpr), y: Math.round(view.y * view.dpr),
         w: Math.max(1, Math.round(drawing.width * view.scale * view.dpr)), h: Math.max(1, Math.round(drawing.height * view.scale * view.dpr))
       };
@@ -5280,6 +5296,9 @@ export function openDrawingEditor({
         flash('Rysunek wychodzi poza obszar kartki zeszytu (przerywana ramka) – tej tablicy nie da się zamienić na kartkę. Przesuń rysunek do ramki albo zostaw tablicę.');
         return;
       }
+      // Od 1.61 rysunek przesuwa się razem z obszarem kartki – cofanie zaczyna się od zamiany.
+      history = new DrawingHistory(drawing.strokes);
+      pages[pageIndex].history = history;
       changed = true;
       view.zoom = 1;
       view.width = 0;
@@ -5288,7 +5307,7 @@ export function openDrawingEditor({
       updatePagePill();
       updateToolbar();
       requestRender();
-      flash(board ? 'Tablica A0 – kartka zeszytu to przerywana ramka w lewym górnym rogu. Powiększ, żeby rysować w szczegółach.' : 'Znów kartka zeszytu.');
+      flash(board ? 'Tablica A0 – kartka zeszytu to przerywana ramka na środku. Pomniejsz albo przesuń, żeby zobaczyć resztę tablicy.' : 'Znów kartka zeszytu.');
     }
     function openPageMenu() {
       const added = pages[pageIndex].added;
@@ -10083,7 +10102,7 @@ export function openDrawingEditor({
         // według odstępu palców, a punkt strony, który był pod środkiem palców na początku, zostaje
         // pod ich środkiem – także gdy palce przy tym idą (przesuwanie). Dawniej przesunięcie od początku
         // gestu łączyło się ze skalą z poprzedniej klatki i strona uciekała w stronę lewego górnego rogu.
-        const zoom = Math.min(maxZoom(), Math.max(MIN_ZOOM, gesture.startZoom * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / gesture.distance));
+        const zoom = Math.min(maxZoom(), Math.max(minZoom(), gesture.startZoom * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / gesture.distance));
         const box = live.getBoundingClientRect();
         view.zoom = zoom;
         view.scale = fitScale() * zoom;

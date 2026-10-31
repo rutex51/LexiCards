@@ -40,7 +40,7 @@ import { clearFormatting, contentEditing, insertBlockAt, paragraphAt, setParagra
 import { openNotePdf } from './note-pdf.js';
 import { printNote } from './note-print.js';
 import { recordingSupported, startRecording } from './recorder.js';
-import { curlTurn, noteBook } from './note-book.js';
+import { curlTurn, noteBook, spreadAvailable } from './note-book.js';
 import { speakThen, speechAvailable, stopSpeaking } from './speech.js';
 import { symbolPanel } from './symbols.js';
 import { openTableEditor } from './table-editor.js';
@@ -681,9 +681,15 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
         textView: kind === 'text',
         onObjectsChange: () => { if (countButton) setObjectsCount(countButton, sessionEditor.objectCount()); },
         beforeInsert: () => nested?.close('done'),
-        // Od 1.60: widok tekstu – ciągły albo książka (zapamiętany).
+        // Od 1.60: widok tekstu – ciągły albo książka (zapamiętany); od 1.61 dwie strony – wspólne z podglądem.
         bookView: library.getSettings().noteEditBook === true,
-        onBookViewChange: (on) => library.updateSettings({ noteEditBook: on }).catch((error) => console.error(error))
+        onBookViewChange: (on) => library.updateSettings({ noteEditBook: on }).catch((error) => console.error(error)),
+        spread: library.getSettings().noteSpread !== false,
+        onSpreadChange: (on) => {
+          // Podgląd pod oknem edycji od razu w tym samym układzie.
+          book?.setSpread(on);
+          library.updateSettings({ noteSpread: on }).catch((error) => console.error(error));
+        }
       });
 
       /** Obrazy, tabele i załączniki nad oknem tekstu – ta sama edycja (bez osobnego zapisu). */
@@ -966,7 +972,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
  */
 function noteEditor({
   html, htmlEN = '', language = 'pl', images, tables = [], urls, imagesFirst = false, numberFigures = false, files = [], loadFile = null, titleID = 'note',
-  textView = true, onObjectsChange = null, beforeInsert = null, bookView = false, onBookViewChange = () => {}
+  textView = true, onObjectsChange = null, beforeInsert = null, bookView = false, onBookViewChange = () => {}, spread = true, onSpreadChange = () => {}
 }) {
   const initialTexts = { pl: normalizeNoteHtml(html), en: normalizeNoteHtml(htmlEN) };
   const labeledImages = withImageLabels(images.map((image) => ({ ...image })));
@@ -2260,7 +2266,9 @@ function noteEditor({
   // ---- widok książki (od 1.60): tekst płynie stronami – kolumny CSS w tym samym polu edycji, jedna kolumna na
   // ekranie (scrollLeft = strona × szerokość pola); strony przewraca się przyciskami, PageUp / PageDown i same, gdy
   // kursor przejdzie na inną stronę (pisanie, strzałki) – kartka zagina się od dolnego rogu jak w podglądzie notatki.
-  const page = { on: false, index: 0, count: 1, busy: false, frame: 0 };
+  // Od 1.61 na dużym ekranie dwie strony obok siebie (ustawienie wspólne z podglądem): pole pokazuje dwie kolumny,
+  // index to rozkładówka, kartka przechodzi przez grzbiet.
+  const page = { on: false, index: 0, count: 1, columns: 1, busy: false, frame: 0, chosen: spread !== false, spread: false };
   const pageIndicator = h('span', { class: 'note-pager__indicator', 'aria-live': 'polite', dataset: { testid: 'note-edit-page' } });
   const pagePrevious = h('button', {
     type: 'button', class: 'icon-button note-pager__button', 'aria-label': 'Poprzednia strona', title: 'Poprzednia strona (PageUp)',
@@ -2270,19 +2278,43 @@ function noteEditor({
     type: 'button', class: 'icon-button note-pager__button', 'aria-label': 'Następna strona', title: 'Następna strona (PageDown)',
     dataset: { testid: 'note-edit-page-next' }, onClick: () => turnPage(1)
   }, icon('chevronRight'));
-  const pager = h('div', { class: 'note-pager note-editor__pager', hidden: true }, pagePrevious, pageIndicator, pageNext);
+  const spreadButton = h('button', {
+    type: 'button', class: 'icon-button note-pager__button note-pager__spread', 'aria-label': 'Dwie strony obok siebie',
+    title: 'Dwie strony obok siebie', 'aria-pressed': String(page.chosen), dataset: { testid: 'note-edit-spread' },
+    onClick: () => {
+      if (page.busy) return;
+      page.chosen = !page.chosen;
+      spreadButton.setAttribute('aria-pressed', String(page.chosen));
+      onSpreadChange(page.chosen);
+      // Ta sama strona tekstu (pierwsza pokazana) – w nowym układzie.
+      const first = page.spread ? page.index * 2 : page.index;
+      layoutPages(0);
+      showPageAt(Math.min(page.count - 1, page.spread ? Math.floor(first / 2) : first));
+    }
+  }, icon('bookOpen'));
+  const pager = h('div', { class: 'note-pager note-editor__pager', hidden: true }, spreadButton, pagePrevious, pageIndicator, pageNext);
   const stage = h('div', { class: 'note-editor__stage' }, area);
   const pagePitch = () => area.clientWidth;
+  /** Kolumna (strona tekstu) na rozkładówce: szerokość jednej strony z odstępem. */
+  const columnPitch = () => pagePitch() / (page.spread ? 2 : 1);
   const showPageAt = (index) => {
     page.index = index;
     area.scrollLeft = index * pagePitch();
-    pageIndicator.textContent = `Strona ${index + 1} z ${page.count}`;
+    const [left, right] = page.spread ? [index * 2 + 1, Math.min(page.columns, index * 2 + 2)] : [index + 1, index + 1];
+    pageIndicator.textContent = right > left ? `Strony ${left}–${right} z ${page.columns}` : `Strona ${left} z ${page.columns}`;
     pagePrevious.disabled = index === 0;
     pageNext.disabled = index >= page.count - 1;
   };
-  /** Ile stron ma tekst (kolumn pola) – po każdej zmianie treści i wielkości. */
+  /**
+   * Ile stron ma tekst (kolumn pola) – po każdej zmianie treści i wielkości. W dwóch stronach nieparzysta liczba kolumn
+   * dostaje pustą kolumnę na końcu (note-editor__area--pad), żeby ostatnia rozkładówka dała się pokazać w całości.
+   */
   const countPages = () => {
-    page.count = Math.max(1, Math.round(area.scrollWidth / Math.max(1, pagePitch())));
+    const columns = () => Math.max(1, Math.round(area.scrollWidth / Math.max(1, columnPitch())));
+    area.classList.remove('note-editor__area--pad');
+    page.columns = columns();
+    if (page.spread && page.columns % 2 === 1) area.classList.add('note-editor__area--pad');
+    page.count = page.spread ? Math.ceil(page.columns / 2) : page.columns;
     showPageAt(Math.min(page.index, page.count - 1));
   };
   /**
@@ -2297,8 +2329,12 @@ function noteEditor({
     const sides = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
     const bottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
     const height = Math.max(240, Math.floor(bottom - area.getBoundingClientRect().top - pager.offsetHeight - 28));
+    // Dwie strony (od 1.61): wybrane i okno dość duże – jak w podglądzie notatki.
+    page.spread = page.chosen && spreadAvailable();
+    spreadButton.hidden = !spreadAvailable();
+    stage.classList.toggle('note-editor__stage--spread', page.spread);
     area.style.setProperty('--book-height', `${height}px`);
-    area.style.setProperty('--book-column', `${Math.max(120, area.clientWidth - sides)}px`);
+    area.style.setProperty('--book-column', `${Math.max(120, page.spread ? (area.clientWidth - sides * 2) / 2 : area.clientWidth - sides)}px`);
     area.style.setProperty('--book-gap', `${sides}px`);
     page.index = index;
     countPages();
@@ -2315,6 +2351,9 @@ function noteEditor({
     pager.hidden = !on;
     if (!on) {
       for (const name of ['--book-height', '--book-column', '--book-gap']) area.style.removeProperty(name);
+      area.classList.remove('note-editor__area--pad');
+      stage.classList.remove('note-editor__stage--spread');
+      page.spread = false;
       area.scrollLeft = 0;
       return;
     }
@@ -2338,8 +2377,8 @@ function noteEditor({
     }
     if (!rect) return null;
     const box = area.getBoundingClientRect();
-    const index = Math.floor((rect.left + 1 - box.left - parseFloat(getComputedStyle(area).paddingLeft) + area.scrollLeft) / pagePitch() + 1e-6);
-    return Math.min(page.count - 1, Math.max(0, index));
+    const column = Math.floor((rect.left + 1 - box.left - parseFloat(getComputedStyle(area).paddingLeft) + area.scrollLeft) / columnPitch() + 1e-6);
+    return Math.min(page.count - 1, Math.max(0, page.spread ? Math.floor(column / 2) : column));
   }
   /** Kursor przeszedł na inną stronę (pisanie, strzałki, wklejenie) – kartka się przewraca. */
   function followCaret() {
@@ -2348,8 +2387,12 @@ function noteEditor({
     const at = caretPage();
     if (at !== null && at !== page.index) turnPage(at - page.index);
   }
-  /** Kopia pola (bez edycji) pokazująca stronę `index` – do przewracania. */
-  function pageCopy(index, parent) {
+  /**
+   * Kopia pola (bez edycji) pokazująca stronę (rozkładówkę) `index` – do przewracania. Kopia nie jest przewijana (w ukrytym
+   * płacie przewinięcie by nie zadziałało), tylko przesunięta w lewo w przycinającym ją elemencie; offset – dodatkowo,
+   * gdy kopia leży w połówce rozkładówki (prawa strona – o pół szerokości pola).
+   */
+  function pageCopy(index, parent, offset = 0) {
     const copy = area.cloneNode(true);
     copy.removeAttribute('contenteditable');
     copy.removeAttribute('role');
@@ -2357,9 +2400,16 @@ function noteEditor({
     copy.setAttribute('aria-hidden', 'true');
     copy.inert = true;
     copy.classList.add('note-editor__area--copy');
+    Object.assign(copy.style, { left: `${-(index * pagePitch() + offset)}px`, right: 'auto', width: `${area.offsetWidth}px` });
     parent.append(copy);
-    copy.scrollLeft = index * pagePitch();
     return copy;
+  }
+  /** Strona albo połowa rozkładówki `index` (side 0 – lewa, 1 – prawa) w przycinającym elemencie w polu – do przewracania. */
+  function halfCopy(index, side, width = area.offsetWidth / 2) {
+    const holder = h('div', { class: 'note-editor__half', 'aria-hidden': 'true', style: { left: `${side * width}px`, width: `${width}px` } });
+    stage.append(holder);
+    pageCopy(index, holder, side * width);
+    return holder;
   }
   /**
    * Przewraca o `delta` stron: w przód – bieżąca strona (kopia) zagina się i odsłania następną (pole już na niej),
@@ -2376,8 +2426,24 @@ function noteEditor({
     }
     page.busy = true;
     const forward = target > page.index;
+    if (page.spread) {
+      // Dwie strony: w przód prawa strona przechodzi przez grzbiet (na odwrocie – lewa strona następnej rozkładówki),
+      // wstecz – lewa; pod spodem już nowa rozkładówka, druga strona bieżącej leży na miejscu do końca.
+      const from = page.index;
+      const still = halfCopy(from, forward ? 0 : 1);
+      const turning = halfCopy(from, forward ? 1 : 0);
+      const back = h('div', { class: 'note-editor__back note-editor__back--page', 'aria-hidden': 'true' });
+      showPageAt(target);
+      const done = curlTurn({ host: stage, turning, back, width: area.offsetWidth / 2, height: area.offsetHeight, forward, spread: true });
+      pageCopy(target, back, forward ? 0 : area.offsetWidth / 2);
+      await done;
+      for (const node of [still, turning, back]) node.remove();
+      page.busy = false;
+      followCaret();
+      return;
+    }
     const shown = forward ? page.index : target;
-    const turning = pageCopy(shown, stage);
+    const turning = halfCopy(shown, 0, area.offsetWidth);
     const back = h('div', { class: 'note-editor__back', 'aria-hidden': 'true' });
     if (forward) showPageAt(target);
     const done = curlTurn({ host: stage, turning, back, width: area.offsetWidth, height: area.offsetHeight, forward });

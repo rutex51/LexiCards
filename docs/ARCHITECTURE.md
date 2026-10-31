@@ -2235,6 +2235,27 @@ porównuje `cardFaces` / `cardMedia` po sprawdzeniu (zapis z 1.56 z numerami str
   po lewej, `closeButton` (`note-left`, „Zamknij”) po prawej; identyfikatory testów bez zmian. Okna edycji (Anuluj /
   Zapisz, Gotowe) – bez zmian.
 
+## Tablica A0 w skali zeszytu, dwie strony w edytorze notatki (od 1.61)
+
+- **Tablica** (`core/drawing.js`, `core/board.js`): `BOARD_WIDTH`, `BOARD_HEIGHT`, `BOARD_SHEET` (lewy górny róg obszaru
+  kartki – na środku tablicy; `SHEET_X`, `SHEET_Y`) w `core/drawing.js` (bez zależności cyklicznej). `setBoard` przesuwa
+  rysunek (`shiftDrawing`: kreski przez `translateStroke`, szablon, początek układu) o `BOARD_SHEET` i z powrotem;
+  `fitsSheet` i `boardViewport` (pusta tablica) – względem obszaru na środku. Format 28: `cleanDrawing` przesuwa raz tablice
+  z formatu 27 (kartka była w rogu), najwyżej do prawego i dolnego brzegu tablicy.
+- **Edytor** (`js/ui/drawing.js`): `fitScale` tablicy = skala kartki zeszytu (z miejscem na pierścienie), przy „100%”
+  (`resize` z `keepFit`) obszar kartki tam, gdzie leży kartka; `minZoom` – cała tablica; `maxZoom` – jak przy kartce.
+  `snapshotPage` tablicy – całe płótno (rulon przez cały ekran). `convertPage` – nowa historia zmian (`DrawingHistory`), bo
+  rysunek się przesunął.
+- **Dwie strony w edytorze** (`js/ui/notes.js`): `page.spread` = wybór (`noteSpread`, wspólny z podglądem –
+  `onSpreadChange` zmienia też otwarty podgląd przez `noteBook.setSpread`) i `spreadAvailable()` z `note-book.js`.
+  Kolumna = (szerokość pola − 2 × marginesy) / 2, odstęp = marginesy – dwie kolumny na rozkładówkę, `index` – rozkładówka
+  (`scrollLeft` = index × szerokość pola). Nieparzysta liczba kolumn – `note-editor__area--pad` (pusta kolumna `::after`),
+  żeby ostatnia rozkładówka dała się przewinąć w całości. Grzbiet – `note-editor__stage--spread::after`.
+- **Przewracanie** (`turnPage`): kopie pola nie są przewijane, tylko przesunięte (`left`) w przycinającym elemencie
+  (`note-editor__half`) – w ukrytym płacie przewinięcie nie działało. Dwie strony: stojąca połowa i przewracana połowa
+  bieżącej rozkładówki, na odwrocie (`note-editor__back--page`) – strona nowej rozkładówki; `curlTurn({ spread: true })` –
+  geometria jak w podglądzie dwóch stron (znak, grzbiet, odbicie odwrotu).
+
 ## Widok książki w edytorze notatki (od 1.60)
 
 - **Pole edycji jako strony** (`js/ui/notes.js`, `noteEditor`): to samo pole `contenteditable` (`note-editor`) z klasą

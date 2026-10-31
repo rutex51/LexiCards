@@ -1,4 +1,4 @@
-# LexiCards 1.60
+# LexiCards 1.61
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -70,8 +70,9 @@ Fiszki – obraz z notatki wypełnia stronę (sygnatura i przyciski na dole), pe
 Rysunek – pierścienie na grzbiecie zeszytu zamiast spirali (w każdej prostokątnej dziurce dwa druty), zeszyt odsuwany w górę – dolna krawędź kartki do środka ekranu; kółko narzędzi o stałym promieniu – widoczne małe kółka z odstępem, reszta ściśnięta za wycinkiem (wersja 1.58): [docs/RELEASE-1.58.md](docs/RELEASE-1.58.md).
 Rysunek – tablica A0: kartka rysunku jako duży arkusz bez wyglądu zeszytu (w menu „Kartki” zamiana w obie strony – z powrotem tylko, gdy rysunek mieści się w obszarze kartki), obraz tablicy w notatce – obszar z rysunkiem w wielkości kartki; przy przejściu tablica zwija się w rulon albo rozwija nad zeszytem (wersja 1.59): [docs/RELEASE-1.59.md](docs/RELEASE-1.59.md).
 Notatki – edycja tekstu w dwóch widokach: „Ciągły” (jak dotąd) i „Książka” – tekst w stronach na wysokość okna, kartki przewracane przyciskami, PageUp / PageDown i same, gdy kursor przechodzi na inną stronę, z tym samym zagięciem kartki co w podglądzie (wersja 1.60): [docs/RELEASE-1.60.md](docs/RELEASE-1.60.md).
+Rysunek – tablica A0 w skali zeszytu: kartka zeszytu na środku tablicy, po przejściu rysunek w tym samym miejscu ekranu, pomniejszenie do całej tablicy, rulon przez cały ekran; notatki – edycja w dwóch stronach obok siebie (ustawienie wspólne z podglądem) (wersja 1.61): [docs/RELEASE-1.61.md](docs/RELEASE-1.61.md).
 
-## Co potrafi wersja 1.60
+## Co potrafi wersja 1.61
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -377,6 +378,9 @@ Od 1.29 edycja ma dwa osobne okna nad podglądem:
   **‹ Strona 2 z 7 ›**; strony przewraca się tymi przyciskami, klawiszami PageDown / PageUp (kursor na początek strony)
   i same – gdy kursor przechodzi na inną stronę (pisanie za końcem strony, strzałki, Ctrl+End). Kartka zagina się od
   dolnego rogu jak w podglądzie (na odwrocie prześwituje lustrzany tekst). Treść i zapis są takie same w obu widokach.
+  Od 1.61 na dużym ekranie **dwie strony obok siebie** (przycisk z ikoną książki pod stroną – to samo ustawienie co
+  w podglądzie, zmiana w jednym miejscu zmienia oba): rozkładówka z grzbietem, **‹ Strony 3–4 z 9 ›**, prawa kartka
+  przechodzi przez grzbiet na lewo (na jej odwrocie – lewa strona następnej rozkładówki), wstecz – lewa na prawo.
 - **Spinacz** w podglądzie – samo okno **Obrazy i załączniki** (Anuluj / Zapisz): obrazy, tabele,
   miejsce w podglądzie, numeracja, załączniki, na dole **Usuń notatkę**.
 
@@ -1096,14 +1100,18 @@ wygina się nad lewą krawędzią kartki (z połyskiem i cieniem na kartce) i wr
 i miejsce przy lewym brzegu ekranu działają jak przy spirali.
 **Tablica A0** (od 1.59): w menu **Kartki** (pigułka „Kartka 1 z 2”) – **Zamień na tablicę A0** i **Nowa tablica A0**. Tablica
 to duży arkusz bez wyglądu zeszytu (bez pierścieni, z szarą ramą), cztery razy szerszy i wyższy od kartki (gdy kartka to A4 –
-wymiary A0, proporcje √2); po otwarciu widać ją całą, powiększenie sięga cztery razy dalej niż przy kartce. Kartka zeszytu
-leży w lewym górnym rogu tablicy (niebieska przerywana ramka „Obszar kartki zeszytu”) – rysunek po zamianie zostaje na swoim
-miejscu. **Zamień na kartkę zeszytu** działa tylko wtedy, gdy cały rysunek mieści się w tej ramce; inaczej pozycja menu mówi
+wymiary A0, proporcje √2). Od 1.61 tablica jest w **skali zeszytu**: „100%” to ta sama skala co kartka, a obszar kartki
+zeszytu (niebieska przerywana ramka „Obszar kartki zeszytu”) leży **na środku tablicy** – dokładnie tam, gdzie na ekranie
+leżała kartka; rysunek po zamianie zostaje w tym samym miejscu ekranu. Resztę tablicy widać po przesunięciu, a pomniejszenie
+(kółko myszy z Ctrl, dwa palce) pokazuje całą tablicę z kartką na środku; „100%” wraca do skali zeszytu. (W 1.59–1.60 kartka
+leżała w lewym górnym rogu tablicy – takie tablice przy otwarciu przesuwają się raz na środek, rysunek przy prawym albo dolnym
+brzegu – najwyżej do brzegu.) **Zamień na kartkę zeszytu** działa tylko wtedy, gdy cały rysunek mieści się w tej ramce; inaczej pozycja menu mówi
 „rysunek wychodzi poza ramkę”, a tablica zostaje (np. po **Cofnij** albo przesunięciu rysunku do ramki – da się). Obraz tablicy
 w notatce: obszar z rysunkiem (z marginesem) w proporcjach kartki, co najmniej wielkości kartki, przeskalowany do wielkości
 obrazu kartki – rysunek do poprawy zostaje tablicą. **Przejście między kartkami** z tablicą: opuszczana tablica zwija się
 w rulon od prawego dolnego rogu (walec z odwrotu papieru, z cieniem) i odsłania następną kartkę pod spodem; przejście na tablicę
-– tablica rozwija się z rulonu nad zeszytem. Między kartkami zeszytu – przewracanie jak dotąd.
+– tablica rozwija się z rulonu nad zeszytem. Od 1.61 tablica zakrywa cały ekran, więc rulon przechodzi przez cały ekran, a pod
+spodem zostaje zwykły zeszyt. Między kartkami zeszytu – przewracanie jak dotąd.
 **Pola tekstowe i wzory** (od 1.13): przycisk **pole tekstowe** (litera T w ramce) otwiera okno
 **Nowe pole tekstowe** – tekst (Enter zaczyna nowy wiersz, długi wiersz łamie się sam), wielkość
 (Mała, Średnia, Duża, od 1.18 Bardzo duża) i kolor; przycisk **Σ** – okno **Nowy wzór**: zapis jak we wzorze w notatce,

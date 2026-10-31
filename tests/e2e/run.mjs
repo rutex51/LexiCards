@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { inflateSync } from 'node:zlib';
 import { decodeText, parseCsv } from '../../js/core/csv.js';
-import { boardViewport } from '../../js/core/board.js';
+import { SHEET_X, SHEET_Y, boardViewport } from '../../js/core/board.js';
 import { dxfPrimitives, parseDxf } from '../../js/core/dxf.js';
 import { openWorkbook } from '../../js/core/xlsx.js';
 import { readZipDirectory } from '../../js/core/zip.js';
@@ -13614,7 +13614,7 @@ test('rysunek 1.55: suma i różnica brył w scenie – „Wytnij…” walec pr
   await dialog.locator('[data-testid=note-right]').click();
   await dialog.locator('[data-testid=note-text]').waitFor();
   const drawingData = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
-  assert.equal(drawingData.version, 27);
+  assert.equal(drawingData.version, 28);
   const solidsSaved = drawingData.strokes.filter((stroke) => stroke.tool === 'solid');
   assert.deepEqual(solidsSaved.map((stroke) => stroke.kind), ['box', 'sphere']);
   const [feature] = solidsSaved[0].features;
@@ -14030,7 +14030,7 @@ async function freezeTime(page) {
   };
 }
 
-test('rysunek 1.59: tablica A0 – kartka zamieniona na tablicę (bez pierścieni, rysunek na miejscu), rysunek poza obszarem kartki blokuje powrót, po „Cofnij” – znów kartka z pierścieniami; obraz do notatki – obszar z rysunkiem w wielkości kartki, rysunek zostaje tablicą (komputer)', async ({ open }) => {
+test('rysunek 1.59 (od 1.61 skala zeszytu, kartka na środku): tablica A0 – po zamianie rysunek w tym samym miejscu ekranu, bez pierścieni; pomniejszenie – cała tablica A0 z kartką na środku; rysunek poza obszarem kartki blokuje powrót, po „Cofnij” – znów kartka z pierścieniami; obraz do notatki – obszar z rysunkiem w wielkości kartki, rysunek zostaje tablicą (komputer)', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
   const ids = await sampleLessons(page);
@@ -14038,26 +14038,42 @@ test('rysunek 1.59: tablica A0 – kartka zamieniona na tablicę (bez pierścien
   const sheet = await pageFrame(page);
   await drawStroke(page, segment(sheet.at(300, 300), sheet.at(700, 300), 12));
   await nextFrames(page);
-  // Kartka → tablica A0.
+  // Kartka → tablica A0: ta sama skala, obszar kartki tam, gdzie była kartka – kreska w tym samym miejscu ekranu.
   await editor.locator('[data-testid=drawing-pages]').click();
   await page.locator('[data-testid=drawing-to-board]').click();
   await expectText(editor.locator('[data-testid=drawing-notice]'), 'Tablica A0');
   await nextFrames(page);
-  const board = await boardFrame(page);
-  const { at } = board;
-  assert.ok(Math.abs((board.bottom - board.top) / (board.right - board.left) - 4525 / 6400) < 0.01, 'proporcje A0');
-  assert.ok(board.scale < sheet.scale / 3, `tablica w całości – mniejsza skala (${board.scale} / ${sheet.scale})`);
-  assert.ok((await livePixel(page, ...at(-38, 528)))[3] < 60, 'bez pierścieni');
-  // Na całej tablicy (mała skala) kreska jest cienka – najciemniejszy piksel w okolicy.
-  assert.ok((await darkest(page, ...at(500, 300), 8)) < 200, 'kreska na swoim miejscu');
-  // Rysunek daleko poza obszarem kartki – zamiana na kartkę zablokowana.
-  await drawStroke(page, segment(at(3000, 2500), at(4400, 2500), 12));
+  await expectText(editor.locator('[data-testid=drawing-zoom]'), '100%');
+  assert.ok((await livePixel(page, ...sheet.at(-38, 528)))[3] < 60, 'bez pierścieni');
+  assert.ok((await darkest(page, ...sheet.at(500, 300), 8)) < 200, 'kreska w tym samym miejscu ekranu');
+  const filled = await page.locator('.drawing__canvas:not(.drawing__canvas--live)').evaluate((canvas) => {
+    const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    let opaque = 0;
+    for (let index = 3; index < data.length; index += 4 * 97) if (data[index] === 255) opaque += 1;
+    return opaque / Math.ceil(data.length / 4 / 97);
+  });
+  assert.ok(filled > 0.97, `tablica zakrywa cały ekran (${filled.toFixed(3)})`);
+  // Pomniejszenie: cała tablica A0 na ekranie, proporcje √2, przerywana ramka kartki na środku.
+  await page.mouse.move(640, 430);
+  await page.keyboard.down('Control');
+  for (let step = 0; step < 8; step += 1) await page.mouse.wheel(0, 400);
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(200);
+  const whole = await boardFrame(page);
+  assert.ok(Math.abs((whole.bottom - whole.top) / (whole.right - whole.left) - 4525 / 6400) < 0.02, 'cała tablica – proporcje A0');
+  const mid = { x: (whole.left + whole.right) / 2, y: (whole.top + whole.bottom) / 2 };
+  assert.ok(Math.abs(mid.x - whole.width / 2) < 4, 'tablica na środku ekranu');
+  await page.screenshot({ path: path.join(OUTPUT, 'rysunek-161-cala-tablica.png') });
+  await editor.locator('[data-testid=drawing-zoom]').click();
+  await nextFrames(page);
+  // Rysunek poza obszarem kartki (z lewej strony ramki) – zamiana na kartkę zablokowana.
+  await drawStroke(page, segment(sheet.at(-350, 500), sheet.at(-150, 500), 12));
   await nextFrames(page);
   await editor.locator('[data-testid=drawing-pages]').click();
   await expectText(page.locator('[data-testid=drawing-to-sheet]'), 'wychodzi poza ramkę');
   await page.locator('[data-testid=drawing-to-sheet]').click();
   await expectText(editor.locator('[data-testid=drawing-notice]'), 'wychodzi poza obszar kartki');
-  assert.ok((await darkest(page, ...at(3700, 2500), 8)) < 200, 'dalej tablica z rysunkiem');
+  assert.ok((await darkest(page, ...sheet.at(-250, 500), 8)) < 200, 'dalej tablica z rysunkiem poza ramką');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-159-tablica.png') });
   // „Cofnij” – kreska poza obszarem znika, tablica wraca do kartki zeszytu (z pierścieniami, w tej samej skali).
   await editor.locator('[data-testid=drawing-undo]').click();
@@ -14070,18 +14086,18 @@ test('rysunek 1.59: tablica A0 – kartka zamieniona na tablicę (bez pierścien
   assert.ok(Math.abs(back.scale - sheet.scale) < 0.001 && Math.abs(back.left - sheet.left) < 1, 'znów kartka zeszytu');
   assert.ok((await livePixel(page, ...back.at(-38, 528)))[3] > 200, 'pierścienie wróciły');
   assert.ok(Math.max(...(await pixelAt(page, ...back.at(500, 300))).slice(0, 3)) < 140, 'kreska na swoim miejscu');
-  // Znów tablica, rysunek na prawie całą szerokość – obraz w notatce: obszar z rysunkiem w wielkości obrazu kartki.
+  // Znów tablica, rysunek także poza kartką – obraz w notatce: obszar z rysunkiem w wielkości obrazu kartki.
   await editor.locator('[data-testid=drawing-pages]').click();
   await page.locator('[data-testid=drawing-to-board]').click();
   await nextFrames(page);
-  await drawStroke(page, segment(at(3000, 2500), at(4400, 2500), 12));
+  await drawStroke(page, segment(sheet.at(-350, 500), sheet.at(-150, 500), 12));
   await editor.locator('[data-testid=drawing-done]').click();
   await editor.waitFor({ state: 'detached' });
   await dialog.locator('[data-testid=note-right]').click();
   await dialog.locator('[data-testid=note-text]').waitFor();
   const saved = await page.evaluate(async (id) => (await window.lexicards.library.noteImages(id))[0].drawing, ids.statements);
   const area = boardViewport(saved);
-  const result = await page.evaluate(async ([id, area]) => {
+  const result = await page.evaluate(async ([id, area, sheetX, sheetY]) => {
     const [image] = await window.lexicards.library.noteImages(id);
     const bitmap = await createImageBitmap(new Blob([image.bytes], { type: image.type }));
     const canvas = Object.assign(document.createElement('canvas'), { width: bitmap.width, height: bitmap.height });
@@ -14096,18 +14112,19 @@ test('rysunek 1.59: tablica A0 – kartka zamieniona na tablicę (bez pierścien
     };
     return {
       width: bitmap.width, height: bitmap.height, board: image.drawing.board, drawingWidth: image.drawing.width, area,
-      first: darkest(500, 300), second: darkest(3700, 2500), empty: darkest(2000, 1800), png: canvas.toDataURL('image/png')
+      first: darkest(sheetX + 500, sheetY + 300), second: darkest(sheetX - 250, sheetY + 500), empty: darkest(sheetX + 300, sheetY + 900),
+      png: canvas.toDataURL('image/png')
     };
-  }, [ids.statements, area]);
+  }, [ids.statements, area, SHEET_X, SHEET_Y]);
   await writeFile(path.join(OUTPUT, 'rysunek-159-obraz-w-notatce.png'), Buffer.from(result.png.split(',')[1], 'base64'));
   assert.deepEqual([result.width, result.height], [1600, 1100], 'obraz w wielkości kartki');
   assert.deepEqual([result.board, result.drawingWidth], [true, 6400], 'rysunek do poprawy zostaje tablicą');
-  assert.ok(result.area.width > 3700 && result.area.x < 300, `obszar z całym rysunkiem (${JSON.stringify(result.area)})`);
+  assert.ok(result.area.x < SHEET_X - 300 && result.area.x + result.area.width > SHEET_X + 700, `obszar z całym rysunkiem (${JSON.stringify(result.area)})`);
   assert.ok(result.first < 150 && result.second < 150, `oba fragmenty na obrazie (${result.first}, ${result.second})`);
   assert.ok(result.empty > 200, 'między nimi pusto');
 }, { device: DESKTOP });
 
-test('rysunek 1.59: z tablicy A0 na kartkę – tablica zwija się w rulon od prawego dolnego rogu i odsłania kartkę zeszytu; z zeszytu na tablicę – tablica rozwija się nad zeszytem (komputer)', async ({ open }) => {
+test('rysunek 1.59 (od 1.61 przez cały ekran): z tablicy A0 na kartkę – tablica w skali zeszytu zwija się w rulon od prawego dolnego rogu ekranu i odsłania zeszyt; z zeszytu na tablicę – rozwija się nad zeszytem (komputer)', async ({ open }) => {
   const page = await open();
   await loadSamples(page);
   const ids = await sampleLessons(page);
@@ -14116,22 +14133,21 @@ test('rysunek 1.59: z tablicy A0 na kartkę – tablica zwija się w rulon od pr
   // Kartka 1 (zeszyt): czerwona kreska przy prawym dolnym rogu.
   await press(editor, 'drawing-color-red');
   await drawStroke(page, segment(sheet.at(1300, 1000), sheet.at(1500, 1000), 12));
-  // Kartka 2 – tablica A0 z kreską w lewym górnym rogu.
+  // Kartka 2 – tablica A0.
   await editor.locator('[data-testid=drawing-pages]').click();
   await page.locator('[data-testid=drawing-page-new-board]').click();
   await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 2 z 2');
   await nextFrames(page);
-  const board = await boardFrame(page);
   const white = (pixel) => pixel[3] === 255 && Math.min(...pixel.slice(0, 3)) > 225;
   const baseCanvas = '.drawing__canvas:not(.drawing__canvas--live)';
 
-  // Z tablicy na kartkę: w połowie animacji prawy dolny róg tablicy już odsłonięty (płótno animacji puste – pod spodem
-  // kartka 1 z czerwoną kreską), lewy górny – jeszcze tablica, a pierścienie przy dolnym brzegu zeszytu już widać.
+  // Z tablicy na kartkę: w połowie prawy dolny róg ekranu już odsłonięty (płótno animacji puste – pod spodem kartka 1
+  // z czerwoną kreską), lewy górny – jeszcze tablica; pod koniec pierścień przy dolnym brzegu zeszytu odsłonięty.
   const time = await freezeTime(page);
   await page.keyboard.press('PageUp');
   await time.moment(550);
-  assert.equal((await flipPixel(page, ...board.fraction(0.95, 0.95)))[3], 0, 'prawy dolny róg tablicy odsłonięty');
-  assert.ok(white(await flipPixel(page, ...board.fraction(0.1, 0.1))), 'lewy górny – jeszcze tablica');
+  assert.equal((await flipPixel(page, 0.95, 0.93))[3], 0, 'prawy dolny róg ekranu odsłonięty');
+  assert.ok(white(await flipPixel(page, 0.08, 0.12)), 'lewy górny róg ekranu – jeszcze tablica');
   assert.ok(await redNear(page, baseCanvas, ...sheet.at(1450, 1000)), 'pod spodem kartka 1 z czerwoną kreską');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-159-rulon-zwijanie.png') });
   await time.moment(900);
@@ -14140,13 +14156,13 @@ test('rysunek 1.59: z tablicy A0 na kartkę – tablica zwija się w rulon od pr
   await waitUntil(() => page.locator('.drawing__flip').evaluate((element) => element.hidden), 'Animacja skończona');
   await expectText(editor.locator('[data-testid=drawing-pages]'), 'Kartka 1 z 2');
 
-  // Z zeszytu na tablicę: tablica rozwija się z lewego górnego rogu – w połowie zeszyt (czerwona kreska) jeszcze widać
-  // przy prawym dolnym rogu, a lewy górny róg zakrywa już biała tablica.
+  // Z zeszytu na tablicę: tablica rozwija się z lewego górnego rogu ekranu – w połowie zeszyt (czerwona kreska) jeszcze
+  // widać przy prawym dolnym rogu, a lewy górny róg i dziurka przy górze zeszytu są już pod tablicą.
   const again = await freezeTime(page);
   await page.keyboard.press('PageDown');
   await again.moment(550);
   assert.ok(await redNear(page, '.drawing__flip', ...sheet.at(1450, 1000)), 'zeszyt jeszcze widać przy prawym dolnym rogu');
-  assert.ok(white(await flipPixel(page, ...board.fraction(0.1, 0.1))), 'lewy górny róg – już tablica');
+  assert.ok(white(await flipPixel(page, 0.08, 0.12)), 'lewy górny róg – już tablica');
   assert.ok(white(await flipPixel(page, ...sheet.at(23, 44))), 'dziurka przy górnym brzegu zeszytu zakryta tablicą');
   await page.screenshot({ path: path.join(OUTPUT, 'rysunek-159-rulon-rozwijanie.png') });
   await again.release();
@@ -14193,8 +14209,9 @@ test('notatka 1.60: edycja w widoku książki – tekst w stronach, przewracanie
   // Domyślnie – widok ciągły.
   assert.equal((await bookState(edit)).book, false);
   assert.equal(await edit.locator('[data-testid=note-edit-page]').isVisible(), false);
-  // Książka: strony o wysokości okna, tekst płynie w kolejne strony.
+  // Książka: strony o wysokości okna, tekst płynie w kolejne strony (od 1.61 na komputerze – najpierw jedna strona).
   await edit.locator('[data-testid=note-edit-view] label', { hasText: 'Książka' }).click();
+  await edit.locator('[data-testid=note-edit-spread]').click();
   await expectText(edit.locator('[data-testid=note-edit-page]'), 'Strona 1 z ');
   const first = await bookState(edit);
   assert.ok(first.book && first.pages >= 3, `kilka stron (${first.pages})`);
@@ -14291,6 +14308,78 @@ test('notatka 1.60 na telefonie: widok książki – strona na szerokość ekran
   await waitUntil(async () => (await edit.locator('.note-editor__area--copy').count()) === 0, 'Kartka przewrócona');
   assert.equal(await overflowX(page), 0);
 });
+
+// ---------------------------------------------------------------- notatka 1.61: dwie strony w edytorze
+
+test('notatka 1.61: edycja w dwóch stronach – rozkładówka z grzbietem, przewracanie prawej strony przez grzbiet (wstecz – lewej), PageDown, kursor na końcu tekstu; jedna strona – też w podglądzie (wspólne ustawienie) (komputer)', async ({ open }) => {
+  const page = await open();
+  await seedLongNote(page);
+  const dialog = noteDialog(page);
+  await dialog.locator('[data-testid=note-right]').click();
+  const edit = page.locator('dialog[data-testid=note-edit-dialog][open]');
+  await edit.waitFor();
+  await settled(edit);
+  await edit.locator('[data-testid=note-edit-view] label', { hasText: 'Książka' }).click();
+  // Duży ekran: dwie strony (jak w podglądzie), pod nimi przycisk książki wciśnięty.
+  await expectText(edit.locator('[data-testid=note-edit-page]'), 'Strony 1–2 z ');
+  assert.equal(await edit.locator('[data-testid=note-edit-spread]').getAttribute('aria-pressed'), 'true');
+  const columns = Number((await edit.locator('[data-testid=note-edit-page]').textContent()).match(/z (\d+)/)[1]);
+  assert.ok(columns >= 6, `stron (${columns})`);
+  // Na rozkładówce widać dwie kolumny: akapit 1 po lewej, dalszy tekst po prawej stronie grzbietu.
+  const halves = await edit.locator('[data-testid=note-editor]').evaluate((area) => {
+    const box = area.getBoundingClientRect();
+    const middle = box.left + box.width / 2;
+    const shown = [...area.querySelectorAll('p')].filter((item) => {
+      const rect = item.getClientRects()[0];
+      return rect && rect.left >= box.left - 1 && rect.right <= box.right + 1;
+    });
+    return { left: shown.filter((item) => item.getClientRects()[0].right < middle).length, right: shown.filter((item) => item.getClientRects()[0].left > middle).length };
+  });
+  assert.ok(halves.left >= 2 && halves.right >= 2, `tekst na obu stronach (${JSON.stringify(halves)})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-161-dwie-strony.png') });
+
+  // Następna rozkładówka: prawa strona przechodzi przez grzbiet (w połowie – płat nad lewą stroną).
+  let time = await freezeTime(page);
+  await edit.locator('[data-testid=note-edit-page-next]').click();
+  await time.moment(360);
+  assert.equal(await edit.locator('.note-editor__half').count(), 2, 'strona stojąca i przewracana');
+  assert.equal(await edit.locator('.note-editor__stage .note-curl__flap').isVisible(), true, 'zagięty płat');
+  await page.screenshot({ path: path.join(OUTPUT, 'notatka-161-przewracanie.png') });
+  await time.release();
+  await expectText(edit.locator('[data-testid=note-edit-page]'), `Strony 3–4 z ${columns}`);
+  await waitUntil(async () => (await edit.locator('.note-editor__half').count()) === 0, 'Kartka przewrócona');
+  const state = await bookState(edit);
+  assert.equal(state.scrollLeft, state.width, 'pole na drugiej rozkładówce');
+  // Wstecz – lewa strona wraca przez grzbiet.
+  time = await freezeTime(page);
+  await edit.locator('[data-testid=note-edit-page-previous]').click();
+  await time.moment(360);
+  assert.equal(await edit.locator('.note-editor__stage .note-curl__flap').isVisible(), true, 'płat przy powrocie');
+  await time.release();
+  await expectText(edit.locator('[data-testid=note-edit-page]'), `Strony 1–2 z ${columns}`);
+  await waitUntil(async () => (await edit.locator('.note-editor__half').count()) === 0, 'Kartka wróciła');
+  // PageDown w polu – następna rozkładówka; Ctrl+End – ostatnia (z końcem tekstu).
+  await edit.locator('[data-testid=note-editor]').click({ position: { x: 60, y: 40 } });
+  await page.keyboard.press('PageDown');
+  await expectText(edit.locator('[data-testid=note-edit-page]'), `Strony 3–4 z ${columns}`);
+  await page.keyboard.press('Control+End');
+  const last = Math.ceil(columns / 2);
+  await expectText(edit.locator('[data-testid=note-edit-page]'), columns % 2 === 0 ? `Strony ${columns - 1}–${columns} z ${columns}` : `Strona ${columns} z ${columns}`);
+  await waitUntil(async () => (await edit.locator('.note-editor__half').count()) === 0, 'Ostatnia rozkładówka');
+  assert.equal(await onShownPage(edit, 'Akapit 36:'), true, 'koniec tekstu na pokazanej rozkładówce');
+  const end = await bookState(edit);
+  assert.equal(end.scrollLeft, (last - 1) * end.width, 'ostatnia rozkładówka w całości');
+
+  // Jedna strona: przycisk książki – także w podglądzie (wspólne ustawienie).
+  await edit.locator('[data-testid=note-edit-spread]').click();
+  // Jedna szersza strona – stron mniej, pokazana strona z końcem tekstu.
+  await waitUntil(async () => /^Strona (\d+) z \1$/.test(await edit.locator('[data-testid=note-edit-page]').textContent()), 'Jedna strona – ostatnia');
+  assert.equal(await edit.locator('[data-testid=note-edit-spread]').getAttribute('aria-pressed'), 'false');
+  assert.equal(await onShownPage(edit, 'Akapit 36:'), true);
+  await edit.locator('[data-testid=note-left]').click();
+  await edit.waitFor({ state: 'detached' });
+  await waitUntil(async () => (await dialog.locator('[data-testid=note-spread]').getAttribute('aria-pressed')) === 'false', 'Podgląd w jednej stronie');
+}, { device: DESKTOP });
 
 // ---------------------------------------------------------------- fiszki 1.56
 

@@ -2,6 +2,7 @@
 // Pełne opisy – docs/RELEASE-<wersja>.md. Pierwsza pozycja to bieżąca wersja aplikacji (sprawdza to test).
 
 export const CHANGELOG = Object.freeze([
+  ['1.61', 'Tablica A0 w skali zeszytu z kartką na środku i rulonem przez cały ekran; notatki – edycja w dwóch stronach obok siebie (ustawienie wspólne z podglądem).'],
   ['1.60', 'Notatki: edycja tekstu w widoku „Książka” – strony na wysokość okna, przewracane przyciskami, PageUp/PageDown i same za kursorem, z zagięciem kartki jak w podglądzie.'],
   ['1.59', 'Rysunek: tablica A0 – kartka jako duży arkusz bez wyglądu zeszytu, zamiana w obie strony, obraz w notatce z obszaru z rysunkiem; przy przejściu tablica zwija się w rulon albo rozwija.'],
   ['1.58', 'Rysunek: pierścienie na grzbiecie zamiast spirali, zeszyt odsuwany w górę (dolna krawędź do środka ekranu), kółko narzędzi o stałym promieniu – reszta kółek ściśnięta za wycinkiem.'],

@@ -509,8 +509,8 @@ const WHEEL_QUIET = 180;
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - ((2 - 2 * t) ** 3) / 2);
 const easeOut = (t) => 1 - (1 - t) ** 3;
 
-/** Czy okno jest dość duże na dwie strony obok siebie (komputer, tablet). */
-function spreadAvailable() {
+/** Czy okno jest dość duże na dwie strony obok siebie (komputer, tablet); od 1.61 też w edytorze notatki. */
+export function spreadAvailable() {
   return window.innerWidth >= SPREAD_MIN_WIDTH && window.innerHeight >= SPREAD_MIN_HEIGHT;
 }
 
@@ -540,12 +540,14 @@ const foldDepth = (geometry) => Math.max(0, ...geometry.folded.map((vertex) =>
 
 /**
  * Jedno przewrócenie kartki od dolnego rogu (od 1.60 – edytor notatki w widoku książki), jak w książce poniżej:
- * host – element z position: relative o wielkości strony (width × height), turning – przewracana strona leżąca już
- * w host na wierzchu (np. kopia strony), back – jej odwrót (element, przez który prześwituje tekst w lustrze).
- * forward – kartka idzie z płaskiej strony w lewo; wstecz – wraca z lewej na wierzch. Zwraca obietnicę końca animacji;
- * warstwy cienia i płata są potem usunięte, a `turning` i `back` – do usunięcia przez wołającego.
+ * host – element z position: relative, turning – przewracana strona leżąca już w host na wierzchu (np. kopia strony),
+ * back – jej odwrót. Jedna strona (host – width × height): forward – kartka idzie z płaskiej strony w lewo, wstecz –
+ * wraca z lewej na wierzch; na odwrocie (back) prześwituje tekst w lustrze. Od 1.61 spread – dwie strony (host –
+ * 2 × width, grzbiet na środku): w przód prawa strona przechodzi przez grzbiet na lewo, wstecz – lewa na prawo;
+ * turning leży na swojej połowie, back to strona, która po przewróceniu leży po drugiej stronie grzbietu. Zwraca
+ * obietnicę końca animacji; warstwy cienia i płata są potem usunięte, `turning` i `back` – do usunięcia przez wołającego.
  */
-export function curlTurn({ host, turning, back, width, height, forward, duration = TURN_DURATION }) {
+export function curlTurn({ host, turning, back, width, height, forward, spread = false, duration = TURN_DURATION }) {
   const corner = cornerOf('bottom', width, height);
   const cast = h('div', { class: 'note-curl__layer', 'aria-hidden': 'true' }, h('span', { class: 'note-curl__band note-curl__band--cast' }));
   const fold = h('div', { class: 'note-curl__layer', 'aria-hidden': 'true' }, h('span', { class: 'note-curl__band note-curl__band--fold' }));
@@ -557,6 +559,13 @@ export function curlTurn({ host, turning, back, width, height, forward, duration
   turning.before(cast);
   turning.after(fold, flap);
   const layers = [cast, fold, flap];
+  // Jak w książce w dwóch stronach: układ strony przewracanej wstecz – odbity względem grzbietu.
+  const sign = spread && !forward ? -1 : 1;
+  const toStage = [sign, 0, 0, 1, spread ? width : 0, 0];
+  const frontLocal = sign > 0 ? IDENTITY : mirror(width);
+  const backMirror = spread && forward;
+  const backLocal = backMirror ? mirror(width) : IDENTITY;
+  const stage = (points) => points.map((point) => applyMatrix(toStage, point));
   const render = (point) => {
     const geometry = foldGeometry({ width, height, corner, point });
     if (!geometry) {
@@ -565,25 +574,30 @@ export function curlTurn({ host, turning, back, width, height, forward, duration
       return;
     }
     for (const layer of layers) layer.hidden = false;
-    turning.style.clipPath = cssPolygon(geometry.flat);
-    back.style.transform = cssMatrix(geometry.reflection);
-    back.style.clipPath = cssPolygon(geometry.folded);
-    cast.style.clipPath = cssPolygon(geometry.folded);
-    fold.style.clipPath = cssPolygon(geometry.flat);
+    turning.style.clipPath = cssPolygon(geometry.flat.map((vertex) => applyMatrix(frontLocal, vertex)));
+    back.style.transform = cssMatrix(multiply(toStage, multiply(geometry.reflection, backLocal)));
+    back.style.clipPath = cssPolygon(geometry.folded.map((vertex) => applyMatrix(backLocal, vertex)));
+    cast.style.clipPath = cssPolygon(stage(geometry.folded));
+    fold.style.clipPath = cssPolygon(stage(geometry.flat));
     const lift = Math.sin(Math.PI * geometry.progress);
     const length = 2 * (width + height);
-    placeBand(cast.firstChild, geometry.point, geometry.normal, width * (0.04 + 0.2 * lift), lift * 1.6, length);
-    placeBand(fold.firstChild, geometry.point, { x: -geometry.normal.x, y: -geometry.normal.y }, width * (0.03 + 0.12 * lift), lift * 2, length);
-    placeBand(light, geometry.point, geometry.normal, foldDepth(geometry) + 1, lift * 2.5, length);
+    const origin = applyMatrix(toStage, geometry.point);
+    const normal = { x: sign * geometry.normal.x, y: geometry.normal.y };
+    placeBand(cast.firstChild, origin, normal, width * (0.04 + 0.2 * lift), lift * 1.6, length);
+    placeBand(fold.firstChild, origin, { x: -normal.x, y: -normal.y }, width * (0.03 + 0.12 * lift), lift * 2, length);
+    const backNormal = { x: (backMirror ? -1 : 1) * geometry.normal.x, y: geometry.normal.y };
+    placeBand(light, applyMatrix(backLocal, geometry.point), backNormal, foldDepth(geometry) + 1, lift * 2.5, length);
   };
-  render(forward ? corner : turnedCorner(corner));
+  // Jedna strona wstecz – kartka wraca z położenia przewróconego; w dwóch stronach zawsze od płaskiej.
+  const fromRest = spread || forward;
+  render(fromRest ? corner : turnedCorner(corner));
   playPage({ land: duration, direction: forward ? 1 : -1 });
   return new Promise((resolve) => {
     const started = performance.now();
     const frame = (now) => {
       const t = Math.min(1, (now - started) / duration);
       const progress = easeInOut(t);
-      render(constrainCorner({ width, height, corner, point: cornerPath(corner, width, height, forward ? progress : 1 - progress) }));
+      render(constrainCorner({ width, height, corner, point: cornerPath(corner, width, height, fromRest ? progress : 1 - progress) }));
       if (t < 1 && host.isConnected) {
         requestAnimationFrame(frame);
         return;
@@ -1036,6 +1050,13 @@ export function noteBook({
     pager,
     layout,
     turn,
+    /** Dwie strony obok siebie albo jedna (od 1.61 – zmienione w edytorze notatki, wspólne ustawienie). */
+    setSpread(value) {
+      if (spreadChosen === Boolean(value)) return;
+      spreadChosen = Boolean(value);
+      spreadButton.setAttribute('aria-pressed', String(spreadChosen));
+      if (!busy && !drag?.active) layout();
+    },
     /** Numer podziału na strony (zmienia się po ponownym podziale). */
     get version() {
       return version;
