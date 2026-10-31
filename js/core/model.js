@@ -73,6 +73,22 @@ export function magicColor(settings) {
   return MAGIC_COLORS.some((item) => item.id === settings?.magicColor) ? settings.magicColor : DEFAULT_MAGIC_COLOR;
 }
 
+/** Kolory teczki magicznych fiszek (od 1.62.1). */
+export const MAGIC_FOLDER_COLORS = Object.freeze([
+  { id: 'yellow', label: 'Żółta' },
+  { id: 'black', label: 'Czarna' },
+  { id: 'gray', label: 'Szara' },
+  { id: 'white', label: 'Biała' }
+]);
+
+/** Teczka bez własnego wyboru: przy złotej fiszce szara (żółta zlewałaby się ze złotem), poza tym żółta. */
+export const defaultMagicFolderColor = (settings) => (magicColor(settings) === 'gold' ? 'gray' : 'yellow');
+
+/** Kolor teczki z ustawień; bez wyboru (albo nieznany) – domyślny dla koloru fiszki. */
+export function magicFolderColor(settings) {
+  return MAGIC_FOLDER_COLORS.some((item) => item.id === settings?.magicFolderColor) ? settings.magicFolderColor : defaultMagicFolderColor(settings);
+}
+
 /**
  * Ikony dziedzin, z grubsza tematycznie: ogólne i biznes, zarządzanie, ekonomia i finanse,
  * języki, decyzje, zachowania, raportowanie, etyka, nauki i technika, pozostałe.
@@ -111,6 +127,7 @@ export function defaultSettings() {
     accentColor: 'blue',           // kolor aplikacji: blue | graphite | orange | green | red
     magicColor: 'violet',          // kolor magicznej fiszki (od 1.62): violet | gold | teal
     magicPanelHidden: false,       // magiczna fiszka schowana za krawędzią okna notatki (szeroki ekran)
+    magicFolderColor: null,        // kolor teczki (od 1.62.1): yellow | black | gray | white; null – domyślny dla koloru fiszki
     preferredDirection: 'pl_en',   // pl_en | en_pl | mixed
     preferredFlashcardFront: 'term',
     flashcardFlips: 1,             // obroty fiszki (od 1.39): 1 | 2 | 3

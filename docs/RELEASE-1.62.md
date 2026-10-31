@@ -66,3 +66,29 @@ robiono).
 - Pojęcie wymaga nazwy po polsku i po angielsku (jak dotąd) – brakującą uzupełnia się w formularzu „Dodaj do lekcji…”.
 - Pisanie tuż za fragmentem może go wydłużyć (kursor na granicy oznaczenia) – fragment zmienia się wtedy także na fiszce.
 - Fiszka dodana do lekcji pokazuje się na pasku fragmentu z nazwą pojęcia, ale nie ma przejścia do pojęcia.
+
+## Uzupełnienie w wersji 1.62.1 – kolor teczki
+
+| Funkcja | Jak działa |
+| --- | --- |
+| **Kolor teczki** | Ustawienia → Wygląd → „Teczka”: żółta, czarna, szara albo biała – w oknie notatki i na ekranach Biblioteki, w jasnym i ciemnym motywie (czarna w ciemnym motywie jaśniejsza, żeby była widoczna). |
+| **Domyślnie** | Bez własnego wyboru teczka jest żółta, a przy złotej fiszce – szara (zamiast granatowej z 1.62). Wybór koloru równego domyślnemu nie jest zapisywany, więc teczka dalej dopasowuje się do koloru fiszki; własny wybór zostaje przy każdym kolorze fiszki. Kolor ustawiony przed narysowaniem strony (bez mignięcia). |
+| **Numeracja** | Bez zmian, potwierdzona: osobna w każdej lekcji – notatka każdej lekcji zaczyna od ✦1. |
+
+### Testy, które wykonano (1.62.1)
+
+- **Testy logiki (Node.js): 548 – wszystkie zaliczone**, w tym nowy: kolory teczki, domyślna żółta, przy złotej fiszce szara,
+  własny wybór przy każdym kolorze fiszki, nieznana wartość – domyślna; w teście biblioteki – fiszka ✦1 jednocześnie
+  w notatkach dwóch lekcji (numeracja osobno w każdej lekcji).
+- **Testy w przeglądarce (Chromium): 265 – wszystkie zaliczone w dwóch pełnych przebiegach** na tym samym kodzie; zmieniony test
+  ustawień: przy złotej fiszce teczka szara (opis „domyślna przy złotej fiszce”), każdy z czterech kolorów na przedniej
+  klapie teczki w oknie notatki, żółta przy turkusie nie jest zapisana (wybór domyślny), biała zapisana, kolor fiszki
+  i teczki ustawiony po ponownym uruchomieniu przed wczytaniem bazy. Cztery testy magicznych fiszek – także osobno przed
+  pełnymi przebiegami.
+- **Lint: bez błędów.**
+- Zrzuty (Chromium): cztery teczki, ustawienia z „Teczką”, złota fiszka z szarą teczką.
+
+### Czego nie sprawdzono (1.62.1)
+
+- Safari na iPhonie i iPadzie – jak w 1.62.
+

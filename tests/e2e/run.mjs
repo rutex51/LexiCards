@@ -18931,7 +18931,7 @@ test('magiczne fiszki 1.62: telefon – przycisk zawsze na początku paska, fisz
   await waitUntil(() => panel.evaluate((element) => element.classList.contains('magic-panel--hidden')), 'po wysłaniu fiszka znowu schowana');
 });
 
-test('magiczne fiszki 1.62: Ustawienia → Wygląd → „Magiczna fiszka” – fiolet, złoto, turkus: kolor fragmentów i fiszki, teczka granatowa przy złocie; wybór zostaje po ponownym uruchomieniu (komputer)', async ({ open }) => {
+test('magiczne fiszki 1.62: Ustawienia → Wygląd → „Magiczna fiszka” – fiolet, złoto, turkus: kolor fragmentów i fiszki; od 1.62.1 „Teczka” – żółta, czarna, szara, biała (przy złotej fiszce domyślnie szara); wybór zostaje po ponownym uruchomieniu (komputer)', async ({ open }) => {
   const page = await open();
   const marked = magicMarkedNote();
   const { ids, edit } = await openMagicNote(page, marked);
@@ -18943,9 +18943,14 @@ test('magiczne fiszki 1.62: Ustawienia → Wygląd → „Magiczna fiszka” –
   await page.goto(`${page.url().split('#')[0]}#/settings`);
   const footer = page.locator('[data-testid=magic-color-name]');
   await expectText(footer, 'Fiolet.');
+  const folderFooter = page.locator('[data-testid=magic-folder-color-name]');
+  await expectText(folderFooter, 'Żółta (domyślna).');
   await page.locator('[data-testid=magic-color-gold]').check({ force: true });
   await expectText(footer, 'Złoto.');
   assert.equal(await page.evaluate(() => document.documentElement.dataset.magic), 'gold');
+  // Przy złotej fiszce teczka bez własnego wyboru – szara.
+  await expectText(folderFooter, 'Szara (domyślna przy złotej fiszce).');
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.magicFolder), 'gray');
   // Ekran ustawień rysuje się od nowa po zapisie – zrzut po ustaniu zmian (element bywa właśnie podmieniany).
   await waitUntil(() => page.locator('.settings-appearance').screenshot({ path: path.join(OUTPUT, 'magia-162-ustawienia.png') }).then(() => true, () => false), 'zrzut ustawień');
   const shots = {};
@@ -18960,21 +18965,46 @@ test('magiczne fiszki 1.62: Ustawienia → Wygląd → „Magiczna fiszka” –
     await magicEdit(page).locator('[data-magic="1.1"]').waitFor();
     await waitUntil(() => magicEdit(page).locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'okno tekstu otwarte');
     shots[color] = await colorOf();
-    if (color === 'gold') {
-      const folderColor = await magicEdit(page).locator('.magic-folder__front').evaluate((front) => getComputedStyle(front).backgroundImage);
-      assert.ok(folderColor.includes('rgb(61, 93, 150)'), `granatowa teczka przy złocie (${folderColor})`);
-    }
+    const folderColor = await magicEdit(page).locator('.magic-folder__front').evaluate((front) => getComputedStyle(front).backgroundImage);
+    assert.ok(folderColor.includes(color === 'gold' ? 'rgb(194, 194, 200)' : 'rgb(245, 196, 87)'), `teczka ${color === 'gold' ? 'szara' : 'żółta'} (${folderColor})`);
     await page.screenshot({ path: path.join(OUTPUT, `magia-162-kolor-${color}.png`) });
     await magicEdit(page).locator('[data-testid=note-left]').click();
     await page.locator('dialog[data-testid=note-edit-dialog]').waitFor({ state: 'detached' });
     await noteDialog(page).locator('[data-testid=note-left]').click();
   }
   assert.deepEqual(shots, { gold: 'rgb(143, 100, 0)', teal: 'rgb(15, 118, 110)' });
-  // Po ponownym uruchomieniu kolor jest ustawiony, zanim wczyta się baza (bez mignięcia fioletu).
+
+  // Kolor teczki (od 1.62.1): każdy z czterech – na przedniej klapie teczki w oknie notatki; zrzuty teczek.
+  const FRONTS = { yellow: 'rgb(245, 196, 87)', black: 'rgb(60, 60, 65)', gray: 'rgb(194, 194, 200)', white: 'rgb(255, 255, 255)' };
+  for (const folder of ['black', 'gray', 'white', 'yellow']) {
+    await page.goto(`${page.url().split('#')[0]}#/settings`);
+    await page.locator(`[data-testid=magic-folder-color-${folder}]`).check({ force: true });
+    await waitUntil(async () => ((await page.evaluate(() => document.documentElement.dataset.magicFolder)) ?? 'yellow') === folder, `teczka ${folder}`);
+    await openNotePreview(page, ids.statements);
+    await noteDialog(page).locator('[data-testid=note-right]').click();
+    const front = magicEdit(page).locator('.magic-folder__front');
+    await front.waitFor();
+    await waitUntil(() => magicEdit(page).locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'okno tekstu otwarte');
+    const image = await front.evaluate((element) => getComputedStyle(element).backgroundImage);
+    assert.ok(image.includes(FRONTS[folder]), `teczka ${folder}: ${image}`);
+    await magicEdit(page).locator('[data-testid=magic-folder]').screenshot({ path: path.join(OUTPUT, `magia-1621-teczka-${folder}.png`) });
+    await magicEdit(page).locator('[data-testid=note-left]').click();
+    await page.locator('dialog[data-testid=note-edit-dialog]').waitFor({ state: 'detached' });
+    await noteDialog(page).locator('[data-testid=note-left]').click();
+  }
+  // Żółta przy turkusie to wybór domyślny – nie jest zapisana (teczka dalej zależy od koloru fiszki).
+  assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().magicFolderColor), null);
+  await page.goto(`${page.url().split('#')[0]}#/settings`);
+  await page.locator('[data-testid=magic-folder-color-white]').check({ force: true });
+  await expectText(folderFooter, 'Biała. Teczka');
+  await waitUntil(() => page.locator('.settings-appearance').screenshot({ path: path.join(OUTPUT, 'magia-1621-ustawienia.png') }).then(() => true, () => false), 'zrzut ustawień');
+
+  // Po ponownym uruchomieniu kolor fiszki i teczki są ustawione, zanim wczyta się baza (bez mignięcia).
   await page.reload();
-  assert.equal(await page.evaluate(() => document.documentElement.dataset.magic), 'teal');
+  assert.deepEqual(await page.evaluate(() => [document.documentElement.dataset.magic, document.documentElement.dataset.magicFolder]), ['teal', 'white']);
   await page.waitForSelector('#app[data-ready="true"]');
   assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().magicColor), 'teal');
+  assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().magicFolderColor), 'white');
   // Ciemny motyw (do obejrzenia na zrzucie).
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto(`${page.url().split('#')[0]}#/settings`);

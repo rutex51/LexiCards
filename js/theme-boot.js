@@ -15,6 +15,11 @@
     if (magic === 'gold' || magic === 'teal') {
       document.documentElement.dataset.magic = magic;
     }
+    // Od 1.62.1: kolor teczki.
+    var folder = localStorage.getItem('lexicards-magic-folder');
+    if (folder === 'black' || folder === 'gray' || folder === 'white') {
+      document.documentElement.dataset.magicFolder = folder;
+    }
     // Od 1.29: podpowiedzi w oknach schowane przyciskiem ⓘ (js/ui/hints.js).
     if (localStorage.getItem('lexicards-hints') === 'hidden') {
       document.documentElement.classList.add('hints-hidden');

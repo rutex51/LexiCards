@@ -8556,8 +8556,6 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   --magic: #8f6400; --magic-fill: #e3b23c; --on-magic: #3b2a00;
   --magic-soft: rgba(227, 178, 60, 0.16); --magic-line: rgba(176, 128, 10, 0.45); --magic-glow: rgba(214, 160, 30, 0.36);
   --magic-grad-a: #f6d775; --magic-grad-b: #c99419; --on-grad: #3b2a00; --magic-dot: rgba(201, 148, 25, 0.7);
-  /* Złote fiszki w granatowej teczce – żółta tektura zlewałaby się ze złotem. */
-  --magic-folder-back: #27406b; --magic-folder-edge: #1b2e50; --magic-folder-front: #3d5d96; --magic-folder-front-2: #2c4677;
 }
 :root[data-magic="teal"] {
   --magic: #0f766e; --magic-fill: #0f766e; --on-magic: #ffffff;
@@ -8573,7 +8571,6 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
   :root[data-magic="gold"]:not([data-theme="light"]) {
     --magic: #f2c94c; --magic-fill: #e3b23c; --on-magic: #3b2a00; --magic-soft: rgba(242, 201, 76, 0.14); --magic-line: rgba(242, 201, 76, 0.42);
     --magic-glow: rgba(227, 178, 60, 0.36);
-    --magic-folder-back: #27406b; --magic-folder-edge: #1b2e50; --magic-folder-front: #3d5d96; --magic-folder-front-2: #2c4677;
   }
   :root[data-magic="teal"]:not([data-theme="light"]) {
     --magic: #5eead4; --magic-fill: #2dd4bf; --on-magic: #042f2e; --magic-soft: rgba(45, 212, 191, 0.14); --magic-line: rgba(45, 212, 191, 0.42);
@@ -8588,12 +8585,35 @@ button.tool-groups__main { border: 0; border-radius: 10px; background: none; col
 :root[data-theme="dark"][data-magic="gold"] {
   --magic: #f2c94c; --magic-fill: #e3b23c; --on-magic: #3b2a00; --magic-soft: rgba(242, 201, 76, 0.14); --magic-line: rgba(242, 201, 76, 0.42);
   --magic-glow: rgba(227, 178, 60, 0.36);
-  --magic-folder-back: #27406b; --magic-folder-edge: #1b2e50; --magic-folder-front: #3d5d96; --magic-folder-front-2: #2c4677;
 }
 :root[data-theme="dark"][data-magic="teal"] {
   --magic: #5eead4; --magic-fill: #2dd4bf; --on-magic: #042f2e; --magic-soft: rgba(45, 212, 191, 0.14); --magic-line: rgba(45, 212, 191, 0.42);
   --magic-glow: rgba(45, 212, 191, 0.34);
 }
+/* Kolor teczki (od 1.62.1): żółta (bez atrybutu), czarna, szara, biała – data-magic-folder na <html> (main.js; przy złotej
+   fiszce domyślnie szara). W ciemnym motywie czarna jest jaśniejsza, żeby nie znikała na czarnym tle. */
+:root {
+  --magic-folder-swatch-yellow: #f5c457;
+  --magic-folder-swatch-black: #2a2a2d;
+  --magic-folder-swatch-gray: #a3a3a9;
+  --magic-folder-swatch-white: #ffffff;
+}
+:root[data-magic-folder="black"] { --magic-folder-back: #2a2a2d; --magic-folder-edge: #121214; --magic-folder-front: #3c3c41; --magic-folder-front-2: #222226; }
+:root[data-magic-folder="gray"] { --magic-folder-back: #8a8a90; --magic-folder-edge: #6b6b70; --magic-folder-front: #c2c2c8; --magic-folder-front-2: #a3a3a9; }
+:root[data-magic-folder="white"] { --magic-folder-back: #d9d9df; --magic-folder-edge: #b8b8c0; --magic-folder-front: #ffffff; --magic-folder-front-2: #eeeef2; }
+@media (prefers-color-scheme: dark) {
+  :root[data-magic-folder="black"]:not([data-theme="light"]) { --magic-folder-back: #3a3a3e; --magic-folder-edge: #1c1c1f; --magic-folder-front: #55555b; --magic-folder-front-2: #38383d; }
+  :root[data-magic-folder="gray"]:not([data-theme="light"]) { --magic-folder-back: #6e6e74; --magic-folder-edge: #4f4f54; --magic-folder-front: #9a9aa0; --magic-folder-front-2: #7d7d83; }
+  :root[data-magic-folder="white"]:not([data-theme="light"]) { --magic-folder-back: #b9b9c0; --magic-folder-edge: #95959c; --magic-folder-front: #e8e8ec; --magic-folder-front-2: #d0d0d6; }
+}
+:root[data-theme="dark"][data-magic-folder="black"] { --magic-folder-back: #3a3a3e; --magic-folder-edge: #1c1c1f; --magic-folder-front: #55555b; --magic-folder-front-2: #38383d; }
+:root[data-theme="dark"][data-magic-folder="gray"] { --magic-folder-back: #6e6e74; --magic-folder-edge: #4f4f54; --magic-folder-front: #9a9aa0; --magic-folder-front-2: #7d7d83; }
+:root[data-theme="dark"][data-magic-folder="white"] { --magic-folder-back: #b9b9c0; --magic-folder-edge: #95959c; --magic-folder-front: #e8e8ec; --magic-folder-front-2: #d0d0d6; }
+/* Próbki białej i czarnej teczki w ustawieniach – z obwódką (biała na białym tle, czarna w ciemnym motywie). */
+.accent-picker__option--white, .accent-picker__option--black { box-shadow: inset 0 0 0 1.5px var(--outline); }
+.accent-picker__option--white { color: #1c1c1e; }
+.accent-picker__option--white:has(input:checked),
+.accent-picker__option--black:has(input:checked) { box-shadow: inset 0 0 0 1.5px var(--outline), 0 0 0 2px var(--surface), 0 0 0 4.5px var(--text-3); }
 
 /* Fragment w notatce (edytor i podgląd): kolor i pogrubienie fiszki, bez innych kolorów w środku. */
 .note-text [data-magic] { color: var(--magic); font-weight: 700; border-radius: 3px; }

@@ -2275,7 +2275,10 @@ porównuje `cardFaces` / `cardMedia` po sprawdzeniu (zapis z 1.56 z numerami str
   lekcja docelowa – `pickDestination`; „Dodaj do lekcji…” – `openTermForm` z `preset`, `title` i `create`
   (`createTermFromMagic`). Na ekranach Biblioteki – `magicFolderFab` (tylko gdy coś czeka). Kolor fiszki – `magicColor`
   w ustawieniach (`core/model.js`), `data-magic` na `<html>` (`main.js`, wcześniej `theme-boot.js`), tokeny `--magic-*`
-  dla fioletu, złota (granatowa teczka) i turkusu w jasnym i ciemnym motywie.
+  dla fioletu, złota i turkusu w jasnym i ciemnym motywie. Od 1.62.1 kolor teczki – `magicFolderColor` (null – domyślny:
+  `defaultMagicFolderColor`, przy złotej fiszce szara; wybór równy domyślnemu nie jest zapisywany), `data-magic-folder`
+  na `<html>` (żółta – bez atrybutu) i tokeny `--magic-folder-*` dla czarnej, szarej i białej (w ciemnym motywie jaśniejsze).
+  Numeracja fiszek – osobna w notatce każdej lekcji (`magic.next` w rekordzie notatki).
 
 ## Tablica A0 w skali zeszytu, dwie strony w edytorze notatki (od 1.61)
 

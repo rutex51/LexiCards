@@ -6,7 +6,7 @@ import { renameReferences } from '../../js/core/note-refs.js';
 import {
   activeMagicCard, cleanMagic, keptSigs, magicCardStatus, magicFragments, magicTermDraft, nextMagicNumber, settleMagic, stripMagic, unmarkMagic
 } from '../../js/core/magic.js';
-import { DEFAULT_MAGIC_COLOR, MAGIC_COLORS, defaultSettings, magicColor } from '../../js/core/model.js';
+import { DEFAULT_MAGIC_COLOR, MAGIC_COLORS, MAGIC_FOLDER_COLORS, defaultSettings, magicColor, magicFolderColor } from '../../js/core/model.js';
 import { createBackup, parseBackupText, restoreBackup } from '../../js/core/backup.js';
 import { makeBranch, makeLibrary } from './helpers.js';
 
@@ -93,6 +93,17 @@ test('magiczne fiszki 1.62 – kolor w ustawieniach: fiolet (domyślny), złoto,
   assert.equal(magicColor({ magicColor: 'pink' }), 'violet');
 });
 
+test('magiczne fiszki 1.62.1 – kolor teczki: żółta, czarna, szara, biała; bez wyboru – żółta, przy złotej fiszce szara; własny wybór zostaje przy każdym kolorze fiszki', () => {
+  assert.deepEqual(MAGIC_FOLDER_COLORS.map((item) => item.id), ['yellow', 'black', 'gray', 'white']);
+  assert.equal(defaultSettings().magicFolderColor, null);
+  assert.equal(magicFolderColor(defaultSettings()), 'yellow');
+  assert.equal(magicFolderColor({ magicColor: 'teal' }), 'yellow');
+  assert.equal(magicFolderColor({ magicColor: 'gold' }), 'gray');
+  assert.equal(magicFolderColor({ magicColor: 'gold', magicFolderColor: 'black' }), 'black');
+  assert.equal(magicFolderColor({ magicColor: 'violet', magicFolderColor: 'white' }), 'white');
+  assert.equal(magicFolderColor({ magicColor: 'gold', magicFolderColor: 'navy' }), 'gray', 'nieznany – domyślny');
+});
+
 test('magiczne fiszki 1.62 – biblioteka: zapis notatki z fiszkami (porządek z treścią), teczka, zmiana pól i lekcji, usunięcie (tekst bez oznaczeń), pojęcie z fiszki w jednym zapisie; kopia zapasowa', async () => {
   const { library } = await makeLibrary();
   const { lesson } = await makeBranch(library, { lesson: 'Financial Statements' });
@@ -136,6 +147,9 @@ test('magiczne fiszki 1.62 – biblioteka: zapis notatki z fiszkami (porządek z
   // Usunięcie fiszki z teczki – fragmenty wracają do zwykłego tekstu.
   await library.saveNote(other.id, { html: '<p><span data-magic="1.1">dywidenda</span> i reszta</p>', images: [], magic: { next: 2, cards: [{ no: 1, state: 'folder', frags: [{ sig: '1.1', slot: 'termPL' }] }] } });
   assert.equal(library.magicFolderCount(), 1);
+  // Numeracja osobno w każdej lekcji: fiszka ✦1 jest jednocześnie w obu notatkach.
+  assert.deepEqual([library.getNote(lesson.id).magic.cards[0].no, library.getNote(other.id).magic.cards[0].no], [1, 1]);
+  assert.deepEqual(library.magicFolder().map((item) => [item.lessonID, item.card.no]), [[other.id, 1]]);
   await library.removeMagicCard(other.id, 1);
   assert.equal(library.getNote(other.id).html, '<p>dywidenda i reszta</p>');
   assert.equal(library.getNote(other.id).magic, undefined);

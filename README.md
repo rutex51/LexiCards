@@ -1,4 +1,4 @@
-# LexiCards 1.62
+# LexiCards 1.62.1
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -71,9 +71,9 @@ Rysunek – pierścienie na grzbiecie zeszytu zamiast spirali (w każdej prostok
 Rysunek – tablica A0: kartka rysunku jako duży arkusz bez wyglądu zeszytu (w menu „Kartki” zamiana w obie strony – z powrotem tylko, gdy rysunek mieści się w obszarze kartki), obraz tablicy w notatce – obszar z rysunkiem w wielkości kartki; przy przejściu tablica zwija się w rulon albo rozwija nad zeszytem (wersja 1.59): [docs/RELEASE-1.59.md](docs/RELEASE-1.59.md).
 Notatki – edycja tekstu w dwóch widokach: „Ciągły” (jak dotąd) i „Książka” – tekst w stronach na wysokość okna, kartki przewracane przyciskami, PageUp / PageDown i same, gdy kursor przechodzi na inną stronę, z tym samym zagięciem kartki co w podglądzie (wersja 1.60): [docs/RELEASE-1.60.md](docs/RELEASE-1.60.md).
 Rysunek – tablica A0 w skali zeszytu: kartka zeszytu na środku tablicy, po przejściu rysunek w tym samym miejscu ekranu, pomniejszenie do całej tablicy, rulon przez cały ekran; notatki – edycja w dwóch stronach obok siebie (ustawienie wspólne z podglądem) (wersja 1.61): [docs/RELEASE-1.61.md](docs/RELEASE-1.61.md).
-Magiczne fiszki – zaznaczony tekst i odwołania [[…]] z notatki lecą jako błyszczące piksele na fiszkę obok edytora, fragmenty przeciągasz do pól (pojęcie, definicja, przykład, obraz), fiszka wpada do teczki 3D, a z teczki – po sprawdzeniu – do lekcji; kolor fiszki: fiolet, złoto albo turkus (wersja 1.62): [docs/RELEASE-1.62.md](docs/RELEASE-1.62.md).
+Magiczne fiszki – zaznaczony tekst i odwołania [[…]] z notatki lecą jako błyszczące piksele na fiszkę obok edytora, fragmenty przeciągasz do pól (pojęcie, definicja, przykład, obraz), fiszka wpada do teczki 3D, a z teczki – po sprawdzeniu – do lekcji; kolor fiszki: fiolet, złoto albo turkus (wersja 1.62); kolor teczki – żółta, czarna, szara, biała (1.62.1): [docs/RELEASE-1.62.md](docs/RELEASE-1.62.md).
 
-## Co potrafi wersja 1.62
+## Co potrafi wersja 1.62.1
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -234,7 +234,8 @@ Magiczne fiszki – zaznaczony tekst i odwołania [[…]] z notatki lecą jako b
   ustawienia – mały plik) oraz jeden plik ze wszystkimi obrazami i załącznikami notatek. Przywracasz
   je po kolei albo oba naraz; obrazy i załączniki, które już są na urządzeniu, zostają.
 - Motyw jasny, ciemny albo zgodny z systemem i kolor aplikacji do wyboru (niebieski, antracytowy,
-  pomarańczowy, zielony, czerwony), od 1.62 także kolor magicznej fiszki (fiolet, złoto, turkus); układ na telefon i na szeroki ekran (od 1.45.1 panel boczny od 700 px, więc także
+  pomarańczowy, zielony, czerwony), od 1.62 także kolor magicznej fiszki (fiolet, złoto, turkus), od 1.62.1 kolor teczki
+  (żółta, czarna, szara, biała); układ na telefon i na szeroki ekran (od 1.45.1 panel boczny od 700 px, więc także
   iPad w pionie; glosariusz jako tabela od 1024 px). Ikony dziedzin mają
   szare tło, a inny kolor można wybrać w edycji dziedziny. Od 1.26 wszystkie okna (formularze, okna
   rysunku, tabeli, kalendarza, równań) wyglądają tak samo: białe tło jak panele edytora rysunku, każde
@@ -1210,7 +1211,9 @@ z teczki, a fragmenty w notatce zostają w kolorze fiszki z sygnaturą. Fiszka w
 
 Fiszki zapisują się razem z notatką: **Anuluj** w oknie tekstu cofa też zmiany fiszek z tej edycji (pojęcie dodane
 z teczki zostaje). W podglądzie notatki fragmenty są w kolorze fiszki z sygnaturą, w PDF, druku, „Kopiuj” i przy
-czytaniu na głos – zwykłym tekstem. Kolor (fiolet, złoto, turkus) – **Ustawienia → Wygląd → Magiczna fiszka**.
+czytaniu na głos – zwykłym tekstem. Kolor (fiolet, złoto, turkus) – **Ustawienia → Wygląd → Magiczna fiszka**, od 1.62.1
+kolor teczki – **Teczka** (żółta, czarna, szara, biała; bez własnego wyboru żółta, a przy złotej fiszce szara).
+Numeracja fiszek jest osobna w każdej lekcji: notatka każdej lekcji zaczyna od ✦1.
 
 ### Postęp i lekcje utrwalone
 
