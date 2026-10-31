@@ -361,3 +361,11 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
 - **Nazwy i grafiki:** „Wiaderko”, „Arkusz”, „Kolor kartki” – opisowe; formaty ISO 216 (A3–A0) i DIN 476 (2A0, 4A0) to
   nazwy norm, nie znaki towarowe. Bez cudzych ikon i grafik. Nowej pozycji rejestru algorytmów geometrii CAD nie dodano
   (wypełnienie to grafika rastrowa przeliczona na wielokąt).
+
+## Uzupełnienie: wersja 1.63.1 (31.10.2026) – notatka z klawiaturą telefonu
+
+- **Zakres:** `js/ui/viewport.js` (nowy – wysokość klawiatury z `visualViewport`), `js/ui/notes.js` (wysokość strony widoku
+  „Książka”, przewijanie do kursora), `js/ui/magic.js` (bez paska fragmentu, „Cofnij” w komunikacie), `js/ui/dialogs.js`
+  (komunikaty w otwartym oknie), CSS.
+- **Funkcje i patenty:** zwykła obsługa interfejsu przeglądarki (Visual Viewport API – standard W3C), bez nowych technik.
+  Ryzyko wstępnie NISKIE.
