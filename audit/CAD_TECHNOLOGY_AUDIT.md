@@ -347,3 +347,17 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
 - **Nazwa:** „Szybka fiszka” to opisowe, potoczne określenie funkcji (nie nazwa produktu). Przy komercjalizacji – jak przy
   każdej nazwie – zalecane sprawdzenie w bazach znaków towarowych (AUDIT_LIMITATIONS.md); wyszukiwania nie robiono.
 - **Funkcje i patenty:** bez nowych technik. Ryzyko wstępnie NISKIE.
+
+## Uzupełnienie: wersja 1.63 (31.10.2026) – wiaderko, kolor kartki, arkusze A3–4A0, wpisywanie w szybkiej fiszce
+
+- **Zakres:** `js/core/bucket.js` (nowy) – wypełnianie obszaru: wypełnianie wierszami pikseli (scanline flood fill),
+  poszerzanie maski kwadratem (dylatacja w dwóch przebiegach), obrys po krawędziach pikseli (pętle brzegu i otworów),
+  upraszczanie Douglasa–Peuckera; element rysunku `fill` (`core/drawing.js`, `ui/drawing.js`), ikona wiaderka (własny
+  rysunek konturowy); kolor kartki; formaty arkusza A3–4A0 (`core/board.js`); tekst wpisywany w polach szybkiej fiszki
+  (`core/magic.js`, `ui/magic.js`); okno tekstu notatki w widocznej części ekranu (CSS).
+- **Algorytmy:** wszystkie są ogólnie znane i opisane w podręcznikach grafiki komputerowej od dziesięcioleci (flood fill,
+  morfologia binarna, śledzenie konturu, Douglas–Peucker 1973); zapisane od nowa, bez kopiowania cudzego kodu. Ryzyko
+  patentowe wstępnie NISKIE (wyszukiwania nie robiono – AUDIT_LIMITATIONS.md).
+- **Nazwy i grafiki:** „Wiaderko”, „Arkusz”, „Kolor kartki” – opisowe; formaty ISO 216 (A3–A0) i DIN 476 (2A0, 4A0) to
+  nazwy norm, nie znaki towarowe. Bez cudzych ikon i grafik. Nowej pozycji rejestru algorytmów geometrii CAD nie dodano
+  (wypełnienie to grafika rastrowa przeliczona na wielokąt).
