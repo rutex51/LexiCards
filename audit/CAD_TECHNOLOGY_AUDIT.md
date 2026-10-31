@@ -318,3 +318,16 @@ Pierwszy etap planu „wspólny układ osi, pełna scena 3D”. Ocena:
   bez zmian).
 - **Funkcje i patenty:** bez nowych technik (przesunięcie, skala, kolumny CSS); kod własny, bez bibliotek. Szczególnego
   ryzyka nie zidentyfikowano (wyszukiwania patentowego nie robiono – AUDIT_LIMITATIONS.md). Ryzyko wstępnie NISKIE.
+
+## Uzupełnienie: wersja 1.62 (31.10.2026) – magiczne fiszki
+
+- **Zakres:** `js/core/magic.js` (nowy – fiszki w rekordzie notatki, fragmenty czytane z treści, porządkowanie przy zapisie,
+  szkic pojęcia), `js/core/note-format.js` (znacznik `data-magic`), `js/core/library.js` (teczka, zmiana i usunięcie fiszki,
+  pojęcie z fiszki), `js/core/backup.js`, `js/ui/magic.js` (nowy – przycisk, fiszka obok edytora, iskry na płótnie, przeciąganie,
+  teczka 3D, okno teczki), `js/ui/notes.js`, `js/ui/note-editing.js`, ustawienie koloru (fiolet, złoto, turkus).
+- **Funkcje i patenty:** zaznaczenie tekstu → fiszka i przypisanie fragmentów do pól to ogólny wzorzec aplikacji do notatek
+  i nauki (zakreślenia w e-czytnikach zamieniane na fiszki, fiszki z notatek); tu – ręcznie, bez automatycznego generowania.
+  Animacje (cząsteczki po krzywych Béziera, lot karty, klapa teczki z przekształceń CSS 3D) – własny kod, bez bibliotek
+  i bez cudzych grafik. Nazwy opisowe („Magiczna fiszka”, „Teczka”). Wyszukiwania patentowego nie robiono
+  (AUDIT_LIMITATIONS.md) – przy komercjalizacji zalecane sprawdzenie obszaru „fiszki z zaznaczeń tekstu”. Nowej pozycji
+  rejestru algorytmów geometrii nie dodano. Ryzyko wstępnie NISKIE.
