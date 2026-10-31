@@ -2235,6 +2235,48 @@ porównuje `cardFaces` / `cardMedia` po sprawdzeniu (zapis z 1.56 z numerami str
   po lewej, `closeButton` (`note-left`, „Zamknij”) po prawej; identyfikatory testów bez zmian. Okna edycji (Anuluj /
   Zapisz, Gotowe) – bez zmian.
 
+## Magiczne fiszki (od 1.62)
+
+- **Treść notatki** (`core/note-format.js`): fragment fiszki to `<span data-magic="N.M">` (`MAGIC_SIG_RE`: numer fiszki
+  w notatce i numer fragmentu, 1–999) – w dokumencie znacznik `magic` fragmentu tekstu. `inlineHtml` łączy kolejne fragmenty
+  tej samej fiszki w jeden span (formatowanie w środku zostaje); `docFromHtml({ magic: false })` – bez znaczników (wklejanie,
+  żeby nie powielać fragmentów). „Usuń formatowanie” (`clearRuns`) i zmiana sygnatury obrazu (`renameReferences`) zostawiają
+  znacznik. Zwykły tekst (czytanie, wyszukiwanie, PDF) – bez zmian; sygnatura ✦N.M to `::after` z atrybutu w arkuszu stylów.
+- **Fiszki** (`core/magic.js`, bez przeglądarki): pole `magic` rekordu notatki – `{ next, cards }`, karta `{ no, state:
+  'active' | 'folder' | 'done', frags: [{ sig, slot }], next, lessonID?, sentAt? }`; dodana do lekcji – `{ no, state: 'done',
+  termID, doneAt }`. Tekst fragmentu nie jest zapisany na fiszce – `magicFragments(html, htmlEN)` czyta go z treści (Map
+  sygnatura → { text, language, object }; `object` – sygnatura obrazu albo tabeli, gdy fragment to całe odwołanie
+  `[[…]]`). `cleanMagic` – sprawdzenie (jedna fiszka w budowie, fiszka bez fragmentów znika), `settleMagic` – przy każdym
+  zapisie notatki (`#writeNote`) i przywróceniu kopii (`backup.js`): fiszki tracą fragmenty, których nie ma w treści,
+  a treść – oznaczenia spoza fiszek (fragmenty fiszek dodanych do lekcji zostają). `magicTermDraft` – szkic pojęcia
+  (teksty pól w kolejności dodania, `cardMedia` z pola „Obraz”: tabela albo obraz po sygnaturze), `magicCardStatus`.
+- **Biblioteka** (`core/library.js`): `magicFolder()` / `magicFolderCount()` – fiszki w teczce ze wszystkich notatek;
+  `updateMagicCard` (pola, lekcja docelowa), `removeMagicCard` (fragmenty wracają do zwykłego tekstu) – bez zmiany treści
+  poza oznaczeniami; `createTermFromMagic` – pojęcie i oznaczenie fiszki jako dodanej w jednym zapisie.
+- **Edytor** (`js/ui/magic.js`, `magicEditor`; `js/ui/notes.js`): grupa „Magiczna fiszka” pierwsza na pasku (Ctrl+M, na
+  telefonie przyklejona na początku przewijanego paska). Wysłanie – `rewrite` z `wrapMarked` (`note-editing.js`: span wokół
+  zaznaczenia między znacznikami, bez spacji na brzegach; odwołanie – cała treść akapitu), więc z cofaniem (Ctrl+Z).
+  Fiszki w edytorze to kopia `magic` zapisywana z notatką (`draft().magic`, `dirty()`), więc Anuluj cofa także je;
+  `unwrap` – w polu z cofaniem, w drugiej wersji językowej `unmarkMagic`. Kursor we fragmencie (`selectionChanged`) –
+  pasek `magic-lock`, przyciski grupy „Tekst” zablokowane (`TEXT_COMMANDS`; także skróty). Warstwa (`magic-layer`,
+  `overflow: clip` – schowana fiszka nie daje się przewinąć w bok) w `note-edit__main` nad przewijaną treścią: fiszka
+  (`magic-panel`; od 1000 px obok tekstu – treść z `padding-right`, węziej – wysuwana z prawej nad tekst), języczek, teczka 3D.
+  Schowana fiszka po animacji ma `hidden`; na szerokim ekranie stan zapamiętany (`magicPanelHidden`).
+- **Iskry i lot do teczki**: `sparkles(host)` – płótno w oknie modalnym (warstwa najwyższa – płótno w `body` byłoby pod
+  oknem), piksele z prostokątów fragmentu (`getClientRects`) lecą po krzywych Béziera do fragmentu na fiszce albo do
+  języczka, najpierw iskrzą na tekście od lewej do prawej; kolory według `data-magic` na `<html>`. `flyToFolder` – kopia
+  fiszki (treść gaśnie, zostaje „lico” ✦N) zmienia rozmiar i leci łukiem nad teczkę, przednia klapa (`rotateX`) się uchyla,
+  karta (`magic-folder__paper--in`) wpada między ścianki. Czas – `performance.now()` w `requestAnimationFrame` (zatrzymanie
+  czasu w testach); `prefers-reduced-motion` – bez animacji.
+- **Porządkowanie** (`enableBoard`): przeciąganie wskaźnikiem (kopia fragmentu pod palcem, podświetlenie pola, odmowa obrazu
+  w polu tekstu, przewijanie listy przy krawędziach), dotknięcie fragmentu i pola (na puszczenie palca – nie „click”, który
+  po przerysowaniu trafiałby w worek) i klawiatura (Enter / spacja).
+- **Teczka** (`openMagicFolder`): fiszki z biblioteki i – dla notatki w edytorze – z edytora (zmiany w kopii edytora);
+  lekcja docelowa – `pickDestination`; „Dodaj do lekcji…” – `openTermForm` z `preset`, `title` i `create`
+  (`createTermFromMagic`). Na ekranach Biblioteki – `magicFolderFab` (tylko gdy coś czeka). Kolor fiszki – `magicColor`
+  w ustawieniach (`core/model.js`), `data-magic` na `<html>` (`main.js`, wcześniej `theme-boot.js`), tokeny `--magic-*`
+  dla fioletu, złota (granatowa teczka) i turkusu w jasnym i ciemnym motywie.
+
 ## Tablica A0 w skali zeszytu, dwie strony w edytorze notatki (od 1.61)
 
 - **Tablica** (`core/drawing.js`, `core/board.js`): `BOARD_WIDTH`, `BOARD_HEIGHT`, `BOARD_SHEET` (lewy górny róg obszaru

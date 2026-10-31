@@ -5222,7 +5222,8 @@ test('notatka 1.20: wyrównanie i interlinia (zaznaczone akapity, bez zaznaczeni
   const editor = dialog.locator('[data-testid=note-editor]');
   await editor.waitFor();
   const button = (command) => dialog.locator(`[data-testid=note-format-${command}]`);
-  assert.deepEqual(await dialog.locator('.note-toolbar__group').evaluateAll((groups) => groups.map((group) => group.getAttribute('aria-label'))), ['Tekst', 'Akapit', 'Wstaw']);
+  // Od 1.62 pierwsza grupa – magiczna fiszka.
+  assert.deepEqual(await dialog.locator('.note-toolbar__group').evaluateAll((groups) => groups.map((group) => group.getAttribute('aria-label'))), ['Magiczna fiszka', 'Tekst', 'Akapit', 'Wstaw']);
   await editor.click();
   await page.keyboard.type('Pierwszy akapit');
   await page.keyboard.press('Enter');
@@ -8317,6 +8318,13 @@ test('notatka 1.29: okno tekstu na komputerze (kolumna na środku); obrazy i za�
   await edit.waitFor();
   const box = await edit.boundingBox();
   assert.deepEqual([box.width, box.height], [1280, 800], 'cały ekran');
+  // Od 1.62 obok tekstu jest magiczna fiszka (tekst przesunięty w lewo) – schowana: kolumna na środku, wybór zapamiętany.
+  const area0 = await edit.locator('[data-testid=note-editor]').boundingBox();
+  const card0 = await edit.locator('[data-testid=magic-panel]').boundingBox();
+  assert.ok(area0.x + area0.width <= card0.x, 'tekst obok fiszki');
+  await edit.locator('[data-testid=magic-hide]').click();
+  await waitUntil(async () => Math.abs((await edit.locator('[data-testid=note-editor]').boundingBox()).x + 460 - 640) < 2, 'tekst na środku po schowaniu fiszki');
+  assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().magicPanelHidden), true);
   const area = await edit.locator('[data-testid=note-editor]').boundingBox();
   assert.ok(area.width <= 920 && Math.abs(area.x + area.width / 2 - 640) < 2, `kolumna na środku (${Math.round(area.x)}, ${Math.round(area.width)})`);
   await page.screenshot({ path: path.join(OUTPUT, 'notatka-129-okno-tekstu-komputer.png') });
@@ -18536,6 +18544,448 @@ test('aktualizacja: po zmianie plików przeglądarka pobiera nowe wydanie', asyn
     await rm(copy, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------- magiczne fiszki (od 1.62)
+
+const MAGIC_NOTE = [
+  '<h3>Bilans</h3>',
+  '<p>Bilans pokazuje, co firma posiada i skąd pochodzą środki na ten majątek – zawsze na konkretny dzień.</p>',
+  '<p>[[Bilans]]</p>',
+  '<p>Zobowiązania (liabilities) to obecny obowiązek jednostki wynikający z przeszłych zdarzeń, którego wypełnienie spowoduje wypływ zasobów.</p>',
+  '<p>Typowe zobowiązania to kredyt bankowy, niezapłacone faktury dostawców i zaległe wynagrodzenia.</p>',
+  '<p>Kapitał własny (equity) to aktywa pomniejszone o zobowiązania.</p>'
+].join('');
+const MAGIC_TABLE = { label: 'Bilans', rows: [['Aktywa', 'Pasywa'], ['Maszyny', 'Kredyt']], align: ['left', 'left'], header: true };
+const magicEdit = (page) => page.locator('dialog[data-testid=note-edit-dialog][open]');
+
+/** Notatka „Financial Statements” z tekstem o zobowiązaniach i tabelą „Bilans” – od razu w oknie tekstu. */
+async function openMagicNote(page, { magic = null, html = MAGIC_NOTE, htmlEN = '' } = {}) {
+  await loadSamples(page);
+  const ids = await sampleLessons(page);
+  await page.evaluate(async ({ id, html, htmlEN, table, magic }) => {
+    await window.lexicards.library.saveNote(id, { html, htmlEN, images: [], tables: [table], ...(magic ? { magic } : {}) });
+  }, { id: ids.statements, html, htmlEN, table: MAGIC_TABLE, magic });
+  await openNotePreview(page, ids.statements);
+  await noteDialog(page).locator('[data-testid=note-right]').click();
+  const edit = magicEdit(page);
+  await edit.locator('[data-testid=note-editor]').waitFor();
+  await waitUntil(() => edit.locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'Okno tekstu otwarte');
+  return { ids, edit };
+}
+
+/** Zaznacza w polu notatki pierwsze wystąpienie tekstu (caret – sam kursor na jego początku). */
+async function selectInNote(page, text, { caret = false } = {}) {
+  const found = await magicEdit(page).locator('[data-testid=note-editor]').evaluate((area, { needle, caret }) => {
+    const walker = document.createTreeWalker(area, window.NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const index = node.data.indexOf(needle);
+      if (index < 0) continue;
+      area.focus();
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, caret ? index : index + needle.length);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
+    }
+    return false;
+  }, { needle: text, caret });
+  assert.ok(found, `tekst „${text}” w notatce`);
+  await nextFrames(page);
+}
+
+/** Wysyła zaznaczenie przyciskiem na pasku i czeka, aż fragment wyląduje na fiszce. */
+async function sendToMagic(page, text, options = {}) {
+  await selectInNote(page, text, options);
+  const before = await magicEdit(page).locator('[data-magic]').count();
+  await magicEdit(page).locator('[data-testid=note-format-magic]').click();
+  await waitUntil(async () => (await magicEdit(page).locator('[data-magic]').count()) > before, `fragment „${text}” oznaczony`);
+  await waitUntil(async () => (await magicEdit(page).locator('.magic-chip--arriving').count()) === 0, 'fragment na fiszce', 6000);
+}
+
+/** Fragmenty fiszki w budowie: [{ sig, text }] (bez lecących). */
+const magicChips = (page) => magicEdit(page).locator('[data-testid=magic-card] .magic-chip').evaluateAll((chips) => chips.map((chip) => ({
+  sig: chip.dataset.sig, text: chip.querySelector('.magic-chip__text').textContent, slot: chip.closest('[data-slot]')?.dataset.slot ?? ''
+})));
+
+/** Przeciąga fragment `sig` w `root` (fiszka albo fiszka w teczce) do pola `slot` ('' – worek); shot – zrzut w trakcie. */
+async function dragMagic(page, root, sig, slot, { shot = null } = {}) {
+  const target = root.locator(slot ? `[data-testid=magic-slot-${slot}]` : '[data-testid=magic-bag]');
+  const chipOf = root.locator(`.magic-chip[data-sig="${sig}"]`);
+  // Fiszka bywa wyższa niż okno – pole i fragment muszą być widoczne (przewinięcie listy).
+  await target.scrollIntoViewIfNeeded();
+  await chipOf.scrollIntoViewIfNeeded();
+  const from = await chipOf.boundingBox();
+  const to = await target.boundingBox();
+  const start = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
+  const end = { x: to.x + to.width / 2, y: to.y + Math.min(to.height / 2, 34) };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  for (let step = 1; step <= 12; step += 1) await page.mouse.move(start.x + ((end.x - start.x) * step) / 12, start.y + ((end.y - start.y) * step) / 12);
+  if (shot) {
+    await nextFrames(page);
+    await page.screenshot({ path: path.join(OUTPUT, shot) });
+  }
+  await page.mouse.up();
+  await nextFrames(page);
+}
+
+/** Pola fragmentów na fiszce: { sygnatura: pole } ('' – worek). */
+const magicSlots = async (page) => Object.fromEntries((await magicChips(page)).map((chip) => [chip.sig, chip.slot]));
+
+const MAGIC_FRAGMENTS = [
+  ['Zobowiązania', '1.1', 'termPL'], ['liabilities', '1.2', 'termEN'], ['obecny obowiązek jednostki wynikający z przeszłych zdarzeń', '1.3', 'defPL'],
+  ['kredyt bankowy, niezapłacone faktury dostawców i zaległe wynagrodzenia', '1.4', 'exPL'], ['[[Bilans]]', '1.5', 'media']
+];
+/** Notatka z fragmentami 1.1–1.5 na fiszce ✦1 (w budowie, wszystkie w polach). */
+const magicMarkedNote = () => {
+  let html = MAGIC_NOTE;
+  for (const [text, sig] of MAGIC_FRAGMENTS) html = html.replace(text, `<span data-magic="${sig}">${text}</span>`);
+  return {
+    html,
+    magic: { next: 2, cards: [{ no: 1, state: 'active', next: 6, frags: MAGIC_FRAGMENTS.map(([, sig, slot]) => ({ sig, slot })) }] }
+  };
+};
+const magicFolderDialog = (page) => page.locator('dialog[data-testid=magic-folder-dialog][open]');
+
+test('magiczne fiszki 1.62: zaznaczenie albo odwołanie [[…]] → przycisk na pasku – fragment w kolorze fiszki, pogrubiony, z sygnaturą ✦N.M, piksele lecą na fiszkę obok tekstu; formatowanie fragmentu zablokowane, „Usuń z fiszki”; fiszka chowa się za krawędź (języczek); „Uporządkuj” – przeciąganie i dotknięcie do pól, obraz tylko w polu „Obraz”; zapis z notatką, podgląd z sygnaturami (komputer)', async ({ open }) => {
+  const page = await open();
+  const { ids, edit } = await openMagicNote(page);
+  const panel = edit.locator('[data-testid=magic-panel]');
+  await panel.waitFor();
+  await expectText(edit.locator('[data-testid=magic-card-no]'), '✦1');
+  assert.equal(await edit.locator('.note-toolbar__button').first().getAttribute('data-testid'), 'note-format-magic', 'przycisk – pierwszy na pasku');
+  const areaBox = await edit.locator('[data-testid=note-editor]').boundingBox();
+  const panelBox = await panel.boundingBox();
+  assert.ok(areaBox.x + areaBox.width <= panelBox.x, 'tekst obok fiszki, nie pod nią');
+  assert.equal(await edit.locator('[data-testid=magic-folder]').isVisible(), true, 'teczka w prawym dolnym rogu');
+
+  // Przelot pikseli – czas zatrzymany w połowie.
+  await selectInNote(page, 'Zobowiązania');
+  const time = await freezeTime(page);
+  await edit.locator('[data-testid=note-format-magic]').click();
+  await time.moment(560);
+  assert.equal(await edit.locator('canvas.magic-sparkles').count(), 1, 'płótno z pikselami w oknie edycji');
+  assert.equal(await edit.locator('.magic-chip--arriving').count(), 1, 'fragment jeszcze w locie');
+  await page.screenshot({ path: path.join(OUTPUT, 'magia-162-przelot.png') });
+  await time.release();
+  await waitUntil(async () => (await edit.locator('.magic-chip--arriving').count()) === 0, 'fragment na fiszce', 6000);
+  const look = await edit.locator('[data-magic="1.1"]').evaluate((span) => ({
+    color: getComputedStyle(span).color, weight: getComputedStyle(span).fontWeight, after: getComputedStyle(span, '::after').content
+  }));
+  assert.equal(look.color, 'rgb(109, 40, 217)', 'kolor fiszki (fiolet)');
+  assert.equal(look.weight, '700');
+  assert.ok(look.after.includes('✦'), 'sygnatura za fragmentem');
+
+  for (const [text] of MAGIC_FRAGMENTS.slice(1, 4)) await sendToMagic(page, text);
+  await sendToMagic(page, '[[Bilans]]', { caret: true });
+  assert.deepEqual((await magicChips(page)).map((chip) => [chip.sig, chip.text]), [
+    ['1.1', 'Zobowiązania'], ['1.2', 'liabilities'], ['1.3', 'obecny obowiązek jednostki wynikający z przeszłych zdarzeń'],
+    ['1.4', 'kredyt bankowy, niezapłacone faktury dostawców i zaległe wynagrodzenia'], ['1.5', 'Bilans']
+  ]);
+  assert.equal(await edit.locator('.magic-chip[data-sig="1.5"] .icon--table').count(), 1, 'tabela z ikoną tabeli');
+  await expectText(edit.locator('[data-testid=magic-card]'), '5 fragmentów · w polach 0');
+  await page.screenshot({ path: path.join(OUTPUT, 'magia-162-worek.png') });
+
+  // Ten sam tekst drugi raz – komunikat, bez nowego fragmentu.
+  await selectInNote(page, 'liabilities');
+  await edit.locator('[data-testid=note-format-magic]').click();
+  await expectText(page.locator('.toast').last(), 'już na magicznej fiszce');
+  assert.equal(await edit.locator('[data-magic]').count(), 5);
+
+  // Kursor we fragmencie: pasek z sygnaturą, przyciski tekstu zablokowane – pogrubienie i Ctrl+I nic nie zmieniają.
+  await selectInNote(page, 'obowiązek', { caret: true });
+  await expectText(edit.locator('[data-testid=magic-lock]'), '✦1.3');
+  assert.equal(await edit.locator('[data-testid=note-format-bold]').evaluate((button) => button.classList.contains('note-toolbar__button--locked')), true);
+  const inside = await edit.locator('[data-magic="1.3"]').innerHTML();
+  await edit.locator('[data-testid=note-format-bold]').click();
+  await expectText(page.locator('.toast').last(), 'Formatowania fragmentu magicznej fiszki nie można zmienić');
+  await selectInNote(page, 'obowiązek');
+  await page.keyboard.press('Control+i');
+  assert.equal(await edit.locator('[data-magic="1.3"]').innerHTML(), inside, 'fragment bez zmian');
+
+  // „Usuń z fiszki” – fragment wraca do zwykłego tekstu, znika z fiszki.
+  await sendToMagic(page, 'Kapitał własny');
+  assert.equal((await magicChips(page)).length, 6);
+  await selectInNote(page, 'Kapitał', { caret: true });
+  await edit.locator('[data-testid=magic-lock-remove]').click();
+  await waitUntil(async () => (await edit.locator('[data-magic="1.6"]').count()) === 0, 'fragment 1.6 bez oznaczenia');
+  await waitUntil(async () => (await magicChips(page)).length === 5, 'fragment 1.6 zniknął z fiszki');
+  assert.ok((await edit.locator('[data-testid=note-editor]').textContent()).includes('Kapitał własny (equity)'));
+  await waitUntil(() => edit.locator('[data-testid=magic-lock]').isHidden(), 'pasek fragmentu znika');
+
+  // Schowanie za krawędź: języczek z numerem fiszki i liczbą fragmentów, tekst na całą szerokość; dotknięcie – fiszka wraca.
+  await edit.locator('[data-testid=magic-hide]').click();
+  await waitUntil(() => panel.evaluate((element) => element.classList.contains('magic-panel--hidden') && element.getAnimations().length === 0), 'fiszka schowana');
+  await expectText(edit.locator('[data-testid=magic-tab]'), '5');
+  await expectText(edit.locator('[data-testid=magic-tab]'), '✦1');
+  await waitUntil(async () => (await edit.locator('[data-testid=note-editor]').boundingBox()).x > areaBox.x + 40, 'tekst wraca na środek');
+  await page.screenshot({ path: path.join(OUTPUT, 'magia-162-schowana.png') });
+  await edit.locator('[data-testid=magic-tab]').click();
+  await waitUntil(() => panel.evaluate((element) => !element.classList.contains('magic-panel--hidden')), 'fiszka z powrotem');
+
+  // Porządkowanie: przeciąganie i dotknięcie; obraz nie trafia do pola tekstu.
+  await edit.locator('[data-testid=magic-edit]').click();
+  const card = edit.locator('[data-testid=magic-card]');
+  await card.locator('[data-testid=magic-slot-termPL]').waitFor();
+  await waitUntil(() => panel.evaluate((element) => element.getAnimations().length === 0), 'fiszka poszerzona');
+  await dragMagic(page, card, '1.1', 'termPL');
+  await dragMagic(page, card, '1.2', 'termEN');
+  await card.locator('.magic-chip[data-sig="1.3"]').click();
+  await card.locator('[data-testid=magic-slot-defPL]').click();
+  await dragMagic(page, card, '1.5', 'defEN');
+  await expectText(page.locator('.toast').last(), 'tylko do pola „Obraz”');
+  await dragMagic(page, card, '1.4', 'exPL', { shot: 'magia-162-porzadkowanie.png' });
+  await dragMagic(page, card, '1.5', 'media');
+  assert.deepEqual(await magicSlots(page), { 1.1: 'termPL', 1.2: 'termEN', 1.3: 'defPL', 1.4: 'exPL', 1.5: 'media' });
+  // Klawiatura: Enter na fragmencie, potem na worku (fokus zostaje na fragmencie) – i z powrotem do pola.
+  await card.locator('.magic-chip[data-sig="1.4"]').focus();
+  await page.keyboard.press('Enter');
+  await card.locator('[data-testid=magic-bag]').focus();
+  await page.keyboard.press('Enter');
+  assert.equal((await magicSlots(page))['1.4'], '');
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset.sig), '1.4', 'fokus na przeniesionym fragmencie');
+  await page.keyboard.press('Enter');
+  await card.locator('[data-testid=magic-slot-exPL]').focus();
+  await page.keyboard.press('Enter');
+  assert.equal((await magicSlots(page))['1.4'], 'exPL');
+  await edit.locator('[data-testid=magic-edit]').click();
+  await expectText(card.locator('.magic-summary'), 'Zobowiązania · liabilities');
+  await expectText(card, 'w polach 5');
+
+  // Zapis z notatką; podgląd – fragmenty w kolorze fiszki z sygnaturą.
+  await edit.locator('[data-testid=note-right]').click();
+  await page.locator('dialog[data-testid=note-edit-dialog]').waitFor({ state: 'detached' });
+  const stored = await storedNote(page, ids.statements);
+  assert.deepEqual(stored.magic.cards, [{ no: 1, state: 'active', next: 7, frags: MAGIC_FRAGMENTS.map(([, sig, slot]) => ({ sig, slot })) }]);
+  assert.equal((stored.html.match(/data-magic=/g) ?? []).length, 5);
+  assert.equal(stored.html.includes('<strong>'), false, 'bez pogrubienia w treści – wygląd z arkusza stylów');
+  const shown = noteDialog(page).locator('.note-text [data-magic="1.1"]');
+  await shown.waitFor();
+  assert.ok((await shown.evaluate((span) => getComputedStyle(span, '::after').content)).includes('✦'), 'sygnatura w podglądzie');
+}, { device: DESKTOP });
+
+test('magiczne fiszki 1.62: „Do teczki” – fiszka leci do teczki 3D (klapa się uchyla) i zwalnia miejsce na ✦2; teczka – lekcja notatki, porządkowanie, „Dodaj do lekcji…” – formularz pojęcia z polami i tabelą, pojęcie w lekcji, fiszka znika z teczki; „Anuluj” cofa nową fiszkę; teczka w Bibliotece – zmiana lekcji i usunięcie fiszki (tekst bez oznaczeń) (komputer)', async ({ open }) => {
+  const page = await open();
+  const marked = magicMarkedNote();
+  const { ids, edit } = await openMagicNote(page, { ...marked, htmlEN: '<p>Liabilities are a present obligation of the entity.</p>' });
+  await expectText(edit.locator('[data-testid=magic-card]'), '5 fragmentów · w polach 5');
+
+  // Lot do teczki – czas zatrzymany w połowie i przy wpadaniu.
+  const time = await freezeTime(page);
+  await edit.locator('[data-testid=magic-send]').click();
+  await time.moment(820);
+  assert.equal(await edit.locator('.magic-flyer').count(), 1, 'fiszka w locie');
+  const lid = await edit.locator('.magic-folder__front').evaluate((front) => front.style.transform);
+  assert.ok(/rotateX\(-(?:[2-4]\d|5\d)/.test(lid), `klapa teczki uchylona (${lid})`);
+  await page.screenshot({ path: path.join(OUTPUT, 'magia-162-lot-do-teczki.png') });
+  await time.moment(1250);
+  assert.equal(await edit.locator('.magic-folder__paper--in').evaluate((paper) => paper.style.visibility), 'visible', 'karta wpada do teczki');
+  await time.release();
+  await expectText(edit.locator('[data-testid=magic-folder-count]'), '1');
+  await expectText(edit.locator('[data-testid=magic-card-no]'), '✦2');
+  await edit.locator('.magic-empty').waitFor();
+  await page.screenshot({ path: path.join(OUTPUT, 'magia-162-nowa-fiszka.png') });
+
+  // Teczka: fiszka z notatki, lekcja notatki, gotowa.
+  await edit.locator('[data-testid=magic-folder]').click();
+  const folder = magicFolderDialog(page);
+  await folder.waitFor();
+  await waitUntil(() => folder.locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'teczka otwarta');
+  const item = folder.locator('[data-testid=magic-folder-item]');
+  assert.equal(await item.count(), 1);
+  await expectText(item, 'Zobowiązania');
+  await expectText(item.locator('[data-testid=magic-folder-status]'), 'Gotowa');
+  await expectText(item.locator('[data-testid=magic-folder-lesson]'), 'Financial Statements – lekcja notatki');
+  await page.screenshot({ path: path.join(OUTPUT, 'magia-162-teczka.png') });
+  // Porządkowanie w teczce: przykład z powrotem do worka (dotknięciem).
+  await item.locator('[data-testid=magic-folder-toggle]').click();
+  const board = item.locator('[data-testid=magic-folder-board]');
+  await board.locator('.magic-chip[data-sig="1.4"]').click();
+  await board.locator('[data-testid=magic-bag]').click();
+  await expectText(item, '1 fragment bez pola – nie trafi na fiszkę.');
+
+  // „Dodaj do lekcji…” – formularz pojęcia wypełniony fragmentami, przypięta tabela.
+  await item.locator('[data-testid=magic-folder-add]').click();
+  const form = sheet(page);
+  await expectText(form.locator('.sheet__title'), 'Pojęcie z fiszki ✦1');
+  await expectValue(form.locator('[data-testid=term-pl]'), 'Zobowiązania');
+  await expectValue(form.locator('[data-testid=term-en]'), 'liabilities');
+  assert.equal(await form.locator('[data-testid=term-save-another]').count(), 0, 'bez „Zapisz i dodaj kolejne”');
+  const tile = form.locator('[data-testid=term-media-tile-0]');
+  assert.deepEqual([await tile.getAttribute('aria-pressed'), await tile.getAttribute('data-label')], ['true', 'Bilans']);
+  await saveSheet(page);
+  await expectText(page.locator('.toast').last(), 'Dodano pojęcie „Zobowiązania” do lekcji Financial Statements');
+  await folder.locator('[data-testid=magic-folder-empty]').waitFor();
+  const term = await page.evaluate((lessonID) => window.lexicards.library.listTerms(lessonID).find((item) => item.termPL === 'Zobowiązania'), ids.statements);
+  assert.equal(term.termEN, 'liabilities');
+  assert.equal(term.descriptionPL, 'obecny obowiązek jednostki wynikający z przeszłych zdarzeń');
+  assert.equal(term.examplePL, null, 'przykład został w worku');
+  assert.deepEqual(term.cardMedia, [{ kind: 'table', label: 'Bilans' }]);
+  await folder.locator('[data-testid=magic-folder-close]').click();
+  await folder.waitFor({ state: 'detached' });
+
+  // Fragment fiszki dodanej do lekcji – nadal oznaczony, pasek z nazwą pojęcia.
+  await selectInNote(page, 'Zobowiązania', { caret: true });
+  await expectText(edit.locator('[data-testid=magic-lock]'), 'dodanej do lekcji jako „Zobowiązania”');
+  await edit.locator('[data-testid=note-right]').click();
+  await page.locator('dialog[data-testid=note-edit-dialog]').waitFor({ state: 'detached' });
+  let stored = await storedNote(page, ids.statements);
+  assert.deepEqual(stored.magic.cards.map((card) => [card.no, card.state, card.termID]), [[1, 'done', term.id]]);
+  assert.equal((stored.html.match(/data-magic=/g) ?? []).length, 5, 'oznaczenia zostają');
+
+  // „Anuluj” cofa nową fiszkę razem z tekstem – także fragment z wersji angielskiej.
+  await noteDialog(page).locator('[data-testid=note-right]').click();
+  await magicEdit(page).locator('[data-testid=note-editor]').waitFor();
+  await sendToMagic(page, 'Kapitał własny');
+  await expectText(magicEdit(page).locator('[data-testid=magic-card-no]'), '✦2');
+  await magicEdit(page).getByRole('radiogroup', { name: 'Język treści' }).locator('.segmented__option', { hasText: 'Angielski' }).click();
+  await sendToMagic(page, 'present obligation');
+  await magicEdit(page).getByRole('radiogroup', { name: 'Język treści' }).locator('.segmented__option', { hasText: 'Polski' }).click();
+  assert.deepEqual((await magicChips(page)).map((chip) => [chip.sig, chip.text]), [['2.1', 'Kapitał własny'], ['2.2', 'present obligation']], 'fragmenty z obu wersji');
+  await magicEdit(page).locator('[data-testid=note-left]').click();
+  await confirm(page);
+  await page.locator('dialog[data-testid=note-edit-dialog]').waitFor({ state: 'detached' });
+  stored = await storedNote(page, ids.statements);
+  assert.equal(stored.html.includes('data-magic="2.1"'), false);
+  assert.equal(stored.htmlEN.includes('data-magic'), false);
+  assert.equal(stored.magic.cards.length, 1);
+
+  // Fiszka ✦2 w teczce (zapisana) – teczka na ekranie Biblioteki.
+  await noteDialog(page).locator('[data-testid=note-right]').click();
+  await magicEdit(page).locator('[data-testid=note-editor]').waitFor();
+  await sendToMagic(page, 'Kapitał własny');
+  await magicEdit(page).locator('[data-testid=magic-send]').click();
+  await expectText(magicEdit(page).locator('[data-testid=magic-folder-count]'), '1');
+  await magicEdit(page).locator('[data-testid=note-right]').click();
+  await page.locator('dialog[data-testid=note-edit-dialog]').waitFor({ state: 'detached' });
+  await noteDialog(page).locator('[data-testid=note-left]').click();
+  await noteDialog(page).waitFor({ state: 'detached' });
+  await page.goto(`${page.url().split('#')[0]}#/library`);
+  const fab = page.locator('[data-testid=magic-folder-fab]');
+  await fab.waitFor();
+  await expectText(fab.locator('[data-testid=magic-folder-fab-count]'), '1');
+  await page.screenshot({ path: path.join(OUTPUT, 'magia-162-teczka-biblioteka.png') });
+  await fab.click();
+  await folder.waitFor();
+  await expectText(item.locator('[data-testid=magic-folder-status]'), 'Brak pojęcia');
+  assert.equal(await item.locator('[data-testid=magic-folder-add]').isDisabled(), true, 'bez pojęcia nie można dodać');
+  // Inna lekcja – wybór w drzewie biblioteki.
+  await item.locator('[data-testid=magic-folder-lesson]').click();
+  const picker = sheet(page);
+  await picker.locator('.row__button', { hasText: 'Business English' }).click();
+  await picker.locator('.row__button', { hasText: 'Finance' }).click();
+  await picker.locator('.row__button', { hasText: 'Investments' }).click();
+  await expectText(item.locator('[data-testid=magic-folder-lesson]'), 'Investments');
+  stored = await storedNote(page, ids.statements);
+  assert.equal(stored.magic.cards.find((card) => card.no === 2).lessonID, ids.investments);
+  // Usunięcie fiszki – fragment wraca do zwykłego tekstu, teczka znika z Biblioteki.
+  await item.locator('[data-testid=magic-folder-delete]').click();
+  await confirm(page);
+  await folder.locator('[data-testid=magic-folder-empty]').waitFor();
+  stored = await storedNote(page, ids.statements);
+  assert.equal(stored.html.includes('data-magic="2.1"'), false);
+  assert.ok(stored.html.includes('Kapitał własny (equity)'));
+  await folder.locator('[data-testid=magic-folder-close]').click();
+  await waitUntil(async () => (await fab.count()) === 0, 'teczka znika z Biblioteki');
+}, { device: DESKTOP });
+
+test('magiczne fiszki 1.62: telefon – przycisk zawsze na początku paska, fiszka schowana (języczek), piksele lecą do języczka; fiszka wysuwa się z prawej, porządkowanie na całą szerokość, teczka nad tekstem; nic nie wystaje poza ekran', async ({ open }) => {
+  const page = await open();
+  const { edit } = await openMagicNote(page);
+  const panel = edit.locator('[data-testid=magic-panel]');
+  await waitUntil(() => panel.evaluate((element) => element.classList.contains('magic-panel--hidden')), 'fiszka schowana na telefonie');
+  await edit.locator('[data-testid=magic-tab]').waitFor();
+  // Pasek przewinięty do końca – przycisk fiszki dalej widoczny na początku.
+  await edit.locator('.note-toolbar').evaluate((bar) => { bar.scrollLeft = bar.scrollWidth; });
+  const magicBox = await edit.locator('[data-testid=note-format-magic]').boundingBox();
+  const barBox = await edit.locator('.note-toolbar').boundingBox();
+  assert.ok(magicBox.x >= barBox.x - 1 && magicBox.x + magicBox.width <= barBox.x + barBox.width + 1, 'przycisk fiszki widoczny');
+  await selectInNote(page, 'Zobowiązania');
+  const time = await freezeTime(page);
+  await edit.locator('[data-testid=note-format-magic]').click();
+  await time.moment(560);
+  await page.screenshot({ path: path.join(OUTPUT, 'magia-162-telefon-przelot.png') });
+  await time.release();
+  await expectText(edit.locator('[data-testid=magic-tab]'), '1');
+  await sendToMagic(page, 'liabilities');
+  await sendToMagic(page, '[[Bilans]]', { caret: true });
+  await expectText(edit.locator('[data-testid=magic-tab]'), '3');
+  await page.screenshot({ path: path.join(OUTPUT, 'magia-162-telefon-edytor.png') });
+  await edit.locator('[data-testid=magic-tab]').click();
+  await waitUntil(() => panel.evaluate((element) => !element.classList.contains('magic-panel--hidden') && element.getAnimations().length === 0), 'fiszka wysunięta');
+  await page.screenshot({ path: path.join(OUTPUT, 'magia-162-telefon-fiszka.png') });
+  await edit.locator('[data-testid=magic-edit]').click();
+  await edit.locator('[data-testid=magic-slot-termPL]').waitFor();
+  await waitUntil(async () => Math.abs((await panel.boundingBox()).width - 390) < 2, 'porządkowanie na całą szerokość');
+  // Dotknięciem: fragment (zaznaczony), potem pole.
+  await edit.locator('.magic-chip[data-sig="1.1"]').tap();
+  assert.equal(await edit.locator('.magic-chip--picked').getAttribute('data-sig'), '1.1');
+  await edit.locator('[data-testid=magic-slot-termPL]').tap();
+  assert.equal((await magicSlots(page))['1.1'], 'termPL');
+  await page.screenshot({ path: path.join(OUTPUT, 'magia-162-telefon-porzadkowanie.png') });
+  assert.ok((await overflowX(page)) <= 0, 'nic nie wystaje poza ekran');
+  await edit.locator('[data-testid=magic-send]').click();
+  await expectText(edit.locator('[data-testid=magic-folder-count]'), '1');
+  await waitUntil(() => panel.evaluate((element) => element.classList.contains('magic-panel--hidden')), 'po wysłaniu fiszka znowu schowana');
+});
+
+test('magiczne fiszki 1.62: Ustawienia → Wygląd → „Magiczna fiszka” – fiolet, złoto, turkus: kolor fragmentów i fiszki, teczka granatowa przy złocie; wybór zostaje po ponownym uruchomieniu (komputer)', async ({ open }) => {
+  const page = await open();
+  const marked = magicMarkedNote();
+  const { ids, edit } = await openMagicNote(page, marked);
+  const colorOf = () => edit.locator('[data-magic="1.1"]').evaluate((span) => getComputedStyle(span).color);
+  assert.equal(await colorOf(), 'rgb(109, 40, 217)');
+  await edit.locator('[data-testid=note-left]').click();
+  await page.locator('dialog[data-testid=note-edit-dialog]').waitFor({ state: 'detached' });
+  await noteDialog(page).locator('[data-testid=note-left]').click();
+  await page.goto(`${page.url().split('#')[0]}#/settings`);
+  const footer = page.locator('[data-testid=magic-color-name]');
+  await expectText(footer, 'Fiolet.');
+  await page.locator('[data-testid=magic-color-gold]').check({ force: true });
+  await expectText(footer, 'Złoto.');
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.magic), 'gold');
+  // Ekran ustawień rysuje się od nowa po zapisie – zrzut po ustaniu zmian (element bywa właśnie podmieniany).
+  await waitUntil(() => page.locator('.settings-appearance').screenshot({ path: path.join(OUTPUT, 'magia-162-ustawienia.png') }).then(() => true, () => false), 'zrzut ustawień');
+  const shots = {};
+  for (const color of ['gold', 'teal']) {
+    if (color === 'teal') {
+      await page.goto(`${page.url().split('#')[0]}#/settings`);
+      await page.locator('[data-testid=magic-color-teal]').check({ force: true });
+      await expectText(footer, 'Turkus.');
+    }
+    await openNotePreview(page, ids.statements);
+    await noteDialog(page).locator('[data-testid=note-right]').click();
+    await magicEdit(page).locator('[data-magic="1.1"]').waitFor();
+    await waitUntil(() => magicEdit(page).locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'okno tekstu otwarte');
+    shots[color] = await colorOf();
+    if (color === 'gold') {
+      const folderColor = await magicEdit(page).locator('.magic-folder__front').evaluate((front) => getComputedStyle(front).backgroundImage);
+      assert.ok(folderColor.includes('rgb(61, 93, 150)'), `granatowa teczka przy złocie (${folderColor})`);
+    }
+    await page.screenshot({ path: path.join(OUTPUT, `magia-162-kolor-${color}.png`) });
+    await magicEdit(page).locator('[data-testid=note-left]').click();
+    await page.locator('dialog[data-testid=note-edit-dialog]').waitFor({ state: 'detached' });
+    await noteDialog(page).locator('[data-testid=note-left]').click();
+  }
+  assert.deepEqual(shots, { gold: 'rgb(143, 100, 0)', teal: 'rgb(15, 118, 110)' });
+  // Po ponownym uruchomieniu kolor jest ustawiony, zanim wczyta się baza (bez mignięcia fioletu).
+  await page.reload();
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.magic), 'teal');
+  await page.waitForSelector('#app[data-ready="true"]');
+  assert.equal(await page.evaluate(() => window.lexicards.library.getSettings().magicColor), 'teal');
+  // Ciemny motyw (do obejrzenia na zrzucie).
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto(`${page.url().split('#')[0]}#/settings`);
+  await page.locator('[data-testid=magic-color-violet]').check({ force: true });
+  await openNotePreview(page, ids.statements);
+  await noteDialog(page).locator('[data-testid=note-right]').click();
+  await magicEdit(page).locator('[data-magic="1.1"]').waitFor();
+  await waitUntil(() => magicEdit(page).locator('.sheet__panel').evaluate((panel) => panel.getAnimations().length === 0), 'okno tekstu otwarte');
+  assert.equal(await colorOf(), 'rgb(196, 165, 255)', 'jaśniejszy fiolet w ciemnym motywie');
+  await page.screenshot({ path: path.join(OUTPUT, 'magia-162-ciemny.png') });
+}, { device: DESKTOP });
 
 // ---------------------------------------------------------------- uruchomienie
 

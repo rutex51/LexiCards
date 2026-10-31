@@ -14,6 +14,7 @@ import {
 import { openMenu, showError, toast } from '../dialogs.js';
 import { h } from '../dom.js';
 import { icon } from '../icons.js';
+import { magicFolderFab } from '../magic.js';
 import {
   confirmConsolidation, consolidatedLastToggle, consolidationMenuItem, markConsolidated, masteryBar, masteryOf, masterySubtitle,
   setConsolidated
@@ -169,6 +170,13 @@ export function missingView(title, backHref, backLabel) {
   };
 }
 
+/** Treść ekranu Biblioteki z teczką magicznych fiszek w prawym dolnym rogu (od 1.62 – gdy coś w niej czeka). */
+export function withMagicFolder(ctx, body) {
+  const folder = magicFolderFab(ctx);
+  if (!folder) return body;
+  return [...(Array.isArray(body) ? body : [body]), folder];
+}
+
 // ---------------------------------------------------------------- lista dziedzin
 
 export class DomainsScreen {
@@ -245,7 +253,7 @@ export class DomainsScreen {
     return {
       title: 'Biblioteka',
       actions,
-      body: [
+      body: withMagicFolder(ctx, [
         this.reordering ? null : group({},
           linkRow({
             href: routes.glossary(),
@@ -258,7 +266,7 @@ export class DomainsScreen {
         this.reordering
           ? reorderList(ctx, 'domain', domains, { title: 'Dziedziny', leadingFor: (domain) => domainBadge(domain) })
           : group({ title: 'Dziedziny', action: domains.length > 1 ? sortAction(ctx, 'domain', () => startReordering(ctx, this, 'domain')) : null }, rows)
-      ]
+      ])
     };
   }
 }
@@ -368,7 +376,7 @@ export class DomainScreen {
       subtitle: domain.details,
       back: { href: routes.domains(), label: 'Biblioteka' },
       actions,
-      body
+      body: withMagicFolder(ctx, body)
     };
   }
 }
@@ -477,7 +485,7 @@ export class ModuleScreen {
       subtitle: module.details,
       back: { href: backHref, label: domain?.name ?? 'Biblioteka' },
       actions,
-      body
+      body: withMagicFolder(ctx, body)
     };
   }
 }

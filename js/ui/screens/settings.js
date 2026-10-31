@@ -5,7 +5,7 @@ import {
   backupFileName, createBackup, createMediaArchive, isZipFile, mediaFileName, parseBackupText, restoreMedia, validateBackup
 } from '../../core/backup.js';
 import { CHANGELOG, CHANGELOG_SHOWN } from '../../core/changelog.js';
-import { ACCENT_COLORS, CONSOLIDATED_REVIEW_OPTIONS, accentColor, consolidatedReviewDays, nowISO } from '../../core/model.js';
+import { ACCENT_COLORS, CONSOLIDATED_REVIEW_OPTIONS, MAGIC_COLORS, accentColor, consolidatedReviewDays, magicColor, nowISO } from '../../core/model.js';
 import {
   formatSize, joinList, plural, pluralAttachments, pluralDomains, pluralFiles, pluralForm, pluralImages, pluralLessons, pluralModules,
   pluralNotes, pluralTerms
@@ -117,6 +117,7 @@ export class SettingsScreen {
     const { library } = ctx;
     const settings = library.getSettings();
     const accent = accentColor(settings);
+    const magic = magicColor(settings);
     const save = async (patch) => {
       try {
         await library.updateSettings(patch);
@@ -151,7 +152,26 @@ export class SettingsScreen {
           h('span', { class: 'visually-hidden' }, item.label))))),
       h('p', { class: 'group__footer', dataset: { testid: 'accent-name' } },
         `${ACCENT_COLORS.find((item) => item.id === accent).label}. Kolor przycisków, zaznaczeń i linków `
-        + 'w jasnym i ciemnym motywie; wykresy w Statystykach zostają w swoich kolorach.')
+        + 'w jasnym i ciemnym motywie; wykresy w Statystykach zostają w swoich kolorach.'),
+      // Od 1.62: kolor magicznej fiszki – fiolet, złoto albo turkus.
+      h('div', { class: 'accent-picker' },
+        h('span', { class: 'accent-picker__label', id: 'magic-color-label' }, 'Magiczna fiszka'),
+        h('div', { class: 'accent-picker__options', role: 'radiogroup', 'aria-labelledby': 'magic-color-label' },
+          MAGIC_COLORS.map((item) => h('label', {
+            class: 'choice choice--color accent-picker__option',
+            style: { '--badge': `var(--magic-swatch-${item.id})` },
+            title: item.label
+          },
+          h('input', {
+            type: 'radio', name: 'magic-color', value: item.id, checked: item.id === magic,
+            dataset: { testid: `magic-color-${item.id}` },
+            onChange: () => save({ magicColor: item.id })
+          }),
+          h('span', { class: 'choice__check', 'aria-hidden': 'true' }, icon('check', { size: 18 })),
+          h('span', { class: 'visually-hidden' }, item.label))))),
+      h('p', { class: 'group__footer', dataset: { testid: 'magic-color-name' } },
+        `${MAGIC_COLORS.find((item) => item.id === magic).label}. Kolor fragmentów notatki wysłanych na magiczną fiszkę, `
+        + 'samej fiszki, iskier i teczki.')
     );
   }
 

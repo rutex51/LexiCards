@@ -22,7 +22,7 @@ import { consolidationMenuItem, consolidationRow } from '../mastery.js';
 import { lessonNoteRow, noteMenuItem, openLessonNote } from '../notes.js';
 import { routes } from '../router.js';
 import { swipeRow } from '../swipe.js';
-import { missingView } from './library.js';
+import { missingView, withMagicFolder } from './library.js';
 import { statsDirection } from './stats.js';
 
 /**
@@ -445,7 +445,7 @@ export class LessonScreen {
       subtitle: lesson.details,
       back: { href: backHref, label: module?.name ?? 'Biblioteka' },
       actions,
-      body,
+      body: withMagicFolder(ctx, body),
       bottomBar: this.list.selecting ? selectionBar(ctx, this.list, this.#visibleTerms()) : null
     };
   }

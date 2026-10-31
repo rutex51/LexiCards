@@ -424,13 +424,18 @@ function termCardGroups(library, state, thumbs) {
   return slot;
 }
 
-export function openTermForm(ctx, { termID = null, lessonID = null } = {}) {
+/**
+ * Formularz pojęcia: termID – edycja, bez – nowe pojęcie (lessonID – lekcja). Od 1.62 (magiczne fiszki): preset –
+ * pola nowego pojęcia wypełnione z góry, title – tytuł okna, create(draft, lessonID) – własny zapis nowego pojęcia
+ * (bez „Zapisz i dodaj kolejne”).
+ */
+export function openTermForm(ctx, { termID = null, lessonID = null, preset = null, title = null, create = null } = {}) {
   const { library } = ctx;
   const existing = termID ? library.getTerm(termID) : null;
   if (termID && !existing) return showError(new Error('Pojęcie nie istnieje. Mogło zostać usunięte.'));
 
   const state = {
-    draft: existing ? termToDraft(existing) : emptyTermDraft(),
+    draft: existing ? termToDraft(existing) : { ...emptyTermDraft(), ...(preset ?? {}) },
     tagsText: existing ? formatTags(existing.tags) : '',
     lessonID: existing?.lessonID ?? (lessonID && library.getLesson(lessonID) ? lessonID : null),
     duplicateAcknowledged: false,
@@ -456,6 +461,7 @@ export function openTermForm(ctx, { termID = null, lessonID = null } = {}) {
       }
     }
     if (existing) await library.updateTerm(existing.id, draft);
+    else if (create) await create(draft, state.lessonID);
     else await library.createTerm(draft, state.lessonID);
 
     if (addAnother) {
@@ -471,7 +477,7 @@ export function openTermForm(ctx, { termID = null, lessonID = null } = {}) {
   };
 
   sheet = openFormSheet({
-    title: existing ? 'Edytuj pojęcie' : 'Nowe pojęcie',
+    title: title ?? (existing ? 'Edytuj pojęcie' : 'Nowe pojęcie'),
     build(api) {
       const container = h('div', { class: 'form-stack' });
       const canSave = () => !isBlank(state.draft.termPL) && !isBlank(state.draft.termEN) && Boolean(state.lessonID);
@@ -565,7 +571,7 @@ export function openTermForm(ctx, { termID = null, lessonID = null } = {}) {
             field('Notatki', textArea({ value: state.draft.notes, onInput: bind('notes') }))
           ),
           duplicateSlot,
-          existing ? null : h('div', { class: 'form-footer' },
+          existing || create ? null : h('div', { class: 'form-footer' },
             addAnotherButton,
             state.savedCount > 0 ? h('p', { class: 'form-note', role: 'status' }, `Dodano w tej sesji: ${pluralTerms(state.savedCount)}.`) : null
           )

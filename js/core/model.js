@@ -60,6 +60,19 @@ export function accentColor(settings) {
   return ACCENT_COLORS.some((item) => item.id === settings?.accentColor) ? settings.accentColor : DEFAULT_ACCENT;
 }
 
+/** Kolory magicznej fiszki (od 1.62): fragmenty notatki, fiszka obok edytora, iskry i teczka. */
+export const MAGIC_COLORS = Object.freeze([
+  { id: 'violet', label: 'Fiolet' },
+  { id: 'gold', label: 'Złoto' },
+  { id: 'teal', label: 'Turkus' }
+]);
+export const DEFAULT_MAGIC_COLOR = 'violet';
+
+/** Kolor magicznej fiszki z ustawień; nieznana wartość – domyślny. */
+export function magicColor(settings) {
+  return MAGIC_COLORS.some((item) => item.id === settings?.magicColor) ? settings.magicColor : DEFAULT_MAGIC_COLOR;
+}
+
 /**
  * Ikony dziedzin, z grubsza tematycznie: ogólne i biznes, zarządzanie, ekonomia i finanse,
  * języki, decyzje, zachowania, raportowanie, etyka, nauki i technika, pozostałe.
@@ -96,6 +109,8 @@ export function defaultSettings() {
     id: SETTINGS_ID,
     appearance: 'system',          // system | light | dark
     accentColor: 'blue',           // kolor aplikacji: blue | graphite | orange | green | red
+    magicColor: 'violet',          // kolor magicznej fiszki (od 1.62): violet | gold | teal
+    magicPanelHidden: false,       // magiczna fiszka schowana za krawędzią okna notatki (szeroki ekran)
     preferredDirection: 'pl_en',   // pl_en | en_pl | mixed
     preferredFlashcardFront: 'term',
     flashcardFlips: 1,             // obroty fiszki (od 1.39): 1 | 2 | 3

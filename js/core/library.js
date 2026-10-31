@@ -16,6 +16,7 @@ import { cleanCardFaces, cleanCardMedia } from './card-faces.js';
 import { createdRange, createdWithin } from './created.js';
 import { cleanFileName, fileTypeOf } from './note-files.js';
 import { NOTE_HTML_LIMIT, normalizeNoteHtml } from './note-format.js';
+import { magicFragments, settleMagic } from './magic.js';
 import { cleanImageCaption, labelKey, withImageLabels } from './note-refs.js';
 import { NOTE_TABLE_LIMIT, cleanNoteTables, withTableLabels } from './tables.js';
 import { blankToNull, collapseWhitespace, isBlank, normalizeKey } from './text.js';
@@ -73,6 +74,7 @@ const errors = {
   nothingSelected: () => new LibraryError('nothingSelected', 'Nie wybrano żadnych pojęć.'),
   emptyStudyQueue: () => new LibraryError('emptyStudyQueue', 'Brak fiszek pasujących do wybranych ustawień.'),
   noStudySession: () => new LibraryError('noStudySession', 'Nie ma trwającej sesji nauki.'),
+  magicCardMissing: () => new LibraryError('magicCardMissing', 'Tej magicznej fiszki już nie ma – mogła zostać dodana do lekcji albo usunięta.'),
   noLastStudy: () => new LibraryError('noLastStudy', 'Nie ma zakończonej sesji do powtórzenia albo jej pojęcia zostały usunięte.'),
   emptyQuiz: () => new LibraryError('emptyQuiz', 'Z tego materiału nie da się ułożyć quizu – potrzebne są co najmniej dwa pojęcia o różnym brzmieniu.'),
   noQuiz: () => new LibraryError('noQuiz', 'Nie ma trwającego quizu.'),
@@ -1132,8 +1134,9 @@ export class Library {
    * nowa nazwa), { bytes, name, type } dodaje. htmlEN – treść po angielsku, imagesFirst – obrazy
    * w podglądzie przed tekstem, numberFigures – numeracja podpisów „Rys. N.” (od 1.18; od 1.21 też
    * „Tab. N.”), tables – tabele notatki (od 1.21, core/tables.js); bez pól htmlEN, imagesFirst,
-   * numberFigures, files i tables zostaje to, co jest w notatce. Notatka bez tekstu, obrazów, tabel
-   * i załączników jest usuwana.
+   * numberFigures, files i tables zostaje to, co jest w notatce. magic – magiczne fiszki notatki (od 1.62,
+   * core/magic.js; bez pola – dotychczasowe), uporządkowane z treścią przez settleMagic(). Notatka bez tekstu,
+   * obrazów, tabel i załączników jest usuwana.
    * Zwraca zapisaną notatkę albo null.
    */
   saveNote(lessonID, draft) {
@@ -1147,9 +1150,12 @@ export class Library {
     return this.#mutate((unit) => this.#removeNote(unit, lessonID));
   }
 
-  #writeNote(unit, lessonID, { html, htmlEN, images = [], imagesFirst, numberFigures, files, tables }, existing) {
-    const clean = normalizeNoteHtml(html ?? '');
-    const cleanEN = typeof htmlEN === 'string' ? normalizeNoteHtml(htmlEN) : (existing?.htmlEN ?? '');
+  #writeNote(unit, lessonID, { html, htmlEN, images = [], imagesFirst, numberFigures, files, tables, magic }, existing) {
+    // Magiczne fiszki (od 1.62): fiszki bez usuniętych fragmentów, treść bez oznaczeń spoza fiszek.
+    const settled = settleMagic(magic === undefined ? existing?.magic : magic,
+      normalizeNoteHtml(html ?? ''), typeof htmlEN === 'string' ? normalizeNoteHtml(htmlEN) : (existing?.htmlEN ?? ''));
+    const clean = settled.html;
+    const cleanEN = settled.htmlEN;
     if (clean.length > NOTE_HTML_LIMIT || cleanEN.length > NOTE_HTML_LIMIT) throw errors.noteTooLong();
     if (images.length > NOTE_IMAGE_LIMIT) throw errors.tooManyImages();
     const metas = [];
@@ -1191,10 +1197,99 @@ export class Library {
     const numbered = typeof numberFigures === 'boolean' ? numberFigures : existing?.numberFigures === true;
     const note = {
       id: lessonID, lessonID, html: clean, htmlEN: cleanEN, images: imageMetas, imagesFirst: first,
-      numberFigures: numbered, files: fileMetas, tables: tableList, createdAt: existing?.createdAt ?? now, updatedAt: now
+      numberFigures: numbered, files: fileMetas, tables: tableList, ...(settled.magic ? { magic: settled.magic } : {}),
+      createdAt: existing?.createdAt ?? now, updatedAt: now
     };
     unit.put('notes', note);
     return note;
+  }
+
+  // ---------------------------------------------------------------- magiczne fiszki (od 1.62)
+
+  /**
+   * Teczka: fiszki czekające na sprawdzenie ze wszystkich notatek, od ostatnio wysłanej –
+   * [{ lessonID, card, fragments }] (fragments – teksty fragmentów z notatki, core/magic.js).
+   */
+  magicFolder() {
+    const list = [];
+    for (const note of this.maps.notes.values()) {
+      const cards = (note.magic?.cards ?? []).filter((card) => card.state === 'folder');
+      if (cards.length === 0) continue;
+      const fragments = magicFragments(note.html, note.htmlEN ?? '');
+      for (const card of cards) list.push({ lessonID: note.lessonID, card, fragments });
+    }
+    return list.sort((a, b) => String(b.card.sentAt ?? '').localeCompare(String(a.card.sentAt ?? '')) || a.card.no - b.card.no);
+  }
+
+  /** Liczba fiszek w teczce. */
+  magicFolderCount() {
+    let count = 0;
+    for (const note of this.maps.notes.values()) count += (note.magic?.cards ?? []).filter((card) => card.state === 'folder').length;
+    return count;
+  }
+
+  /**
+   * Zmienia fiszkę z teczki bez zmiany treści notatki: patch – { frags?: [{ sig, slot }], lessonID? } (lekcja
+   * docelowa; null – lekcja notatki).
+   */
+  updateMagicCard(noteLessonID, no, patch) {
+    return this.#patchMagic(noteLessonID, no, (card) => {
+      if (Array.isArray(patch.frags)) card.frags = patch.frags.map((frag) => ({ sig: frag.sig, slot: frag.slot ?? null }));
+      if (patch.lessonID !== undefined) {
+        if (patch.lessonID) {
+          this.#require('lesson', patch.lessonID);
+          card.lessonID = patch.lessonID;
+        } else {
+          delete card.lessonID;
+        }
+      }
+    });
+  }
+
+  /** Usuwa fiszkę: jej fragmenty w notatce wracają do zwykłego tekstu. */
+  removeMagicCard(noteLessonID, no) {
+    return this.#patchMagic(noteLessonID, no, (card, magic) => {
+      magic.cards = magic.cards.filter((item) => item !== card);
+    });
+  }
+
+  /**
+   * Pojęcie z magicznej fiszki (od 1.62): tworzy je w lekcji `lessonID` i – w jednym zapisie – oznacza fiszkę `no`
+   * notatki lekcji `noteLessonID` jako dodaną (jeśli jest zapisana; fiszka zmieniana w edytorze notatki zostaje
+   * oznaczona w edytorze).
+   */
+  createTermFromMagic(draft, lessonID, { noteLessonID, no }) {
+    return this.#mutate((unit) => {
+      validateTermDraft(draft);
+      if (!lessonID) throw errors.parentNotSelected('lesson');
+      const lesson = this.#require('lesson', lessonID);
+      const term = makeTerm({ lesson, draft, sortOrder: this.#nextOrder(this.listTerms(lesson.id)) });
+      unit.put('terms', term);
+      this.#unconsolidate(unit, lesson.id);
+      const note = this.getNote(noteLessonID);
+      const card = note?.magic?.cards.find((item) => item.no === no && item.state !== 'done');
+      if (card) {
+        const cards = note.magic.cards.map((item) => (item === card ? { no, state: 'done', termID: term.id, doneAt: nowISO() } : item));
+        unit.put('notes', { ...note, magic: { ...note.magic, cards }, updatedAt: nowISO() });
+      }
+      return term;
+    });
+  }
+
+  #patchMagic(noteLessonID, no, change) {
+    return this.#mutate((unit) => {
+      const note = this.getNote(noteLessonID);
+      const magic = note?.magic ? structuredClone(note.magic) : null;
+      const card = magic?.cards.find((item) => item.no === no && item.state !== 'done');
+      if (!card) throw errors.magicCardMissing();
+      change(card, magic);
+      const settled = settleMagic(magic, note.html, note.htmlEN ?? '');
+      const updated = { ...note, html: settled.html, htmlEN: settled.htmlEN, updatedAt: nowISO() };
+      if (settled.magic) updated.magic = settled.magic;
+      else delete updated.magic;
+      unit.put('notes', updated);
+      return updated;
+    });
   }
 
   /** Załączniki zapisywanej notatki; bez listy (np. import z arkusza) zostają dotychczasowe. */

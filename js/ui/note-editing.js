@@ -205,6 +205,38 @@ function findMark(root, mark) {
   return null;
 }
 
+/**
+ * Otacza zaznaczenie w kopii treści (tekst między znacznikami, bez białych znaków na brzegach) elementem
+ * `wrapper` – od 1.62 fragment magicznej fiszki; whole – całą treść bloku z początkiem zaznaczenia (akapit
+ * z odwołaniem [[…]]). Znaczniki zostają (zaznaczenie po zmianie). Zwraca false, gdy nie ma czego otoczyć.
+ */
+export function wrapMarked(root, wrapper, { whole = false } = {}) {
+  const start = findMark(root, START);
+  if (!start) return false;
+  if (whole) {
+    const leaf = leafOf(root, start.node);
+    if (!leaf) return false;
+    wrapper.append(...leaf.childNodes);
+    leaf.append(wrapper);
+    return true;
+  }
+  const end = findMark(root, END);
+  if (!end) return false;
+  const range = document.createRange();
+  range.setStart(start.node, start.index + 1);
+  range.setEnd(end.node, end.index);
+  let from = range.startOffset;
+  while (from < start.node.data.length && from !== (start.node === end.node ? end.index : -1) && /\s/.test(start.node.data[from])) from += 1;
+  range.setStart(start.node, from);
+  let to = range.endOffset;
+  while (to > (start.node === end.node ? from : 0) && /\s/.test(end.node.data[to - 1])) to -= 1;
+  range.setEnd(end.node, to);
+  if (range.collapsed || range.toString().trim() === '') return false;
+  wrapper.append(range.extractContents());
+  range.insertNode(wrapper);
+  return true;
+}
+
 /** Usuwa znaczniki z kopii; zwraca klucze zaznaczenia (null – nie było znaczników). */
 export function takeMarks(root) {
   const start = findMark(root, START);
@@ -344,7 +376,7 @@ export function clearFormatting(root) {
   };
 }
 
-/** Fragmenty bez formatowania (poza linkiem) w zakresie znaków [start, end). */
+/** Fragmenty bez formatowania (poza linkiem i fragmentem magicznej fiszki) w zakresie znaków [start, end). */
 function clearRuns(runs, start, end) {
   const result = [];
   let position = 0;
@@ -356,7 +388,8 @@ function clearRuns(runs, start, end) {
       result.push(run);
     } else {
       if (from > position) result.push({ ...run, text: run.text.slice(0, from - position) });
-      result.push({ text: run.text.slice(from - position, to - position), ...(run.href ? { href: run.href } : {}) });
+      // Link i (od 1.62) fragment magicznej fiszki zostają – to nie jest formatowanie.
+      result.push({ text: run.text.slice(from - position, to - position), ...(run.href ? { href: run.href } : {}), ...(run.magic ? { magic: run.magic } : {}) });
       if (to < position + length) result.push({ ...run, text: run.text.slice(to - position) });
     }
     position += length;

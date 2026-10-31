@@ -1,7 +1,7 @@
 // Start aplikacji: baza danych, biblioteka, nawigacja i odświeżanie ekranów.
 
 import { Library } from './core/library.js';
-import { DEFAULT_ACCENT, accentColor } from './core/model.js';
+import { DEFAULT_ACCENT, DEFAULT_MAGIC_COLOR, accentColor, magicColor } from './core/model.js';
 import { openDefaultAdapter } from './core/storage.js';
 import { toast } from './ui/dialogs.js';
 import { trackInputMode } from './ui/focus-mode.js';
@@ -64,6 +64,7 @@ function preventInputZoom() {
 preventInputZoom();
 const APPEARANCE_KEY = 'lexicards-appearance';
 const ACCENT_KEY = 'lexicards-accent';
+const MAGIC_KEY = 'lexicards-magic';
 const THEME_COLORS = { light: '#f2f2f7', dark: '#000000' };
 
 /**
@@ -78,9 +79,14 @@ function applyAppearance(settings) {
   const accent = accentColor(settings);
   if (accent === DEFAULT_ACCENT) delete root.dataset.accent;
   else root.dataset.accent = accent;
+  // Kolor magicznej fiszki (od 1.62).
+  const magic = magicColor(settings);
+  if (magic === DEFAULT_MAGIC_COLOR) delete root.dataset.magic;
+  else root.dataset.magic = magic;
   try {
     localStorage.setItem(APPEARANCE_KEY, appearance);
     localStorage.setItem(ACCENT_KEY, accent);
+    localStorage.setItem(MAGIC_KEY, magic);
   } catch {
     // Pamięć lokalna bywa wyłączona; motyw i tak zostanie ustawiony po wczytaniu bazy.
   }

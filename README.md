@@ -1,4 +1,4 @@
-# LexiCards 1.61
+# LexiCards 1.62
 
 Aplikacja do nauki terminologii polsko-angielskiej. Działa w przeglądarce na komputerze
 z Windows i na iPhonie, także bez internetu. Jest darmowa i nie wymaga konta: materiały
@@ -71,8 +71,9 @@ Rysunek – pierścienie na grzbiecie zeszytu zamiast spirali (w każdej prostok
 Rysunek – tablica A0: kartka rysunku jako duży arkusz bez wyglądu zeszytu (w menu „Kartki” zamiana w obie strony – z powrotem tylko, gdy rysunek mieści się w obszarze kartki), obraz tablicy w notatce – obszar z rysunkiem w wielkości kartki; przy przejściu tablica zwija się w rulon albo rozwija nad zeszytem (wersja 1.59): [docs/RELEASE-1.59.md](docs/RELEASE-1.59.md).
 Notatki – edycja tekstu w dwóch widokach: „Ciągły” (jak dotąd) i „Książka” – tekst w stronach na wysokość okna, kartki przewracane przyciskami, PageUp / PageDown i same, gdy kursor przechodzi na inną stronę, z tym samym zagięciem kartki co w podglądzie (wersja 1.60): [docs/RELEASE-1.60.md](docs/RELEASE-1.60.md).
 Rysunek – tablica A0 w skali zeszytu: kartka zeszytu na środku tablicy, po przejściu rysunek w tym samym miejscu ekranu, pomniejszenie do całej tablicy, rulon przez cały ekran; notatki – edycja w dwóch stronach obok siebie (ustawienie wspólne z podglądem) (wersja 1.61): [docs/RELEASE-1.61.md](docs/RELEASE-1.61.md).
+Magiczne fiszki – zaznaczony tekst i odwołania [[…]] z notatki lecą jako błyszczące piksele na fiszkę obok edytora, fragmenty przeciągasz do pól (pojęcie, definicja, przykład, obraz), fiszka wpada do teczki 3D, a z teczki – po sprawdzeniu – do lekcji; kolor fiszki: fiolet, złoto albo turkus (wersja 1.62): [docs/RELEASE-1.62.md](docs/RELEASE-1.62.md).
 
-## Co potrafi wersja 1.61
+## Co potrafi wersja 1.62
 
 - Biblioteka w układzie dziedzina → moduł → lekcja → pojęcie: dodawanie, edycja,
   przenoszenie, kopiowanie, zmiana kolejności i usuwanie z ostrzeżeniem, ile elementów zniknie.
@@ -132,6 +133,11 @@ Rysunek – tablica A0 w skali zeszytu: kartka zeszytu na środku tablicy, po pr
   `$\frac{a}{b}$`, `$\sqrt{x}$`…), a podgląd notatki pokazuje go jak w podręczniku; `$$…$$` – wzór
   w osobnym wierszu. Przycisk **Σ** (od 1.26 jedyny – bez osobnej ikony ⓘ) otwiera okno **Równania**:
   zapis z podglądem, ściągawka i **Wstaw**. Czytanie na głos i słuchanie czytają wzór słowami („x do kwadratu”).
+- Magiczne fiszki (od 1.62): w edytorze notatki zaznaczony tekst (albo akapit z odwołaniem `[[…]]` do obrazu lub tabeli)
+  przycisk z gwiazdką wysyła na fiszkę obok tekstu – fragment dostaje kolor fiszki, pogrubienie i sygnaturę ✦1.2,
+  a błyszczące piksele lecą z tekstu na fiszkę. Fragmenty przeciągasz (albo dotykasz) do pól: pojęcie, definicja,
+  przykład (po polsku i po angielsku) i obraz; fiszka wpada do **teczki** 3D w prawym dolnym rogu, a z teczki – po
+  sprawdzeniu – trafia jako pojęcie do lekcji notatki albo innej. Zobacz [Magiczne fiszki](#magiczne-fiszki).
 - Rysunki odręczne w notatce: **Narysuj** przy obrazach otwiera edytor na cały ekran – pióro
   z naciskiem rysika (Apple Pencil, rysik w laptopie), zakreślacz, gumka całych kresek albo
   fragmentów (cztery wielkości), zaznaczanie prostokątem (przesuń, powiel, usuń), linijka z kątem,
@@ -228,7 +234,7 @@ Rysunek – tablica A0 w skali zeszytu: kartka zeszytu na środku tablicy, po pr
   ustawienia – mały plik) oraz jeden plik ze wszystkimi obrazami i załącznikami notatek. Przywracasz
   je po kolei albo oba naraz; obrazy i załączniki, które już są na urządzeniu, zostają.
 - Motyw jasny, ciemny albo zgodny z systemem i kolor aplikacji do wyboru (niebieski, antracytowy,
-  pomarańczowy, zielony, czerwony); układ na telefon i na szeroki ekran (od 1.45.1 panel boczny od 700 px, więc także
+  pomarańczowy, zielony, czerwony), od 1.62 także kolor magicznej fiszki (fiolet, złoto, turkus); układ na telefon i na szeroki ekran (od 1.45.1 panel boczny od 700 px, więc także
   iPad w pionie; glosariusz jako tabela od 1024 px). Ikony dziedzin mają
   szare tło, a inny kolor można wybrać w edycji dziedziny. Od 1.26 wszystkie okna (formularze, okna
   rysunku, tabeli, kalendarza, równań) wyglądają tak samo: białe tło jak panele edytora rysunku, każde
@@ -1173,6 +1179,38 @@ w edytorze (z przerywaną obwódką) – obraz rysunku w notatce jej nie ma, ale
 **Odnośnik** (od 1.38): kolor karteczki **Bez tła – odnośnik** (krążek z przerywaną obwódką) – sam tekst
 z cienką strzałką i mniejszym grotem, bez kartki i cienia (wybranie go włącza strzałkę). Pole odnośnika
 dopasowuje się do tekstu, więc strzałka zaczyna się przy nim; w pliku DXF – tekst i strzałka.
+
+### Magiczne fiszki
+
+Od 1.62 pojęcia do lekcji zbierasz prosto z notatki. W oknie tekstu notatki pierwszy na pasku formatowania jest
+przycisk **magicznej fiszki** (karta z gwiazdką, **Ctrl+M**):
+- **Zaznacz tekst** i dotknij przycisku – fragment zmienia się na kolor fiszki, pogrubiony, z sygnaturą **✦1.2**
+  (fiszka 1, fragment 2), a błyszczące piksele lecą z tekstu na **fiszkę obok edytora** i fragment ląduje w jej
+  **worku**. Kursor w akapicie z odwołaniem `[[Bilans]]` – na fiszkę trafia obraz albo tabela (z miniaturą). Fragment
+  jest w jednym akapicie; dłuższy tekst wysyłasz w kilku fragmentach. Fragmenty mogą być z polskiej i angielskiej
+  wersji notatki. Tekst na fiszce to zawsze tekst z notatki – poprawka w notatce poprawia fiszkę.
+- **Kolor i pogrubienia fragmentu nie zmienisz** – gdy kursor jest we fragmencie, przyciski tekstu są wyszarzone, a pod
+  paskiem jest pasek z sygnaturą: **Pokaż na fiszce** i **Usuń z fiszki** (fragment wraca do zwykłego tekstu).
+- **Schowanie**: strzałka › na fiszce chowa ją za prawą krawędź – zostaje języczek z numerem fiszki i liczbą
+  fragmentów (piksele lecą wtedy do języczka); dotknięcie języczka wysuwa fiszkę. Na komputerze i iPadzie w poziomie
+  fiszka jest obok tekstu (zapamiętane, czy schowana), na telefonie – wysuwa się z prawej nad tekst.
+- **Uporządkuj** – worek i pola: **Pojęcie**, **Definicja**, **Przykład** (każde po polsku i po angielsku) i **Obraz**
+  (tylko obrazy i tabele z notatki). Fragment przeciągasz palcem, rysikiem albo myszą, albo dotykasz fragmentu, a potem
+  pola (z klawiatury: Tab, Enter). Z pola do worka – tak samo. **Gotowe** wraca do skrótu fiszki.
+- **Do teczki** – uporządkowana albo nie, fiszka maleje i leci do **teczki 3D** w prawym dolnym rogu (klapa się
+  uchyla, karta wpada do środka, licznik rośnie), a obok tekstu czeka pusta fiszka ✦2.
+
+**Teczka** (w oknie notatki i – gdy coś w niej czeka – w prawym dolnym rogu ekranów Biblioteki) to fiszki ze wszystkich
+notatek czekające na sprawdzenie: stan (**Gotowa**, **Do uzupełnienia**, **Brak pojęcia**), **Lekcja** – od razu lekcja
+notatki, dotknięcie zmienia ją na inną, **Uporządkuj** (te same pola), **Usuń** (fragmenty w notatce wracają do zwykłego
+tekstu) i **Dodaj do lekcji…** – formularz nowego pojęcia wypełniony fragmentami (z przypiętym obrazem albo tabelą
+z notatki). Tam uzupełniasz, czego brakuje (np. nazwę po angielsku), i zapisujesz – pojęcie jest w lekcji, fiszka znika
+z teczki, a fragmenty w notatce zostają w kolorze fiszki z sygnaturą. Fiszka w innej lekcji niż notatka – bez obrazów
+(fiszka pokazuje obrazy z notatki swojej lekcji). Fragmenty bez pola nie trafiają do pojęcia.
+
+Fiszki zapisują się razem z notatką: **Anuluj** w oknie tekstu cofa też zmiany fiszek z tej edycji (pojęcie dodane
+z teczki zostaje). W podglądzie notatki fragmenty są w kolorze fiszki z sygnaturą, w PDF, druku, „Kopiuj” i przy
+czytaniu na głos – zwykłym tekstem. Kolor (fiolet, złoto, turkus) – **Ustawienia → Wygląd → Magiczna fiszka**.
 
 ### Postęp i lekcje utrwalone
 

@@ -7,7 +7,9 @@
 //           (interlinia) przy <p>, <h3> i <li>,
 //   wewnątrz: <strong>, <em>, <u>, <s>, <sup>, <sub>, <span data-color="…">, <a href>, <br>,
 //           od 1.18 <span data-size="s | l | xl"> – wielkość tekstu, a w data-color także własny
-//           kolor #rrggbb (wtedy z style="--note-color: …", z którego kolor bierze arkusz stylów).
+//           kolor #rrggbb (wtedy z style="--note-color: …", z którego kolor bierze arkusz stylów),
+//           od 1.62 <span data-magic="N.M"> – fragment wysłany na magiczną fiszkę (N – numer fiszki
+//           w notatce, M – numer fragmentu; zob. core/magic.js).
 // Każdy HTML – wklejony z Worda, strony WWW, Notatek, zapisany w edytorze albo z kopii
 // zapasowej – przechodzi przez normalizeNoteHtml(), która zostawia wyłącznie te znaczniki.
 // Dzięki temu treść jest bezpieczna do wyświetlenia (bez skryptów, stylów i obrazów z sieci)
@@ -21,8 +23,9 @@
 //   align?, line?, runs }] }
 //   ('break' – nowa strona; bez tekstu, nigdy na początku, na końcu ani dwa razy z rzędu;
 //   indent – wcięcie akapitu i nagłówka, od 1.18; align i line – wyrównanie i interlinia, od 1.20)
-//   Fragment: { text, b?, i?, u?, s?, sup?, sub?, color?, size?, href? } – '\n' w tekście to nowy
-//   wiersz; color – nazwa z palety albo (od 1.18) własny '#rrggbb', size – 's' | 'l' | 'xl'.
+//   Fragment: { text, b?, i?, u?, s?, sup?, sub?, color?, size?, href?, magic? } – '\n' w tekście to nowy
+//   wiersz; color – nazwa z palety albo (od 1.18) własny '#rrggbb', size – 's' | 'l' | 'xl', magic – sygnatura
+//   fragmentu magicznej fiszki 'N.M' (od 1.62).
 //
 // W edytorze (contenteditable) wcięcie to zagnieżdżone <blockquote> (tak robi polecenie „indent”
 // przeglądarki – z cofaniem), a kolor i wielkość nadane poleceniami – <font color> i <font size>;
@@ -46,6 +49,8 @@ const MAX_DEPTH = 2;
 /** Kolor „bez koloru” nadawany w edytorze – zdejmuje kolor (nie jest kolorem tekstu). */
 export const NOTE_NO_COLOR = '#010101';
 const HEX_RE = /^#[0-9a-f]{6}$/;
+/** Sygnatura fragmentu magicznej fiszki (od 1.62): „numer fiszki.numer fragmentu”. */
+export const MAGIC_SIG_RE = /^[1-9]\d{0,2}\.[1-9]\d{0,2}$/;
 /** Kolor fragmentu: nazwa z palety albo (od 1.18) własny kolor #rrggbb. */
 const validColor = (value) => COLOR_IDS.has(value) || (HEX_RE.test(value ?? '') && value !== NOTE_NO_COLOR);
 
@@ -150,7 +155,8 @@ function sameMarks(a, b) {
   return MARKS.every((mark) => Boolean(a[mark]) === Boolean(b[mark]))
     && (a.color ?? null) === (b.color ?? null)
     && (a.size ?? null) === (b.size ?? null)
-    && (a.href ?? null) === (b.href ?? null);
+    && (a.href ?? null) === (b.href ?? null)
+    && (a.magic ?? null) === (b.magic ?? null);
 }
 
 function marksOf(source) {
@@ -160,6 +166,7 @@ function marksOf(source) {
   if (source.color && validColor(source.color)) marks.color = source.color;
   if (SIZE_IDS.has(source.size)) marks.size = source.size;
   if (source.href) marks.href = source.href;
+  if (MAGIC_SIG_RE.test(source.magic ?? '')) marks.magic = source.magic;
   return marks;
 }
 
@@ -169,6 +176,7 @@ function commonMarks(a, b) {
   if (a.color && a.color === b.color) marks.color = a.color;
   if (a.size && a.size === b.size) marks.size = a.size;
   if (a.href && a.href === b.href) marks.href = a.href;
+  if (a.magic && a.magic === b.magic) marks.magic = a.magic;
   return marks;
 }
 
@@ -333,6 +341,7 @@ function elementMarks(tag, attributes, parent, editor = false) {
   const dataColor = String(attributes['data-color'] ?? '').toLowerCase();
   if (validColor(dataColor)) marks.color = dataColor;
   if (SIZE_IDS.has(attributes['data-size'])) marks.size = attributes['data-size'];
+  if (MAGIC_SIG_RE.test(attributes['data-magic'] ?? '')) marks.magic = attributes['data-magic'];
   if (attributes.style) {
     const style = parseStyle(attributes.style);
     const weight = style['font-weight'];
@@ -374,9 +383,10 @@ const LINE_BULLET_RE = /^[•·▪◦‣⁃●○■\-–—*+]\s+/u;
 /**
  * Zamienia HTML na dokument notatki. Rozumie dowolny HTML (także nie do końca poprawny),
  * ale zostawia tylko treść i formatowanie, które notatka obsługuje. options.editor – treść
- * pola edytora (od 1.18: kolory spoza palety i wielkość tekstu z <font>, zob. elementMarks).
+ * pola edytora (od 1.18: kolory spoza palety i wielkość tekstu z <font>, zob. elementMarks);
+ * options.magic: false – bez oznaczeń magicznej fiszki (wklejany tekst nie powiela fragmentów, od 1.62).
  */
-export function docFromHtml(html, { editor = false } = {}) {
+export function docFromHtml(html, { editor = false, magic = true } = {}) {
   const source = String(html ?? '');
   const blocks = [];
   /** Otwarte elementy: { tag, marks, word } – word: poziom listy Worda. */
@@ -606,6 +616,12 @@ export function docFromHtml(html, { editor = false } = {}) {
     }
     block.runs = cleanRuns(block.runs);
   }
+  if (!magic) {
+    for (const block of blocks) {
+      for (const run of block.runs) delete run.magic;
+      block.runs = cleanRuns(block.runs);
+    }
+  }
   return { blocks: normalizePageBreaks(blocks.filter((block) => block.type === 'break' || block.runs.length > 0)) };
 }
 
@@ -651,7 +667,21 @@ function escapeHtml(text) {
   return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+/** Fragmenty jednej magicznej fiszki (od 1.62) w jednym <span data-magic> – także z innym formatowaniem w środku. */
 function inlineHtml(runs) {
+  let html = '';
+  for (let index = 0; index < runs.length;) {
+    const magic = runs[index].magic ?? null;
+    let end = index;
+    while (end < runs.length && (runs[end].magic ?? null) === magic) end += 1;
+    const inner = formattedHtml(runs.slice(index, end));
+    html += magic && MAGIC_SIG_RE.test(magic) ? `<span data-magic="${magic}">${inner}</span>` : inner;
+    index = end;
+  }
+  return html;
+}
+
+function formattedHtml(runs) {
   let html = '';
   for (const run of runs) {
     let text = run.text.split('\n').map(escapeHtml).join('<br>');

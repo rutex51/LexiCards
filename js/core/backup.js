@@ -15,6 +15,7 @@ import { cleanDrawing, drawingWithoutPhotoBytes } from './drawing.js';
 import { LibraryError } from './library.js';
 import { IMAGE_EXTENSIONS, imageInfo } from './images.js';
 import { cleanFileName, fileTypeOf } from './note-files.js';
+import { settleMagic } from './magic.js';
 import { normalizeNoteHtml } from './note-format.js';
 import { cleanImageCaption, withImageLabels } from './note-refs.js';
 import { cleanNoteTables } from './tables.js';
@@ -212,16 +213,21 @@ export function validateBackup(raw) {
       dropped += 1;
       continue;
     }
-    const html = normalizeNoteHtml(typeof record.html === 'string' ? record.html : '');
-    const htmlEN = normalizeNoteHtml(typeof record.htmlEN === 'string' ? record.htmlEN : '');
+    // Magiczne fiszki (od 1.62) – sprawdzone razem z treścią, jak przy zapisie notatki.
+    const settled = settleMagic(record.magic, normalizeNoteHtml(typeof record.html === 'string' ? record.html : ''),
+      normalizeNoteHtml(typeof record.htmlEN === 'string' ? record.htmlEN : ''));
+    const { html, htmlEN } = settled;
     const metas = mediaList(record.images, (meta) => embedded.has(meta.id) || separate);
     const files = separate ? mediaList(record.files, () => true) : [];
     const images = withImageLabels(metas.map((meta) => imageMeta(meta, embedded.get(meta.id))));
     // Tabele (od 1.21) – sprawdzone jak przy zapisie notatki.
     const tables = cleanNoteTables(record.tables, images.map((meta) => meta.label));
     if (html === '' && htmlEN === '' && metas.length === 0 && files.length === 0 && tables.length === 0) continue;
+    const plain = { ...record };
+    delete plain.magic;
     data.notes.push({
-      ...record,
+      ...plain,
+      ...(settled.magic ? { magic: settled.magic } : {}),
       id: lessonID,
       lessonID,
       html,

@@ -10,6 +10,7 @@ import { sentences } from '../core/listen.js';
 import { NOTE_FILE_LIMIT, NOTE_FILE_MAX_BYTES, NOTE_IMAGE_LIMIT } from '../core/model.js';
 import { bytesToBase64 } from '../core/base64.js';
 import { nextDrawingLabel } from '../core/drawing.js';
+import { unmarkMagic } from '../core/magic.js';
 import {
   MAX_INDENT, NOTE_ALIGNS, NOTE_COLORS, NOTE_LINE_SPACINGS, NOTE_NO_COLOR, NOTE_SIZES, PAGE_BREAK_LINE, editorNoteHtml, isEmptyNoteHtml,
   normalizeLink, noteText, normalizeNoteHtml, portableNoteHtml
@@ -42,6 +43,7 @@ import { printNote } from './note-print.js';
 import { recordingSupported, startRecording } from './recorder.js';
 import { curlTurn, noteBook, spreadAvailable } from './note-book.js';
 import { speakThen, speechAvailable, stopSpeaking } from './speech.js';
+import { magicEditor } from './magic.js';
 import { symbolPanel } from './symbols.js';
 import { openTableEditor } from './table-editor.js';
 
@@ -106,8 +108,15 @@ const FORMAT_GROUPS = [
     ]
   }
 ];
+/** Magiczna fiszka (od 1.62) – pierwsza grupa paska w oknie tekstu notatki (core/magic.js, ui/magic.js). */
+const MAGIC_GROUP = {
+  label: 'Magiczna fiszka',
+  buttons: [{ command: 'magic', icon: 'magicCard', label: 'Magiczna fiszka – wyślij zaznaczony tekst albo odwołanie [[…]]', keys: 'Ctrl+M' }]
+};
+/** Polecenia grupy „Tekst” – zablokowane, gdy kursor jest we fragmencie magicznej fiszki. */
+const TEXT_COMMANDS = FORMAT_GROUPS[0].buttons.map((button) => button.command);
 /** Polecenia bez stanu włączenia (przycisk nie jest przełącznikiem). */
-const ACTION_COMMANDS = ['color', 'size', 'removeFormat', 'pageBreak', 'equation', 'object', 'indent', 'outdent', 'paragraph', 'symbol', 'date'];
+const ACTION_COMMANDS = ['color', 'size', 'removeFormat', 'pageBreak', 'equation', 'object', 'indent', 'outdent', 'paragraph', 'symbol', 'date', 'magic'];
 const ALIGN_ICONS = { left: 'alignLeft', center: 'alignCenter', right: 'alignRight', justify: 'alignJustify' };
 
 const escapeHtml = (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -689,7 +698,10 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
           // Podgląd pod oknem edycji od razu w tym samym układzie.
           book?.setSpread(on);
           library.updateSettings({ noteSpread: on }).catch((error) => console.error(error));
-        }
+        },
+        // Od 1.62: magiczne fiszki notatki (tylko w oknie tekstu).
+        magic: note?.magic ?? null,
+        magicHost: kind === 'text' ? { ctx, lessonID } : null
       });
 
       /** Obrazy, tabele i załączniki nad oknem tekstu – ta sama edycja (bez osobnego zapisu). */
@@ -719,6 +731,12 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       if (kind === 'text') {
         countButton = objectsButton(sessionEditor.objectCount(), () => openNested());
         replaceChildren(sessionBody, heading(h('div', { class: 'note-sheet__tools' }, sessionEditor.recordButton, countButton)), sessionEditor.element);
+        // Magiczna fiszka obok tekstu i teczka w prawym dolnym rogu – warstwa nad przewijaną treścią.
+        if (sessionEditor.magicLayer) {
+          const main = h('div', { class: 'note-edit__main' });
+          sessionBody.replaceWith(main);
+          main.append(sessionBody, sessionEditor.magicLayer);
+        }
       } else {
         replaceChildren(sessionBody, heading(), sessionEditor.objects, note ? deleteActions() : null);
       }
@@ -781,6 +799,7 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
       sessionDialog.dataset.testid = kind === 'text' ? 'note-edit-dialog' : 'note-objects-dialog';
       session = { kind, dialog: sessionDialog };
       focusPanel(sessionPanel);
+      sessionEditor.refreshMagic();
       sessionEditor.focus();
     }
 
@@ -968,11 +987,15 @@ export function openLessonNote(ctx, lessonID, { edit = false } = {}) {
  * tabele i załączniki. textView – okno tekstu jest (bez niego – samo okno obiektów: bez „Wstaw do
  * tekstu”); onObjectsChange() – zmiana liczby obiektów; beforeInsert() – przed wstawieniem odwołania
  * z okna obiektów (zamyka je, żeby było widać tekst).
- * Zwraca { element, objects, recordingBar, recordButton, objectCount(), draft(), dirty(), busy(), focus(), destroy() }.
+ * Od 1.62 magic – magiczne fiszki notatki, magicHost – { ctx, lessonID } (okno tekstu: przycisk fiszki na pasku,
+ * fiszka obok tekstu i teczka – ui/magic.js).
+ * Zwraca { element, objects, recordingBar, recordButton, magicLayer, objectCount(), draft(), dirty(), busy(), focus(),
+ * refreshMagic(), destroy() }.
  */
 function noteEditor({
   html, htmlEN = '', language = 'pl', images, tables = [], urls, imagesFirst = false, numberFigures = false, files = [], loadFile = null, titleID = 'note',
-  textView = true, onObjectsChange = null, beforeInsert = null, bookView = false, onBookViewChange = () => {}, spread = true, onSpreadChange = () => {}
+  textView = true, onObjectsChange = null, beforeInsert = null, bookView = false, onBookViewChange = () => {}, spread = true, onSpreadChange = () => {},
+  magic = null, magicHost = null
 }) {
   const initialTexts = { pl: normalizeNoteHtml(html), en: normalizeNoteHtml(htmlEN) };
   const labeledImages = withImageLabels(images.map((image) => ({ ...image })));
@@ -1004,6 +1027,8 @@ function noteEditor({
   const initialFiles = filesKey();
   const tablesKey = () => JSON.stringify(state.tables);
   const initialTables = tablesKey();
+  /** Magiczne fiszki (od 1.62) – ui/magic.js; tworzone na końcu, gdy jest już treść pola. */
+  let magicCards = null;
 
   const area = h('div', {
     class: 'note-text note-editor__area',
@@ -1197,10 +1222,21 @@ function noteEditor({
     return button;
   };
   const toolbar = h('div', { class: 'note-toolbar', role: 'toolbar', 'aria-label': 'Formatowanie tekstu' },
-    FORMAT_GROUPS.map((group) => h('div', { class: 'note-toolbar__group', role: 'group', 'aria-label': group.label }, group.buttons.map(toolbarButton))));
+    (textView && magicHost ? [MAGIC_GROUP, ...FORMAT_GROUPS] : FORMAT_GROUPS).map((group) => h('div', {
+      class: `note-toolbar__group${group === MAGIC_GROUP ? ' note-toolbar__group--magic' : ''}`, role: 'group', 'aria-label': group.label
+    }, group.buttons.map(toolbarButton))));
+
+  /** Kursor we fragmencie magicznej fiszki – formatowania tekstu nie można zmienić (komunikat zamiast zmiany). */
+  const lockedText = (name) => {
+    if (!magicCards?.locked() || !TEXT_COMMANDS.includes(name)) return false;
+    toast('Formatowania fragmentu magicznej fiszki nie można zmienić. Usuń go z fiszki, jeśli ma być zwykłym tekstem.');
+    return true;
+  };
 
   function command(name) {
+    if (lockedText(name)) return;
     switch (name) {
+      case 'magic': magicCards?.capture(); break;
       case 'color': togglePanel(colorPanel, renderColorPanel); break;
       case 'size': togglePanel(sizePanel); break;
       case 'paragraph': togglePanel(paragraphPanel, renderParagraphPanel); break;
@@ -1426,6 +1462,7 @@ function noteEditor({
     state.range = range.cloneRange();
     updateToolbar();
     followCaret();
+    magicCards?.selectionChanged();
   };
   document.addEventListener('selectionchange', onSelectionChange);
 
@@ -1461,9 +1498,17 @@ function noteEditor({
       editLink();
       return;
     }
+    // Ctrl+M (od 1.62) – zaznaczenie na magiczną fiszkę.
+    if (key === 'm' && magicCards) {
+      event.preventDefault();
+      captureSelection();
+      magicCards.capture();
+      return;
+    }
     const shortcut = { b: 'bold', i: 'italic', u: 'underline', '.': 'superscript', ',': 'subscript' }[key];
     if (shortcut) {
       event.preventDefault();
+      if (lockedText(shortcut)) return;
       captureSelection();
       run(shortcut);
     }
@@ -1487,7 +1532,8 @@ function noteEditor({
     if (html) {
       // Przeglądarka najpierw porządkuje HTML (np. z Worda), potem zostaje tylko to, co notatka obsługuje.
       const parsed = new window.DOMParser().parseFromString(html, 'text/html');
-      const clean = normalizeNoteHtml(parsed.body.innerHTML);
+      // Wklejony tekst nie powiela fragmentów magicznej fiszki (od 1.62).
+      const clean = normalizeNoteHtml(parsed.body.innerHTML, { magic: false });
       if (clean) document.execCommand('insertHTML', false, editorNoteHtml(clean));
     } else if (text) {
       document.execCommand('insertText', false, text);
@@ -2494,6 +2540,7 @@ function noteEditor({
     previewSection,
     filesSection
   );
+  const toolbarBox = h('div', { class: 'note-editor__toolbar' }, toolbar, colorPanel, sizePanel, paragraphPanel, symbolsPanel, objectsPanel);
   const element = h('div', { class: 'note-editor note-editor--text' },
     textView ? recordingBar : null,
     h('section', { class: 'note-editor__text' },
@@ -2519,10 +2566,12 @@ function noteEditor({
             showLanguage(value);
             syncEmpty();
             layoutPages(0);
+            magicCards?.selectionChanged();
+            magicCards?.refresh();
           }
         }))
       ),
-      h('div', { class: 'note-editor__toolbar' }, toolbar, colorPanel, sizePanel, paragraphPanel, symbolsPanel, objectsPanel),
+      toolbarBox,
       stage,
       pager
     )
@@ -2563,6 +2612,38 @@ function noteEditor({
   /** Treść obu wersji z bieżącym stanem pola. */
   const texts = () => ({ ...state.texts, [state.language]: areaHtml() });
 
+  if (textView && magicHost) {
+    magicCards = magicEditor({
+      ctx: magicHost.ctx,
+      lessonID: magicHost.lessonID,
+      area,
+      magic,
+      texts,
+      rewrite,
+      liveRange,
+      // Fragment wraca do zwykłego tekstu: w polu – z cofaniem, w drugiej wersji językowej – w zapamiętanej treści.
+      unwrap: (sigs) => {
+        if ([...area.querySelectorAll('[data-magic]')].some((span) => sigs.has(span.dataset.magic))) {
+          rewrite((copy) => {
+            for (const span of copy.querySelectorAll('[data-magic]')) if (sigs.has(span.dataset.magic)) span.replaceWith(...span.childNodes);
+          });
+        }
+        const other = state.language === 'pl' ? 'en' : 'pl';
+        state.texts[other] = unmarkMagic(state.texts[other], sigs);
+      },
+      thumb: (label) => {
+        const image = state.images[findImageByLabel(state.images, label)];
+        if (image?.url) return h('img', { src: image.url, alt: '', draggable: 'false' });
+        return icon(findTableByLabel(state.tables, label) >= 0 ? 'table' : 'image', { size: 18 });
+      },
+      tableLabels: () => state.tables.map((table) => table.label),
+      onLock: (locked) => {
+        for (const name of TEXT_COMMANDS) buttons.get(name)?.classList.toggle('note-toolbar__button--locked', locked);
+      }
+    });
+    toolbarBox.append(magicCards.lockbar);
+  }
+
   return {
     element,
     objects,
@@ -2591,7 +2672,9 @@ function noteEditor({
           })),
         files: state.files.map((file) => (file.stored
           ? { id: file.id, name: file.name }
-          : { bytes: file.bytes, name: file.name, type: file.type, duration: file.duration }))
+          : { bytes: file.bytes, name: file.name, type: file.type, duration: file.duration })),
+        // Od 1.62: magiczne fiszki (bez okna tekstu – zostają te, które są w notatce).
+        ...(magicCards ? { magic: magicCards.draft() } : {})
       };
     },
     dirty() {
@@ -2602,7 +2685,8 @@ function noteEditor({
         || tablesKey() !== initialTables
         || state.imagesFirst !== imagesFirst
         || state.numberFigures !== numberFigures
-        || state.pending > 0 || state.filesPending > 0 || Boolean(recording);
+        || state.pending > 0 || state.filesPending > 0 || Boolean(recording)
+        || Boolean(magicCards && magicCards.key() !== magicCards.initialKey);
     },
     busy: () => state.pending > 0 || state.filesPending > 0,
     /** Kończy trwające nagranie i dodaje je do załączników – przed zapisem notatki. */
@@ -2613,6 +2697,10 @@ function noteEditor({
     },
     /** Język treści w polu ('pl' | 'en'). */
     language: () => state.language,
+    /** Warstwa magicznej fiszki (fiszka, języczek, teczka) – null bez okna tekstu. */
+    magicLayer: magicCards?.layer ?? null,
+    /** Po wstawieniu warstwy do okna – układ fiszki obok tekstu. */
+    refreshMagic: () => magicCards?.refresh(),
     focus() {
       requestAnimationFrame(() => {
         // Na telefonie bez automatycznego fokusu – klawiatura zasłoniłaby pasek i tekst.
@@ -2624,6 +2712,7 @@ function noteEditor({
       gridObserver.disconnect();
       pageObserver.disconnect();
       window.cancelAnimationFrame(page.frame);
+      magicCards?.destroy();
       // Zamknięte bez zapisu – nagranie przepada, mikrofon zostaje zwolniony.
       recording?.cancel();
       recording = null;
